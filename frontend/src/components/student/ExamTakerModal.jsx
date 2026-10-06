@@ -152,28 +152,50 @@ export default function ExamTakerModal({
     }
   };
 
+  const isAssignment = exam.category === 'ASSIGNMENT';
+
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title={exam.title} maxWidth="max-w-4xl">
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title={`${isAssignment ? 'Assignment Submission' : 'Examination'} — ${exam.title}`}
+      maxWidth="max-w-4xl"
+    >
       <div className="space-y-6">
         {/* Countdown Timer Banner */}
         <div
           className={`flex flex-col sm:flex-row items-center justify-between gap-3 p-4 rounded-xl border ${
             isGracePeriod
               ? 'bg-amber-950/40 border-amber-500/40 text-amber-300'
+              : isAssignment
+              ? 'bg-purple-950/40 border-purple-500/40 text-purple-300'
               : 'bg-indigo-950/40 border-indigo-500/40 text-indigo-300'
           }`}
         >
           <div className="flex items-center gap-2">
-            <Clock className={`w-5 h-5 ${isGracePeriod ? 'animate-bounce text-amber-400' : 'text-indigo-400'}`} />
+            <Clock
+              className={`w-5 h-5 ${
+                isGracePeriod
+                  ? 'animate-bounce text-amber-400'
+                  : isAssignment
+                  ? 'text-purple-400'
+                  : 'text-indigo-400'
+              }`}
+            />
             <div>
               <span className="text-xs font-semibold uppercase tracking-wider block">
-                {isGracePeriod ? 'Grace Period Active (Late Turn-in)' : 'Time Remaining'}
+                {isGracePeriod
+                  ? 'Grace Period Active (Late Turn-in)'
+                  : isAssignment
+                  ? 'Time Remaining Until Deadline'
+                  : 'Time Remaining'}
               </span>
               <span className="text-xl font-mono font-bold tracking-tight">
                 {timeLeft || 'Calculating...'}
               </span>
             </div>
           </div>
+
 
           <div className="text-xs text-right">
             <div>
@@ -367,14 +389,15 @@ export default function ExamTakerModal({
                 {submitting ? (
                   <>
                     <div className="w-4 h-4 rounded-full border-2 border-white/30 border-t-white animate-spin" />
-                    <span>Submitting Exam...</span>
+                    <span>{isAssignment ? 'Submitting Assignment...' : 'Submitting Exam...'}</span>
                   </>
                 ) : (
                   <>
                     <Send className="w-4 h-4" />
-                    <span>Turn In Exam</span>
+                    <span>{isAssignment ? 'Turn In Assignment' : 'Turn In Exam'}</span>
                   </>
                 )}
+
               </button>
             </div>
           </div>

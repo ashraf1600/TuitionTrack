@@ -159,11 +159,19 @@ export default function TutorDashboard() {
     }
   };
 
-  const handleToggleClass = async (cycleId, classNo, completed) => {
+  const [authorCategory, setAuthorCategory] = useState('EXAM');
+
+  const handleToggleClass = async (cycleId, classNo, completed, date = null, topic = '') => {
     if (currentCycle) {
+      const targetIso = completed ? (date ? new Date(date).toISOString() : new Date().toISOString()) : null;
       const updatedClasses = currentCycle.classes_data.map((c) =>
         c.classNo === classNo
-          ? { ...c, completed, date: completed ? new Date().toISOString() : null }
+          ? {
+              ...c,
+              completed,
+              date: targetIso,
+              topic: completed ? topic : '',
+            }
           : c
       );
       const completedCount = updatedClasses.filter((c) => c.completed).length;
@@ -182,7 +190,7 @@ export default function TutorDashboard() {
     }
 
     try {
-      const res = await api.toggleClass(cycleId, classNo, completed);
+      const res = await api.toggleClass(cycleId, classNo, completed, date, topic);
       setCurrentCycle(res.cycle);
       loadAnalytics();
     } catch (err) {
@@ -190,6 +198,7 @@ export default function TutorDashboard() {
       loadStudentCycle(selectedStudentId);
     }
   };
+
 
   const handleResetCycle = async (cycleId) => {
     try {
@@ -320,17 +329,32 @@ export default function TutorDashboard() {
             )}
 
             {activeTab === 'exams' && (
-              <button
-                onClick={() => {
-                  setInitialBatchForExam('');
-                  setAuthorExamModalOpen(true);
-                }}
-                className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs flex items-center gap-1.5 shadow-md shadow-indigo-600/20 transition"
-              >
-                <Plus className="w-4 h-4" />
-                <span>Schedule New Exam</span>
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    setAuthorCategory('EXAM');
+                    setInitialBatchForExam('');
+                    setAuthorExamModalOpen(true);
+                  }}
+                  className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs flex items-center gap-1.5 shadow-md shadow-indigo-600/20 transition"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Schedule Exam</span>
+                </button>
+                <button
+                  onClick={() => {
+                    setAuthorCategory('ASSIGNMENT');
+                    setInitialBatchForExam('');
+                    setAuthorExamModalOpen(true);
+                  }}
+                  className="px-3.5 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-semibold text-xs flex items-center gap-1.5 shadow-md shadow-purple-600/20 transition"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Create Assignment</span>
+                </button>
+              </div>
             )}
+
           </div>
         </div>
 
@@ -491,14 +515,28 @@ export default function TutorDashboard() {
                     {/* Action buttons */}
                     <div className="pt-2 flex items-center gap-2">
                       <button
-                        onClick={() => handleScheduleForBatch(batch.id)}
-                        className="flex-1 py-2 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs shadow-md shadow-indigo-600/20 flex items-center justify-center gap-1.5 transition"
+                        onClick={() => {
+                          setAuthorCategory('EXAM');
+                          handleScheduleForBatch(batch.id);
+                        }}
+                        className="flex-1 py-2 px-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs shadow-md shadow-indigo-600/20 flex items-center justify-center gap-1 transition"
                       >
                         <Plus className="w-3.5 h-3.5" />
                         <span>Schedule Exam</span>
                       </button>
+                      <button
+                        onClick={() => {
+                          setAuthorCategory('ASSIGNMENT');
+                          handleScheduleForBatch(batch.id);
+                        }}
+                        className="flex-1 py-2 px-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-semibold text-xs shadow-md shadow-purple-600/20 flex items-center justify-center gap-1 transition"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>Assignment</span>
+                      </button>
                     </div>
                   </div>
+
                 ))}
               </div>
             )}
@@ -556,10 +594,11 @@ export default function TutorDashboard() {
                 <table className="w-full text-left text-sm border-collapse">
                   <thead>
                     <tr className="border-b border-slate-800 text-[11px] font-bold text-slate-400 uppercase tracking-wider">
-                      <th className="py-3 px-4">Exam Title</th>
+                      <th className="py-3 px-4">Title</th>
+                      <th className="py-3 px-4">Category</th>
                       <th className="py-3 px-4">Format</th>
                       <th className="py-3 px-4">Assigned To</th>
-                      <th className="py-3 px-4">Schedule</th>
+                      <th className="py-3 px-4">Schedule / Deadline</th>
                       <th className="py-3 px-4">Marks</th>
                       <th className="py-3 px-4">Status</th>
                       <th className="py-3 px-4">Results</th>
@@ -571,6 +610,17 @@ export default function TutorDashboard() {
                       <tr key={exam.id} className="hover:bg-slate-800/30 transition">
                         <td className="py-3 px-4 font-semibold text-slate-200">
                           {exam.title}
+                        </td>
+                        <td className="py-3 px-4">
+                          {exam.category === 'ASSIGNMENT' ? (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                              ASSIGNMENT
+                            </span>
+                          ) : (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                              EXAM
+                            </span>
+                          )}
                         </td>
                         <td className="py-3 px-4">
                           <span
@@ -596,13 +646,28 @@ export default function TutorDashboard() {
                           )}
                         </td>
                         <td className="py-3 px-4 text-xs text-slate-400">
-                          {new Date(exam.start_time).toLocaleDateString(undefined, {
-                            month: 'short',
-                            day: 'numeric',
-                            hour: '2-digit',
-                            minute: '2-digit',
-                          })}
+                          {exam.category === 'ASSIGNMENT' ? (
+                            <span className="text-purple-300 font-mono">
+                              Deadline:{' '}
+                              {new Date(exam.end_time).toLocaleDateString(undefined, {
+                                month: 'short',
+                                day: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit',
+                              })}
+                            </span>
+                          ) : (
+                            <span>
+                              {new Date(exam.start_time).toLocaleDateString(undefined, {
+                                month: 'short',
+                                day: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit',
+                              })}
+                            </span>
+                          )}
                         </td>
+
                         <td className="py-3 px-4 text-xs font-bold text-emerald-400">
                           {exam.total_marks}
                         </td>
@@ -696,11 +761,13 @@ export default function TutorDashboard() {
         students={students}
         initialStudentId={selectedStudentId}
         initialBatchId={initialBatchForExam}
+        initialCategory={authorCategory}
         onExamCreated={() => {
           loadExams();
           setActiveTab('exams');
         }}
       />
+
 
       {selectedExamForGrading && selectedSubmissionForGrading && (
         <SubmissionsGradingModal

@@ -76,8 +76,10 @@ class ExamListSerializer(serializers.ModelSerializer):
         fields = [
             'id',
             'title',
+            'category',
             'exam_type',
             'tutor',
+
             'tutor_name',
             'student',
             'student_name',
@@ -153,6 +155,7 @@ class ExamDetailSerializer(serializers.ModelSerializer):
         fields = [
             'id',
             'title',
+            'category',
             'exam_type',
             'content_html',
             'mcq_data',
@@ -267,9 +270,11 @@ class ExamCreateUpdateSerializer(serializers.ModelSerializer):
         fields = [
             'id',
             'title',
+            'category',
             'exam_type',
             'student_id',
             'batch_id',
+
             'content_html',
             'mcq_data',
             'solution_html',

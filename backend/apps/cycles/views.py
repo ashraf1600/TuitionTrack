@@ -75,23 +75,34 @@ class CycleViewSet(TenantScopedViewSet):
         classes_data = list(cycle.classes_data)
         found = False
         now_iso = timezone.now().isoformat()
+        custom_date = serializer.validated_data.get('date')
+        date_iso = custom_date.isoformat() if custom_date else now_iso
+        topic_val = serializer.validated_data.get('topic', '')
 
         for item in classes_data:
             if item.get('classNo') == class_no:
                 item['completed'] = completed
-                item['date'] = now_iso if completed else None
+                item['date'] = date_iso if completed else None
+                if completed and topic_val:
+                    item['topic'] = topic_val
+                elif not completed:
+                    item.pop('topic', None)
                 found = True
                 break
 
         if not found:
-            classes_data.append({
+            new_item = {
                 'classNo': class_no,
                 'completed': completed,
-                'date': now_iso if completed else None
-            })
+                'date': date_iso if completed else None
+            }
+            if completed and topic_val:
+                new_item['topic'] = topic_val
+            classes_data.append(new_item)
 
         cycle.classes_data = classes_data
         cycle.save(update_fields=['classes_data', 'updated_at'])
+
 
         return Response({
             'message': f'Class {class_no} marked as {"completed" if completed else "incomplete"}.',

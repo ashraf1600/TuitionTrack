@@ -107,10 +107,11 @@ export const api = {
   // Cycles
   getCycles: (studentId) => apiRequest(`/cycles/${studentId ? `?student_id=${studentId}` : ''}`),
   getCycleDetail: (id) => apiRequest(`/cycles/${id}/`),
-  toggleClass: (cycleId, classNo, completed) => apiRequest(`/cycles/${cycleId}/toggle_class/`, {
+  toggleClass: (cycleId, classNo, completed, date = null, topic = '') => apiRequest(`/cycles/${cycleId}/toggle_class/`, {
     method: 'PATCH',
-    body: JSON.stringify({ class_no: classNo, completed }),
+    body: JSON.stringify({ class_no: classNo, completed, date, topic }),
   }),
+
   resetCycle: (cycleId) => apiRequest(`/cycles/${cycleId}/reset/`, { method: 'POST' }),
 
   // Analytics

@@ -68,15 +68,27 @@ class CycleSerializer(serializers.ModelSerializer):
             return 0.0
         return round((obj.completed_classes / obj.total_classes) * 100, 1)
 
+    def to_representation(self, instance):
+        """Strip fee and billing figures when viewed by a student."""
+        data = super().to_representation(instance)
+        request = self.context.get('request')
+        if request and getattr(request.user, 'role', None) == 'STUDENT':
+            data.pop('fee_snapshot', None)
+            data.pop('earned_amount', None)
+            data.pop('pending_amount', None)
+        return data
+
 
 class ToggleClassSerializer(serializers.Serializer):
     """
     Validates input for PATCH /api/v1/cycles/<id>/toggle_class/
-    Supports both class_no and classNo for frontend convenience.
+    Supports both class_no and classNo, along with optional date and topic.
     """
     class_no = serializers.IntegerField(required=False, min_value=1)
     classNo = serializers.IntegerField(required=False, min_value=1)
     completed = serializers.BooleanField(required=True)
+    date = serializers.DateTimeField(required=False, allow_null=True)
+    topic = serializers.CharField(required=False, allow_blank=True, max_length=255)
 
     def validate(self, attrs):
         class_num = attrs.get('class_no') or attrs.get('classNo')
@@ -84,3 +96,4 @@ class ToggleClassSerializer(serializers.Serializer):
             raise serializers.ValidationError('Either "class_no" or "classNo" must be provided.')
         attrs['resolved_class_no'] = class_num
         return attrs
+

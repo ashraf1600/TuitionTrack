@@ -42,10 +42,13 @@ export default function ExamAuthoringModal({
   onExamCreated,
   initialStudentId = '',
   initialBatchId = '',
+  initialCategory = 'EXAM',
 }) {
   const [activeTab, setActiveTab] = useState('questions'); // 'questions' | 'schedule' | 'solutions'
+  const [category, setCategory] = useState(initialCategory || 'EXAM'); // 'EXAM' | 'ASSIGNMENT'
   const [examType, setExamType] = useState('HYBRID'); // 'HYBRID' | 'MCQ' | 'CQ'
   const [targetType, setTargetType] = useState(initialBatchId ? 'batch' : 'student'); // 'student' | 'batch'
+
 
   // Batches state
   const [batches, setBatches] = useState([]);
@@ -299,6 +302,7 @@ export default function ExamAuthoringModal({
     try {
       const payload = {
         title,
+        category,
         exam_type: examType,
         student_id: targetType === 'student' ? studentId : null,
         batch_id: targetType === 'batch' ? batchId : null,
@@ -315,6 +319,7 @@ export default function ExamAuthoringModal({
         is_results_published: isResultsPublished,
       };
 
+
       await api.createExam(payload);
       onExamCreated();
       onClose();
@@ -326,7 +331,12 @@ export default function ExamAuthoringModal({
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Author, Schedule & Grade Exam" maxWidth="max-w-4xl">
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title={category === 'ASSIGNMENT' ? 'Create & Schedule Assignment' : 'Author, Schedule & Grade Exam'}
+      maxWidth="max-w-4xl"
+    >
       <form onSubmit={handleSubmit} className="space-y-4">
         {error && (
           <div className="p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs flex items-center gap-2">
@@ -334,6 +344,34 @@ export default function ExamAuthoringModal({
             <span>{error}</span>
           </div>
         )}
+
+        {/* Assessment Category Selector: EXAM vs ASSIGNMENT */}
+        <div className="flex items-center gap-2 p-1.5 rounded-xl bg-slate-900 border border-slate-800 w-fit">
+          <button
+            type="button"
+            onClick={() => setCategory('EXAM')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
+              category === 'EXAM'
+                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <FileText className="w-3.5 h-3.5" />
+            <span>Timed Examination</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setCategory('ASSIGNMENT')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
+              category === 'ASSIGNMENT'
+                ? 'bg-purple-600 text-white shadow-md shadow-purple-600/30'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <Clock className="w-3.5 h-3.5" />
+            <span>Assignment with Deadline</span>
+          </button>
+        </div>
 
         {/* Tab Navigation */}
         <div className="flex items-center justify-between border-b border-slate-800 pb-2">
@@ -366,7 +404,7 @@ export default function ExamAuthoringModal({
               }`}
             >
               <Calendar className="w-3.5 h-3.5" />
-              <span>Schedule & Settings</span>
+              <span>{category === 'ASSIGNMENT' ? 'Deadline & Settings' : 'Schedule & Settings'}</span>
             </button>
 
             <button
@@ -388,17 +426,22 @@ export default function ExamAuthoringModal({
         <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 p-3.5 rounded-xl bg-slate-800/40 border border-slate-700/60">
           <div className="sm:col-span-6">
             <label className="block text-[11px] font-bold text-slate-300 uppercase tracking-wider mb-1">
-              Exam Title *
+              {category === 'ASSIGNMENT' ? 'Assignment Title *' : 'Exam Title *'}
             </label>
             <input
               type="text"
               required
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder="e.g. HSC Physics — Modern Physics & Mechanics"
+              placeholder={
+                category === 'ASSIGNMENT'
+                  ? 'e.g. Physics Assignment #3 — Thermodynamics Problem Set'
+                  : 'e.g. HSC Physics — Modern Physics & Mechanics'
+              }
               className="w-full px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-100 text-xs focus:outline-none focus:border-indigo-500"
             />
           </div>
+
 
           <div className="sm:col-span-3">
             <label className="block text-[11px] font-bold text-slate-300 uppercase tracking-wider mb-1">
@@ -789,7 +832,7 @@ export default function ExamAuthoringModal({
 
               <div>
                 <label className="block text-xs font-bold text-slate-300 mb-1">
-                  Scheduled End Time *
+                  {category === 'ASSIGNMENT' ? 'Submission Deadline *' : 'Scheduled End Time *'}
                 </label>
                 <input
                   type="datetime-local"
@@ -799,9 +842,12 @@ export default function ExamAuthoringModal({
                   className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-xs text-slate-100 focus:outline-none focus:border-indigo-500"
                 />
                 <span className="block text-[10px] text-slate-400 mt-1">
-                  Submissions after this time will enter the grace period or be locked.
+                  {category === 'ASSIGNMENT'
+                    ? 'Students can turn in their work anytime before this deadline.'
+                    : 'Submissions after this time will enter the grace period or be locked.'}
                 </span>
               </div>
+
 
               <div>
                 <label className="block text-xs font-bold text-slate-300 mb-1">

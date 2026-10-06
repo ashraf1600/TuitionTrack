@@ -1,5 +1,5 @@
 import React from 'react';
-import { Calendar, Clock, Award, ArrowRight, CheckCircle2, Trophy, Layers } from 'lucide-react';
+import { Calendar, Clock, Award, ArrowRight, CheckCircle2, Trophy, Layers, FileCheck } from 'lucide-react';
 import StatusBadge from '../common/StatusBadge';
 
 export default function ExamCard({
@@ -11,6 +11,7 @@ export default function ExamCard({
   const {
     id,
     title,
+    category,
     exam_type,
     batch_name,
     total_marks,
@@ -20,6 +21,7 @@ export default function ExamCard({
     has_submission,
   } = exam;
 
+  const isAssignment = category === 'ASSIGNMENT';
   const startDate = new Date(start_time);
   const endDate = new Date(end_time);
 
@@ -33,6 +35,15 @@ export default function ExamCard({
         <div className="flex items-start justify-between gap-2 mb-2">
           <div className="flex items-center gap-1.5 flex-wrap">
             <StatusBadge status={dynamic_status} />
+            {isAssignment ? (
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                ASSIGNMENT
+              </span>
+            ) : (
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                EXAM
+              </span>
+            )}
             {exam_type && (
               <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-slate-800 text-slate-300 border border-slate-700">
                 {exam_type}
@@ -57,17 +68,40 @@ export default function ExamCard({
         )}
 
         <div className="space-y-1.5 text-xs text-slate-400">
-          <div className="flex items-center gap-2">
-            <Calendar className="w-4 h-4 text-slate-500" />
-            <span>{startDate.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <Clock className="w-4 h-4 text-slate-500" />
-            <span>
-              {startDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} —{' '}
-              {endDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-            </span>
-          </div>
+          {isAssignment ? (
+            <div className="flex items-center gap-2 text-purple-300">
+              <Clock className="w-4 h-4 text-purple-400" />
+              <span>
+                Deadline:{' '}
+                {endDate.toLocaleDateString(undefined, {
+                  month: 'short',
+                  day: 'numeric',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                })}
+              </span>
+            </div>
+          ) : (
+            <>
+              <div className="flex items-center gap-2">
+                <Calendar className="w-4 h-4 text-slate-500" />
+                <span>
+                  {startDate.toLocaleDateString(undefined, {
+                    weekday: 'short',
+                    month: 'short',
+                    day: 'numeric',
+                  })}
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Clock className="w-4 h-4 text-slate-500" />
+                <span>
+                  {startDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} —{' '}
+                  {endDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                </span>
+              </div>
+            </>
+          )}
         </div>
       </div>
 
@@ -79,7 +113,7 @@ export default function ExamCard({
               className="flex-1 py-2 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs flex items-center justify-center gap-1.5 border border-slate-700 transition"
             >
               <CheckCircle2 className="w-4 h-4 text-indigo-400" />
-              <span>Results & Key</span>
+              <span>{isAssignment ? 'View Submission & Grade' : 'Results & Key'}</span>
             </button>
             {onViewLeaderboard && (
               <button
@@ -94,9 +128,13 @@ export default function ExamCard({
         ) : isRunning ? (
           <button
             onClick={() => onTakeExam(id)}
-            className="w-full py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-lg shadow-emerald-600/30 transition animate-pulse"
+            className={`w-full py-2.5 px-3 rounded-xl text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-lg transition animate-pulse ${
+              isAssignment
+                ? 'bg-purple-600 hover:bg-purple-500 shadow-purple-600/30'
+                : 'bg-emerald-600 hover:bg-emerald-500 shadow-emerald-600/30'
+            }`}
           >
-            <span>Take Exam Now</span>
+            <span>{isAssignment ? 'Submit Assignment Now' : 'Take Exam Now'}</span>
             <ArrowRight className="w-4 h-4" />
           </button>
         ) : isScheduled ? (
@@ -105,7 +143,7 @@ export default function ExamCard({
           </div>
         ) : (
           <div className="text-[11px] text-rose-400/80 text-center w-full py-1.5 rounded-lg bg-rose-950/20 border border-rose-900/30">
-            Exam window passed (Missed)
+            {isAssignment ? 'Assignment Deadline Passed' : 'Exam window passed (Missed)'}
           </div>
         )}
       </div>

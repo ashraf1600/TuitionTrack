@@ -58,12 +58,26 @@ class Exam(models.Model):
         MCQ = 'MCQ', 'MCQ Only'
         CQ = 'CQ', 'CQ Only'
 
+    class AssessmentCategory(models.TextChoices):
+        EXAM = 'EXAM', 'Exam'
+        ASSIGNMENT = 'ASSIGNMENT', 'Assignment'
+
+    category = models.CharField(
+        max_length=20,
+        choices=AssessmentCategory.choices,
+        default=AssessmentCategory.EXAM,
+        db_index=True,
+        verbose_name='Assessment Category',
+        help_text='Differentiates between timed Exams and Assignments with deadlines.'
+    )
+
     exam_type = models.CharField(
         max_length=10,
         choices=ExamType.choices,
         default=ExamType.HYBRID,
         verbose_name='Exam Type',
     )
+
 
     title = models.CharField(max_length=255, verbose_name='Exam Title')
 
