@@ -300,10 +300,12 @@ class UnassignedStudentsView(APIView):
         from .models import TuitionEnrollment
         tutor = request.user
 
-        # Prospective students who selected this tutor
+        from django.db.models import Q
+        # Prospective or created students under this tutor
         prospective = User.objects.filter(
-            role=User.Role.STUDENT,
-            selected_tutor=tutor
+            role=User.Role.STUDENT
+        ).filter(
+            Q(selected_tutor=tutor) | Q(tutor=tutor)
         ).select_related('student_profile')
 
         # Check which students are not enrolled in any of this tutor's tuitions

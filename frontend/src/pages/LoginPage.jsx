@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { api } from '../api/client';
 import { GraduationCap, Lock, User, Mail, Phone, ArrowRight, AlertCircle, ShieldCheck, School, Users } from 'lucide-react';
 
 export default function LoginPage() {
