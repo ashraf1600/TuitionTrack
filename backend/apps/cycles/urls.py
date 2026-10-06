@@ -1,8 +1,10 @@
-"""Cycles URL patterns — stubs for Phase 3 implementation."""
+"""Cycles URL patterns"""
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
+from .views import CycleViewSet
 
 router = DefaultRouter()
+router.register(r'cycles', CycleViewSet, basename='cycle')
 
 urlpatterns = [
     path('', include(router.urls)),

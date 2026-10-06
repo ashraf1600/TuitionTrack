@@ -1,9 +1,7 @@
-"""Analytics URL patterns — stubs for Phase 3 implementation."""
-from django.urls import path, include
-from rest_framework.routers import DefaultRouter
-
-router = DefaultRouter()
+"""Analytics URL patterns"""
+from django.urls import path
+from .views import WalletAnalyticsView
 
 urlpatterns = [
-    path('analytics/', include(router.urls)),
+    path('analytics/wallet/', WalletAnalyticsView.as_view(), name='wallet-analytics'),
 ]
