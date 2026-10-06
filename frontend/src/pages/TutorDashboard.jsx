@@ -1092,8 +1092,10 @@ export default function TutorDashboard() {
       <AddStudentModal
         isOpen={addStudentModalOpen}
         onClose={() => setAddStudentModalOpen(false)}
+        tuitions={tuitions}
         onStudentAdded={() => {
           loadStudents();
+          loadTuitions();
           loadAnalytics();
         }}
       />

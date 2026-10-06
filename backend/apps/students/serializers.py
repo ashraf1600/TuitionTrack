@@ -114,6 +114,7 @@ class StudentCreateSerializer(serializers.Serializer):
     tuition_fee = serializers.DecimalField(max_digits=10, decimal_places=2, default=0.00)
     cycle_length = serializers.IntegerField(default=12, min_value=1)
     notes = serializers.CharField(required=False, allow_blank=True, default='')
+    tuition_id = serializers.UUIDField(required=False, allow_null=True, default=None)
 
     def validate_username(self, value):
         if User.objects.filter(username=value).exists():
@@ -132,6 +133,7 @@ class StudentCreateSerializer(serializers.Serializer):
         1. User with role=STUDENT, tutor=request.user
         2. StudentProfile with financial/cycle config
         3. Cycle #1 with snapshotted fee and total_classes
+        4. Optional TuitionEnrollment & AttendanceCycle if tuition_id is provided
 
         Uses select_for_update-style atomicity via @transaction.atomic.
         If any step fails, all are rolled back.
@@ -139,6 +141,7 @@ class StudentCreateSerializer(serializers.Serializer):
         from apps.cycles.models import Cycle
 
         tutor = self.context['request'].user
+        tuition_id = validated_data.pop('tuition_id', None)
 
         # ── Step 1: Create Student User ──────────────────────────────────────
         student_user = User.objects.create_user(
@@ -174,6 +177,21 @@ class StudentCreateSerializer(serializers.Serializer):
             classes_data=Cycle.build_fresh_classes_data(profile.cycle_length),
             status=Cycle.Status.ACTIVE,
         )
+
+        # ── Step 4: Optional Tuition Enrollment ──────────────────────────────
+        if tuition_id:
+            from apps.students.models import Tuition, TuitionEnrollment
+            from apps.cycles.models import AttendanceCycle
+            tuition = Tuition.objects.filter(id=tuition_id, tutor=tutor).first()
+            if tuition:
+                enr, created = TuitionEnrollment.objects.get_or_create(tuition=tuition, student=student_user)
+                if created:
+                    AttendanceCycle.objects.create(
+                        enrollment=enr,
+                        cycle_number=1,
+                        classes_data=AttendanceCycle.build_fresh_classes_data(tuition.cycle_length),
+                        status=AttendanceCycle.Status.ACTIVE
+                    )
 
         return student_user
 

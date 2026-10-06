@@ -3,7 +3,7 @@ import Modal from '../common/Modal';
 import { api } from '../../api/client';
 import { UserPlus, AlertCircle, CheckCircle2 } from 'lucide-react';
 
-export default function AddStudentModal({ isOpen, onClose, onStudentAdded }) {
+export default function AddStudentModal({ isOpen, onClose, onStudentAdded, tuitions = [] }) {
   const [formData, setFormData] = useState({
     username: '',
     password: '',
@@ -18,6 +18,7 @@ export default function AddStudentModal({ isOpen, onClose, onStudentAdded }) {
     tuition_fee: '5000.00',
     cycle_length: 12,
     notes: '',
+    tuition_id: '',
   });
 
   const [loading, setLoading] = useState(false);
@@ -32,6 +33,24 @@ export default function AddStudentModal({ isOpen, onClose, onStudentAdded }) {
     }));
   };
 
+  const handleTuitionChange = (e) => {
+    const tId = e.target.value;
+    const selectedT = tuitions.find((t) => t.id === tId);
+    if (selectedT) {
+      setFormData((prev) => ({
+        ...prev,
+        tuition_id: tId,
+        tuition_fee: selectedT.tuition_fee ? String(selectedT.tuition_fee) : prev.tuition_fee,
+        cycle_length: selectedT.cycle_length || prev.cycle_length,
+      }));
+    } else {
+      setFormData((prev) => ({
+        ...prev,
+        tuition_id: '',
+      }));
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
@@ -39,8 +58,22 @@ export default function AddStudentModal({ isOpen, onClose, onStudentAdded }) {
     setLoading(true);
 
     try {
-      const res = await api.createStudent(formData);
-      setSuccess('Student account and Cycle #1 initialized successfully!');
+      const payload = { ...formData };
+      if (!payload.tuition_id) {
+        delete payload.tuition_id;
+      }
+      const res = await api.createStudent(payload);
+
+      // If tuition was selected and backend didn't already enroll, ensure enrollment
+      if (formData.tuition_id && res?.student?.id) {
+        try {
+          await api.enrollInTuition(formData.tuition_id, res.student.id);
+        } catch (_) {
+          // Handled or already enrolled
+        }
+      }
+
+      setSuccess('Student account & Tuition enrollment initialized successfully!');
       setTimeout(() => {
         onStudentAdded();
         onClose();
@@ -58,6 +91,7 @@ export default function AddStudentModal({ isOpen, onClose, onStudentAdded }) {
           tuition_fee: '5000.00',
           cycle_length: 12,
           notes: '',
+          tuition_id: '',
         });
         setSuccess('');
       }, 1000);
@@ -174,6 +208,33 @@ export default function AddStudentModal({ isOpen, onClose, onStudentAdded }) {
             />
           </div>
         </div>
+
+        {/* Optional Tuition Assignment */}
+        {tuitions && tuitions.length > 0 && (
+          <div className="p-3 rounded-xl bg-indigo-500/10 border border-indigo-500/20 space-y-1.5">
+            <label className="block text-xs font-semibold text-indigo-300">
+              Assign to Specific Tuition (Optional)
+            </label>
+            <select
+              name="tuition_id"
+              value={formData.tuition_id || ''}
+              onChange={handleTuitionChange}
+              className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 text-sm focus:outline-none focus:border-indigo-500 transition"
+            >
+              <option value="">-- No specific tuition (General roster only) --</option>
+              {tuitions.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.title} ({t.cycle_length} classes • ৳{Number(t.tuition_fee).toLocaleString()})
+                </option>
+              ))}
+            </select>
+            {formData.tuition_id && (
+              <p className="text-[11px] text-emerald-400 font-medium">
+                ✓ Auto-fills fee & cycle length, and enrolls student directly into this tuition routine.
+              </p>
+            )}
+          </div>
+        )}
 
         {/* Academic & Financial config */}
         <div className="pt-2 border-t border-slate-800 grid grid-cols-1 sm:grid-cols-2 gap-4">
