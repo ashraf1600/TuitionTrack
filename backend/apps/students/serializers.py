@@ -368,17 +368,26 @@ class TuitionSerializer(serializers.ModelSerializer):
                         'pending_balance': float(active_c.pending_balance),
                     })
 
-            res.append({
+            phone_val = getattr(enr.student, 'phone', '') or getattr(getattr(enr.student, 'student_profile', None), 'parent_phone', '')
+            entry = {
                 'enrollment_id': str(enr.id),
                 'student_id': str(enr.student.id),
                 'student_name': enr.student.get_full_name() or enr.student.username,
-                'email': enr.student.email if (not is_student or is_self) else '',
-                'phone': enr.student.phone if (not is_student or is_self) else '',
-                'grade_level': getattr(getattr(enr.student, 'student_profile', None), 'grade_level', '') if (not is_student or is_self) else '',
-                'institution': getattr(getattr(enr.student, 'student_profile', None), 'institution', '') if (not is_student or is_self) else '',
                 'joined_at': enr.joined_at,
                 'active_cycle': cycle_info,
-            })
+            }
+            if not is_student or is_self:
+                entry['email'] = enr.student.email
+                entry['phone'] = phone_val
+                entry['grade_level'] = getattr(getattr(enr.student, 'student_profile', None), 'grade_level', '')
+                entry['institution'] = getattr(getattr(enr.student, 'student_profile', None), 'institution', '')
+            else:
+                entry['email'] = ''
+                entry['phone'] = ''
+                entry['grade_level'] = ''
+                entry['institution'] = ''
+            res.append(entry)
+
         return res
 
     def get_wallet_summary(self, obj):
@@ -437,7 +446,7 @@ class TuitionCreateUpdateSerializer(serializers.ModelSerializer):
                 student = User.objects.filter(id=s_id, role=User.Role.STUDENT).first()
                 if not student:
                     raise serializers.ValidationError(f'Student with ID {s_id} does not exist.')
-                if student.tutor and student.tutor != tutor:
+                if student.tutor != tutor and student.selected_tutor != tutor:
                     raise serializers.ValidationError(f'Cannot enroll student {s_id} belonging to another tutor.')
         return value
 

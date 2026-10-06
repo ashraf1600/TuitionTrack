@@ -361,7 +361,10 @@ export default function TuitionWorkspace() {
     try {
       const detail = await api.getExamDetail(exam.id);
       setSelectedExamForGrading(detail);
-      setSelectedSubmissionForGrading(detail.submission);
+      const sub = (detail.submissions && detail.submissions.length > 0)
+        ? detail.submissions[0]
+        : detail.submission;
+      setSelectedSubmissionForGrading(sub);
       setGradingModalOpen(true);
     } catch (err) {
       alert(`Failed to load submission: ${err.message}`);
@@ -949,13 +952,13 @@ export default function TuitionWorkspace() {
                             </button>
 
                             {/* Review & Grade */}
-                            {exam.has_submission ? (
+                            {(exam.has_submission || exam.submissions_count > 0) ? (
                               <button
                                 onClick={() => handleOpenGrading(exam)}
                                 className="px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs flex items-center gap-1 shadow-md shadow-emerald-600/20 transition"
                               >
                                 <Award className="w-3.5 h-3.5" />
-                                <span>Grade</span>
+                                <span>Grade{exam.submissions_count > 1 ? ` (${exam.submissions_count})` : ''}</span>
                               </button>
                             ) : (
                               <span className="text-[11px] text-slate-500 italic">

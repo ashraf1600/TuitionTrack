@@ -52,11 +52,6 @@ class TutorRegistrationSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         if attrs['password'] != attrs.pop('password_confirm'):
             raise serializers.ValidationError({'password_confirm': 'Passwords do not match.'})
-        from django.contrib.auth.password_validation import validate_password
-        try:
-            validate_password(attrs['password'])
-        except Exception as exc:
-            raise serializers.ValidationError({'password': list(exc.messages) if hasattr(exc, 'messages') else str(exc)})
         return attrs
 
     def create(self, validated_data):
@@ -73,14 +68,21 @@ class TutorDirectorySerializer(serializers.ModelSerializer):
     Privacy invariant: Never exposes personal contact details (email, phone) or tuition fees.
     """
     name = serializers.SerializerMethodField()
+    subjects = serializers.SerializerMethodField()
     tuitions = serializers.SerializerMethodField()
 
     class Meta:
         model = User
-        fields = ['id', 'username', 'name', 'tuitions']
+        fields = ['id', 'username', 'name', 'subjects', 'tuitions']
 
     def get_name(self, obj):
         return obj.get_full_name() or obj.username
+
+    def get_subjects(self, obj):
+        if hasattr(obj, 'tuitions'):
+            subjects = [t.subject for t in obj.tuitions.all() if t.subject]
+            return list(dict.fromkeys(subjects))
+        return []
 
     def get_tuitions(self, obj):
         if hasattr(obj, 'tuitions'):
@@ -88,11 +90,13 @@ class TutorDirectorySerializer(serializers.ModelSerializer):
                 {
                     'id': str(t.id),
                     'title': t.title,
+                    'subject': t.subject,
                     'cycle_length': t.cycle_length,
                 }
                 for t in obj.tuitions.all()
             ]
         return []
+
 
 
 class StudentSelfRegistrationSerializer(serializers.Serializer):
@@ -133,11 +137,6 @@ class StudentSelfRegistrationSerializer(serializers.Serializer):
     def validate(self, attrs):
         if attrs['password'] != attrs.pop('password_confirm'):
             raise serializers.ValidationError({'password_confirm': 'Passwords do not match.'})
-        from django.contrib.auth.password_validation import validate_password
-        try:
-            validate_password(attrs['password'])
-        except Exception as exc:
-            raise serializers.ValidationError({'password': list(exc.messages) if hasattr(exc, 'messages') else str(exc)})
         if not (attrs.get('selected_tutor_id', '').strip() or attrs.get('selected_tutor_username', '').strip() or attrs.get('tutor_username', '').strip()):
             raise serializers.ValidationError('Selecting a tutor is required.')
         return attrs

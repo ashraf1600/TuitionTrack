@@ -64,13 +64,20 @@ class ExamSubmissionSerializer(serializers.ModelSerializer):
         data = super().to_representation(instance)
         request = self.context.get('request')
         is_student = request and getattr(request.user, 'role', None) == 'STUDENT'
-        if is_student and not instance.exam.is_results_published:
+        from datetime import timedelta
+        now = timezone.now()
+        exam = instance.exam
+        grace_limit = exam.end_time + timedelta(minutes=exam.grace_period_minutes)
+        window_active = (now <= grace_limit)
+
+        if is_student and (not exam.is_results_published or window_active):
             data['mcq_score'] = None
             data['cq_score'] = None
             data['obtained_marks'] = None
             data['tutor_feedback'] = ''
             data['is_graded'] = False
         return data
+
 
 
 class ExamListSerializer(serializers.ModelSerializer):
@@ -233,7 +240,10 @@ class ExamDetailSerializer(serializers.ModelSerializer):
             data['solution_media_url'] = ''
         elif is_student:
             sub = self._get_submission(instance)
-            if not (sub and instance.is_results_published):
+            from datetime import timedelta
+            grace_limit = instance.end_time + timedelta(minutes=instance.grace_period_minutes)
+            window_active = (now <= grace_limit)
+            if not (sub and instance.is_results_published and not window_active):
                 data['solution_media_url'] = ''
                 data['solution_html'] = ''
                 stripped = []
@@ -243,6 +253,7 @@ class ExamDetailSerializer(serializers.ModelSerializer):
                     q_copy.pop('explanation', None)
                     stripped.append(q_copy)
                 data['mcq_data'] = stripped
+
 
         return data
 
@@ -447,12 +458,17 @@ class ExamCreateUpdateSerializer(serializers.ModelSerializer):
             attrs['student'] = None
         elif student_id:
             try:
-                student = User.objects.get(id=student_id, role=User.Role.STUDENT, tutor=request.user)
+                from django.db.models import Q
+                student = User.objects.get(
+                    Q(id=student_id, role=User.Role.STUDENT) &
+                    (Q(tutor=request.user) | Q(selected_tutor=request.user))
+                )
             except User.DoesNotExist:
                 raise serializers.ValidationError({'student_id': 'Selected student does not exist or belongs to another tutor.'})
             attrs['student'] = student
             attrs['tuition'] = None
             attrs['batch'] = None
+
 
         return attrs
 

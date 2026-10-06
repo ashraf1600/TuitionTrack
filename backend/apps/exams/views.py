@@ -294,10 +294,11 @@ class ExamViewSet(viewsets.ModelViewSet):
         submission.calculate_mcq_score()
         submission.save(update_fields=['mcq_score', 'obtained_marks', 'is_graded', 'graded_at', 'updated_at'])
 
-        if exam.is_results_published:
+        if exam.is_results_published and now > grace_limit:
             msg = f'Exam submitted successfully ({sub_status.capitalize()}). MCQs auto-graded: {submission.mcq_score} marks.'
         else:
             msg = f'Exam submitted successfully ({sub_status.capitalize()}).'
+
 
         return Response(
             {

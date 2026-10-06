@@ -259,16 +259,20 @@ class TuitionViewSet(viewsets.ModelViewSet):
         context['request'] = self.request
         return context
 
-    def _scoped_student_or_404(self, student_id):
+    def _scoped_student_or_reject(self, student_id):
         """Only students owned by this tutor, or orphans who selected this tutor."""
-        return get_object_or_404(
-            User.objects.filter(
-                Q(tutor=self.request.user)
-                | Q(tutor__isnull=True, selected_tutor=self.request.user)
-            ),
-            id=student_id,
-            role=User.Role.STUDENT,
-        )
+        from rest_framework.exceptions import PermissionDenied, ValidationError
+        if not student_id:
+            raise ValidationError({'student_id': 'student_id is required.'})
+        student = User.objects.filter(id=student_id, role=User.Role.STUDENT).first()
+        if not student:
+            raise ValidationError({'student_id': 'Student does not exist.'})
+        if student.tutor != self.request.user and student.selected_tutor != self.request.user:
+            raise PermissionDenied('Unauthorized: Student belongs to another tutor.')
+        return student
+
+    _scoped_student_or_404 = _scoped_student_or_reject
+
 
     def create(self, request, *args, **kwargs):
         if request.user.role != 'TUTOR':

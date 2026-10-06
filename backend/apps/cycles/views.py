@@ -28,8 +28,13 @@ class CycleViewSet(TenantScopedViewSet):
     """
     queryset = Cycle.objects.all().select_related('student', 'tutor')
     serializer_class = CycleSerializer
-    # No POST: cycles are only created via student provisioning or reset.
-    http_method_names = ['get', 'patch', 'head', 'options']
+    http_method_names = ['get', 'post', 'patch', 'head', 'options']
+
+    def create(self, request, *args, **kwargs):
+        return Response(
+            {'error': 'Cycles cannot be created directly. They are initialized via student provisioning or reset.'},
+            status=status.HTTP_405_METHOD_NOT_ALLOWED
+        )
 
     def partial_update(self, request, *args, **kwargs):
         if request.user.role != 'TUTOR':
@@ -160,12 +165,6 @@ class CycleViewSet(TenantScopedViewSet):
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
-            if not cycle.is_complete:
-                return Response(
-                    {'error': f'Cannot reset cycle before completion ({cycle.completed_classes}/{cycle.total_classes} classes completed).'},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-
             # 1. Archive current cycle
             cycle.status = Cycle.Status.ARCHIVED
             cycle.save(update_fields=['status', 'updated_at'])
@@ -202,6 +201,11 @@ class AttendanceCycleViewSet(viewsets.ModelViewSet):
     from apps.authentication.permissions import IsTutorOrStudent
     permission_classes = [IsAuthenticated, IsTutorOrStudent]
     http_method_names = ['get', 'patch', 'post', 'head', 'options']
+
+    def get_permissions(self):
+        if self.action in ['create', 'update', 'partial_update', 'destroy', 'reset', 'toggle_class']:
+            return [IsAuthenticated(), IsTutor()]
+        return [IsAuthenticated(), IsTutorOrStudent()]
 
     def get_queryset(self):
         from .models import AttendanceCycle
@@ -246,50 +250,6 @@ class AttendanceCycleViewSet(viewsets.ModelViewSet):
 
         return qs.order_by('-cycle_number')
 
-    def list(self, request, *args, **kwargs):
-        # Auto-initialize ACTIVE cycle on explicit tuition+student query.
-        # Scoped: tutor must own tuition; student may only init self.
-        tuition_id = request.query_params.get('tuition_id')
-        student_id = request.query_params.get('student_id')
-        if tuition_id and student_id:
-            from .models import AttendanceCycle
-            from apps.students.models import TuitionEnrollment
-            from django.db.models import Max
-            try:
-                enrollment_qs = TuitionEnrollment.objects.select_related('tuition')
-                if request.user.role == 'TUTOR':
-                    enrollment_qs = enrollment_qs.filter(
-                        tuition_id=tuition_id, student_id=student_id,
-                        tuition__tutor=request.user,
-                    )
-                elif request.user.role == 'STUDENT':
-                    if str(student_id) != str(request.user.id):
-                        enrollment_qs = enrollment_qs.none()
-                    else:
-                        enrollment_qs = enrollment_qs.filter(
-                            tuition_id=tuition_id, student_id=student_id,
-                        )
-                else:
-                    enrollment_qs = enrollment_qs.none()
-                enrollment = enrollment_qs.first()
-                if enrollment and not AttendanceCycle.objects.filter(
-                    enrollment=enrollment, status=AttendanceCycle.Status.ACTIVE
-                ).exists():
-                    max_no = AttendanceCycle.objects.filter(enrollment=enrollment).aggregate(
-                        m=Max('cycle_number'))['m'] or 0
-                    try:
-                        AttendanceCycle.objects.create(
-                            enrollment=enrollment,
-                            cycle_number=max_no + 1,
-                            classes_data=AttendanceCycle.build_fresh_classes_data(
-                                enrollment.tuition.cycle_length),
-                            status=AttendanceCycle.Status.ACTIVE,
-                        )
-                    except Exception:
-                        pass  # concurrent init won the race; list existing rows
-            except Exception:
-                pass
-        return super().list(request, *args, **kwargs)
 
     def create(self, request, *args, **kwargs):
         return Response(
