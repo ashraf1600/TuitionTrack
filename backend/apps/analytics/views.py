@@ -24,28 +24,42 @@ class WalletAnalyticsView(APIView):
     def get(self, request):
         tutor = request.user
 
-        # Fetch all active cycles for this tutor with students pre-joined
+        from apps.cycles.models import AttendanceCycle
+        from django.db.models import Q
+
+        # Identify students who have tuition attendance cycles to avoid double-counting legacy cycles
+        tuition_student_ids = set(
+            AttendanceCycle.objects.filter(
+                Q(enrollment__tuition__tutor=tutor) | Q(tutor=tutor)
+            ).values_list('enrollment__student_id', flat=True)
+        )
+
+        # Active tuition cycles for active students in active enrollments
+        t_active_cycles = AttendanceCycle.objects.filter(
+            Q(enrollment__tuition__tutor=tutor) | Q(tutor=tutor),
+            status=AttendanceCycle.Status.ACTIVE,
+            enrollment__student__is_active=True,
+            enrollment__is_active=True,
+        ).select_related('enrollment__student', 'enrollment__tuition')
+
+        # Archived tuition cycles for lifetime calculation (preserved even if un-enrolled)
+        t_archived_cycles = AttendanceCycle.objects.filter(
+            Q(enrollment__tuition__tutor=tutor) | Q(tutor=tutor),
+            status=AttendanceCycle.Status.ARCHIVED,
+        ).select_related('enrollment__student', 'enrollment__tuition')
+
+        # Legacy 1-on-1 cycles: only for active students NOT already in tuition cycles
         active_cycles = Cycle.objects.filter(
             tutor=tutor,
-            status=Cycle.Status.ACTIVE
-        ).select_related('student', 'student__student_profile')
+            status=Cycle.Status.ACTIVE,
+            student__is_active=True,
+        ).exclude(student_id__in=tuition_student_ids).select_related('student', 'student__student_profile')
 
-        # Fetch archived cycles for lifetime calculation
+        # Archived legacy cycles for lifetime calculation
         archived_cycles = Cycle.objects.filter(
             tutor=tutor,
             status=Cycle.Status.ARCHIVED
         )
-
-        from apps.cycles.models import AttendanceCycle
-        t_active_cycles = AttendanceCycle.objects.filter(
-            enrollment__tuition__tutor=tutor,
-            status=AttendanceCycle.Status.ACTIVE
-        ).select_related('enrollment__student', 'enrollment__tuition')
-
-        t_archived_cycles = AttendanceCycle.objects.filter(
-            enrollment__tuition__tutor=tutor,
-            status=AttendanceCycle.Status.ARCHIVED
-        ).select_related('enrollment__student', 'enrollment__tuition')
 
         total_earned = sum(float(c.earned_amount) for c in active_cycles) + sum(float(c.earned_revenue) for c in t_active_cycles)
         total_pending = sum(float(c.pending_amount) for c in active_cycles) + sum(float(c.pending_balance) for c in t_active_cycles)

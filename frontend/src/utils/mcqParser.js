@@ -13,6 +13,7 @@ export function parseRawMCQText(rawText) {
 
   const parsedQuestions = [];
   let idCounter = 1;
+  const letterMap = { A: 0, B: 1, C: 2, D: 3 };
 
   for (const block of questionBlocks) {
     const trimmed = block.trim();
@@ -23,10 +24,13 @@ export function parseRawMCQText(rawText) {
     let cleanedBlock = trimmed.replace(/^\s*(?:\d+[\.\)]|Q\s*\d+[:\.]|Question\s*\d+[:\.])\s*/i, '');
 
     // 2. Extract Answer and Explanation if present
-    let correctAnswer = '';
+    let correctAnswer = null;
     const ansMatch = cleanedBlock.match(/(?:Answer|Ans|Correct(?:\s*Answer)?)\s*[:\-–]\s*\(?([A-Da-d])\)?/i);
     if (ansMatch) {
-      correctAnswer = ansMatch[1].toUpperCase();
+      const letter = ansMatch[1].toUpperCase();
+      if (letter in letterMap) {
+        correctAnswer = letterMap[letter];
+      }
     }
 
     let explanation = '';
@@ -36,7 +40,6 @@ export function parseRawMCQText(rawText) {
     }
 
     // 3. Extract Options A, B, C, D
-    const optionMatches = [];
     const optionRegex = /(?:^|\s|\n)(?:\(?([A-Da-d])[\)\.]|\[([A-Da-d])\])\s*([^\n\r]+)/g;
 
     let match;
@@ -66,11 +69,14 @@ export function parseRawMCQText(rawText) {
       foundOptions.D || 'Option D',
     ];
 
+    const uniqueId = `mcq-${Date.now()}-${Math.random().toString(36).substr(2, 6)}-${idCounter++}`;
+
     parsedQuestions.push({
-      id: idCounter++,
+      id: uniqueId,
       question: questionPrompt || `Question ${idCounter - 1}`,
       options: optionsArray,
-      correct_answer: correctAnswer || 'A',
+      correct_answer: correctAnswer,
+      points: 1,
       marks: 1,
       explanation: explanation || '',
     });

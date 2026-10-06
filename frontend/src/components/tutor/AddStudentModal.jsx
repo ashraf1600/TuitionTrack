@@ -56,7 +56,7 @@ export default function AddStudentModal({
     const { name, value } = e.target;
     setFormData((prev) => ({
       ...prev,
-      [name]: name === 'cycle_length' ? parseInt(value) || 1 : value,
+      [name]: name === 'cycle_length' ? parseInt(value) || 12 : value,
     }));
   };
 

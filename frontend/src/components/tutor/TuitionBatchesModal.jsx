@@ -17,7 +17,22 @@ import {
   DollarSign,
 } from 'lucide-react';
 
-const DAYS_OF_WEEK = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+// Canonical Sat-first week order (matches TutorDashboard + TuitionWorkspace).
+const DAYS_OF_WEEK = ['Saturday', 'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+
+const isNotFoundError = (err) => /404|not found/i.test(err?.message || '');
+
+// Strong 12-char generated password using crypto RNG (letters+digits+symbols).
+function generateTempPassword(length = 12) {
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789!@#$%&*';
+  const buf = new Uint32Array(length);
+  if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
+    crypto.getRandomValues(buf);
+  } else {
+    for (let i = 0; i < length; i += 1) buf[i] = Math.floor(Math.random() * 4294967296);
+  }
+  return Array.from(buf, (n) => alphabet[n % alphabet.length]).join('');
+}
 
 export default function TuitionBatchesModal({
   isOpen,
@@ -95,22 +110,36 @@ export default function TuitionBatchesModal({
   }, [batchToEdit, isOpen]);
 
   const toggleStudent = (id) => {
+    const key = String(id);
     setSelectedStudentIds((prev) =>
-      prev.includes(id) ? prev.filter((s) => s !== id) : [...prev, id]
+      prev.map(String).includes(key) ? prev.filter((s) => String(s) !== key) : [...prev, id]
     );
   };
 
   const removeStudent = (id) => {
-    setSelectedStudentIds((prev) => prev.filter((s) => s !== id));
+    setSelectedStudentIds((prev) => prev.filter((s) => String(s) !== String(id)));
+  };
+
+  const toMinutes = (t) => {
+    const m = String(t || '00:00').match(/(\d{1,2}):(\d{2})/);
+    return m ? parseInt(m[1], 10) * 60 + parseInt(m[2], 10) : 0;
   };
 
   const addRoutineSlot = () => {
-    if (weeklyRoutine.some((s) => s.day === slotDay && s.start_time === slotStartTime)) {
-      return;
-    }
+    const candidate = { day: slotDay, start_time: slotStartTime, end_time: slotEndTime };
+    // Block overlapping intervals on the same day, not just exact start-time matches.
+    const overlaps = weeklyRoutine.some((s) => {
+      if (String(s.day).toLowerCase() !== String(candidate.day).toLowerCase()) return false;
+      const sS = toMinutes(s.start_time || s.time);
+      const sE = toMinutes(s.end_time || '23:59');
+      const cS = toMinutes(candidate.start_time);
+      const cE = toMinutes(candidate.end_time);
+      return Math.max(sS, cS) < Math.min(sE, cE);
+    });
+    if (overlaps) return;
     setWeeklyRoutine((prev) => [
       ...prev,
-      { day: slotDay, start_time: slotStartTime, end_time: slotEndTime, time: slotStartTime }
+      { day: slotDay, start_time: slotStartTime, end_time: slotEndTime }
     ]);
   };
 
@@ -128,21 +157,23 @@ export default function TuitionBatchesModal({
 
     setCreatingStudent(true);
     try {
+      const tempPassword = generateTempPassword(12);
       const res = await api.createStudent({
         username: newStudentUsername.trim().toLowerCase(),
         first_name: newStudentFirst.trim(),
         last_name: newStudentLast.trim(),
         email: newStudentEmail.trim() || `${newStudentUsername.trim().toLowerCase()}@tuitiontrack.local`,
-        password: 'pass' + Math.floor(100000 + Math.random() * 900000),
+        password: tempPassword,
         phone: newStudentPhone.trim(),
         grade_level: newStudentGrade.trim(),
-        total_classes: cycleLength,
-        fee_amount: parseFloat(monthlyFee) || 9000,
+        cycle_length: cycleLength,
+        tuition_fee: parseFloat(monthlyFee) || 9000,
       });
 
+      const newId = res.student.student_id || res.student.id;
       const newStudentObj = {
-        student_id: res.student.id,
-        id: res.student.id,
+        student_id: newId,
+        id: newId,
         username: res.student.username,
         full_name: `${newStudentFirst} ${newStudentLast}`.trim(),
         email: res.student.email,
@@ -151,7 +182,7 @@ export default function TuitionBatchesModal({
       };
 
       setStudentsList((prev) => [newStudentObj, ...prev]);
-      setSelectedStudentIds((prev) => [...prev, res.student.id]);
+      setSelectedStudentIds((prev) => [...prev, newId]);
 
       // Reset form
       setNewStudentFirst('');
@@ -160,6 +191,7 @@ export default function TuitionBatchesModal({
       setNewStudentEmail('');
       setNewStudentPhone('');
       setShowAddStudentForm(false);
+      alert(`Student registered successfully!\nUsername: ${res.student.username}\nTemporary Password: ${tempPassword}\nPlease share this password with the student.`);
     } catch (err) {
       alert(`Failed to add student: ${err.message}`);
     } finally {
@@ -186,29 +218,18 @@ export default function TuitionBatchesModal({
 
       const payload = {
         title: name.trim(),
-        name: name.trim(),
         subject: subject.trim(),
         description: description.trim(),
         cycle_length: parseInt(cycleLength, 10) || 12,
         tuition_fee: parseFloat(monthlyFee) || 0,
-        monthly_fee: parseFloat(monthlyFee) || 0,
-        student_ids: selectedStudentIds,
+        student_ids: selectedStudentIds.map((id) => parseInt(id, 10)).filter(Number.isFinite),
         routine: normalizedRoutine,
-        weekly_routine: normalizedRoutine,
       };
 
       if (batchToEdit) {
-        try {
-          await api.updateTuition(batchToEdit.id, payload);
-        } catch (_) {
-          await api.updateBatch(batchToEdit.id, payload);
-        }
+        await api.updateTuition(batchToEdit.id, payload);
       } else {
-        try {
-          await api.createTuition(payload);
-        } catch (_) {
-          await api.createBatch(payload);
-        }
+        await api.createTuition(payload);
       }
 
       onBatchSaved();
@@ -233,7 +254,7 @@ export default function TuitionBatchesModal({
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title={batchToEdit ? `Edit Tuition Batch — ${batchToEdit.name}` : 'Create New Tuition Batch & Routine'}
+      title={batchToEdit ? `Edit Tuition — ${batchToEdit.title || batchToEdit.name}` : 'Create New Tuition & Routine'}
       maxWidth="max-w-3xl"
     >
       <form onSubmit={handleSubmit} className="space-y-5">

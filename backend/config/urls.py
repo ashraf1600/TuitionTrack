@@ -11,4 +11,9 @@ urlpatterns = [
     path('api/v1/', include('apps.cycles.urls')),
     path('api/v1/', include('apps.analytics.urls')),
     path('api/v1/', include('apps.exams.urls')),
-] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+]
+
+# Serve media via Django only in DEBUG. In production serve via Nginx/S3
+# with authenticated views — never expose answer-sheet uploads publicly.
+if settings.DEBUG:
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

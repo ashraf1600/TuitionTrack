@@ -41,8 +41,8 @@ ALLOWED_TAGS = {
 
 # ── Allowed HTML Attributes Per Tag ───────────────────────────────────────────
 ALLOWED_ATTRIBUTES = {
-    # Global attributes (on any tag)
-    '*': {'class', 'id', 'style'},
+    # Global attributes (on any tag) — no style (CSS-XSS via expression/url)
+    '*': {'class', 'id'},
     # Images — only safe src schemes will survive nh3's URL cleaning
     'img': {'src', 'alt', 'width', 'height', 'title'},
     # Links — restricted href schemes
@@ -55,6 +55,10 @@ ALLOWED_ATTRIBUTES = {
     'span': {'class', 'data-type', 'data-latex'},
     'div': {'class', 'data-type', 'data-latex'},
 }
+
+# Schemes considered safe. Relative /media/ URLs and data:image/* embeds from
+# TipTap are rewritten to absolute http(s) before cleaning, then restored.
+SAFE_URL_SCHEMES = {'http', 'https', 'mailto'}
 
 
 def sanitize_exam_html(raw_html: str) -> str:
@@ -75,14 +79,35 @@ def sanitize_exam_html(raw_html: str) -> str:
     if not raw_html or not raw_html.strip():
         return ''
 
+    # Cap input to prevent DB bloat / DoS via huge HTML pastes.
+    MAX_HTML_CHARS = 200_000
+    if len(raw_html) > MAX_HTML_CHARS:
+        raw_html = raw_html[:MAX_HTML_CHARS]
+
+    # Preserve relative /media/ diagram URLs and data:image/* TipTap embeds
+    # across nh3's scheme stripping by placeholder-substitution.
+    import re
+    placeholders = {}
+
+    def _stash(m):
+        key = f'__TTURL{len(placeholders)}__'
+        placeholders[key] = m.group(0)
+        prefix = m.group(1)
+        return f'{prefix}http://placeholder.local/{key}'
+
+    raw_html = re.sub(r'((?:src|href)\s*=\s*["\'])(/media/[^"\']*)', _stash, raw_html)
+    raw_html = re.sub(r'((?:src|href)\s*=\s*["\'])(data:image/[^"\']*)', _stash, raw_html)
+
     sanitized = nh3.clean(
         raw_html,
         tags=ALLOWED_TAGS,
         attributes=ALLOWED_ATTRIBUTES,
         # Strip dangerous link schemes (javascript:, data:, vbscript:)
-        url_schemes={'http', 'https', 'mailto'},
+        url_schemes=SAFE_URL_SCHEMES,
         link_rel='noopener noreferrer',
         # Strips HTML comments (can be used to hide XSS payloads)
         strip_comments=True,
     )
+    for key, original in placeholders.items():
+        sanitized = sanitized.replace(f'http://placeholder.local/{key}', original)
     return sanitized

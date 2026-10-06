@@ -169,10 +169,40 @@ class Exam(models.Model):
             models.Index(fields=['tutor', 'start_time']),
             models.Index(fields=['student', 'start_time']),
         ]
+        constraints = [
+            models.CheckConstraint(
+                condition=(
+                    models.Q(tuition__isnull=False)
+                    | models.Q(student__isnull=False)
+                    | models.Q(batch__isnull=False)
+                ),
+                name='exam_requires_target',
+            ),
+        ]
 
     def __str__(self):
-        student_name = self.student.get_full_name() or self.student.username
-        return f'{self.title} — {student_name}'
+        if self.student:
+            target = self.student.get_full_name() or self.student.username
+        elif self.tuition:
+            target = f'Tuition: {self.tuition.title}'
+        elif self.batch:
+            target = f'Batch: {self.batch.name}'
+        else:
+            target = 'Unassigned'
+        return f'{self.title} — {target}'
+
+    def save(self, *args, **kwargs):
+        # Defence-in-depth: sanitize even on direct ORM/admin/shell writes
+        # (serializers sanitize too, but must not be the only gate).
+        try:
+            from .sanitizer import sanitize_exam_html
+            if self.content_html:
+                self.content_html = sanitize_exam_html(self.content_html)
+            if self.solution_html:
+                self.solution_html = sanitize_exam_html(self.solution_html)
+        except Exception:
+            pass
+        super().save(*args, **kwargs)
 
     # ── Dynamic Status Computation ───────────────────────────────────────────
     # Status is NEVER stored in the DB — always evaluated against server time.
@@ -220,6 +250,8 @@ class Exam(models.Model):
     def can_submit(self) -> bool:
         """Returns True if the student can still submit (within window + grace)."""
         from datetime import timedelta
+        if not self.is_published:
+            return False
         now = timezone.now()
         grace_end = self.end_time + timedelta(minutes=self.grace_period_minutes)
         return self.start_time <= now <= grace_end
@@ -380,18 +412,26 @@ class ExamSubmission(models.Model):
             student_norm = LETTER_MAP.get(student_raw, student_raw)
 
 
-            q_marks = float(q.get('marks') or q.get('points') or 1.0)
+            q_points = q.get('points')
+            q_marks_raw = q.get('marks')
+            if q_points is not None:
+                q_marks = float(q_points)
+            elif q_marks_raw is not None:
+                q_marks = float(q_marks_raw)
+            else:
+                q_marks = 1.0
 
             if student_norm and student_norm == correct_norm:
                 total_mcq += q_marks
 
-        self.mcq_score = total_mcq
+        max_marks = float(self.exam.total_marks)
+        self.mcq_score = min(total_mcq, max_marks)
         if self.exam.exam_type == Exam.ExamType.MCQ:
-            self.obtained_marks = total_mcq
+            self.obtained_marks = min(total_mcq, max_marks)
             self.is_graded = True
             self.graded_at = timezone.now()
         else:
             cq_val = float(self.cq_score) if self.cq_score is not None else 0.0
-            self.obtained_marks = total_mcq + cq_val
-        return total_mcq
+            self.obtained_marks = min(total_mcq + cq_val, max_marks)
+        return self.mcq_score
 

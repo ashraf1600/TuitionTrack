@@ -53,7 +53,13 @@ class ExamViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated, IsTutorOrStudent]
     http_method_names = ['get', 'post', 'patch', 'delete', 'head', 'options']
 
+    def get_permissions(self):
+        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+            return [IsAuthenticated(), IsTutor()]
+        return [IsAuthenticated(), IsTutorOrStudent()]
+
     def get_queryset(self):
+        import uuid as _uuid
         user = self.request.user
         qs = Exam.objects.select_related('tutor', 'student', 'batch', 'tuition').prefetch_related('submissions')
 
@@ -63,10 +69,22 @@ class ExamViewSet(viewsets.ModelViewSet):
             batch_id = self.request.query_params.get('batch_id')
             tuition_id = self.request.query_params.get('tuition_id')
             if student_id:
+                try:
+                    _uuid.UUID(str(student_id))
+                except (ValueError, AttributeError, TypeError):
+                    return qs.none()
                 qs = qs.filter(student_id=student_id)
             if batch_id:
+                try:
+                    _uuid.UUID(str(batch_id))
+                except (ValueError, AttributeError, TypeError):
+                    return qs.none()
                 qs = qs.filter(batch_id=batch_id)
             if tuition_id:
+                try:
+                    _uuid.UUID(str(tuition_id))
+                except (ValueError, AttributeError, TypeError):
+                    return qs.none()
                 qs = qs.filter(tuition_id=tuition_id)
         elif user.role == 'STUDENT':
             qs = qs.filter(is_published=True).filter(
@@ -91,47 +109,75 @@ class ExamViewSet(viewsets.ModelViewSet):
         exam = serializer.save(tutor=self.request.user)
 
         # Collect recipient emails (individual student, tuition enrollments, or batch)
+        # active students only; sending individual emails avoids exposing recipient addresses.
         recipients = []
-        if exam.student and exam.student.email:
+        if exam.student_id and exam.student and exam.student.email and exam.student.is_active:
             recipients.append(exam.student.email)
-        elif exam.tuition:
-            recipients = [
+        if exam.tuition_id:
+            recipients += [
                 enr.student.email
                 for enr in exam.tuition.enrollments.select_related('student').all()
-                if enr.student.email
+                if enr.student.email and enr.student.is_active
             ]
-        elif exam.batch:
-            recipients = [s.email for s in exam.batch.students.all() if s.email]
+        if exam.batch_id:
+            recipients += [s.email for s in exam.batch.students.filter(is_active=True).all() if s.email]
+        # Dedupe while preserving order
+        recipients = list(dict.fromkeys(recipients))
 
         if recipients:
-            try:
-                subject = f'[TuitionTrack] New {exam.category.capitalize()}: {exam.title}'
-                start_str = exam.start_time.strftime('%Y-%m-%d %H:%M UTC')
-                end_str = exam.end_time.strftime('%Y-%m-%d %H:%M UTC')
-                target_desc = f'Tuition: {exam.tuition.title}' if exam.tuition else (f'Batch: {exam.batch.name}' if exam.batch else f'Student: {exam.student.get_full_name() or exam.student.username}')
-                body = (
-                    f"Hello,\n\n"
-                    f"A new assessment has been published by {exam.tutor.get_full_name() or exam.tutor.username}.\n\n"
-                    f"Title: {exam.title}\n"
-                    f"Category: {exam.category}\n"
-                    f"Type: {exam.get_exam_type_display()}\n"
-                    f"Target: {target_desc}\n"
-                    f"Total Marks: {exam.total_marks}\n"
-                    f"Start Time: {start_str}\n"
-                    f"End / Deadline: {end_str}\n"
-                    f"Grace Period: {exam.grace_period_minutes} minutes\n\n"
-                    f"Please log in to TuitionTrack before the deadline.\n\n"
-                    f"— TuitionTrack Team"
-                )
-                send_mail(
-                    subject=subject,
-                    message=body,
-                    from_email=settings.DEFAULT_FROM_EMAIL,
-                    recipient_list=recipients,
-                    fail_silently=True,
-                )
-            except Exception as exc:
-                logger.warning(f'Failed to send exam notification email: {exc}')
+            subject = f'[TuitionTrack] New {exam.category.capitalize()}: {exam.title}'
+            start_str = exam.start_time.strftime('%Y-%m-%d %H:%M UTC')
+            end_str = exam.end_time.strftime('%Y-%m-%d %H:%M UTC')
+            target_desc = f'Tuition: {exam.tuition.title}' if exam.tuition else (f'Batch: {exam.batch.name}' if exam.batch else f'Student: {exam.student.get_full_name() or exam.student.username}')
+            body = (
+                f"Hello,\n\n"
+                f"A new assessment has been published by {exam.tutor.get_full_name() or exam.tutor.username}.\n\n"
+                f"Title: {exam.title}\n"
+                f"Category: {exam.category}\n"
+                f"Type: {exam.get_exam_type_display()}\n"
+                f"Target: {target_desc}\n"
+                f"Total Marks: {exam.total_marks}\n"
+                f"Start Time: {start_str}\n"
+                f"End / Deadline: {end_str}\n"
+                f"Grace Period: {exam.grace_period_minutes} minutes\n\n"
+                f"Please log in to TuitionTrack before the deadline.\n\n"
+                f"— TuitionTrack Team"
+            )
+            html_body = f"""
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #0f172a; color: #f8fafc; border-radius: 16px; padding: 24px; border: 1px solid #334155;">
+                <div style="text-align: center; margin-bottom: 20px;">
+                    <h2 style="color: #818cf8; margin: 0;">TuitionTrack Assessment Alert</h2>
+                    <p style="color: #94a3b8; font-size: 13px; margin: 4px 0 0 0;">New Assessment Published by {exam.tutor.get_full_name() or exam.tutor.username}</p>
+                </div>
+                <div style="background: #1e293b; border-radius: 12px; padding: 20px; border: 1px solid #334155; margin-bottom: 20px;">
+                    <h3 style="color: #ffffff; margin-top: 0; font-size: 18px;">{exam.title}</h3>
+                    <table style="width: 100%; border-collapse: collapse; font-size: 13px; color: #cbd5e1;">
+                        <tr><td style="padding: 6px 0; color: #94a3b8;"><strong>Category:</strong></td><td style="color: #818cf8;">{exam.category}</td></tr>
+                        <tr><td style="padding: 6px 0; color: #94a3b8;"><strong>Target:</strong></td><td style="color: #ffffff;">{target_desc}</td></tr>
+                        <tr><td style="padding: 6px 0; color: #94a3b8;"><strong>Type:</strong></td><td>{exam.get_exam_type_display()}</td></tr>
+                        <tr><td style="padding: 6px 0; color: #94a3b8;"><strong>Total Marks:</strong></td><td style="color: #34d399; font-weight: bold;">{exam.total_marks}</td></tr>
+                        <tr><td style="padding: 6px 0; color: #94a3b8;"><strong>Start Window:</strong></td><td>{start_str}</td></tr>
+                        <tr><td style="padding: 6px 0; color: #94a3b8;"><strong>End / Deadline:</strong></td><td style="color: #f87171;">{end_str}</td></tr>
+                        <tr><td style="padding: 6px 0; color: #94a3b8;"><strong>Grace Period:</strong></td><td>{exam.grace_period_minutes} min</td></tr>
+                    </table>
+                </div>
+                <p style="font-size: 13px; color: #94a3b8; line-height: 1.5;">
+                    Please log in to your TuitionTrack Student Portal before the scheduled window. Questions and assessments will unlock automatically at the start time.
+                </p>
+            </div>
+            """
+            for recipient in recipients:
+                try:
+                    send_mail(
+                        subject=subject,
+                        message=body,
+                        from_email=settings.DEFAULT_FROM_EMAIL,
+                        recipient_list=[recipient],
+                        html_message=html_body,
+                        fail_silently=True,
+                    )
+                except Exception as exc:
+                    logger.warning(f'Failed to send exam notification email to {recipient}: {exc}')
 
     def create(self, request, *args, **kwargs):
         if request.user.role != 'TUTOR':
@@ -148,6 +194,21 @@ class ExamViewSet(viewsets.ModelViewSet):
             status=status.HTTP_201_CREATED
         )
 
+    def update(self, request, *args, **kwargs):
+        if request.user.role != 'TUTOR':
+            return Response({'error': 'Only tutors can edit exams.'}, status=status.HTTP_403_FORBIDDEN)
+        return super().update(request, *args, **kwargs)
+
+    def partial_update(self, request, *args, **kwargs):
+        if request.user.role != 'TUTOR':
+            return Response({'error': 'Only tutors can edit exams.'}, status=status.HTTP_403_FORBIDDEN)
+        return super().partial_update(request, *args, **kwargs)
+
+    def destroy(self, request, *args, **kwargs):
+        if request.user.role != 'TUTOR':
+            return Response({'error': 'Only tutors can delete exams.'}, status=status.HTTP_403_FORBIDDEN)
+        return super().destroy(request, *args, **kwargs)
+
     @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated, IsStudent])
     def submit(self, request, pk=None):
         """
@@ -156,13 +217,14 @@ class ExamViewSet(viewsets.ModelViewSet):
         Auto-grades MCQs immediately and calculates score.
         Validates against server UTC time + grace period.
         """
-        exam = get_object_or_404(Exam, id=pk)
+        # Scoped lookup: students see only published, assigned exams (no oracle).
+        exam = get_object_or_404(self.get_queryset(), id=pk)
 
         # Tenant check: Student must be 1-on-1, enrolled in tuition, or enrolled in batch
         is_assigned = (
-            (exam.student == request.user) or
-            (exam.tuition and exam.tuition.enrollments.filter(student=request.user).exists()) or
-            (exam.batch and exam.batch.students.filter(id=request.user.id).exists())
+            (exam.student_id == request.user.id) or
+            (exam.tuition_id and exam.tuition.enrollments.filter(student=request.user).exists()) or
+            (exam.batch_id and exam.batch.students.filter(id=request.user.id).exists())
         )
         if not is_assigned:
             return Response(
@@ -210,24 +272,37 @@ class ExamViewSet(viewsets.ModelViewSet):
 
         images_val = serializer.validated_data.get('uploaded_images') or serializer.validated_data.get('image_urls') or []
 
-        submission = ExamSubmission.objects.create(
-            exam=exam,
-            student=request.user,
-            submitted_at=now,
-            answers_data=serializer.validated_data.get('answers_data', {}),
-            uploaded_images=images_val,
-            image_urls=images_val,
-            status=sub_status,
-        )
+        from django.db import IntegrityError, transaction
+        try:
+            with transaction.atomic():
+                submission = ExamSubmission.objects.create(
+                    exam=exam,
+                    student=request.user,
+                    submitted_at=now,
+                    answers_data=serializer.validated_data.get('answers_data', {}),
+                    uploaded_images=images_val,
+                    image_urls=images_val,
+                    status=sub_status,
+                )
+        except IntegrityError:
+            return Response(
+                {'error': 'You have already submitted this exam.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
         # Automatically grade MCQs
         submission.calculate_mcq_score()
         submission.save(update_fields=['mcq_score', 'obtained_marks', 'is_graded', 'graded_at', 'updated_at'])
 
+        if exam.is_results_published:
+            msg = f'Exam submitted successfully ({sub_status.capitalize()}). MCQs auto-graded: {submission.mcq_score} marks.'
+        else:
+            msg = f'Exam submitted successfully ({sub_status.capitalize()}).'
+
         return Response(
             {
-                'message': f'Exam submitted successfully ({sub_status.capitalize()}). MCQs auto-graded: {submission.mcq_score} marks.',
-                'submission': ExamSubmissionSerializer(submission).data,
+                'message': msg,
+                'submission': ExamSubmissionSerializer(submission, context={'request': request}).data,
             },
             status=status.HTTP_201_CREATED
         )
@@ -237,22 +312,25 @@ class ExamViewSet(viewsets.ModelViewSet):
         """
         GET /api/v1/exams/<id>/leaderboard/
         Returns ranked leaderboard of student submissions for this exam.
-        Accessible by the tutor and assigned students.
+        Accessible by the tutor and assigned students (only after results published).
         """
-        exam = get_object_or_404(Exam, id=pk)
+        # Tutors: scoped to own exams; students: scoped to assigned exams.
+        exam = get_object_or_404(self.get_queryset(), id=pk)
 
-        # Check access permission
+        # Check access permission (get_queryset already scopes, keep explicit guard)
         user = request.user
-        if user.role == 'TUTOR' and (exam.tutor != user and (not exam.tuition or exam.tuition.tutor != user)):
+        if user.role == 'TUTOR' and (exam.tutor_id != user.id and (not exam.tuition_id or exam.tuition.tutor_id != user.id)):
             return Response({'error': 'Unauthorized'}, status=status.HTTP_403_FORBIDDEN)
         if user.role == 'STUDENT':
             is_assigned = (
-                (exam.student == user) or
-                (exam.tuition and exam.tuition.enrollments.filter(student=user).exists()) or
-                (exam.batch and exam.batch.students.filter(id=user.id).exists())
+                (exam.student_id == user.id) or
+                (exam.tuition_id and exam.tuition.enrollments.filter(student=user).exists()) or
+                (exam.batch_id and exam.batch.students.filter(id=user.id).exists())
             )
             if not is_assigned:
                 return Response({'error': 'Unauthorized'}, status=status.HTTP_403_FORBIDDEN)
+            if not exam.is_results_published:
+                return Response({'error': 'Results are not published yet.'}, status=status.HTTP_403_FORBIDDEN)
 
         submissions = exam.submissions.select_related('student').order_by(
             models.F('obtained_marks').desc(nulls_last=True),
@@ -261,13 +339,19 @@ class ExamViewSet(viewsets.ModelViewSet):
 
         total_marks = float(exam.total_marks)
         leaderboard_data = []
+        last_score = None
+        current_rank = 0
 
         for idx, sub in enumerate(submissions, start=1):
             obtained = float(sub.obtained_marks) if sub.obtained_marks is not None else 0.0
             pct = round((obtained / total_marks) * 100, 1) if total_marks > 0 else 0.0
+            # Dense ranking with ties: equal scores share rank.
+            if last_score is None or obtained != last_score:
+                current_rank = idx
+                last_score = obtained
 
             leaderboard_data.append({
-                'rank': idx,
+                'rank': current_rank,
                 'student_id': sub.student.id,
                 'student_name': sub.student.get_full_name() or sub.student.username,
                 'obtained_marks': obtained,
@@ -280,7 +364,7 @@ class ExamViewSet(viewsets.ModelViewSet):
                 'is_graded': sub.is_graded,
             })
 
-        target_title = exam.tuition.title if exam.tuition else (exam.batch.name if exam.batch else None)
+        target_title = exam.tuition.title if exam.tuition_id else (exam.batch.name if exam.batch_id else None)
 
         return Response({
             'exam_id': str(exam.id),
@@ -302,10 +386,11 @@ class GradeSubmissionView(APIView):
     permission_classes = [IsAuthenticated, IsTutor]
 
     def patch(self, request, pk):
+        from django.db.models import Q
         submission = get_object_or_404(
-            ExamSubmission.objects.select_related('exam'),
+            ExamSubmission.objects.select_related('exam', 'exam__tuition'),
+            Q(exam__tutor=request.user) | Q(exam__tuition__tutor=request.user),
             id=pk,
-            exam__tutor=request.user
         )
 
         serializer = GradeSubmissionSerializer(
@@ -317,10 +402,39 @@ class GradeSubmissionView(APIView):
         cq_val = serializer.validated_data.get('cq_score')
         obtained_val = serializer.validated_data.get('obtained_marks')
 
-        if cq_val is not None:
+        from decimal import Decimal
+        total = Decimal(str(submission.exam.total_marks))
+        mcq = Decimal(str(submission.mcq_score or 0))
+        if cq_val is not None and obtained_val is not None:
+            # Both supplied: obtained must equal mcq+cq and respect total.
+            combined = mcq + Decimal(str(cq_val))
+            if Decimal(str(obtained_val)) != combined:
+                return Response(
+                    {'error': 'obtained_marks must equal mcq_score + cq_score when both are supplied.'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            if combined > total:
+                return Response(
+                    {'error': f'Combined marks ({combined}) cannot exceed exam total marks ({total}).'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
             submission.cq_score = cq_val
-            submission.obtained_marks = float(submission.mcq_score or 0) + float(cq_val)
+            submission.obtained_marks = combined
+        elif cq_val is not None:
+            combined = mcq + Decimal(str(cq_val))
+            if combined > total:
+                return Response(
+                    {'error': f'Combined marks ({combined}) cannot exceed exam total marks ({total}).'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            submission.cq_score = cq_val
+            submission.obtained_marks = combined
         elif obtained_val is not None:
+            if Decimal(str(obtained_val)) > total:
+                return Response(
+                    {'error': f'Obtained marks ({obtained_val}) cannot exceed exam total marks ({total}).'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
             submission.obtained_marks = obtained_val
 
         submission.tutor_feedback = serializer.validated_data.get('tutor_feedback', submission.tutor_feedback)
@@ -347,17 +461,21 @@ class MediaUploadView(APIView):
     parser_classes = [MultiPartParser, FormParser]
 
     ALLOWED_EXTENSIONS = {'.png', '.jpg', '.jpeg', '.webp', '.pdf'}
-    MAX_SIZE_BYTES = 10 * 1024 * 1024  # 10 MB
+    ALLOWED_CONTENT_TYPES = {'image/png', 'image/jpeg', 'image/webp', 'application/pdf'}
 
     def post(self, request):
         uploaded_file = request.FILES.get('file')
         if not uploaded_file:
             return Response({'error': 'No file provided.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Validate file size
-        if uploaded_file.size > self.MAX_SIZE_BYTES:
+        max_mb = getattr(settings, 'MAX_UPLOAD_SIZE_MB', 10)
+        max_bytes = max_mb * 1024 * 1024
+        # Validate file size (reject empty too)
+        if uploaded_file.size == 0:
+            return Response({'error': 'Empty file is not allowed.'}, status=status.HTTP_400_BAD_REQUEST)
+        if uploaded_file.size > max_bytes:
             return Response(
-                {'error': f'File exceeds maximum size limit of 10MB ({uploaded_file.size} bytes).'},
+                {'error': f'File exceeds maximum size limit of {max_mb}MB ({uploaded_file.size} bytes).'},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
@@ -369,9 +487,29 @@ class MediaUploadView(APIView):
                 {'error': f'Invalid file format "{ext}". Allowed formats: {", ".join(self.ALLOWED_EXTENSIONS)}'},
                 status=status.HTTP_400_BAD_REQUEST
             )
+        # Validate MIME type + magic bytes (blocks polyglot HTML/JS in .png/.pdf)
+        content_type = getattr(uploaded_file, 'content_type', '')
+        if content_type and content_type not in self.ALLOWED_CONTENT_TYPES:
+            return Response(
+                {'error': f'Invalid content type "{content_type}".'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        header = uploaded_file.read(12)
+        uploaded_file.seek(0)
+        valid_magic = (
+            header.startswith(b'\x89PNG') or header.startswith(b'\xff\xd8\xff')
+            or header.startswith(b'RIFF') or header.startswith(b'%PDF')
+        )
+        if not valid_magic:
+            return Response(
+                {'error': 'File content does not match its extension.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
-        # Generate unique filename to avoid overwrites
-        unique_name = f'{uuid.uuid4().hex[:12]}_{uploaded_file.name}'
+        # Generate unique filename to avoid overwrites (sanitized, no traversal)
+        from django.utils.text import get_valid_filename
+        safe_base = get_valid_filename(os.path.basename(uploaded_file.name))[-80:] or 'upload'
+        unique_name = f'{uuid.uuid4().hex[:12]}_{safe_base}'
         save_path = f'uploads/{timezone.now().strftime("%Y/%m")}/{unique_name}'
 
         saved_path = default_storage.save(save_path, ContentFile(uploaded_file.read()))

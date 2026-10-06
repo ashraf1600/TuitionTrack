@@ -28,7 +28,21 @@ class CycleViewSet(TenantScopedViewSet):
     """
     queryset = Cycle.objects.all().select_related('student', 'tutor')
     serializer_class = CycleSerializer
-    http_method_names = ['get', 'patch', 'post', 'head', 'options']
+    # No POST: cycles are only created via student provisioning or reset.
+    http_method_names = ['get', 'patch', 'head', 'options']
+
+    def partial_update(self, request, *args, **kwargs):
+        if request.user.role != 'TUTOR':
+            return Response({'error': 'Students cannot edit cycles.'}, status=status.HTTP_403_FORBIDDEN)
+        return super().partial_update(request, *args, **kwargs)
+
+    @staticmethod
+    def _validate_uuid(value):
+        import uuid as _uuid
+        try:
+            return str(_uuid.UUID(str(value)))
+        except (ValueError, AttributeError, TypeError):
+            return None
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -36,11 +50,15 @@ class CycleViewSet(TenantScopedViewSet):
         # Support ?student_id=<uuid> filter
         student_id = self.request.query_params.get('student_id')
         if student_id:
+            if not self._validate_uuid(student_id):
+                return qs.none()
             qs = qs.filter(student_id=student_id)
 
         # Support ?status=ACTIVE or ARCHIVED filter
         cycle_status = self.request.query_params.get('status')
         if cycle_status:
+            if cycle_status.upper() not in ('ACTIVE', 'ARCHIVED'):
+                return qs.none()
             qs = qs.filter(status=cycle_status.upper())
 
         return qs.order_by('-cycle_number')
@@ -71,43 +89,59 @@ class CycleViewSet(TenantScopedViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # Update classes_data JSON array
-        classes_data = list(cycle.classes_data)
-        found = False
-        now_iso = timezone.now().isoformat()
-        custom_date = serializer.validated_data.get('date')
-        date_iso = custom_date.isoformat() if custom_date else now_iso
-        topic_val = serializer.validated_data.get('topic', '')
+        # Update classes_data JSON array (row-locked to prevent lost updates)
+        with transaction.atomic():
+            cycle = Cycle.objects.select_for_update().get(id=cycle.id)
+            if cycle.status != Cycle.Status.ACTIVE:
+                return Response(
+                    {'error': 'Cannot toggle attendance on an archived cycle.'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            classes_data = list(cycle.classes_data)
+            found = False
+            now_iso = timezone.now().isoformat()
+            custom_date = serializer.validated_data.get('date')
+            date_iso = custom_date.isoformat() if custom_date else now_iso
+            topic_val = serializer.validated_data.get('topic', '')
 
-        for item in classes_data:
-            num = item.get('classNo') or item.get('class_no')
-            if int(num or 0) == int(class_no):
-                item['completed'] = completed
-                item['date'] = date_iso if completed else None
+            for item in classes_data:
+                num = item.get('classNo') or item.get('class_no')
+                try:
+                    match = int(num or 0) == int(class_no)
+                except (TypeError, ValueError):
+                    continue
+                if match:
+                    item['completed'] = completed
+                    item['date'] = date_iso if completed else None
+                    if completed and topic_val:
+                        item['topic'] = topic_val
+                    elif not completed:
+                        item.pop('topic', None)
+                    found = True
+                    break
+
+            if not found:
+                if len(classes_data) >= cycle.total_classes:
+                    return Response(
+                        {'error': 'Cycle already has maximum number of class entries.'},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+                new_item = {
+                    'classNo': class_no,
+                    'completed': completed,
+                    'date': date_iso if completed else None
+                }
                 if completed and topic_val:
-                    item['topic'] = topic_val
-                elif not completed:
-                    item.pop('topic', None)
-                found = True
-                break
+                    new_item['topic'] = topic_val
+                classes_data.append(new_item)
 
-        if not found:
-            new_item = {
-                'classNo': class_no,
-                'completed': completed,
-                'date': date_iso if completed else None
-            }
-            if completed and topic_val:
-                new_item['topic'] = topic_val
-            classes_data.append(new_item)
-
-        cycle.classes_data = classes_data
-        cycle.save(update_fields=['classes_data', 'updated_at'])
+            cycle.classes_data = classes_data
+            cycle.save(update_fields=['classes_data', 'updated_at'])
 
 
         return Response({
             'message': f'Class {class_no} marked as {"completed" if completed else "incomplete"}.',
-            'cycle': CycleSerializer(cycle).data
+            'cycle': CycleSerializer(cycle, context={'request': request}).data
         }, status=status.HTTP_200_OK)
 
     @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated, IsTutor])
@@ -123,6 +157,12 @@ class CycleViewSet(TenantScopedViewSet):
             if cycle.status != Cycle.Status.ACTIVE:
                 return Response(
                     {'error': 'Cannot reset an already archived cycle.'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            if not cycle.is_complete:
+                return Response(
+                    {'error': f'Cannot reset cycle before completion ({cycle.completed_classes}/{cycle.total_classes} classes completed).'},
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
@@ -150,7 +190,7 @@ class CycleViewSet(TenantScopedViewSet):
         return Response({
             'message': f'Cycle #{cycle.cycle_number} archived. Cycle #{new_cycle.cycle_number} started successfully.',
             'previous_cycle_id': str(cycle.id),
-            'cycle': CycleSerializer(new_cycle).data
+            'cycle': CycleSerializer(new_cycle, context={'request': request}).data
         }, status=status.HTTP_201_CREATED)
 
 
@@ -165,6 +205,7 @@ class AttendanceCycleViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         from .models import AttendanceCycle
+        import uuid as _uuid
         user = self.request.user
         qs = AttendanceCycle.objects.select_related(
             'enrollment__tuition',
@@ -181,38 +222,80 @@ class AttendanceCycleViewSet(viewsets.ModelViewSet):
 
         tuition_id = self.request.query_params.get('tuition_id')
         if tuition_id:
+            try:
+                _uuid.UUID(str(tuition_id))
+            except (ValueError, AttributeError, TypeError):
+                return qs.none()
             qs = qs.filter(enrollment__tuition_id=tuition_id)
 
         student_id = self.request.query_params.get('student_id')
         if student_id:
+            try:
+                _uuid.UUID(str(student_id))
+            except (ValueError, AttributeError, TypeError):
+                return qs.none()
+            if user.role == 'STUDENT' and str(student_id) != str(user.id):
+                return qs.none()
             qs = qs.filter(enrollment__student_id=student_id)
-
-        # Auto-initialize active cycle if student is enrolled in tuition but has no cycle yet
-        if tuition_id and student_id and not qs.exists():
-            from apps.students.models import TuitionEnrollment
-            enrollment = TuitionEnrollment.objects.filter(
-                tuition_id=tuition_id,
-                student_id=student_id
-            ).select_related('tuition').first()
-            if enrollment:
-                AttendanceCycle.objects.get_or_create(
-                    enrollment=enrollment,
-                    status=AttendanceCycle.Status.ACTIVE,
-                    defaults={
-                        'cycle_number': 1,
-                        'classes_data': AttendanceCycle.build_fresh_classes_data(enrollment.tuition.cycle_length),
-                    }
-                )
-                qs = AttendanceCycle.objects.filter(
-                    enrollment__tuition_id=tuition_id,
-                    enrollment__student_id=student_id
-                )
 
         status_param = self.request.query_params.get('status')
         if status_param:
+            if status_param.upper() not in ('ACTIVE', 'ARCHIVED'):
+                return qs.none()
             qs = qs.filter(status=status_param.upper())
 
         return qs.order_by('-cycle_number')
+
+    def list(self, request, *args, **kwargs):
+        # Auto-initialize ACTIVE cycle on explicit tuition+student query.
+        # Scoped: tutor must own tuition; student may only init self.
+        tuition_id = request.query_params.get('tuition_id')
+        student_id = request.query_params.get('student_id')
+        if tuition_id and student_id:
+            from .models import AttendanceCycle
+            from apps.students.models import TuitionEnrollment
+            from django.db.models import Max
+            try:
+                enrollment_qs = TuitionEnrollment.objects.select_related('tuition')
+                if request.user.role == 'TUTOR':
+                    enrollment_qs = enrollment_qs.filter(
+                        tuition_id=tuition_id, student_id=student_id,
+                        tuition__tutor=request.user,
+                    )
+                elif request.user.role == 'STUDENT':
+                    if str(student_id) != str(request.user.id):
+                        enrollment_qs = enrollment_qs.none()
+                    else:
+                        enrollment_qs = enrollment_qs.filter(
+                            tuition_id=tuition_id, student_id=student_id,
+                        )
+                else:
+                    enrollment_qs = enrollment_qs.none()
+                enrollment = enrollment_qs.first()
+                if enrollment and not AttendanceCycle.objects.filter(
+                    enrollment=enrollment, status=AttendanceCycle.Status.ACTIVE
+                ).exists():
+                    max_no = AttendanceCycle.objects.filter(enrollment=enrollment).aggregate(
+                        m=Max('cycle_number'))['m'] or 0
+                    try:
+                        AttendanceCycle.objects.create(
+                            enrollment=enrollment,
+                            cycle_number=max_no + 1,
+                            classes_data=AttendanceCycle.build_fresh_classes_data(
+                                enrollment.tuition.cycle_length),
+                            status=AttendanceCycle.Status.ACTIVE,
+                        )
+                    except Exception:
+                        pass  # concurrent init won the race; list existing rows
+            except Exception:
+                pass
+        return super().list(request, *args, **kwargs)
+
+    def create(self, request, *args, **kwargs):
+        return Response(
+            {'error': 'Direct cycle creation is not allowed. Use enroll or reset.'},
+            status=status.HTTP_405_METHOD_NOT_ALLOWED
+        )
 
     def get_serializer_class(self):
         from .serializers import AttendanceCycleSerializer
@@ -253,34 +336,50 @@ class AttendanceCycleViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        classes_data = list(cycle.classes_data)
-        found = False
-        date_iso = custom_date.isoformat() if custom_date else timezone.now().isoformat()
+        with transaction.atomic():
+            cycle = AttendanceCycle.objects.select_for_update().get(id=cycle.id)
+            if cycle.status != AttendanceCycle.Status.ACTIVE:
+                return Response(
+                    {'error': 'Cannot toggle attendance on an archived cycle.'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            classes_data = list(cycle.classes_data)
+            found = False
+            date_iso = custom_date.isoformat() if custom_date else timezone.now().isoformat()
 
-        for item in classes_data:
-            num = item.get('class_no') or item.get('classNo')
-            if int(num or 0) == int(class_no):
-                item['completed'] = completed
-                item['date'] = date_iso if completed else None
+            for item in classes_data:
+                num = item.get('class_no') or item.get('classNo')
+                try:
+                    match = int(num or 0) == int(class_no)
+                except (TypeError, ValueError):
+                    continue
+                if match:
+                    item['completed'] = completed
+                    item['date'] = date_iso if completed else None
+                    if completed and topic_val:
+                        item['topic'] = topic_val
+                    elif not completed:
+                        item.pop('topic', None)
+                    found = True
+                    break
+
+            if not found:
+                if len(classes_data) >= cycle.total_classes:
+                    return Response(
+                        {'error': 'Cycle already has maximum number of class entries.'},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+                entry = {
+                    'class_no': class_no,
+                    'completed': completed,
+                    'date': date_iso if completed else None
+                }
                 if completed and topic_val:
-                    item['topic'] = topic_val
-                elif not completed:
-                    item.pop('topic', None)
-                found = True
-                break
+                    entry['topic'] = topic_val
+                classes_data.append(entry)
 
-        if not found:
-            entry = {
-                'class_no': class_no,
-                'completed': completed,
-                'date': date_iso if completed else None
-            }
-            if completed and topic_val:
-                entry['topic'] = topic_val
-            classes_data.append(entry)
-
-        cycle.classes_data = classes_data
-        cycle.save(update_fields=['classes_data', 'updated_at'])
+            cycle.classes_data = classes_data
+            cycle.save(update_fields=['classes_data', 'updated_at'])
 
         return Response({
             'message': f'Class #{class_no} marked as {"completed" if completed else "incomplete"}.',
@@ -304,14 +403,23 @@ class AttendanceCycleViewSet(viewsets.ModelViewSet):
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
+            if not cycle.is_complete:
+                return Response(
+                    {'error': f'Cannot reset cycle before completion ({cycle.completed_classes}/{cycle.total_classes} classes completed).'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
             cycle.status = AttendanceCycle.Status.ARCHIVED
             cycle.save(update_fields=['status', 'updated_at'])
 
             tuition = cycle.enrollment.tuition
             new_cycle = AttendanceCycle.objects.create(
                 enrollment=cycle.enrollment,
+                tutor=cycle.tutor or (tuition.tutor if tuition else request.user),
+                fee_snapshot=tuition.tuition_fee if tuition else cycle.fee_snapshot,
+                total_classes=tuition.cycle_length if tuition else cycle.total_classes,
                 cycle_number=cycle.cycle_number + 1,
-                classes_data=AttendanceCycle.build_fresh_classes_data(tuition.cycle_length),
+                classes_data=AttendanceCycle.build_fresh_classes_data(tuition.cycle_length if tuition else cycle.total_classes),
                 status=AttendanceCycle.Status.ACTIVE
             )
 

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import Navbar from '../components/common/Navbar';
 import WalletWidget from '../components/tutor/WalletWidget';
 import StudentRoster from '../components/tutor/StudentRoster';
@@ -11,6 +12,17 @@ import TuitionBatchesModal from '../components/tutor/TuitionBatchesModal';
 import LeaderboardModal from '../components/common/LeaderboardModal';
 import StatusBadge from '../components/common/StatusBadge';
 import { api } from '../api/client';
+
+// Sat-first canonical week order shared with TuitionWorkspace (Sat -> Fri for BD context).
+// Keep this single source consistent everywhere weekly routines are rendered/sorted.
+const DAYS_ORDER = ['Saturday', 'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+const normId = (s) => String(s?.student_id ?? s?.id ?? s ?? '');
+const isNotFoundError = (err) => /404|not found/i.test(err?.message || '');
+const timeToMinutes = (t) => {
+  const m = String(t || '18:00').match(/(\d{1,2}):(\d{2})/);
+  if (!m) return 18 * 60;
+  return parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
+};
 import {
   FileText,
   Plus,
@@ -19,6 +31,7 @@ import {
   Users,
   Clock,
   ExternalLink,
+  ChevronRight,
   RefreshCw,
   CheckCircle2,
   Layers,
@@ -36,6 +49,7 @@ import {
 } from 'lucide-react';
 
 export default function TutorDashboard() {
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('attendance'); // 'attendance' | 'batches' | 'exams'
 
   // Data states
@@ -93,7 +107,7 @@ export default function TutorDashboard() {
       setStudents(list);
 
       if (list.length > 0 && !selectedStudentId) {
-        setSelectedStudentId(list[0].student_id || list[0].id);
+        setSelectedStudentId(normId(list[0]));
       }
     } catch (err) {
       console.error('Failed to load students:', err);
@@ -262,13 +276,18 @@ export default function TutorDashboard() {
       if (isTuitionCycle) {
         try {
           res = await api.toggleAttendanceClass(cycleId, numToMatch, completed, date, topic);
-        } catch (_) {
+        } catch (fallbackErr) {
+          // Only fall back to the legacy endpoint when the tuition endpoint 404s.
+          // A 400/403 means validation/permission rejected the request — surfacing it
+          // instead of silently retrying the wrong API.
+          if (!isNotFoundError(fallbackErr)) throw fallbackErr;
           res = await api.toggleClass(cycleId, numToMatch, completed, date, topic);
         }
       } else {
         try {
           res = await api.toggleClass(cycleId, numToMatch, completed, date, topic);
-        } catch (_) {
+        } catch (fallbackErr) {
+          if (!isNotFoundError(fallbackErr)) throw fallbackErr;
           res = await api.toggleAttendanceClass(cycleId, numToMatch, completed, date, topic);
         }
       }
@@ -347,7 +366,7 @@ export default function TutorDashboard() {
     setAuthorExamModalOpen(true);
   };
 
-  const selectedStudent = students.find((s) => s.student_id === selectedStudentId || s.id === selectedStudentId);
+  const selectedStudent = students.find((s) => normId(s) === String(selectedStudentId));
   const studentName = selectedStudent ? selectedStudent.full_name : 'Student';
 
   const selectedTuition = useMemo(() => {
@@ -357,15 +376,17 @@ export default function TutorDashboard() {
 
   const filteredStudents = useMemo(() => {
     if (!selectedTuition) return students;
-    const enrolledIds = (selectedTuition.enrollments || []).map((e) => e.student_id || e.student);
-    if (selectedTuition.students) {
-      enrolledIds.push(...selectedTuition.students);
-    }
-    return students.filter((s) => enrolledIds.includes(s.student_id || s.id));
+    const enrolledSet = new Set(
+      [
+        ...((selectedTuition.enrollments || []).map((e) => String(e.student_id ?? e.student ?? e))),
+        ...((selectedTuition.students || []).map((s) => String(s?.student_id ?? s?.id ?? s))),
+        ...((selectedTuition.student_ids || []).map((s) => String(s))),
+      ]
+    );
+    return students.filter((s) => enrolledSet.has(normId(s)));
   }, [students, selectedTuition]);
 
-  const DAYS_ORDER = ['Saturday', 'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
-
+  // DAYS_ORDER is defined once at module top (Sat-first canonical order).
   const weeklyScheduleByDay = useMemo(() => {
     const schedule = {};
     DAYS_ORDER.forEach((day) => {
@@ -391,7 +412,7 @@ export default function TutorDashboard() {
     });
 
     DAYS_ORDER.forEach((day) => {
-      schedule[day].sort((a, b) => a.startTime.localeCompare(b.startTime));
+      schedule[day].sort((a, b) => timeToMinutes(a.startTime) - timeToMinutes(b.startTime));
     });
 
     return schedule;
@@ -577,7 +598,7 @@ export default function TutorDashboard() {
               <button
                 onClick={() => {
                   setSelectedTuitionId('all');
-                  if (students.length > 0) setSelectedStudentId(students[0].student_id || students[0].id);
+                  if (students.length > 0) setSelectedStudentId(normId(students[0]));
                 }}
                 className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${
                   selectedTuitionId === 'all'
@@ -595,14 +616,17 @@ export default function TutorDashboard() {
                     key={t.id}
                     onClick={() => {
                       setSelectedTuitionId(t.id);
-                      const enrolledIds = (t.enrollments || []).map((e) => e.student_id || e.student);
-                      if (t.students) enrolledIds.push(...t.students);
+                      const enrolledIds = [
+                        ...((t.enrollments || []).map((e) => String(e.student_id ?? e.student ?? e))),
+                        ...((t.students || []).map((s) => String(s?.student_id ?? s?.id ?? s))),
+                        ...((t.student_ids || []).map((s) => String(s))),
+                      ];
 
                       // If current selected student is in this tuition, keep it; otherwise switch to first enrolled or null
                       if (selectedStudentId && enrolledIds.some((id) => String(id) === String(selectedStudentId))) {
                         loadStudentCycle(selectedStudentId, t.id);
                       } else if (enrolledIds.length > 0) {
-                        setSelectedStudentId(enrolledIds[0]);
+                        setSelectedStudentId(String(enrolledIds[0]));
                       } else {
                         setSelectedStudentId(null);
                         setCurrentCycle(null);
@@ -628,30 +652,39 @@ export default function TutorDashboard() {
               <div className="p-4 rounded-2xl bg-indigo-950/20 border border-indigo-500/20 flex flex-wrap items-center justify-between gap-4">
                 <div>
                   <h4 className="font-extrabold text-slate-100 text-sm sm:text-base flex items-center gap-2">
-                    <span>{selectedTuition.title}</span>
+                    <span>{selectedTuition.title || selectedTuition.name}</span>
                     {selectedTuition.subject && (
                       <span className="text-xs text-indigo-400 font-semibold">({selectedTuition.subject})</span>
                     )}
                   </h4>
                   <div className="flex flex-wrap items-center gap-3 text-xs text-slate-400 mt-1">
-                    <span>Cycle Length: <strong className="text-indigo-300 font-bold">{selectedTuition.cycle_length} Classes</strong></span>
+                    <span>Cycle Length: <strong className="text-indigo-300 font-bold">{selectedTuition.cycle_length || 12} Classes</strong></span>
                     <span>•</span>
-                    <span>Fee: <strong className="text-emerald-400 font-bold">৳{selectedTuition.tuition_fee}</strong></span>
+                    <span>Fee: <strong className="text-emerald-400 font-bold">৳{selectedTuition.tuition_fee || selectedTuition.monthly_fee || 0}</strong></span>
                     <span>•</span>
                     <span>Enrolled: <strong className="text-slate-200 font-bold">{selectedTuition.enrollments?.length || selectedTuition.students?.length || 0} Students</strong></span>
                   </div>
                 </div>
 
-                {selectedTuition.active_cycle_summary && (
-                  <div className="flex items-center gap-2 text-xs">
-                    <div className="px-3 py-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 font-bold">
-                      Earned: ৳{selectedTuition.active_cycle_summary.total_earned}
+                <div className="flex items-center gap-3">
+                  {selectedTuition.active_cycle_summary && (
+                    <div className="flex items-center gap-2 text-xs">
+                      <div className="px-3 py-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 font-bold">
+                        Earned: ৳{selectedTuition.active_cycle_summary.total_earned}
+                      </div>
+                      <div className="px-3 py-1.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-300 font-bold">
+                        Pending: ৳{selectedTuition.active_cycle_summary.total_pending}
+                      </div>
                     </div>
-                    <div className="px-3 py-1.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-300 font-bold">
-                      Pending: ৳{selectedTuition.active_cycle_summary.total_pending}
-                    </div>
-                  </div>
-                )}
+                  )}
+                  <button
+                    onClick={() => navigate(`/tuitions/${selectedTuition.id}`)}
+                    className="px-3.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-md shadow-indigo-600/30 transition"
+                  >
+                    <span>Open Workspace</span>
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
             )}
 
@@ -731,116 +764,135 @@ export default function TutorDashboard() {
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-                {batches.map((batch) => (
-                  <div
-                    key={batch.id}
-                    className="p-5 rounded-2xl bg-slate-900/70 border border-slate-800 hover:border-slate-700 transition flex flex-col justify-between space-y-4 group"
-                  >
-                    <div>
-                      <div className="flex items-start justify-between gap-2">
-                        <div>
-                          <h4 className="font-extrabold text-slate-100 text-base group-hover:text-indigo-300 transition">
-                            {batch.name}
-                          </h4>
-                          {batch.subject && (
-                            <span className="text-xs text-indigo-400 font-semibold block">
-                              {batch.subject}
-                            </span>
+                {batches.map((batch) => {
+                  const tuitionTitle = batch.title || batch.name || 'Untitled Tuition';
+                  const tuitionFee = batch.tuition_fee || batch.monthly_fee || 0;
+                  const cycleLength = batch.cycle_length || 12;
+                  const studentCount = batch.student_count || batch.enrolled_count || batch.enrollments?.length || batch.students?.length || 0;
+                  const routineSlots = batch.routine || batch.weekly_routine || [];
+
+                  return (
+                    <div
+                      key={batch.id}
+                      onClick={() => navigate(`/tuitions/${batch.id}`)}
+                      className="p-5 rounded-2xl bg-slate-900/80 border border-slate-800 hover:border-indigo-500/50 hover:shadow-xl hover:shadow-indigo-500/10 cursor-pointer transition-all duration-200 flex flex-col justify-between space-y-4 group"
+                    >
+                      <div>
+                        {/* Card Header */}
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0 flex-1">
+                            <h4 className="font-extrabold text-slate-100 text-base sm:text-lg group-hover:text-indigo-300 transition truncate">
+                              {tuitionTitle}
+                            </h4>
+                            {batch.subject && (
+                              <span className="text-xs text-indigo-400 font-semibold block mt-0.5">
+                                {batch.subject}
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="flex items-center gap-1 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+                            <button
+                              onClick={() => {
+                                setSelectedBatchToEdit(batch);
+                                setBatchModalOpen(true);
+                              }}
+                              className="p-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition"
+                              title="Edit Tuition Settings"
+                            >
+                              <Edit2 className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteBatch(batch.id)}
+                              className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 transition"
+                              title="Delete Tuition"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+
+                        {batch.description && (
+                          <p className="text-xs text-slate-400 mt-2 line-clamp-2">
+                            {batch.description}
+                          </p>
+                        )}
+
+                        {/* Metric Badges */}
+                        <div className="mt-3.5 flex flex-wrap items-center gap-2 text-xs">
+                          <div className="px-2.5 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 font-bold flex items-center gap-1">
+                            <DollarSign className="w-3 h-3" />
+                            <span>৳{tuitionFee}/cycle</span>
+                          </div>
+                          <div className="px-2.5 py-1 rounded-lg bg-indigo-500/10 border border-indigo-500/20 text-indigo-300 font-semibold flex items-center gap-1">
+                            <Clock className="w-3 h-3" />
+                            <span>{cycleLength} Classes</span>
+                          </div>
+                          <div className="px-2.5 py-1 rounded-lg bg-slate-800 border border-slate-700 text-slate-300 font-medium flex items-center gap-1">
+                            <Users className="w-3 h-3 text-indigo-400" />
+                            <span>{studentCount} Students</span>
+                          </div>
+                        </div>
+
+                        {/* Scheduled Weekly Routine Pills */}
+                        <div className="mt-4 pt-3 border-t border-slate-800">
+                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1.5 flex items-center gap-1">
+                            <Clock className="w-3 h-3 text-indigo-400" />
+                            Weekly Routine Days & Time:
+                          </span>
+                          {routineSlots.length > 0 ? (
+                            <div className="flex flex-wrap gap-1.5">
+                              {routineSlots.map((slot, i) => (
+                                <span
+                                  key={i}
+                                  className="px-2 py-0.5 rounded-md bg-slate-800 border border-slate-700 text-slate-200 text-[11px] font-mono"
+                                >
+                                  {slot.day?.slice(0, 3)} @ {slot.start_time || slot.time} {slot.end_time ? `- ${slot.end_time}` : ''}
+                                </span>
+                              ))}
+                            </div>
+                          ) : (
+                            <span className="text-xs text-slate-500 italic">No routine set</span>
                           )}
                         </div>
+                      </div>
 
-                        <div className="flex items-center gap-1">
+                      {/* Navigation CTA & Actions */}
+                      <div className="pt-2 space-y-2" onClick={(e) => e.stopPropagation()}>
+                        <button
+                          onClick={() => navigate(`/tuitions/${batch.id}`)}
+                          className="w-full py-2.5 px-3 rounded-xl bg-gradient-to-r from-indigo-600 via-indigo-500 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold text-xs shadow-md shadow-indigo-600/25 flex items-center justify-center gap-1.5 transition group/btn"
+                        >
+                          <span>Open Tuition Workspace</span>
+                          <ChevronRight className="w-4 h-4 group-hover/btn:translate-x-0.5 transition-transform" />
+                        </button>
+
+                        <div className="flex items-center gap-2">
                           <button
                             onClick={() => {
-                              setSelectedBatchToEdit(batch);
-                              setBatchModalOpen(true);
+                              setAuthorCategory('EXAM');
+                              handleScheduleForBatch(batch.id);
                             }}
-                            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition"
-                            title="Edit Batch"
+                            className="flex-1 py-1.5 px-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs border border-slate-700/60 flex items-center justify-center gap-1 transition"
                           >
-                            <Edit2 className="w-3.5 h-3.5" />
+                            <Plus className="w-3 h-3 text-indigo-400" />
+                            <span>Schedule Exam</span>
                           </button>
                           <button
-                            onClick={() => handleDeleteBatch(batch.id)}
-                            className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 transition"
-                            title="Delete Batch"
+                            onClick={() => {
+                              setAuthorCategory('ASSIGNMENT');
+                              handleScheduleForBatch(batch.id);
+                            }}
+                            className="flex-1 py-1.5 px-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs border border-slate-700/60 flex items-center justify-center gap-1 transition"
                           >
-                            <Trash2 className="w-3.5 h-3.5" />
+                            <Plus className="w-3 h-3 text-purple-400" />
+                            <span>Assignment</span>
                           </button>
                         </div>
                       </div>
-
-                      {batch.description && (
-                        <p className="text-xs text-slate-400 mt-1 line-clamp-2">
-                          {batch.description}
-                        </p>
-                      )}
-
-                      {/* Fee & Enrolled count */}
-                      <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
-                        <div className="px-2.5 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 font-bold flex items-center gap-1">
-                          <DollarSign className="w-3 h-3" />
-                          <span>৳{batch.tuition_fee || batch.monthly_fee}/cycle</span>
-                        </div>
-                        <div className="px-2.5 py-1 rounded-lg bg-indigo-500/10 border border-indigo-500/20 text-indigo-300 font-semibold flex items-center gap-1">
-                          <Clock className="w-3 h-3" />
-                          <span>{batch.cycle_length || 12} Classes</span>
-                        </div>
-                        <div className="px-2.5 py-1 rounded-lg bg-slate-800 border border-slate-700 text-slate-300 font-medium flex items-center gap-1">
-                          <Users className="w-3 h-3 text-indigo-400" />
-                          <span>{batch.student_count || batch.enrollment_count || batch.enrollments?.length || 0} Students</span>
-                        </div>
-                      </div>
-
-                      {/* Weekly Routine schedule */}
-                      <div className="mt-4 pt-3 border-t border-slate-800">
-                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1.5 flex items-center gap-1">
-                          <Clock className="w-3 h-3 text-indigo-400" />
-                          Weekly Routine Days & Time:
-                        </span>
-                        {(batch.routine || batch.weekly_routine) && (batch.routine || batch.weekly_routine).length > 0 ? (
-                          <div className="flex flex-wrap gap-1.5">
-                            {(batch.routine || batch.weekly_routine).map((slot, i) => (
-                              <span
-                                key={i}
-                                className="px-2 py-0.5 rounded-md bg-slate-800 border border-slate-700 text-slate-200 text-[11px] font-mono"
-                              >
-                                {slot.day?.slice(0, 3)} @ {slot.start_time || slot.time} {slot.end_time ? `- ${slot.end_time}` : ''}
-                              </span>
-                            ))}
-                          </div>
-                        ) : (
-                          <span className="text-xs text-slate-500 italic">No routine set</span>
-                        )}
-                      </div>
                     </div>
-
-                    {/* Action buttons */}
-                    <div className="pt-2 flex items-center gap-2">
-                      <button
-                        onClick={() => {
-                          setAuthorCategory('EXAM');
-                          handleScheduleForBatch(batch.id);
-                        }}
-                        className="flex-1 py-2 px-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs shadow-md shadow-indigo-600/20 flex items-center justify-center gap-1 transition"
-                      >
-                        <Plus className="w-3.5 h-3.5" />
-                        <span>Schedule Exam</span>
-                      </button>
-                      <button
-                        onClick={() => {
-                          setAuthorCategory('ASSIGNMENT');
-                          handleScheduleForBatch(batch.id);
-                        }}
-                        className="flex-1 py-2 px-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-semibold text-xs shadow-md shadow-purple-600/20 flex items-center justify-center gap-1 transition"
-                      >
-                        <Plus className="w-3.5 h-3.5" />
-                        <span>Assignment</span>
-                      </button>
-                    </div>
-                  </div>
-
-                ))}
+                  );
+                })}
               </div>
             )}
 
@@ -1121,11 +1173,11 @@ export default function TutorDashboard() {
           loadStudents();
           loadTuitions();
           loadAnalytics();
-          if (newStudent?.id) {
+          if (newStudent?.student_id || newStudent?.id) {
             if (assignedTuitionId && assignedTuitionId !== 'all') {
               setSelectedTuitionId(assignedTuitionId);
             }
-            setSelectedStudentId(newStudent.id);
+            setSelectedStudentId(normId(newStudent));
           }
         }}
       />

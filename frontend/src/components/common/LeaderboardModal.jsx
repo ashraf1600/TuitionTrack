@@ -125,7 +125,7 @@ export default function LeaderboardModal({ isOpen, onClose, examId, examTitle })
                       2
                     </div>
                     <div className="w-12 h-12 rounded-full bg-slate-700 border-2 border-slate-400 flex items-center justify-center text-slate-200 font-bold text-base mt-2 mb-2 shadow-inner">
-                      {topThree[1].student_name.slice(0, 2).toUpperCase()}
+                      {(topThree[1].student_name || '').slice(0, 2).toUpperCase()}
                     </div>
                     <div className="font-bold text-slate-200 text-sm truncate max-w-full">
                       {topThree[1].student_name}
@@ -138,7 +138,7 @@ export default function LeaderboardModal({ isOpen, onClose, examId, examTitle })
                       {topThree[1].percentage}%
                     </div>
                     <div className="text-[11px] text-slate-400 mt-2 font-mono">
-                      MCQ: {topThree[1].mcq_score} {topThree[1].cq_score !== null ? `• CQ: ${topThree[1].cq_score}` : ''}
+                      MCQ: {topThree[1].mcq_score} {topThree[1].cq_score != null ? `• CQ: ${topThree[1].cq_score}` : ''}
                     </div>
                   </div>
                 )}
@@ -150,7 +150,7 @@ export default function LeaderboardModal({ isOpen, onClose, examId, examTitle })
                       <Crown className="w-4 h-4" />
                     </div>
                     <div className="w-14 h-14 rounded-full bg-amber-500/20 border-2 border-amber-400 flex items-center justify-center text-amber-300 font-extrabold text-lg mt-2 mb-2 shadow-lg">
-                      {topThree[0].student_name.slice(0, 2).toUpperCase()}
+                      {(topThree[0].student_name || '').slice(0, 2).toUpperCase()}
                     </div>
                     <div className="font-extrabold text-slate-100 text-base truncate max-w-full flex items-center gap-1">
                       <span>{topThree[0].student_name}</span>
@@ -164,7 +164,7 @@ export default function LeaderboardModal({ isOpen, onClose, examId, examTitle })
                       {topThree[0].percentage}%
                     </div>
                     <div className="text-[11px] text-slate-400 mt-2 font-mono">
-                      MCQ: {topThree[0].mcq_score} {topThree[0].cq_score !== null ? `• CQ: ${topThree[0].cq_score}` : ''}
+                      MCQ: {topThree[0].mcq_score} {topThree[0].cq_score != null ? `• CQ: ${topThree[0].cq_score}` : ''}
                     </div>
                   </div>
                 )}
@@ -176,7 +176,7 @@ export default function LeaderboardModal({ isOpen, onClose, examId, examTitle })
                       3
                     </div>
                     <div className="w-12 h-12 rounded-full bg-amber-900/40 border-2 border-amber-600 flex items-center justify-center text-amber-300 font-bold text-base mt-2 mb-2 shadow-inner">
-                      {topThree[2].student_name.slice(0, 2).toUpperCase()}
+                      {(topThree[2].student_name || '').slice(0, 2).toUpperCase()}
                     </div>
                     <div className="font-bold text-slate-200 text-sm truncate max-w-full">
                       {topThree[2].student_name}
@@ -189,7 +189,7 @@ export default function LeaderboardModal({ isOpen, onClose, examId, examTitle })
                       {topThree[2].percentage}%
                     </div>
                     <div className="text-[11px] text-slate-400 mt-2 font-mono">
-                      MCQ: {topThree[2].mcq_score} {topThree[2].cq_score !== null ? `• CQ: ${topThree[2].cq_score}` : ''}
+                      MCQ: {topThree[2].mcq_score} {topThree[2].cq_score != null ? `• CQ: ${topThree[2].cq_score}` : ''}
                     </div>
                   </div>
                 )}
@@ -211,9 +211,9 @@ export default function LeaderboardModal({ isOpen, onClose, examId, examTitle })
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-800/60 font-medium">
-                    {leaderboard.map((entry) => (
+                    {leaderboard.map((entry, idx) => (
                       <tr
-                        key={entry.student_id}
+                        key={`${entry.student_id}-${idx}`}
                         className={`hover:bg-slate-800/30 transition ${
                           entry.rank === 1
                             ? 'bg-amber-500/5'
@@ -258,12 +258,14 @@ export default function LeaderboardModal({ isOpen, onClose, examId, examTitle })
                         </td>
                         <td className="py-3 px-4 text-slate-300 font-mono text-[11px]">
                           <span className="text-indigo-400">MCQ: {entry.mcq_score}</span>
-                          {entry.cq_score !== null && (
+                          {entry.cq_score != null && (
                             <span className="text-emerald-400 ml-2">CQ: {entry.cq_score}</span>
                           )}
                         </td>
                         <td className="py-3 px-4 text-slate-400 text-[11px]">
-                          {new Date(entry.submitted_at).toLocaleTimeString([], {
+                          {new Date(entry.submitted_at).toLocaleString([], {
+                            month: 'short',
+                            day: 'numeric',
                             hour: '2-digit',
                             minute: '2-digit',
                           })}

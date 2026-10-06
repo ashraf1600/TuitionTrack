@@ -27,35 +27,41 @@ export async function apiRequest(endpoint, options = {}) {
 
   let response = await fetch(url, config);
 
-  // If token expired (401), attempt refresh once
+  // If token expired (401), attempt refresh once (single-flight for parallel 401s)
   if (response.status === 401 && localStorage.getItem('refresh_token')) {
-    const refreshToken = localStorage.getItem('refresh_token');
-    try {
-      const refreshResp = await fetch(`${BASE_URL}/auth/token/refresh/`, {
+    if (!_refreshPromise) {
+      const refreshToken = localStorage.getItem('refresh_token');
+      _refreshPromise = fetch(`${BASE_URL}/auth/token/refresh/`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ refresh: refreshToken }),
-      });
-
-      if (refreshResp.ok) {
-        const refreshData = await refreshResp.json();
-        localStorage.setItem('access_token', refreshData.access);
-        headers['Authorization'] = `Bearer ${refreshData.access}`;
-
-        // Retry original request
-        response = await fetch(url, { ...config, headers });
-      } else {
-        // Refresh token expired - clear and redirect
+      }).then(async (refreshResp) => {
+        if (refreshResp.ok) {
+          const refreshData = await refreshResp.json();
+          localStorage.setItem('access_token', refreshData.access);
+          if (refreshData.refresh) localStorage.setItem('refresh_token', refreshData.refresh);
+          return refreshData.access;
+        }
+        throw new Error('refresh failed');
+      }).catch(() => {
         localStorage.removeItem('access_token');
         localStorage.removeItem('refresh_token');
         localStorage.removeItem('user_data');
         window.location.href = '/login';
+        return null;
+      }).finally(() => {
+        // reset on next tick so concurrent callers share the same promise
+        setTimeout(() => { _refreshPromise = null; }, 0);
+      });
+    }
+    try {
+      const newAccess = await _refreshPromise;
+      if (newAccess) {
+        headers['Authorization'] = `Bearer ${newAccess}`;
+        response = await fetch(url, { ...config, headers });
       }
     } catch {
-      localStorage.removeItem('access_token');
-      localStorage.removeItem('refresh_token');
-      localStorage.removeItem('user_data');
-      window.location.href = '/login';
+      // redirect already handled
     }
   }
 
@@ -68,11 +74,64 @@ export async function apiRequest(endpoint, options = {}) {
   }
 
   if (!response.ok) {
-    const errorMsg = data?.error || data?.detail || data?.message || (typeof data === 'object' ? JSON.stringify(data) : 'Request failed');
+    // Flatten DRF field errors: {field: [msg]} -> "field: msg"
+    let errorMsg = 'Request failed';
+    if (data && typeof data === 'object') {
+      if (data.error || data.detail || data.message) {
+        errorMsg = data.error || data.detail || data.message;
+      } else {
+        const parts = [];
+        for (const [k, v] of Object.entries(data)) {
+          parts.push(`${k}: ${Array.isArray(v) ? v.join(', ') : v}`);
+        }
+        errorMsg = parts.join(' | ') || errorMsg;
+      }
+    } else if (typeof data === 'string' && data) {
+      errorMsg = data;
+    }
     throw new Error(errorMsg);
   }
 
+  // Transparent pagination auto-accumulation for GET requests so lists never stop at page 1
+  if (data && typeof data === 'object' && Array.isArray(data.results) && data.next && (!options.method || options.method === 'GET')) {
+    try {
+      const accumulated = [...data.results];
+      let nextUrl = data.next;
+      while (nextUrl) {
+        const fetchUrl = nextUrl.startsWith('http') ? nextUrl : `${BASE_URL}${nextUrl}`;
+        const nextResp = await fetch(fetchUrl, { ...config, headers });
+        if (!nextResp.ok) break;
+        const nextData = await nextResp.json();
+        if (Array.isArray(nextData.results)) {
+          accumulated.push(...nextData.results);
+        }
+        nextUrl = nextData.next;
+      }
+      data.results = accumulated;
+      data.count = accumulated.length;
+    } catch (pageErr) {
+      console.warn('Pagination auto-accumulation warning:', pageErr);
+    }
+  }
+
   return data;
+}
+
+let _refreshPromise = null;
+
+export async function fetchServerOffset() {
+  try {
+    const before = Date.now();
+    const resp = await fetch(`${BASE_URL}/auth/me/`, { method: 'HEAD' });
+    const dateHeader = resp.headers.get('date');
+    if (!dateHeader) return 0;
+    const serverMs = new Date(dateHeader).getTime();
+    const after = Date.now();
+    const rtt = (after - before) / 2;
+    return serverMs + rtt - after;
+  } catch {
+    return 0;
+  }
 }
 
 export const api = {
@@ -179,4 +238,5 @@ export const api = {
 
   // Media
   uploadMedia: (formData) => apiRequest('/media/upload/', { method: 'POST', body: formData }),
+  fetchServerOffset: () => fetchServerOffset(),
 };

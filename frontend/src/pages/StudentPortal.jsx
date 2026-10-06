@@ -25,6 +25,8 @@ export default function StudentPortal() {
   const [activeExam, setActiveExam] = useState(null);
   const [selectedLeaderboardExam, setSelectedLeaderboardExam] = useState(null);
 
+  const isNotFoundError = (err) => /404|not found/i.test(err?.message || '');
+
   const loadData = async () => {
     // 1. Cycles
     try {
@@ -33,7 +35,10 @@ export default function StudentPortal() {
       try {
         const cyclesData = await api.getAttendanceCycles();
         list = Array.isArray(cyclesData) ? cyclesData : cyclesData.results || [];
-      } catch (_) {
+      } catch (fallbackErr) {
+        // Only fall back to the legacy endpoint on 404 (endpoint missing).
+        // 401/403 means auth/permission — must surface, not silently retry.
+        if (!isNotFoundError(fallbackErr)) throw fallbackErr;
         const cyclesData = await api.getCycles();
         list = Array.isArray(cyclesData) ? cyclesData : cyclesData.results || [];
       }
@@ -52,7 +57,8 @@ export default function StudentPortal() {
       try {
         const tuitionsData = await api.getTuitions();
         batchList = Array.isArray(tuitionsData) ? tuitionsData : tuitionsData.results || [];
-      } catch (_) {
+      } catch (fallbackErr) {
+        if (!isNotFoundError(fallbackErr)) throw fallbackErr;
         const batchesData = await api.getBatches();
         batchList = Array.isArray(batchesData) ? batchesData : batchesData.results || [];
       }

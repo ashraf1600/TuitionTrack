@@ -13,8 +13,15 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / '.env')
 
 # ─── Security ─────────────────────────────────────────────────────────────────
-SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-fallback-key')
-DEBUG = os.getenv('DEBUG', 'True') == 'True'
+DEBUG = os.getenv('DEBUG', 'False').lower() in ('true', '1', 't')
+SECRET_KEY = os.getenv('SECRET_KEY')
+if not SECRET_KEY:
+    if DEBUG:
+        import secrets
+        SECRET_KEY = os.getenv('SECRET_KEY', 'dev-secret-key-' + secrets.token_hex(16))
+    else:
+        from django.core.exceptions import ImproperlyConfigured
+        raise ImproperlyConfigured("The SECRET_KEY environment variable must be set in production.")
 ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1,testserver').split(',')
 
 # ─── Application Definition ───────────────────────────────────────────────────
@@ -138,9 +145,17 @@ REST_FRAMEWORK = {
     'DEFAULT_RENDERER_CLASSES': (
         'rest_framework.renderers.JSONRenderer',
     ),
-    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
+    'DEFAULT_PAGINATION_CLASS': 'apps.authentication.pagination.StandardPagination',
     'PAGE_SIZE': 20,
-    'DATETIME_FORMAT': '%Y-%m-%dT%H:%M:%SZ',
+    'DATETIME_FORMAT': '%Y-%m-%dT%H:%M:%S%z',
+    'DEFAULT_THROTTLE_CLASSES': (
+        'rest_framework.throttling.AnonRateThrottle',
+        'rest_framework.throttling.UserRateThrottle',
+    ),
+    'DEFAULT_THROTTLE_RATES': {
+        'anon': '60/min',
+        'user': '600/min',
+    },
 }
 
 # ─── Simple JWT ───────────────────────────────────────────────────────────────
@@ -151,7 +166,9 @@ SIMPLE_JWT = {
     'REFRESH_TOKEN_LIFETIME': timedelta(
         days=int(os.getenv('REFRESH_TOKEN_LIFETIME_DAYS', 7))
     ),
-    'ROTATE_REFRESH_TOKENS': True,
+    # Rotation without blacklist keeps old refresh valid; either install
+    # token_blacklist app or disable rotation. Disabled by default.
+    'ROTATE_REFRESH_TOKENS': False,
     'BLACKLIST_AFTER_ROTATION': False,
     'AUTH_HEADER_TYPES': ('Bearer',),
     'USER_ID_FIELD': 'id',

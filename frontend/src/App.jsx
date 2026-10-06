@@ -6,6 +6,8 @@ import LoginPage from './pages/LoginPage';
 import TutorDashboard from './pages/TutorDashboard';
 import StudentPortal from './pages/StudentPortal';
 
+import TuitionWorkspace from './pages/TuitionWorkspace';
+
 function RootRedirect() {
   const { user, token, loading } = useAuth();
 
@@ -36,6 +38,14 @@ export default function App() {
             element={
               <ProtectedRoute requiredRole="TUTOR">
                 <TutorDashboard />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/tuitions/:id"
+            element={
+              <ProtectedRoute requiredRole="TUTOR">
+                <TuitionWorkspace />
               </ProtectedRoute>
             }
           />

@@ -132,6 +132,8 @@ class Tuition(models.Model):
         verbose_name='Tutor',
     )
     title = models.CharField(max_length=200, verbose_name='Tuition Title')
+    subject = models.CharField(max_length=150, blank=True, verbose_name='Subject')
+    description = models.TextField(blank=True, verbose_name='Description')
     cycle_length = models.PositiveIntegerField(
         default=12,
         validators=[MinValueValidator(1)],
@@ -163,7 +165,7 @@ class Tuition(models.Model):
 
     @property
     def enrolled_students_count(self):
-        return self.enrollments.count()
+        return self.enrollments.filter(is_active=True).count()
 
 
 class TuitionEnrollment(models.Model):
@@ -186,6 +188,10 @@ class TuitionEnrollment(models.Model):
         related_name='enrolled_tuitions',
         limit_choices_to={'role': 'STUDENT'},
         verbose_name='Student'
+    )
+    is_active = models.BooleanField(
+        default=True,
+        verbose_name='Is Active Enrollment'
     )
     joined_at = models.DateTimeField(auto_now_add=True)
 

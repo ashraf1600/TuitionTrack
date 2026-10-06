@@ -59,13 +59,13 @@ export default function StudentRoster({
       ) : (
         <div className="space-y-2.5 max-h-[500px] overflow-y-auto pr-1">
           {students.map((student) => {
-            const isSelected = selectedStudentId === student.student_id;
+            const isSelected = String(selectedStudentId) === String(student.student_id ?? student.id);
             const profile = student.profile || {};
 
             return (
               <div
-                key={student.student_id}
-                onClick={() => onSelectStudent(student.student_id)}
+                key={String(student.student_id ?? student.id)}
+                onClick={() => onSelectStudent(String(student.student_id ?? student.id))}
                 className={`p-3.5 rounded-xl border cursor-pointer transition-all duration-200 ${
                   isSelected
                     ? 'bg-indigo-950/40 border-indigo-500/60 shadow-lg shadow-indigo-500/10'
@@ -110,7 +110,7 @@ export default function StudentRoster({
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
-                      onToggleActive(student.student_id);
+                      onToggleActive(String(student.student_id ?? student.id));
                     }}
                     title={student.is_active ? 'Deactivate Student' : 'Activate Student'}
                     className={`p-1.5 rounded-lg border transition ${

@@ -46,7 +46,7 @@ export default function StatusBadge({ status, className = '' }) {
 
     default:
       return (
-        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-800 text-slate-400 border border-slate-750 ${className}`}>
+        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-800 text-slate-400 border border-slate-700 ${className}`}>
           {status || 'Unknown'}
         </span>
       );

@@ -54,6 +54,7 @@ class CycleSerializer(serializers.ModelSerializer):
             'earned_amount',
             'pending_amount',
             'progress_percentage',
+            'classes_data',
             'is_complete',
             'status',
             'created_at',
@@ -115,6 +116,7 @@ class AttendanceCycleSerializer(serializers.ModelSerializer):
     earned_revenue = serializers.ReadOnlyField()
     pending_balance = serializers.ReadOnlyField()
     progress_percent = serializers.ReadOnlyField()
+    progress_percentage = serializers.ReadOnlyField()
     is_complete = serializers.ReadOnlyField()
 
     class Meta:
@@ -135,6 +137,7 @@ class AttendanceCycleSerializer(serializers.ModelSerializer):
             'earned_revenue',
             'pending_balance',
             'progress_percent',
+            'progress_percentage',
             'is_complete',
             'status',
             'classes_data',
@@ -144,8 +147,10 @@ class AttendanceCycleSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
     def get_student_name(self, obj):
-        student = obj.enrollment.student
-        return student.get_full_name() or student.username
+        if obj.enrollment and obj.enrollment.student:
+            student = obj.enrollment.student
+            return student.get_full_name() or student.username
+        return 'Enrolled Student'
 
     def to_representation(self, instance):
         data = super().to_representation(instance)

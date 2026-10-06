@@ -7,6 +7,11 @@ const COLORS = {
   Pending: '#6366F1',  // Indigo
 };
 
+const COLORS_LOWER = {
+  earned: '#10B981',
+  pending: '#6366F1',
+};
+
 export default function WalletWidget({ analytics, loading }) {
   if (loading) {
     return (
@@ -20,12 +25,17 @@ export default function WalletWidget({ analytics, loading }) {
   if (!analytics) return null;
 
   const {
-    total_students = 0,
-    total_earned = 0,
-    total_pending = 0,
-    lifetime_archived_earnings = 0,
+    total_students: _totalStudents = 0,
+    total_earned: _totalEarned = 0,
+    total_pending: _totalPending = 0,
+    lifetime_archived_earnings: _lifetime = 0,
     chart_data = [],
   } = analytics;
+
+  const total_students = _totalStudents ?? 0;
+  const total_earned = _totalEarned ?? 0;
+  const total_pending = _totalPending ?? 0;
+  const lifetime_archived_earnings = _lifetime ?? 0;
 
   const totalCycleVolume = total_earned + total_pending;
   const earnedPercentage = totalCycleVolume > 0 ? Math.round((total_earned / totalCycleVolume) * 100) : 0;
@@ -47,7 +57,7 @@ export default function WalletWidget({ analytics, loading }) {
           <Award className="w-4 h-4 text-amber-400" />
           <span className="text-slate-400">Lifetime Revenue:</span>
           <span className="font-bold text-amber-300">
-            ৳{lifetime_archived_earnings.toLocaleString()}
+            ৳{Number(lifetime_archived_earnings ?? 0).toLocaleString()}
           </span>
         </div>
       </div>
@@ -70,7 +80,7 @@ export default function WalletWidget({ analytics, loading }) {
                 {chart_data.map((entry, index) => (
                   <Cell
                     key={`cell-${index}`}
-                    fill={COLORS[entry.name] || '#64748b'}
+                    fill={COLORS_LOWER[(entry.name || '').toLowerCase()] || COLORS[entry.name] || '#64748b'}
                   />
                 ))}
               </Pie>
@@ -121,7 +131,7 @@ export default function WalletWidget({ analytics, loading }) {
               <DollarSign className="w-4 h-4 text-emerald-400" />
             </div>
             <div className="text-2xl font-bold text-emerald-400">
-              ৳{total_earned.toLocaleString()}
+              ৳{Number(total_earned ?? 0).toLocaleString()}
             </div>
             <div className="text-[11px] text-emerald-500/80 mt-1">Completed classes</div>
           </div>
@@ -133,7 +143,7 @@ export default function WalletWidget({ analytics, loading }) {
               <Clock className="w-4 h-4 text-indigo-400" />
             </div>
             <div className="text-2xl font-bold text-indigo-300">
-              ৳{total_pending.toLocaleString()}
+              ৳{Number(total_pending ?? 0).toLocaleString()}
             </div>
             <div className="text-[11px] text-indigo-400/80 mt-1">Remaining classes</div>
           </div>

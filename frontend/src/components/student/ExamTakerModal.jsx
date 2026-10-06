@@ -30,6 +30,8 @@ export default function ExamTakerModal({
   const [error, setError] = useState('');
   const [timeLeft, setTimeLeft] = useState('');
   const [isGracePeriod, setIsGracePeriod] = useState(false);
+  const [isExpired, setIsExpired] = useState(false);
+  const [serverOffsetMs, setServerOffsetMs] = useState(0);
 
   // Reset when exam changes
   useEffect(() => {
@@ -38,21 +40,26 @@ export default function ExamTakerModal({
       setTextAnswers({});
       setImageUrls([]);
       setError('');
+      setIsExpired(false);
+      // Estimate server-client clock offset from API Date header (prevents
+      // trivial bypass by changing OS clock; backend remains authoritative).
+      api.fetchServerOffset().then(setServerOffsetMs).catch(() => setServerOffsetMs(0));
     }
   }, [exam]);
 
-  // Live Countdown Timer
+  // Live Countdown Timer (server-offset corrected; backend still enforces)
   useEffect(() => {
     if (!isOpen || !exam) return;
 
     const interval = setInterval(() => {
-      const now = new Date().getTime();
+      const now = Date.now() + serverOffsetMs;
       const endTime = new Date(exam.end_time).getTime();
       const graceEnd = endTime + (exam.grace_period_minutes || 5) * 60 * 1000;
 
       if (now > graceEnd) {
         setTimeLeft('00:00:00 (Expired)');
         setIsGracePeriod(false);
+        setIsExpired(true);
         clearInterval(interval);
       } else if (now > endTime) {
         // In grace period
@@ -74,7 +81,7 @@ export default function ExamTakerModal({
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [isOpen, exam]);
+  }, [isOpen, exam, serverOffsetMs]);
 
   if (!exam) return null;
 
@@ -92,6 +99,19 @@ export default function ExamTakerModal({
   const handlePhotoUpload = async (e) => {
     const files = Array.from(e.target.files || []);
     if (files.length === 0) return;
+    const MAX_BYTES = 10 * 1024 * 1024;
+    for (const f of files) {
+      if (f.size > MAX_BYTES) {
+        setError(`"${f.name}" exceeds 10MB limit.`);
+        e.target.value = '';
+        return;
+      }
+      if (f.size === 0) {
+        setError(`"${f.name}" is empty.`);
+        e.target.value = '';
+        return;
+      }
+    }
 
     setUploading(true);
     setError('');
@@ -101,7 +121,11 @@ export default function ExamTakerModal({
         const formData = new FormData();
         formData.append('file', file);
         const res = await api.uploadMedia(formData);
-        setImageUrls((prev) => [...prev, res.url]);
+        const url = res.url || res.file_url;
+        if (!url || /^\s*(javascript|data:text\/html|vbscript):/i.test(url)) {
+          throw new Error('Server returned an unsafe file URL.');
+        }
+        setImageUrls((prev) => [...prev, url]);
       }
     } catch (err) {
       setError(err.message || 'Failed to upload photo.');
@@ -118,6 +142,10 @@ export default function ExamTakerModal({
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
+    if (isExpired) {
+      setError('Submission window has closed (including grace period).');
+      return;
+    }
 
     // Validation
     const answeredCount = Object.keys(mcqAnswers).length;
@@ -126,21 +154,28 @@ export default function ExamTakerModal({
       return;
     }
 
+    const needsCQ = !isMCQOnly && exam.content_html && exam.content_html !== '<p></p>' && exam.content_html !== '<p>Multiple Choice Examination</p>';
     if (!isMCQOnly && imageUrls.length === 0 && answeredCount === 0) {
       setError('Please answer the questions or upload a photo of your written answer script.');
+      return;
+    }
+    if (needsCQ && imageUrls.length === 0 && exam.exam_type !== 'MCQ') {
+      // HYBRID/CQ with written section requires an upload
+      setError('Please upload your written answer script for the CQ section.');
       return;
     }
 
     setSubmitting(true);
     try {
       const answersData = {
-        ...mcqAnswers,
         ...textAnswers,
+        ...mcqAnswers,
       };
 
       await api.submitExam(exam.id, {
         answers_data: answersData,
         image_urls: imageUrls,
+        uploaded_images: imageUrls,
       });
 
       onExamSubmitted();
@@ -339,16 +374,22 @@ export default function ExamTakerModal({
 
               {imageUrls.length > 0 && (
                 <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  {imageUrls.map((url, index) => (
+                  {imageUrls.map((url, index) => {
+                    const isPdf = /\.pdf(\?|$)/i.test(url);
+                    return (
                     <div
                       key={index}
                       className="relative group rounded-xl overflow-hidden border border-slate-700 bg-slate-900"
                     >
+                      {isPdf ? (
+                        <a href={url} target="_blank" rel="noopener noreferrer" className="block w-full h-24 flex items-center justify-center text-xs text-indigo-300 underline">PDF Page #{index + 1}</a>
+                      ) : (
                       <img
                         src={url}
                         alt={`Upload ${index + 1}`}
                         className="w-full h-24 object-cover"
                       />
+                      )}
                       <button
                         type="button"
                         onClick={() => removeImage(index)}
@@ -361,7 +402,8 @@ export default function ExamTakerModal({
                         Page #{index + 1}
                       </span>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -383,7 +425,7 @@ export default function ExamTakerModal({
               </button>
               <button
                 type="submit"
-                disabled={submitting || uploading}
+                disabled={submitting || uploading || isExpired}
                 className="px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-lg shadow-emerald-600/30 flex items-center gap-2 transition disabled:opacity-50"
               >
                 {submitting ? (

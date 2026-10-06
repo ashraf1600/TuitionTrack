@@ -52,6 +52,11 @@ class TutorRegistrationSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         if attrs['password'] != attrs.pop('password_confirm'):
             raise serializers.ValidationError({'password_confirm': 'Passwords do not match.'})
+        from django.contrib.auth.password_validation import validate_password
+        try:
+            validate_password(attrs['password'])
+        except Exception as exc:
+            raise serializers.ValidationError({'password': list(exc.messages) if hasattr(exc, 'messages') else str(exc)})
         return attrs
 
     def create(self, validated_data):
@@ -63,13 +68,16 @@ class TutorRegistrationSerializer(serializers.ModelSerializer):
 
 
 class TutorDirectorySerializer(serializers.ModelSerializer):
-    """Public serializer for prospective students browsing available tutors."""
+    """
+    Public directory of verified tutors for prospective students during registration.
+    Privacy invariant: Never exposes personal contact details (email, phone) or tuition fees.
+    """
     name = serializers.SerializerMethodField()
     tuitions = serializers.SerializerMethodField()
 
     class Meta:
         model = User
-        fields = ['id', 'username', 'name', 'email', 'phone', 'tuitions']
+        fields = ['id', 'username', 'name', 'tuitions']
 
     def get_name(self, obj):
         return obj.get_full_name() or obj.username
@@ -81,7 +89,6 @@ class TutorDirectorySerializer(serializers.ModelSerializer):
                     'id': str(t.id),
                     'title': t.title,
                     'cycle_length': t.cycle_length,
-                    'tuition_fee': float(t.tuition_fee),
                 }
                 for t in obj.tuitions.all()
             ]
@@ -91,7 +98,7 @@ class TutorDirectorySerializer(serializers.ModelSerializer):
 class StudentSelfRegistrationSerializer(serializers.Serializer):
     """Handles student self-registration with profile info and selected tutor discovery linking."""
     username = serializers.CharField(max_length=150)
-    password = serializers.CharField(write_only=True, min_length=6)
+    password = serializers.CharField(write_only=True, min_length=8)
     password_confirm = serializers.CharField(write_only=True)
     first_name = serializers.CharField(max_length=150)
     last_name = serializers.CharField(max_length=150, required=False, default='')
@@ -113,9 +120,26 @@ class StudentSelfRegistrationSerializer(serializers.Serializer):
             raise serializers.ValidationError('A user with this username already exists.')
         return value
 
+    def validate_selected_tutor_id(self, value):
+        if not value or not str(value).strip():
+            return ''
+        import uuid
+        try:
+            uuid.UUID(str(value).strip())
+        except (ValueError, AttributeError):
+            raise serializers.ValidationError('Invalid tutor ID format.')
+        return str(value).strip()
+
     def validate(self, attrs):
         if attrs['password'] != attrs.pop('password_confirm'):
             raise serializers.ValidationError({'password_confirm': 'Passwords do not match.'})
+        from django.contrib.auth.password_validation import validate_password
+        try:
+            validate_password(attrs['password'])
+        except Exception as exc:
+            raise serializers.ValidationError({'password': list(exc.messages) if hasattr(exc, 'messages') else str(exc)})
+        if not (attrs.get('selected_tutor_id', '').strip() or attrs.get('selected_tutor_username', '').strip() or attrs.get('tutor_username', '').strip()):
+            raise serializers.ValidationError('Selecting a tutor is required.')
         return attrs
 
     def create(self, validated_data):
@@ -128,7 +152,12 @@ class StudentSelfRegistrationSerializer(serializers.Serializer):
 
         target_tutor = None
         if tutor_id:
-            target_tutor = User.objects.filter(id=tutor_id, role=User.Role.TUTOR).first()
+            import uuid
+            try:
+                tutor_uuid = uuid.UUID(tutor_id)
+                target_tutor = User.objects.filter(id=tutor_uuid, role=User.Role.TUTOR).first()
+            except (ValueError, TypeError):
+                target_tutor = None
         if not target_tutor and tutor_user:
             target_tutor = User.objects.filter(username=tutor_user, role=User.Role.TUTOR).first()
         if not target_tutor and fallback_user:

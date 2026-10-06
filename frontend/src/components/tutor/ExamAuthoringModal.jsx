@@ -36,6 +36,16 @@ import {
 } from 'lucide-react';
 import MathRenderer from '../common/MathRenderer';
 
+function formatLocalInputDateTime(d) {
+  const pad = (n) => String(n).padStart(2, '0');
+  const year = d.getFullYear();
+  const month = pad(d.getMonth() + 1);
+  const day = pad(d.getDate());
+  const hours = pad(d.getHours());
+  const minutes = pad(d.getMinutes());
+  return `${year}-${month}-${day}T${hours}:${minutes}`;
+}
+
 export default function ExamAuthoringModal({
   isOpen,
   onClose,
@@ -65,22 +75,13 @@ export default function ExamAuthoringModal({
 
   // Dates
   const now = new Date();
-  const defaultStart = new Date(now.getTime() + 10 * 60 * 1000).toISOString().slice(0, 16);
-  const defaultEnd = new Date(now.getTime() + 70 * 60 * 1000).toISOString().slice(0, 16);
+  const defaultStart = formatLocalInputDateTime(new Date(now.getTime() + 10 * 60 * 1000));
+  const defaultEnd = formatLocalInputDateTime(new Date(now.getTime() + 70 * 60 * 1000));
   const [startTime, setStartTime] = useState(defaultStart);
   const [endTime, setEndTime] = useState(defaultEnd);
 
-  // MCQ questions state
-  const [mcqList, setMcqList] = useState([
-    {
-      id: 'mcq-1',
-      question: 'What is the SI unit of gravitational acceleration $g$?',
-      options: ['m/s', 'm/s²', 'N/kg²', 'J/s'],
-      correct_answer: 1,
-      explanation: 'Acceleration has units of length per time squared (m/s²).',
-      points: 1,
-    },
-  ]);
+  // MCQ questions state (empty by default - never ship sample content)
+  const [mcqList, setMcqList] = useState([]);
   const [rawMCQInput, setRawMCQInput] = useState('');
   const [showPasteModal, setShowPasteModal] = useState(false);
 
@@ -96,12 +97,35 @@ export default function ExamAuthoringModal({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  // Load batches
+  // Reset helper to ensure clean state and no stale demo data
+  const resetForm = () => {
+    setTitle('');
+    setError('');
+    setCategory(initialCategory || 'EXAM');
+    const firstSid = initialStudentId || (students[0]?.id || students[0]?.student_id || '');
+    setStudentId(firstSid);
+    setBatchId(initialBatchId || '');
+    setTargetType(initialBatchId ? 'batch' : (firstSid ? 'student' : (students.length > 0 ? 'student' : 'batch')));
+    setMcqList([]);
+    setRawMCQInput('');
+    setSolutionHtml('');
+    setSolutionMediaUrl('');
+    setIsResultsPublished(false);
+    const dNow = new Date();
+    setStartTime(formatLocalInputDateTime(new Date(dNow.getTime() + 10 * 60 * 1000)));
+    setEndTime(formatLocalInputDateTime(new Date(dNow.getTime() + 70 * 60 * 1000)));
+    if (editor) {
+      editor.commands.setContent('');
+    }
+  };
+
+  // Sync category, target, and reset state whenever modal opens
   useEffect(() => {
     if (isOpen) {
+      resetForm();
       loadBatches();
     }
-  }, [isOpen]);
+  }, [isOpen, initialCategory, initialStudentId, initialBatchId]);
 
   const loadBatches = async () => {
     try {
@@ -130,7 +154,7 @@ export default function ExamAuthoringModal({
       setStudentId(initialStudentId);
       setTargetType('student');
     } else if (students.length > 0 && !studentId) {
-      setStudentId(students[0].student_id);
+      setStudentId(students[0].id || students[0].student_id);
     }
   }, [initialStudentId, students]);
 
@@ -141,7 +165,7 @@ export default function ExamAuthoringModal({
     }
   }, [initialBatchId]);
 
-  // TipTap Editor instance for CQ
+  // TipTap Editor instance for CQ (clean empty content by default)
   const editor = useEditor({
     extensions: [
       StarterKit,
@@ -156,7 +180,7 @@ export default function ExamAuthoringModal({
         allowBase64: true,
       }),
     ],
-    content: `<h2>Physics & Math Assessment (Written CQ Section)</h2><p>Solve the following analytical problems step by step with clear derivations:</p><table><thead><tr><th>Question</th><th>Marks</th></tr></thead><tbody><tr><td>1. A particle moves with velocity $v(t) = 3t^2 - 4t$. Find acceleration at $t = 2$s.</td><td>10</td></tr><tr><td>2. Evaluate the definite integral: $$\\int_0^\\pi \\sin^2(x) dx$$</td><td>15</td></tr></tbody></table>`,
+    content: '',
     editorProps: {
       attributes: {
         class: 'prose prose-invert max-w-none focus:outline-none min-h-[180px] p-4 text-slate-100',
@@ -235,6 +259,9 @@ export default function ExamAuthoringModal({
     setMcqList((prev) => {
       const copy = [...prev];
       copy[index] = { ...copy[index], [field]: value };
+      if (field === 'points') {
+        copy[index].marks = value;
+      }
       return copy;
     });
   };
@@ -307,6 +334,7 @@ export default function ExamAuthoringModal({
 
     setLoading(true);
     try {
+      const parsedGrace = parseInt(gracePeriod, 10);
       const payload = {
         title,
         category,
@@ -322,14 +350,14 @@ export default function ExamAuthoringModal({
         start_time: new Date(startTime).toISOString(),
         end_time: new Date(endTime).toISOString(),
         duration_minutes: parseInt(durationMinutes) || null,
-        grace_period_minutes: parseInt(gracePeriod) || 5,
+        grace_period_minutes: isNaN(parsedGrace) ? 5 : parsedGrace,
         is_published: true,
         is_results_published: isResultsPublished,
       };
 
-
       await api.createExam(payload);
       onExamCreated();
+      resetForm();
       onClose();
     } catch (err) {
       setError(err.message || 'Failed to schedule exam.');
@@ -455,55 +483,69 @@ export default function ExamAuthoringModal({
             <label className="block text-[11px] font-bold text-slate-300 uppercase tracking-wider mb-1">
               Assign Target
             </label>
-            <div className="flex gap-1 mb-1">
+            <div className="flex gap-1 mb-1.5">
+              <button
+                type="button"
+                onClick={() => setTargetType('batch')}
+                className={`flex-1 py-1.5 text-[10px] font-bold rounded-lg border transition ${
+                  targetType === 'batch'
+                    ? 'bg-indigo-600 border-indigo-500 text-white shadow'
+                    : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                Tuition (Group / Batch)
+              </button>
               <button
                 type="button"
                 onClick={() => setTargetType('student')}
-                className={`flex-1 py-1 text-[10px] font-bold rounded ${
-                  targetType === 'student' ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-400'
+                className={`flex-1 py-1.5 text-[10px] font-bold rounded-lg border transition ${
+                  targetType === 'student'
+                    ? 'bg-indigo-600 border-indigo-500 text-white shadow'
+                    : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-slate-200'
                 }`}
               >
                 1-on-1 Student
               </button>
-              <button
-                type="button"
-                onClick={() => setTargetType('batch')}
-                className={`flex-1 py-1 text-[10px] font-bold rounded ${
-                  targetType === 'batch' ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-400'
-                }`}
-              >
-                Tuition Batch
-              </button>
             </div>
 
             {targetType === 'student' ? (
-              <select
-                value={studentId}
-                onChange={(e) => setStudentId(e.target.value)}
-                className="w-full px-2 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-100 text-xs"
-              >
-                {students.map((st) => (
-                  <option key={st.student_id} value={st.student_id}>
-                    {st.full_name} (@{st.username})
-                  </option>
-                ))}
-              </select>
-            ) : (
-              <select
-                value={batchId}
-                onChange={(e) => setBatchId(e.target.value)}
-                className="w-full px-2 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-100 text-xs"
-              >
-                {batches.length === 0 ? (
-                  <option value="">No batches created yet</option>
-                ) : (
-                  batches.map((b) => (
-                    <option key={b.id} value={b.id}>
-                      {b.title || b.name} ({b.student_count || b.enrollment_count || b.enrollments?.length || 0} students)
+              <div>
+                <select
+                  value={studentId}
+                  onChange={(e) => setStudentId(e.target.value)}
+                  className="w-full px-2.5 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-100 text-xs focus:outline-none focus:border-indigo-500"
+                >
+                  {students.map((st) => (
+                    <option key={st.student_id} value={st.student_id}>
+                      {st.full_name} (@{st.username})
                     </option>
-                  ))
-                )}
-              </select>
+                  ))}
+                </select>
+                <span className="block text-[10px] text-indigo-400 mt-1">
+                  ✓ Assigned specifically to this 1-on-1 student.
+                </span>
+              </div>
+            ) : (
+              <div>
+                <select
+                  value={batchId}
+                  onChange={(e) => setBatchId(e.target.value)}
+                  className="w-full px-2.5 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-100 text-xs focus:outline-none focus:border-indigo-500"
+                >
+                  {batches.length === 0 ? (
+                    <option value="">No tuitions created yet</option>
+                  ) : (
+                    batches.map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.title || b.name} ({b.student_count || b.enrollment_count || b.enrollments?.length || 0} students enrolled)
+                      </option>
+                    ))
+                  )}
+                </select>
+                <span className="block text-[10px] text-emerald-400 mt-1">
+                  ✓ All enrolled students in this tuition will automatically receive this assessment.
+                </span>
+              </div>
             )}
           </div>
 
@@ -657,7 +699,7 @@ export default function ExamAuthoringModal({
                           <div
                             key={optIdx}
                             className={`flex items-center gap-2 p-1.5 rounded-lg border transition ${
-                              q.correct_answer === optIdx
+                              (q.correct_answer === optIdx || (typeof q.correct_answer === 'string' && q.correct_answer.toUpperCase() === letter))
                                 ? 'bg-emerald-950/40 border-emerald-500/60 text-emerald-300'
                                 : 'bg-slate-900/60 border-slate-700/60 text-slate-300'
                             }`}
@@ -666,7 +708,7 @@ export default function ExamAuthoringModal({
                               <input
                                 type="radio"
                                 name={`correct-${qIdx}`}
-                                checked={q.correct_answer === optIdx}
+                                checked={q.correct_answer === optIdx || (typeof q.correct_answer === 'string' && q.correct_answer.toUpperCase() === letter)}
                                 onChange={() => handleUpdateMCQ(qIdx, 'correct_answer', optIdx)}
                                 className="accent-emerald-500"
                               />

@@ -170,9 +170,21 @@ class AttendanceCycle(models.Model):
     id = models.UUIDField(
         primary_key=True, default=uuid.uuid4, editable=False
     )
+    tutor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='tuition_cycles',
+        limit_choices_to={'role': 'TUTOR'},
+        db_index=True,
+        verbose_name='Tutor',
+    )
     enrollment = models.ForeignKey(
         'students.TuitionEnrollment',
-        on_delete=models.CASCADE,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
         related_name='cycles',
         verbose_name='Tuition Enrollment'
     )
@@ -180,6 +192,20 @@ class AttendanceCycle(models.Model):
         default=1,
         verbose_name='Cycle Number',
         help_text='Auto-incremented on each reset. Cycle #1 is the first.'
+    )
+    fee_snapshot = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=0.00,
+        validators=[MinValueValidator(0)],
+        verbose_name='Fee Snapshot',
+        help_text='Copy of tuition_fee at the time this cycle was created.'
+    )
+    total_classes = models.PositiveIntegerField(
+        default=12,
+        validators=[MinValueValidator(1)],
+        verbose_name='Total Classes',
+        help_text='Copy of cycle_length at the time this cycle was created.'
     )
     classes_data = models.JSONField(
         default=list,
@@ -200,9 +226,35 @@ class AttendanceCycle(models.Model):
         verbose_name = 'Attendance Cycle'
         verbose_name_plural = 'Attendance Cycles'
         ordering = ['enrollment', '-cycle_number']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['enrollment'],
+                condition=models.Q(status='ACTIVE'),
+                name='unique_active_attendance_cycle_per_enrollment'
+            )
+        ]
 
     def __str__(self):
-        return f'{self.enrollment} — Cycle #{self.cycle_number} ({self.status})'
+        return f'{self.enrollment or "Archived"} — Cycle #{self.cycle_number} ({self.status})'
+
+    def save(self, *args, **kwargs):
+        # Snapshot only on creation so later Tuition fee edits never rewrite history.
+        if self._state.adding and self.enrollment_id:
+            try:
+                tuition = self.enrollment.tuition
+            except Exception:
+                tuition = None
+            if tuition is not None:
+                if self.tutor_id is None:
+                    self.tutor = tuition.tutor
+                # fee_snapshot default 0.00 means "unset" -> snapshot live fee
+                if self.fee_snapshot is None or float(self.fee_snapshot) == 0.0:
+                    self.fee_snapshot = tuition.tuition_fee
+                # total_classes default is 12; snapshot live length on creation
+                # (explicit values passed by callers are already set before save)
+                if not kwargs.get('update_fields'):
+                    self.total_classes = tuition.cycle_length
+        super().save(*args, **kwargs)
 
     @property
     def completed_classes(self):
@@ -210,26 +262,40 @@ class AttendanceCycle(models.Model):
         return sum(1 for c in self.classes_data if c.get('completed', False))
 
     @property
-    def total_classes(self):
-        return self.enrollment.tuition.cycle_length
-
-    @property
     def tuition_fee(self):
-        return self.enrollment.tuition.tuition_fee
+        if self.fee_snapshot is not None and float(self.fee_snapshot) > 0:
+            return self.fee_snapshot
+        if self.enrollment_id and getattr(self, 'enrollment', None) and getattr(self.enrollment, 'tuition', None):
+            return self.enrollment.tuition.tuition_fee
+        return self.fee_snapshot or 0.00
 
     @property
     def per_class_rate(self):
+        from decimal import Decimal
         if not self.total_classes:
             return 0.00
-        return round(float(self.tuition_fee) / self.total_classes, 2)
+        return float(round(Decimal(str(self.tuition_fee)) / self.total_classes, 2))
 
     @property
     def earned_revenue(self):
-        return round(self.per_class_rate * self.completed_classes, 2)
+        from decimal import Decimal
+        if not self.total_classes:
+            return 0.00
+        fee = Decimal(str(self.tuition_fee))
+        if self.completed_classes >= self.total_classes:
+            return float(fee)
+        return float(round((fee * self.completed_classes) / self.total_classes, 2))
 
     @property
     def pending_balance(self):
-        return round(float(self.tuition_fee) - self.earned_revenue, 2)
+        from decimal import Decimal
+        if not self.total_classes:
+            return 0.00
+        fee = Decimal(str(self.tuition_fee))
+        earned = Decimal(str(self.earned_revenue))
+        if self.completed_classes >= self.total_classes:
+            return 0.00
+        return float(round(fee - earned, 2))
 
     @property
     def progress_percent(self):
@@ -238,11 +304,20 @@ class AttendanceCycle(models.Model):
         return min(100, round((self.completed_classes / self.total_classes) * 100))
 
     @property
+    def progress_percentage(self):
+        return self.progress_percent
+
+    @property
     def is_complete(self):
         return self.completed_classes >= self.total_classes
 
     @classmethod
     def build_fresh_classes_data(cls, total_classes: int) -> list:
+        total_classes = int(total_classes or 0)
+        if total_classes < 1:
+            raise ValueError('total_classes must be >= 1')
+        if total_classes > 500:
+            raise ValueError('total_classes exceeds maximum of 500')
         return [
             {"class_no": i, "completed": False, "date": None, "topic": ""}
             for i in range(1, total_classes + 1)

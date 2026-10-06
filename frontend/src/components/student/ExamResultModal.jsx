@@ -28,10 +28,12 @@ export default function ExamResultModal({
 
   const { submission } = exam;
   const isGraded = submission.is_graded;
-  const obtained = submission.obtained_marks !== null ? parseFloat(submission.obtained_marks) : null;
+  const obtained = submission.obtained_marks != null ? parseFloat(submission.obtained_marks) : null;
   const total = parseFloat(exam.total_marks);
-  const percentage = obtained !== null && total > 0 ? Math.round((obtained / total) * 100) : 0;
+  const percentage = !total || Number.isNaN(total) || obtained === null || Number.isNaN(obtained) ? 0 : Math.round((obtained / total) * 100);
 
+  const solutionUrl = exam.solution_media_url || '';
+  const isSafeSolutionUrl = solutionUrl && !/^\s*(javascript:|data:text\/html)/i.test(solutionUrl);
   const hasMCQs = Array.isArray(exam.mcq_data) && exam.mcq_data.length > 0;
   const LETTER_MAP = ['A', 'B', 'C', 'D'];
 
@@ -120,7 +122,8 @@ export default function ExamResultModal({
               <div className="space-y-3 max-h-[360px] overflow-y-auto pr-1">
                 {exam.mcq_data.map((q, idx) => {
                   const qKey = q.id || `mcq-${idx}`;
-                  const studentChoice = submission.answers_data?.[qKey] ?? submission.answers_data?.[`mcq_${idx}`];
+                  const answers = submission.answers_data || {};
+                  const studentChoice = answers[q.id] ?? answers[`mcq-${idx}`] ?? answers[`mcq_${idx}`] ?? answers[String(idx)] ?? answers[idx];
                   const hasAnswered = studentChoice !== undefined && studentChoice !== null && studentChoice !== '';
 
                   // Normalize indices and letters
@@ -170,6 +173,7 @@ export default function ExamResultModal({
                         {(q.options || []).map((opt, optIdx) => {
                           const isStudentSelected =
                             String(studentChoice) === String(optIdx) ||
+                            Number(studentChoice) === optIdx ||
                             String(studentChoice).toUpperCase() === LETTER_MAP[optIdx];
                           const isCorrectOption =
                             String(correctVal) === String(optIdx) ||
@@ -224,7 +228,7 @@ export default function ExamResultModal({
           )}
 
           {/* Official Model Solution / Derivations */}
-          {(exam.solution_html || exam.solution_media_url) && (
+          {(exam.solution_html || isSafeSolutionUrl) && (
             <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 space-y-3">
               <h4 className="text-xs font-bold text-indigo-300 uppercase tracking-wider flex items-center gap-2">
                 <BookOpen className="w-4 h-4 text-indigo-400" />
@@ -237,10 +241,10 @@ export default function ExamResultModal({
                 </div>
               )}
 
-              {exam.solution_media_url && (
+              {isSafeSolutionUrl && (
                 <div className="pt-2">
                   <a
-                    href={exam.solution_media_url}
+                    href={solutionUrl}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 text-xs font-semibold transition"

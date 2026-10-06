@@ -13,6 +13,11 @@ import {
 } from 'lucide-react';
 import Modal from '../common/Modal';
 
+const toLocalDateString = (d = new Date()) => {
+  const dt = d instanceof Date ? d : new Date(d);
+  return dt.getFullYear() + '-' + String(dt.getMonth() + 1).padStart(2, '0') + '-' + String(dt.getDate()).padStart(2, '0');
+};
+
 export default function CycleGrid({
   cycle,
   studentName,
@@ -28,7 +33,7 @@ export default function CycleGrid({
   // Class Attendance Date Picker Modal
   const [dateModalOpen, setDateModalOpen] = useState(false);
   const [selectedClass, setSelectedClass] = useState(null);
-  const [classDate, setClassDate] = useState(new Date().toISOString().slice(0, 10));
+  const [classDate, setClassDate] = useState(toLocalDateString(new Date()));
   const [classTopic, setClassTopic] = useState('');
   const [isCompletedState, setIsCompletedState] = useState(true);
   const [savingClass, setSavingClass] = useState(false);
@@ -72,9 +77,9 @@ export default function CycleGrid({
     // Always default to Completed (true) on open so calendar date picker is immediately visible and ready to save
     setIsCompletedState(true);
     if (cls.date) {
-      setClassDate(new Date(cls.date).toISOString().slice(0, 10));
+      setClassDate(toLocalDateString(new Date(cls.date)));
     } else {
-      setClassDate(new Date().toISOString().slice(0, 10));
+      setClassDate(toLocalDateString(new Date()));
     }
     setClassTopic(cls.topic || '');
     setDateModalOpen(true);
@@ -228,7 +233,7 @@ export default function CycleGrid({
             Click any box to set attendance date and topic:
           </span>
           <span className="font-mono text-slate-300">
-            Snapshot Rate: <strong className="text-emerald-400">৳{Math.round(fee_snapshot / total_classes)}</strong> / class
+            Snapshot Rate: <strong className="text-emerald-400">৳{!total_classes ? 0 : Math.round(fee_snapshot / total_classes)}</strong> / class
           </span>
         </div>
 
@@ -344,7 +349,7 @@ export default function CycleGrid({
                     <div className="flex items-center gap-1">
                       <button
                         type="button"
-                        onClick={() => setClassDate(new Date().toISOString().slice(0, 10))}
+                        onClick={() => setClassDate(toLocalDateString(new Date()))}
                         className="text-[10px] px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-indigo-300 border border-slate-700 transition"
                       >
                         Today
@@ -354,7 +359,7 @@ export default function CycleGrid({
                         onClick={() => {
                           const y = new Date();
                           y.setDate(y.getDate() - 1);
-                          setClassDate(y.toISOString().slice(0, 10));
+                          setClassDate(toLocalDateString(y));
                         }}
                         className="text-[10px] px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition"
                       >

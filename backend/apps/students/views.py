@@ -15,6 +15,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated
 from django.contrib.auth import get_user_model
+from django.db.models import Q
 from django.shortcuts import get_object_or_404
 
 from apps.authentication.permissions import IsTutor
@@ -89,6 +90,14 @@ class StudentDetailView(generics.RetrieveUpdateDestroyAPIView):
         student = self.get_object()
         student.is_active = False
         student.save(update_fields=['is_active'])
+
+        from apps.students.models import TuitionEnrollment
+        from apps.cycles.models import AttendanceCycle
+        TuitionEnrollment.objects.filter(student=student).update(is_active=False)
+        AttendanceCycle.objects.filter(enrollment__student=student, status=AttendanceCycle.Status.ACTIVE).update(
+            status=AttendanceCycle.Status.ARCHIVED
+        )
+
         return Response(
             {'message': f'Student "{student.get_full_name() or student.username}" has been deactivated.'},
             status=status.HTTP_200_OK
@@ -112,6 +121,16 @@ class StudentToggleActiveView(APIView):
         student.is_active = not student.is_active
         student.save(update_fields=['is_active'])
 
+        from apps.students.models import TuitionEnrollment
+        from apps.cycles.models import AttendanceCycle
+        if not student.is_active:
+            TuitionEnrollment.objects.filter(student=student).update(is_active=False)
+            AttendanceCycle.objects.filter(enrollment__student=student, status=AttendanceCycle.Status.ACTIVE).update(
+                status=AttendanceCycle.Status.ARCHIVED
+            )
+        else:
+            TuitionEnrollment.objects.filter(student=student).update(is_active=True)
+
         action_taken = 'activated' if student.is_active else 'deactivated'
         return Response(
             {
@@ -128,8 +147,13 @@ class TuitionBatchViewSet(generics.ListCreateAPIView, viewsets.GenericViewSet):
     - Tutors can create, list, view, update, and manage student enrollments.
     - Students can list batches they are enrolled in and view weekly routines.
     """
-    from apps.authentication.permissions import IsTutorOrStudent
+    from apps.authentication.permissions import IsTutorOrStudent, IsTutor
     permission_classes = [IsAuthenticated, IsTutorOrStudent]
+
+    def get_permissions(self):
+        if self.action in ['create', 'update', 'partial_update', 'destroy', 'add_student', 'remove_student']:
+            return [IsAuthenticated(), IsTutor()]
+        return [IsAuthenticated(), IsTutorOrStudent()]
 
     def get_queryset(self):
         from .models import TuitionBatch
@@ -145,6 +169,11 @@ class TuitionBatchViewSet(generics.ListCreateAPIView, viewsets.GenericViewSet):
         if self.request.method in ['POST', 'PUT', 'PATCH']:
             return TuitionBatchCreateUpdateSerializer
         return TuitionBatchSerializer
+
+    def create(self, request, *args, **kwargs):
+        if request.user.role != 'TUTOR':
+            return Response({'error': 'Only tutors can create batches.'}, status=status.HTTP_403_FORBIDDEN)
+        return super().create(request, *args, **kwargs)
 
     def retrieve(self, request, pk=None):
         from .serializers import TuitionBatchSerializer
@@ -173,10 +202,7 @@ class TuitionBatchViewSet(generics.ListCreateAPIView, viewsets.GenericViewSet):
         from .serializers import TuitionBatchSerializer
         batch = get_object_or_404(self.get_queryset(), pk=pk)
         student_id = request.data.get('student_id')
-        student = get_object_or_404(User, id=student_id, role=User.Role.STUDENT)
-        if not student.tutor:
-            student.tutor = request.user
-            student.save(update_fields=['tutor'])
+        student = get_object_or_404(User, id=student_id, role=User.Role.STUDENT, tutor=request.user)
         batch.students.add(student)
         return Response({
             'message': f'Student "{student.get_full_name() or student.username}" added to batch.',
@@ -188,7 +214,7 @@ class TuitionBatchViewSet(generics.ListCreateAPIView, viewsets.GenericViewSet):
         from .serializers import TuitionBatchSerializer
         batch = get_object_or_404(self.get_queryset(), pk=pk)
         student_id = request.data.get('student_id')
-        student = get_object_or_404(User, id=student_id, role=User.Role.STUDENT)
+        student = get_object_or_404(User, id=student_id, role=User.Role.STUDENT, tutor=request.user)
         batch.students.remove(student)
         return Response({
             'message': f'Student "{student.get_full_name() or student.username}" removed from batch.',
@@ -204,9 +230,14 @@ class TuitionViewSet(viewsets.ModelViewSet):
     Tutors can create, list, update, and delete tuitions.
     Students can list all tuitions they are enrolled in.
     """
-    from apps.authentication.permissions import IsTutorOrStudent
+    from apps.authentication.permissions import IsTutorOrStudent, IsTutor
     permission_classes = [IsAuthenticated, IsTutorOrStudent]
     http_method_names = ['get', 'post', 'patch', 'delete', 'head', 'options']
+
+    def get_permissions(self):
+        if self.action in ['create', 'update', 'partial_update', 'destroy', 'enroll', 'unenroll']:
+            return [IsAuthenticated(), IsTutor()]
+        return [IsAuthenticated(), IsTutorOrStudent()]
 
     def get_queryset(self):
         from .models import Tuition
@@ -228,7 +259,41 @@ class TuitionViewSet(viewsets.ModelViewSet):
         context['request'] = self.request
         return context
 
+    def _scoped_student_or_404(self, student_id):
+        """Only students owned by this tutor, or orphans who selected this tutor."""
+        return get_object_or_404(
+            User.objects.filter(
+                Q(tutor=self.request.user)
+                | Q(tutor__isnull=True, selected_tutor=self.request.user)
+            ),
+            id=student_id,
+            role=User.Role.STUDENT,
+        )
+
+    def create(self, request, *args, **kwargs):
+        if request.user.role != 'TUTOR':
+            return Response({'error': 'Only tutors can create tuitions.'}, status=status.HTTP_403_FORBIDDEN)
+        return super().create(request, *args, **kwargs)
+
+    def update(self, request, *args, **kwargs):
+        if request.user.role != 'TUTOR':
+            return Response({'error': 'Only tutors can edit tuitions.'}, status=status.HTTP_403_FORBIDDEN)
+        return super().update(request, *args, **kwargs)
+
+    def partial_update(self, request, *args, **kwargs):
+        if request.user.role != 'TUTOR':
+            return Response({'error': 'Only tutors can edit tuitions.'}, status=status.HTTP_403_FORBIDDEN)
+        return super().partial_update(request, *args, **kwargs)
+
+    def destroy(self, request, *args, **kwargs):
+        if request.user.role != 'TUTOR':
+            return Response({'error': 'Only tutors can delete tuitions.'}, status=status.HTTP_403_FORBIDDEN)
+        return super().destroy(request, *args, **kwargs)
+
     def perform_create(self, serializer):
+        if self.request.user.role != 'TUTOR':
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied('Only tutors can create tuitions.')
         serializer.save(tutor=self.request.user)
 
     @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated, IsTutor])
@@ -244,23 +309,28 @@ class TuitionViewSet(viewsets.ModelViewSet):
 
         tuition = self.get_object()
         student_id = request.data.get('student_id')
-        student = get_object_or_404(User, id=student_id, role=User.Role.STUDENT)
-
-        # Set tutor relation if missing
-        if not student.tutor:
-            student.tutor = request.user
-            student.save(update_fields=['tutor'])
+        student = self._scoped_student_or_404(student_id)
 
         enrollment, created = TuitionEnrollment.objects.get_or_create(
             tuition=tuition,
             student=student
         )
+        if not enrollment.is_active:
+            enrollment.is_active = True
+            enrollment.save(update_fields=['is_active'])
 
+        # Max cycle_number across ALL cycles (active+archived) avoids duplicate #1
+        from django.db.models import Max
+        max_no = AttendanceCycle.objects.filter(enrollment=enrollment).aggregate(
+            m=Max('cycle_number'))['m'] or 0
         cycle, cycle_created = AttendanceCycle.objects.get_or_create(
             enrollment=enrollment,
             status=AttendanceCycle.Status.ACTIVE,
             defaults={
-                'cycle_number': 1,
+                'tutor': request.user,
+                'fee_snapshot': tuition.tuition_fee,
+                'total_classes': tuition.cycle_length,
+                'cycle_number': max_no + 1,
                 'classes_data': AttendanceCycle.build_fresh_classes_data(tuition.cycle_length),
             }
         )
@@ -274,14 +344,24 @@ class TuitionViewSet(viewsets.ModelViewSet):
     def unenroll(self, request, pk=None):
         """
         POST /api/v1/tuitions/<id>/unenroll/
-        Removes student enrollment from this tuition.
+        Removes student enrollment from this tuition while preserving historical cycle ledger.
         """
         from .serializers import TuitionSerializer
+        from apps.cycles.models import AttendanceCycle
         tuition = self.get_object()
         student_id = request.data.get('student_id')
-        student = get_object_or_404(User, id=student_id, role=User.Role.STUDENT)
+        student = self._scoped_student_or_404(student_id)
 
-        tuition.enrollments.filter(student=student).delete()
+        enrollment = tuition.enrollments.filter(student=student).first()
+        if not enrollment:
+            return Response({'error': 'Student is not enrolled in this tuition.'}, status=status.HTTP_404_NOT_FOUND)
+
+        enrollment.is_active = False
+        enrollment.save(update_fields=['is_active'])
+        AttendanceCycle.objects.filter(enrollment=enrollment, status=AttendanceCycle.Status.ACTIVE).update(
+            status=AttendanceCycle.Status.ARCHIVED
+        )
+
         return Response({
             'message': f'Student "{student.get_full_name() or student.username}" removed from {tuition.title}.',
             'tuition': TuitionSerializer(tuition, context={'request': request}).data
@@ -301,9 +381,10 @@ class UnassignedStudentsView(APIView):
         tutor = request.user
 
         from django.db.models import Q
-        # Prospective or created students under this tutor
+        # Prospective or created students under this tutor (active only)
         prospective = User.objects.filter(
-            role=User.Role.STUDENT
+            role=User.Role.STUDENT,
+            is_active=True,
         ).filter(
             Q(selected_tutor=tutor) | Q(tutor=tutor)
         ).select_related('student_profile')
