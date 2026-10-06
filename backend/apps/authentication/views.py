@@ -10,6 +10,7 @@ from rest_framework_simplejwt.views import TokenObtainPairView
 from .serializers import (
     CustomTokenObtainPairSerializer,
     TutorRegistrationSerializer,
+    StudentSelfRegistrationSerializer,
     UserProfileSerializer,
 )
 
@@ -37,6 +38,30 @@ class TutorRegisterView(generics.CreateAPIView):
                     'username': user.username,
                     'name': user.get_full_name() or user.username,
                     'role': user.role,
+                }
+            },
+            status=status.HTTP_201_CREATED
+        )
+
+
+class StudentRegisterView(generics.CreateAPIView):
+    """Student self-registration endpoint."""
+    serializer_class = StudentSelfRegistrationSerializer
+    permission_classes = [AllowAny]
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = serializer.save()
+        return Response(
+            {
+                'message': 'Student account created successfully.',
+                'user': {
+                    'id': str(user.id),
+                    'username': user.username,
+                    'name': user.get_full_name() or user.username,
+                    'role': user.role,
+                    'tutor_id': str(user.tutor_id) if user.tutor_id else None,
                 }
             },
             status=status.HTTP_201_CREATED

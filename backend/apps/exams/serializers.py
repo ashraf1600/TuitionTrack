@@ -2,10 +2,10 @@
 Exams App Serializers
 
 Handles serialization for:
-  - Exam list, create, update, detail with dynamic status
+  - Exam list, create, update, detail with dynamic status, batch assignment, and MCQs
   - Student exam submission payload & validation
-  - Tutor grading payload & validation
-  - Media upload response
+  - Auto-grading & tutor grading payload & validation
+  - Leaderboard generation for tuition batch / student rankings
 """
 from rest_framework import serializers
 from django.utils import timezone
@@ -32,6 +32,8 @@ class ExamSubmissionSerializer(serializers.ModelSerializer):
             'answers_data',
             'image_urls',
             'status',
+            'mcq_score',
+            'cq_score',
             'obtained_marks',
             'tutor_feedback',
             'is_graded',
@@ -45,6 +47,8 @@ class ExamSubmissionSerializer(serializers.ModelSerializer):
             'student_name',
             'submitted_at',
             'status',
+            'mcq_score',
+            'cq_score',
             'obtained_marks',
             'tutor_feedback',
             'is_graded',
@@ -61,25 +65,32 @@ class ExamListSerializer(serializers.ModelSerializer):
     """Serializer for GET /api/v1/exams/ (list view)."""
     tutor_name = serializers.SerializerMethodField()
     student_name = serializers.SerializerMethodField()
+    batch_name = serializers.SerializerMethodField()
     dynamic_status = serializers.SerializerMethodField()
     has_submission = serializers.SerializerMethodField()
     submission_id = serializers.SerializerMethodField()
+    mcq_count = serializers.SerializerMethodField()
 
     class Meta:
         model = Exam
         fields = [
             'id',
             'title',
+            'exam_type',
             'tutor',
             'tutor_name',
             'student',
             'student_name',
+            'batch',
+            'batch_name',
             'total_marks',
             'start_time',
             'end_time',
             'duration_minutes',
             'grace_period_minutes',
             'is_published',
+            'is_results_published',
+            'mcq_count',
             'dynamic_status',
             'has_submission',
             'submission_id',
@@ -91,15 +102,24 @@ class ExamListSerializer(serializers.ModelSerializer):
         return obj.tutor.get_full_name() or obj.tutor.username
 
     def get_student_name(self, obj):
-        return obj.student.get_full_name() or obj.student.username
+        if obj.student:
+            return obj.student.get_full_name() or obj.student.username
+        if obj.batch:
+            return f'Batch: {obj.batch.name}'
+        return 'Unassigned'
+
+    def get_batch_name(self, obj):
+        return obj.batch.name if obj.batch else None
+
+    def get_mcq_count(self, obj):
+        return len(obj.mcq_data) if isinstance(obj.mcq_data, list) else 0
 
     def _get_submission(self, obj):
-        # Cache submission on obj to avoid duplicate queries
         if not hasattr(obj, '_cached_submission'):
             request = self.context.get('request')
             if request and request.user.role == 'STUDENT':
                 obj._cached_submission = obj.submissions.filter(student=request.user).first()
-            elif request and request.user.role == 'TUTOR':
+            elif request and request.user.role == 'TUTOR' and obj.student:
                 obj._cached_submission = obj.submissions.filter(student=obj.student).first()
             else:
                 obj._cached_submission = obj.submissions.first()
@@ -121,49 +141,56 @@ class ExamDetailSerializer(serializers.ModelSerializer):
     """Serializer for GET /api/v1/exams/<id>/ (detail view)."""
     tutor_name = serializers.SerializerMethodField()
     student_name = serializers.SerializerMethodField()
+    batch_name = serializers.SerializerMethodField()
     dynamic_status = serializers.SerializerMethodField()
     submission = serializers.SerializerMethodField()
     can_submit = serializers.SerializerMethodField()
+    mcq_data = serializers.SerializerMethodField()
+    solution_html = serializers.SerializerMethodField()
 
     class Meta:
         model = Exam
         fields = [
             'id',
             'title',
+            'exam_type',
             'content_html',
+            'mcq_data',
+            'solution_html',
+            'solution_media_url',
             'tutor',
             'tutor_name',
             'student',
             'student_name',
+            'batch',
+            'batch_name',
             'total_marks',
             'start_time',
             'end_time',
             'duration_minutes',
             'grace_period_minutes',
             'is_published',
+            'is_results_published',
             'dynamic_status',
             'can_submit',
             'submission',
             'created_at',
             'updated_at',
         ]
-        read_only_fields = [
-            'id',
-            'tutor',
-            'tutor_name',
-            'student_name',
-            'dynamic_status',
-            'can_submit',
-            'submission',
-            'created_at',
-            'updated_at',
-        ]
+        read_only_fields = fields
 
     def get_tutor_name(self, obj):
         return obj.tutor.get_full_name() or obj.tutor.username
 
     def get_student_name(self, obj):
-        return obj.student.get_full_name() or obj.student.username
+        if obj.student:
+            return obj.student.get_full_name() or obj.student.username
+        if obj.batch:
+            return f'Batch: {obj.batch.name}'
+        return 'Unassigned'
+
+    def get_batch_name(self, obj):
+        return obj.batch.name if obj.batch else None
 
     def _get_submission(self, obj):
         if not hasattr(obj, '_cached_submission'):
@@ -193,32 +220,76 @@ class ExamDetailSerializer(serializers.ModelSerializer):
             return False
         return obj.can_submit()
 
+    def get_mcq_data(self, obj):
+        """
+        Hide answers and explanations for students if they haven't submitted
+        or if results are not yet published.
+        """
+        request = self.context.get('request')
+        questions = obj.mcq_data or []
+        if not request:
+            return questions
+
+        sub = self._get_submission(obj)
+        # If student hasn't submitted yet, hide correct answer
+        if request.user.role == 'STUDENT' and not sub:
+            sanitized_q = []
+            for q in questions:
+                q_copy = dict(q)
+                q_copy.pop('correct_answer', None)
+                q_copy.pop('explanation', None)
+                sanitized_q.append(q_copy)
+            return sanitized_q
+
+        return questions
+
+    def get_solution_html(self, obj):
+        """Show solutions only after submission or to tutors."""
+        request = self.context.get('request')
+        if not request or request.user.role == 'TUTOR':
+            return obj.solution_html
+        sub = self._get_submission(obj)
+        if sub and obj.is_results_published:
+            return obj.solution_html
+        return ''
+
 
 class ExamCreateUpdateSerializer(serializers.ModelSerializer):
     """
     Serializer for creating and editing exams by tutors.
-    Automatically applies nh3 sanitization to content_html.
+    Supports either student_id (1-on-1) or batch_id (Tuition batch).
     """
-    student_id = serializers.UUIDField(write_only=True)
+    student_id = serializers.UUIDField(required=False, allow_null=True, write_only=True)
+    batch_id = serializers.UUIDField(required=False, allow_null=True, write_only=True)
 
     class Meta:
         model = Exam
         fields = [
             'id',
             'title',
+            'exam_type',
             'student_id',
+            'batch_id',
             'content_html',
+            'mcq_data',
+            'solution_html',
+            'solution_media_url',
             'total_marks',
             'start_time',
             'end_time',
             'duration_minutes',
             'grace_period_minutes',
             'is_published',
+            'is_results_published',
         ]
         read_only_fields = ['id']
 
     def validate_content_html(self, value):
-        """Sanitize rich-text content to eliminate any stored XSS."""
+        if not value:
+            return ''
+        return sanitize_exam_html(value)
+
+    def validate_solution_html(self, value):
         if not value:
             return ''
         return sanitize_exam_html(value)
@@ -230,15 +301,24 @@ class ExamCreateUpdateSerializer(serializers.ModelSerializer):
         if start and end and end <= start:
             raise serializers.ValidationError({'end_time': 'End time must be strictly after start time.'})
 
-        # Validate student belongs to the tutor
         request = self.context.get('request')
-        if request and 'student_id' in attrs:
-            student_id = attrs['student_id']
+        from apps.students.models import TuitionBatch
+
+        student_id = attrs.pop('student_id', None)
+        batch_id = attrs.pop('batch_id', None)
+
+        if student_id:
             try:
-                student = User.objects.get(id=student_id, role='STUDENT', tutor=request.user)
-                attrs['student'] = student
+                attrs['student'] = User.objects.get(id=student_id, role=User.Role.STUDENT)
             except User.DoesNotExist:
-                raise serializers.ValidationError({'student_id': 'Student not found or does not belong to you.'})
+                raise serializers.ValidationError({'student_id': 'Selected student does not exist.'})
+        elif batch_id:
+            try:
+                attrs['batch'] = TuitionBatch.objects.get(id=batch_id, tutor=request.user)
+            except TuitionBatch.DoesNotExist:
+                raise serializers.ValidationError({'batch_id': 'Selected tuition batch does not exist.'})
+        elif not self.instance:
+            raise serializers.ValidationError('You must assign the exam to either a Student or a Tuition Batch.')
 
         return attrs
 
@@ -255,13 +335,29 @@ class SubmitExamSerializer(serializers.Serializer):
 
 class GradeSubmissionSerializer(serializers.Serializer):
     """Validates payload for tutor grading."""
-    obtained_marks = serializers.DecimalField(max_digits=6, decimal_places=2, min_value=0)
+    obtained_marks = serializers.DecimalField(max_digits=6, decimal_places=2, required=False, min_value=0)
+    cq_score = serializers.DecimalField(max_digits=6, decimal_places=2, required=False, min_value=0)
     tutor_feedback = serializers.CharField(required=False, allow_blank=True, default='')
 
-    def validate_obtained_marks(self, value):
+    def validate(self, attrs):
         submission = self.context.get('submission')
-        if submission and value > submission.exam.total_marks:
+        marks = attrs.get('obtained_marks')
+        if marks is not None and submission and marks > submission.exam.total_marks:
             raise serializers.ValidationError(
-                f'Obtained marks ({value}) cannot exceed exam total marks ({submission.exam.total_marks}).'
+                f'Obtained marks ({marks}) cannot exceed exam total marks ({submission.exam.total_marks}).'
             )
-        return value
+        return attrs
+
+
+class LeaderboardEntrySerializer(serializers.Serializer):
+    rank = serializers.IntegerField()
+    student_id = serializers.UUIDField()
+    student_name = serializers.CharField()
+    obtained_marks = serializers.FloatField()
+    total_marks = serializers.FloatField()
+    percentage = serializers.FloatField()
+    mcq_score = serializers.FloatField()
+    cq_score = serializers.FloatField(allow_null=True)
+    status = serializers.CharField()
+    submitted_at = serializers.DateTimeField()
+    is_graded = serializers.BooleanField()

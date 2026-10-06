@@ -60,3 +60,56 @@ class StudentProfile(models.Model):
 
     def __str__(self):
         return f'{self.user.get_full_name() or self.user.username} — Profile'
+
+
+class TuitionBatch(models.Model):
+    """
+    Represents a tuition group / batch created by a tutor.
+    Can contain single or multiple students with a recurring weekly routine.
+    """
+    id = models.UUIDField(
+        primary_key=True, default=uuid.uuid4, editable=False
+    )
+    tutor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='tuition_batches',
+        limit_choices_to={'role': 'TUTOR'},
+        db_index=True,
+        verbose_name='Tutor',
+    )
+    name = models.CharField(max_length=255, verbose_name='Tuition / Batch Name')
+    subject = models.CharField(max_length=150, blank=True, verbose_name='Subject')
+    description = models.TextField(blank=True, verbose_name='Description')
+    students = models.ManyToManyField(
+        settings.AUTH_USER_MODEL,
+        related_name='enrolled_batches',
+        limit_choices_to={'role': 'STUDENT'},
+        blank=True,
+        verbose_name='Enrolled Students',
+    )
+    # Weekly Routine: [{"day": "Sunday", "time": "18:00"}, {"day": "Tuesday", "time": "18:00"}]
+    weekly_routine = models.JSONField(
+        default=list,
+        verbose_name='Weekly Routine',
+        help_text='JSON array of schedule slots: [{"day": "Sunday", "time": "18:00"}]',
+    )
+    monthly_fee = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=0.00,
+        validators=[MinValueValidator(0)],
+        verbose_name='Monthly Fee per Student',
+    )
+    is_active = models.BooleanField(default=True, verbose_name='Is Active')
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'Tuition Batch'
+        verbose_name_plural = 'Tuition Batches'
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'{self.name} ({self.subject}) — Tutor: {self.tutor.username}'

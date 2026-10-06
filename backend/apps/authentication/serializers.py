@@ -62,6 +62,82 @@ class TutorRegistrationSerializer(serializers.ModelSerializer):
         return user
 
 
+class StudentSelfRegistrationSerializer(serializers.Serializer):
+    """Handles student self-registration with profile info and optional tutor linking."""
+    username = serializers.CharField(max_length=150)
+    password = serializers.CharField(write_only=True, min_length=6)
+    password_confirm = serializers.CharField(write_only=True)
+    first_name = serializers.CharField(max_length=150)
+    last_name = serializers.CharField(max_length=150, required=False, default='')
+    email = serializers.EmailField(required=False, allow_blank=True, default='')
+    phone = serializers.CharField(max_length=20, required=False, allow_blank=True, default='')
+
+    grade_level = serializers.CharField(max_length=50, required=False, allow_blank=True, default='')
+    institution = serializers.CharField(max_length=150, required=False, allow_blank=True, default='')
+    parent_name = serializers.CharField(max_length=100, required=False, allow_blank=True, default='')
+    parent_phone = serializers.CharField(max_length=20, required=False, allow_blank=True, default='')
+    tutor_username = serializers.CharField(required=False, allow_blank=True, default='')
+
+    def validate_username(self, value):
+        if User.objects.filter(username=value).exists():
+            raise serializers.ValidationError('A user with this username already exists.')
+        return value
+
+    def validate(self, attrs):
+        if attrs['password'] != attrs.pop('password_confirm'):
+            raise serializers.ValidationError({'password_confirm': 'Passwords do not match.'})
+        return attrs
+
+    def create(self, validated_data):
+        from apps.students.models import StudentProfile
+        from apps.cycles.models import Cycle
+
+        tutor_username = validated_data.pop('tutor_username', '').strip()
+        tutor = None
+        if tutor_username:
+            tutor = User.objects.filter(username=tutor_username, role=User.Role.TUTOR).first()
+
+        password = validated_data.pop('password')
+        grade_level = validated_data.pop('grade_level', '')
+        institution = validated_data.pop('institution', '')
+        parent_name = validated_data.pop('parent_name', '')
+        parent_phone = validated_data.pop('parent_phone', '')
+
+        user = User.objects.create_user(
+            username=validated_data['username'],
+            password=password,
+            first_name=validated_data['first_name'],
+            last_name=validated_data.get('last_name', ''),
+            email=validated_data.get('email', ''),
+            phone=validated_data.get('phone', ''),
+            role=User.Role.STUDENT,
+            tutor=tutor,
+        )
+
+        profile = StudentProfile.objects.create(
+            user=user,
+            grade_level=grade_level,
+            institution=institution,
+            parent_name=parent_name,
+            parent_phone=parent_phone,
+            tuition_fee=0.00,
+            cycle_length=12,
+        )
+
+        if tutor:
+            Cycle.objects.create(
+                tutor=tutor,
+                student=user,
+                cycle_number=1,
+                fee_snapshot=profile.tuition_fee,
+                total_classes=profile.cycle_length,
+                classes_data=Cycle.build_fresh_classes_data(profile.cycle_length),
+                status=Cycle.Status.ACTIVE,
+            )
+
+        return user
+
+
 class UserProfileSerializer(serializers.ModelSerializer):
     """Read-only profile serializer for /auth/me/"""
     class Meta:

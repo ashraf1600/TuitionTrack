@@ -9,7 +9,7 @@ Endpoints:
   DELETE /api/v1/students/<id>/      — Tutor deactivates student (soft delete)
   POST   /api/v1/students/<id>/toggle_active/ — Reactivate/deactivate student
 """
-from rest_framework import generics, status
+from rest_framework import generics, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -120,3 +120,78 @@ class StudentToggleActiveView(APIView):
             },
             status=status.HTTP_200_OK
         )
+
+
+class TuitionBatchViewSet(generics.ListCreateAPIView, viewsets.GenericViewSet):
+    """
+    ViewSet for TuitionBatches (Tuitions).
+    - Tutors can create, list, view, update, and manage student enrollments.
+    - Students can list batches they are enrolled in and view weekly routines.
+    """
+    from apps.authentication.permissions import IsTutorOrStudent
+    permission_classes = [IsAuthenticated, IsTutorOrStudent]
+
+    def get_queryset(self):
+        from .models import TuitionBatch
+        user = self.request.user
+        if user.role == 'TUTOR':
+            return TuitionBatch.objects.filter(tutor=user).prefetch_related('students')
+        elif user.role == 'STUDENT':
+            return TuitionBatch.objects.filter(students=user, is_active=True).prefetch_related('students')
+        return TuitionBatch.objects.none()
+
+    def get_serializer_class(self):
+        from .serializers import TuitionBatchSerializer, TuitionBatchCreateUpdateSerializer
+        if self.request.method in ['POST', 'PUT', 'PATCH']:
+            return TuitionBatchCreateUpdateSerializer
+        return TuitionBatchSerializer
+
+    def retrieve(self, request, pk=None):
+        from .serializers import TuitionBatchSerializer
+        batch = get_object_or_404(self.get_queryset(), pk=pk)
+        return Response(TuitionBatchSerializer(batch).data)
+
+    def partial_update(self, request, pk=None):
+        from .serializers import TuitionBatchSerializer, TuitionBatchCreateUpdateSerializer
+        batch = get_object_or_404(self.get_queryset(), pk=pk)
+        if request.user.role != 'TUTOR':
+            return Response({'error': 'Only tutors can edit batches.'}, status=status.HTTP_403_FORBIDDEN)
+        serializer = TuitionBatchCreateUpdateSerializer(batch, data=request.data, partial=True, context={'request': request})
+        serializer.is_valid(raise_exception=True)
+        updated_batch = serializer.save()
+        return Response(TuitionBatchSerializer(updated_batch).data)
+
+    def destroy(self, request, pk=None):
+        batch = get_object_or_404(self.get_queryset(), pk=pk)
+        if request.user.role != 'TUTOR':
+            return Response({'error': 'Only tutors can delete batches.'}, status=status.HTTP_403_FORBIDDEN)
+        batch.delete()
+        return Response({'message': 'Tuition batch deleted.'}, status=status.HTTP_204_NO_CONTENT)
+
+    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated, IsTutor])
+    def add_student(self, request, pk=None):
+        from .serializers import TuitionBatchSerializer
+        batch = get_object_or_404(self.get_queryset(), pk=pk)
+        student_id = request.data.get('student_id')
+        student = get_object_or_404(User, id=student_id, role=User.Role.STUDENT)
+        if not student.tutor:
+            student.tutor = request.user
+            student.save(update_fields=['tutor'])
+        batch.students.add(student)
+        return Response({
+            'message': f'Student "{student.get_full_name() or student.username}" added to batch.',
+            'batch': TuitionBatchSerializer(batch).data
+        })
+
+    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated, IsTutor])
+    def remove_student(self, request, pk=None):
+        from .serializers import TuitionBatchSerializer
+        batch = get_object_or_404(self.get_queryset(), pk=pk)
+        student_id = request.data.get('student_id')
+        student = get_object_or_404(User, id=student_id, role=User.Role.STUDENT)
+        batch.students.remove(student)
+        return Response({
+            'message': f'Student "{student.get_full_name() or student.username}" removed from batch.',
+            'batch': TuitionBatchSerializer(batch).data
+        })
+

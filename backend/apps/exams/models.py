@@ -30,26 +30,77 @@ class Exam(models.Model):
         db_index=True,
         verbose_name='Tutor',
     )
+    # Target can be a single Student or an entire TuitionBatch
     student = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
         related_name='assigned_exams',
         limit_choices_to={'role': 'STUDENT'},
+        null=True,
+        blank=True,
         db_index=True,
-        verbose_name='Student',
+        verbose_name='Student (1-on-1)',
+        help_text='Set if this exam is assigned to a specific individual student.',
+    )
+    batch = models.ForeignKey(
+        'students.TuitionBatch',
+        on_delete=models.CASCADE,
+        related_name='batch_exams',
+        null=True,
+        blank=True,
+        db_index=True,
+        verbose_name='Tuition Batch',
+        help_text='Set if this exam is assigned to all students in a tuition batch.',
+    )
+
+    class ExamType(models.TextChoices):
+        HYBRID = 'HYBRID', 'Hybrid (MCQ + CQ)'
+        MCQ = 'MCQ', 'MCQ Only'
+        CQ = 'CQ', 'CQ Only'
+
+    exam_type = models.CharField(
+        max_length=10,
+        choices=ExamType.choices,
+        default=ExamType.HYBRID,
+        verbose_name='Exam Type',
     )
 
     title = models.CharField(max_length=255, verbose_name='Exam Title')
 
-    # Sanitized rich text from TipTap editor.
-    # Raw HTML is NEVER stored directly — it passes through nh3 sanitizer first.
+    # Sanitized rich text / CQ questions from TipTap editor
     content_html = models.TextField(
-        verbose_name='Exam Content (Sanitized HTML)',
-        help_text=(
-            'Stores sanitized HTML from the TipTap rich-text editor. '
-            'Includes formatted text, tables, and KaTeX math delimiters. '
-            'NEVER stored raw — always sanitized via nh3 before persistence.'
-        )
+        blank=True,
+        default='',
+        verbose_name='Exam Content / CQ Questions (Sanitized HTML)',
+        help_text='Stores sanitized HTML from the TipTap rich-text editor.',
+    )
+
+    # Structured MCQ Questions array
+    # Schema: [{"id": 1, "question": "...", "options": ["A", "B", "C", "D"], "correct_answer": "B", "marks": 1, "explanation": "..."}]
+    mcq_data = models.JSONField(
+        default=list,
+        blank=True,
+        verbose_name='MCQ Questions Data',
+        help_text='List of structured MCQs with 4 options and answers for auto-grading.',
+    )
+
+    # Model solutions & explanations for CQ & MCQ
+    solution_html = models.TextField(
+        blank=True,
+        default='',
+        verbose_name='Model Solution & Answer Keys (Sanitized HTML)',
+        help_text='Detailed solutions, step-by-step derivations and answer explanations.',
+    )
+    solution_media_url = models.CharField(
+        max_length=500,
+        blank=True,
+        default='',
+        verbose_name='Solution Attachment / Image Sheet URL',
+    )
+    is_results_published = models.BooleanField(
+        default=True,
+        verbose_name='Are Results Published',
+        help_text='When enabled, students can view marks, rankings, and solutions.',
     )
 
     total_marks = models.DecimalField(
@@ -202,14 +253,29 @@ class ExamSubmission(models.Model):
         verbose_name='Submission Status',
     )
 
-    # Grading fields (filled by tutor after reviewing submission)
+    # Grading fields
+    mcq_score = models.DecimalField(
+        max_digits=6,
+        decimal_places=2,
+        default=0.00,
+        validators=[MinValueValidator(0)],
+        verbose_name='MCQ Auto Score',
+    )
+    cq_score = models.DecimalField(
+        max_digits=6,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(0)],
+        verbose_name='CQ Awarded Marks',
+    )
     obtained_marks = models.DecimalField(
         max_digits=6,
         decimal_places=2,
         null=True,
         blank=True,
         validators=[MinValueValidator(0)],
-        verbose_name='Obtained Marks',
+        verbose_name='Total Obtained Marks',
     )
     tutor_feedback = models.TextField(
         blank=True,
@@ -245,3 +311,32 @@ class ExamSubmission(models.Model):
     def __str__(self):
         student_name = self.student.get_full_name() or self.student.username
         return f'{self.exam.title} — {student_name} ({self.status})'
+
+    def calculate_mcq_score(self):
+        """
+        Automatically grades student MCQ answers against exam.mcq_data.
+        Computes mcq_score and sets obtained_marks.
+        If MCQ-only, marks is_graded=True immediately.
+        """
+        if not self.exam.mcq_data:
+            return 0.0
+
+        total_mcq = 0.0
+        for q in self.exam.mcq_data:
+            q_id = str(q.get('id', ''))
+            correct = str(q.get('correct_answer', '')).strip().upper()
+            student_ans = str(self.answers_data.get(q_id, '')).strip().upper()
+            q_marks = float(q.get('marks', 1))
+
+            if student_ans and student_ans == correct:
+                total_mcq += q_marks
+
+        self.mcq_score = total_mcq
+        if self.exam.exam_type == Exam.ExamType.MCQ:
+            self.obtained_marks = total_mcq
+            self.is_graded = True
+            self.graded_at = timezone.now()
+        else:
+            cq_val = float(self.cq_score) if self.cq_score is not None else 0.0
+            self.obtained_marks = total_mcq + cq_val
+        return total_mcq

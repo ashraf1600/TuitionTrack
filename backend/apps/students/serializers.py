@@ -176,3 +176,75 @@ class StudentCreateSerializer(serializers.Serializer):
         )
 
         return student_user
+
+
+class TuitionBatchStudentSerializer(serializers.ModelSerializer):
+    student_id = serializers.UUIDField(source='id', read_only=True)
+    full_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = User
+        fields = ['student_id', 'username', 'full_name', 'email', 'phone']
+
+    def get_full_name(self, obj):
+        return obj.get_full_name() or obj.username
+
+
+class TuitionBatchSerializer(serializers.ModelSerializer):
+    tutor_name = serializers.SerializerMethodField()
+    students_detail = TuitionBatchStudentSerializer(source='students', many=True, read_only=True)
+    student_count = serializers.SerializerMethodField()
+
+    class Meta:
+        from .models import TuitionBatch
+        model = TuitionBatch
+        fields = [
+            'id', 'tutor', 'tutor_name', 'name', 'subject', 'description',
+            'students', 'students_detail', 'student_count',
+            'weekly_routine', 'monthly_fee', 'is_active', 'created_at', 'updated_at'
+        ]
+        read_only_fields = ['id', 'tutor', 'tutor_name', 'created_at', 'updated_at']
+
+    def get_tutor_name(self, obj):
+        return obj.tutor.get_full_name() or obj.tutor.username
+
+    def get_student_count(self, obj):
+        return obj.students.count()
+
+
+class TuitionBatchCreateUpdateSerializer(serializers.ModelSerializer):
+    student_ids = serializers.ListField(
+        child=serializers.UUIDField(),
+        required=False,
+        default=list,
+        write_only=True
+    )
+
+    class Meta:
+        from .models import TuitionBatch
+        model = TuitionBatch
+        fields = [
+            'id', 'name', 'subject', 'description', 'student_ids',
+            'weekly_routine', 'monthly_fee', 'is_active'
+        ]
+        read_only_fields = ['id']
+
+    def create(self, validated_data):
+        from .models import TuitionBatch
+        student_ids = validated_data.pop('student_ids', [])
+        tutor = self.context['request'].user
+        batch = TuitionBatch.objects.create(tutor=tutor, **validated_data)
+        if student_ids:
+            students = User.objects.filter(id__in=student_ids, role=User.Role.STUDENT)
+            batch.students.set(students)
+        return batch
+
+    def update(self, instance, validated_data):
+        student_ids = validated_data.pop('student_ids', None)
+        for attr, val in validated_data.items():
+            setattr(instance, attr, val)
+        instance.save()
+        if student_ids is not None:
+            students = User.objects.filter(id__in=student_ids, role=User.Role.STUDENT)
+            instance.students.set(students)
+        return instance
