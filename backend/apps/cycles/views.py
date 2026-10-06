@@ -14,7 +14,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 
-from apps.authentication.permissions import IsTutor
+from apps.authentication.permissions import IsTutor, IsTutorOrStudent
 from apps.authentication.mixins import TenantScopedViewSet
 from .models import Cycle
 from .serializers import CycleSerializer, ToggleClassSerializer
