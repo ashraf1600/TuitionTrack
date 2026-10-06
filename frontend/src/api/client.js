@@ -79,6 +79,7 @@ export const api = {
   // Auth
   login: (credentials) => apiRequest('/auth/token/', { method: 'POST', body: JSON.stringify(credentials) }),
   registerTutor: (data) => apiRequest('/auth/register/', { method: 'POST', body: JSON.stringify(data) }),
+  registerStudent: (data) => apiRequest('/auth/register/student/', { method: 'POST', body: JSON.stringify(data) }),
   getMe: () => apiRequest('/auth/me/'),
 
   // Students
@@ -87,6 +88,21 @@ export const api = {
   getStudentDetail: (id) => apiRequest(`/students/${id}/`),
   updateStudent: (id, data) => apiRequest(`/students/${id}/`, { method: 'PATCH', body: JSON.stringify(data) }),
   toggleStudentActive: (id) => apiRequest(`/students/${id}/toggle_active/`, { method: 'POST' }),
+
+  // Tuition Batches
+  getBatches: () => apiRequest('/batches/'),
+  createBatch: (data) => apiRequest('/batches/', { method: 'POST', body: JSON.stringify(data) }),
+  getBatchDetail: (id) => apiRequest(`/batches/${id}/`),
+  updateBatch: (id, data) => apiRequest(`/batches/${id}/`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deleteBatch: (id) => apiRequest(`/batches/${id}/`, { method: 'DELETE' }),
+  addStudentToBatch: (batchId, studentId) => apiRequest(`/batches/${batchId}/add_student/`, {
+    method: 'POST',
+    body: JSON.stringify({ student_id: studentId }),
+  }),
+  removeStudentFromBatch: (batchId, studentId) => apiRequest(`/batches/${batchId}/remove_student/`, {
+    method: 'POST',
+    body: JSON.stringify({ student_id: studentId }),
+  }),
 
   // Cycles
   getCycles: (studentId) => apiRequest(`/cycles/${studentId ? `?student_id=${studentId}` : ''}`),
@@ -101,7 +117,13 @@ export const api = {
   getWalletAnalytics: () => apiRequest('/analytics/wallet/'),
 
   // Exams
-  getExams: (studentId) => apiRequest(`/exams/${studentId ? `?student_id=${studentId}` : ''}`),
+  getExams: (studentId, batchId) => {
+    const params = new URLSearchParams();
+    if (studentId) params.append('student_id', studentId);
+    if (batchId) params.append('batch_id', batchId);
+    const query = params.toString() ? `?${params.toString()}` : '';
+    return apiRequest(`/exams/${query}`);
+  },
   getExamDetail: (id) => apiRequest(`/exams/${id}/`),
   createExam: (examData) => apiRequest('/exams/', { method: 'POST', body: JSON.stringify(examData) }),
   updateExam: (id, examData) => apiRequest(`/exams/${id}/`, { method: 'PATCH', body: JSON.stringify(examData) }),
@@ -110,6 +132,7 @@ export const api = {
     method: 'POST',
     body: JSON.stringify(submissionData),
   }),
+  getExamLeaderboard: (examId) => apiRequest(`/exams/${examId}/leaderboard/`),
   gradeSubmission: (submissionId, gradeData) => apiRequest(`/submissions/${submissionId}/grade/`, {
     method: 'PATCH',
     body: JSON.stringify(gradeData),

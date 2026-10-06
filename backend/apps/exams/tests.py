@@ -278,3 +278,103 @@ class ExamLifecycleTests(APITestCase):
         bad_file = SimpleUploadedFile('virus.exe', b'bad', content_type='application/x-msdownload')
         resp_bad = self.client.post(upload_url, {'file': bad_file}, format='multipart')
         self.assertEqual(resp_bad.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_tuition_batch_mcq_auto_grading_and_leaderboard(self):
+        from apps.students.models import TuitionBatch
+
+        # Create another student under tutor1
+        student2 = User.objects.create_user(
+            username='exam_student2',
+            password='password123',
+            email='student2@example.com',
+            role=User.Role.STUDENT,
+            tutor=self.tutor1,
+            first_name='Second',
+            last_name='Student'
+        )
+
+        # Create tuition batch
+        batch = TuitionBatch.objects.create(
+            tutor=self.tutor1,
+            name='Physics Batch Alpha',
+            subject='Physics',
+            weekly_routine=[{'day': 'Monday', 'time': '16:00'}, {'day': 'Wednesday', 'time': '16:00'}],
+            monthly_fee=5000.00
+        )
+        batch.students.add(self.student1, student2)
+
+        # Create MCQ Exam for this batch
+        mcqs = [
+            {
+                'id': 'mcq-1',
+                'question': 'What is the SI unit of force?',
+                'options': ['Joule', 'Newton', 'Watt', 'Pascal'],
+                'correct_answer': 1,
+                'explanation': 'Newton is SI unit of force.',
+                'points': 5.0
+            },
+            {
+                'id': 'mcq-2',
+                'question': 'What is the unit of energy?',
+                'options': ['Joule', 'Newton', 'Volt', 'Ampere'],
+                'correct_answer': 0,
+                'explanation': 'Joule is unit of energy.',
+                'points': 5.0
+            }
+        ]
+
+        now = timezone.now()
+        exam = Exam.objects.create(
+            tutor=self.tutor1,
+            batch=batch,
+            title='Mechanics MCQ Assessment',
+            exam_type=Exam.ExamType.MCQ,
+            total_marks=10.00,
+            start_time=now - timedelta(minutes=10),
+            end_time=now + timedelta(minutes=50),
+            grace_period_minutes=5,
+            mcq_data=mcqs,
+            is_published=True,
+            is_results_published=True
+        )
+
+        submit_url = reverse('exam-submit', kwargs={'pk': exam.id})
+
+        # Student 1 gets both correct: score = 10.0
+        self.client.force_authenticate(user=self.student1)
+        resp1 = self.client.post(submit_url, {
+            'answers_data': {'mcq-1': 1, 'mcq-2': 0},
+            'image_urls': []
+        }, format='json')
+        self.assertEqual(resp1.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(resp1.data['submission']['mcq_score'], '10.00')
+
+        # Student 2 gets only 1 correct: score = 5.0
+        self.client.force_authenticate(user=student2)
+        resp2 = self.client.post(submit_url, {
+            'answers_data': {'mcq-1': 1, 'mcq-2': 2},
+            'image_urls': []
+        }, format='json')
+        self.assertEqual(resp2.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(resp2.data['submission']['mcq_score'], '5.00')
+
+        # Fetch Leaderboard
+        leaderboard_url = reverse('exam-leaderboard', kwargs={'pk': exam.id})
+        self.client.force_authenticate(user=self.tutor1)
+        resp_lb = self.client.get(leaderboard_url)
+        self.assertEqual(resp_lb.status_code, status.HTTP_200_OK)
+
+        lb = resp_lb.data['leaderboard']
+        self.assertEqual(len(lb), 2)
+        # Student 1 is Rank 1 with 10.0 marks (100.0%)
+        self.assertEqual(lb[0]['rank'], 1)
+        self.assertEqual(lb[0]['student_name'], self.student1.get_full_name())
+        self.assertEqual(lb[0]['obtained_marks'], 10.0)
+        self.assertEqual(lb[0]['percentage'], 100.0)
+
+        # Student 2 is Rank 2 with 5.0 marks (50.0%)
+        self.assertEqual(lb[1]['rank'], 2)
+        self.assertEqual(lb[1]['student_name'], student2.get_full_name())
+        self.assertEqual(lb[1]['obtained_marks'], 5.0)
+        self.assertEqual(lb[1]['percentage'], 50.0)
+

@@ -316,19 +316,34 @@ class ExamSubmission(models.Model):
         """
         Automatically grades student MCQ answers against exam.mcq_data.
         Computes mcq_score and sets obtained_marks.
+        Supports both 0-based indices and letters (A, B, C, D).
         If MCQ-only, marks is_graded=True immediately.
         """
         if not self.exam.mcq_data:
             return 0.0
 
-        total_mcq = 0.0
-        for q in self.exam.mcq_data:
-            q_id = str(q.get('id', ''))
-            correct = str(q.get('correct_answer', '')).strip().upper()
-            student_ans = str(self.answers_data.get(q_id, '')).strip().upper()
-            q_marks = float(q.get('marks', 1))
+        LETTER_MAP = {'0': 'A', '1': 'B', '2': 'C', '3': 'D', 'A': 'A', 'B': 'B', 'C': 'C', 'D': 'D'}
 
-            if student_ans and student_ans == correct:
+        total_mcq = 0.0
+        for idx, q in enumerate(self.exam.mcq_data):
+            q_id = str(q.get('id', f'mcq-{idx}'))
+            raw_correct = str(q.get('correct_answer', '')).strip().upper()
+            correct_norm = LETTER_MAP.get(raw_correct, raw_correct)
+
+            # Check by specific ID or by index fallback safely (0 is not None)
+            student_val = None
+            for key in [q_id, f'mcq_{idx}', str(idx)]:
+                if key in self.answers_data:
+                    student_val = self.answers_data[key]
+                    break
+
+            student_raw = str(student_val).strip().upper() if student_val is not None else ''
+            student_norm = LETTER_MAP.get(student_raw, student_raw)
+
+
+            q_marks = float(q.get('marks') or q.get('points') or 1.0)
+
+            if student_norm and student_norm == correct_norm:
                 total_mcq += q_marks
 
         self.mcq_score = total_mcq
@@ -340,3 +355,4 @@ class ExamSubmission(models.Model):
             cq_val = float(self.cq_score) if self.cq_score is not None else 0.0
             self.obtained_marks = total_mcq + cq_val
         return total_mcq
+

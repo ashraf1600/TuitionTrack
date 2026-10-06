@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { GraduationCap, Lock, User, Mail, Phone, ArrowRight, AlertCircle, ShieldCheck } from 'lucide-react';
+import { GraduationCap, Lock, User, Mail, Phone, ArrowRight, AlertCircle, ShieldCheck, School, Users } from 'lucide-react';
 
 export default function LoginPage() {
-  const [isRegister, setIsRegister] = useState(false);
+  const [mode, setMode] = useState('login'); // 'login' | 'register-tutor' | 'register-student'
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
 
@@ -15,10 +15,16 @@ export default function LoginPage() {
   const [phone, setPhone] = useState('');
   const [passwordConfirm, setPasswordConfirm] = useState('');
 
+  // Student specific
+  const [gradeLevel, setGradeLevel] = useState('Class 10');
+  const [institution, setInstitution] = useState('');
+  const [parentPhone, setParentPhone] = useState('');
+  const [tutorUsername, setTutorUsername] = useState('');
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const { login, registerTutor } = useAuth();
+  const { login, registerTutor, registerStudent } = useAuth();
   const navigate = useNavigate();
 
   const handleSubmit = async (e) => {
@@ -27,11 +33,11 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      if (isRegister) {
+      if (mode === 'register-tutor') {
         if (password !== passwordConfirm) {
           throw new Error('Passwords do not match.');
         }
-        const user = await registerTutor({
+        await registerTutor({
           username,
           password,
           password_confirm: passwordConfirm,
@@ -41,6 +47,24 @@ export default function LoginPage() {
           phone,
         });
         navigate('/tutor');
+      } else if (mode === 'register-student') {
+        if (password !== passwordConfirm) {
+          throw new Error('Passwords do not match.');
+        }
+        await registerStudent({
+          username,
+          password,
+          password_confirm: passwordConfirm,
+          first_name: firstName,
+          last_name: lastName,
+          email,
+          phone,
+          grade_level: gradeLevel,
+          institution,
+          parent_phone: parentPhone,
+          tutor_username: tutorUsername,
+        });
+        navigate('/student');
       } else {
         const user = await login(username, password);
         if (user.role === 'TUTOR') {
@@ -59,7 +83,13 @@ export default function LoginPage() {
   const handleDemoTutor = () => {
     setUsername('admin');
     setPassword('admin1234');
-    setIsRegister(false);
+    setMode('login');
+  };
+
+  const handleDemoStudent = () => {
+    setUsername('integration_student_1');
+    setPassword('pass123456');
+    setMode('login');
   };
 
   return (
@@ -75,31 +105,40 @@ export default function LoginPage() {
           Tuition<span className="text-indigo-400">Track</span>
         </h1>
         <p className="mt-2 text-sm text-slate-400">
-          Smart Multi-Tenant Tuition Attendance & Exam Platform
+          Smart Multi-Tenant Tuition Attendance, Batches & Exam Platform
         </p>
       </div>
 
-      <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md relative z-10 px-4 sm:px-0">
+      <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-lg relative z-10 px-4 sm:px-0">
         <div className="glass-panel py-8 px-6 sm:px-10 rounded-3xl shadow-2xl">
-          {/* Mode Switch Tabs */}
+          {/* 3 Mode Switch Tabs */}
           <div className="flex rounded-xl bg-slate-800/80 p-1 mb-6 border border-slate-700/60">
             <button
               type="button"
-              onClick={() => { setIsRegister(false); setError(''); }}
+              onClick={() => { setMode('login'); setError(''); }}
               className={`flex-1 py-2 text-xs font-bold rounded-lg transition ${
-                !isRegister ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-200'
+                mode === 'login' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-200'
               }`}
             >
               Sign In
             </button>
             <button
               type="button"
-              onClick={() => { setIsRegister(true); setError(''); }}
+              onClick={() => { setMode('register-tutor'); setError(''); }}
               className={`flex-1 py-2 text-xs font-bold rounded-lg transition ${
-                isRegister ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-200'
+                mode === 'register-tutor' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-200'
               }`}
             >
-              Register as Tutor
+              Tutor Sign Up
+            </button>
+            <button
+              type="button"
+              onClick={() => { setMode('register-student'); setError(''); }}
+              className={`flex-1 py-2 text-xs font-bold rounded-lg transition ${
+                mode === 'register-student' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              Student Sign Up
             </button>
           </div>
 
@@ -113,7 +152,7 @@ export default function LoginPage() {
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label className="block text-xs font-semibold text-slate-300 mb-1">
-                Username
+                Username *
               </label>
               <div className="relative">
                 <input
@@ -121,14 +160,14 @@ export default function LoginPage() {
                   required
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
-                  placeholder="Enter your username"
+                  placeholder="Enter username"
                   className="w-full pl-9 pr-3 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 text-sm focus:outline-none focus:border-indigo-500 transition"
                 />
                 <User className="w-4 h-4 text-slate-500 absolute left-3 top-3" />
               </div>
             </div>
 
-            {isRegister && (
+            {mode !== 'login' && (
               <>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
@@ -158,43 +197,103 @@ export default function LoginPage() {
                   </div>
                 </div>
 
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">
-                    Email Address
-                  </label>
-                  <div className="relative">
-                    <input
-                      type="email"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      placeholder="tutor@gmail.com"
-                      className="w-full pl-9 pr-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 text-sm focus:outline-none focus:border-indigo-500"
-                    />
-                    <Mail className="w-4 h-4 text-slate-500 absolute left-3 top-3" />
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">
+                      Email
+                    </label>
+                    <div className="relative">
+                      <input
+                        type="email"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        placeholder="email@example.com"
+                        className="w-full pl-8 pr-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 text-xs focus:outline-none focus:border-indigo-500"
+                      />
+                      <Mail className="w-3.5 h-3.5 text-slate-500 absolute left-2.5 top-3" />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">
+                      Phone
+                    </label>
+                    <div className="relative">
+                      <input
+                        type="tel"
+                        value={phone}
+                        onChange={(e) => setPhone(e.target.value)}
+                        placeholder="+88017..."
+                        className="w-full pl-8 pr-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 text-xs focus:outline-none focus:border-indigo-500"
+                      />
+                      <Phone className="w-3.5 h-3.5 text-slate-500 absolute left-2.5 top-3" />
+                    </div>
                   </div>
                 </div>
 
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">
-                    Phone
-                  </label>
-                  <div className="relative">
-                    <input
-                      type="tel"
-                      value={phone}
-                      onChange={(e) => setPhone(e.target.value)}
-                      placeholder="+88017..."
-                      className="w-full pl-9 pr-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 text-sm focus:outline-none focus:border-indigo-500"
-                    />
-                    <Phone className="w-4 h-4 text-slate-500 absolute left-3 top-3" />
+                {mode === 'register-student' && (
+                  <div className="space-y-3 pt-2 border-t border-slate-800">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-300 mb-1">
+                          Grade / Class
+                        </label>
+                        <input
+                          type="text"
+                          value={gradeLevel}
+                          onChange={(e) => setGradeLevel(e.target.value)}
+                          placeholder="e.g. Class 10 / HSC"
+                          className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 text-xs focus:outline-none focus:border-indigo-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-300 mb-1">
+                          School / College
+                        </label>
+                        <input
+                          type="text"
+                          value={institution}
+                          onChange={(e) => setInstitution(e.target.value)}
+                          placeholder="Institution name"
+                          className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 text-xs focus:outline-none focus:border-indigo-500"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-300 mb-1">
+                          Guardian Phone
+                        </label>
+                        <input
+                          type="tel"
+                          value={parentPhone}
+                          onChange={(e) => setParentPhone(e.target.value)}
+                          placeholder="+88018..."
+                          className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 text-xs focus:outline-none focus:border-indigo-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-300 mb-1">
+                          Tutor Username (Optional)
+                        </label>
+                        <input
+                          type="text"
+                          value={tutorUsername}
+                          onChange={(e) => setTutorUsername(e.target.value)}
+                          placeholder="e.g. admin"
+                          className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-indigo-300 text-xs focus:outline-none focus:border-indigo-500"
+                        />
+                      </div>
+                    </div>
                   </div>
-                </div>
+                )}
               </>
             )}
 
             <div>
               <label className="block text-xs font-semibold text-slate-300 mb-1">
-                Password
+                Password *
               </label>
               <div className="relative">
                 <input
@@ -209,10 +308,10 @@ export default function LoginPage() {
               </div>
             </div>
 
-            {isRegister && (
+            {mode !== 'login' && (
               <div>
                 <label className="block text-xs font-semibold text-slate-300 mb-1">
-                  Confirm Password
+                  Confirm Password *
                 </label>
                 <div className="relative">
                   <input
@@ -231,13 +330,19 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full mt-2 py-3 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-sm shadow-lg shadow-indigo-600/30 flex items-center justify-center gap-2 transition disabled:opacity-50"
+              className="w-full mt-3 py-3 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-sm shadow-lg shadow-indigo-600/30 flex items-center justify-center gap-2 transition disabled:opacity-50"
             >
               {loading ? (
                 <div className="w-5 h-5 rounded-full border-2 border-white/30 border-t-white animate-spin" />
               ) : (
                 <>
-                  <span>{isRegister ? 'Create Tutor Account' : 'Sign In to Portal'}</span>
+                  <span>
+                    {mode === 'login'
+                      ? 'Sign In to Portal'
+                      : mode === 'register-tutor'
+                      ? 'Create Tutor Account'
+                      : 'Register as Student'}
+                  </span>
                   <ArrowRight className="w-4 h-4" />
                 </>
               )}
@@ -245,17 +350,27 @@ export default function LoginPage() {
           </form>
 
           {/* Quick Demo Credentials */}
-          {!isRegister && (
-            <div className="mt-6 pt-5 border-t border-slate-800/80 text-center">
-              <span className="text-xs text-slate-500 block mb-2">Development Demo Access:</span>
-              <button
-                type="button"
-                onClick={handleDemoTutor}
-                className="w-full py-2 px-3 rounded-xl bg-slate-800/60 hover:bg-slate-800 border border-slate-700 text-xs text-indigo-300 font-semibold flex items-center justify-center gap-2 transition"
-              >
-                <ShieldCheck className="w-4 h-4 text-indigo-400" />
-                <span>Fill Admin Tutor Credentials (admin / admin1234)</span>
-              </button>
+          {mode === 'login' && (
+            <div className="mt-6 pt-5 border-t border-slate-800/80 space-y-2 text-center">
+              <span className="text-[11px] text-slate-500 block">Quick Demo Logins:</span>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={handleDemoTutor}
+                  className="py-1.5 px-2 rounded-xl bg-slate-800/60 hover:bg-slate-800 border border-slate-700 text-[11px] text-indigo-300 font-semibold flex items-center justify-center gap-1.5 transition"
+                >
+                  <ShieldCheck className="w-3.5 h-3.5 text-indigo-400" />
+                  <span>Admin Tutor</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDemoStudent}
+                  className="py-1.5 px-2 rounded-xl bg-slate-800/60 hover:bg-slate-800 border border-slate-700 text-[11px] text-emerald-300 font-semibold flex items-center justify-center gap-1.5 transition"
+                >
+                  <User className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Demo Student</span>
+                </button>
+              </div>
             </div>
           )}
         </div>

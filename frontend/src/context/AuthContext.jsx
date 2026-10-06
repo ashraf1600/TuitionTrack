@@ -43,8 +43,12 @@ export function AuthProvider({ children }) {
   };
 
   const registerTutor = async (formData) => {
-    const data = await api.registerTutor(formData);
-    // After registration, auto login
+    await api.registerTutor(formData);
+    return login(formData.username, formData.password);
+  };
+
+  const registerStudent = async (formData) => {
+    await api.registerStudent(formData);
     return login(formData.username, formData.password);
   };
 
@@ -64,6 +68,7 @@ export function AuthProvider({ children }) {
     isStudent: user?.role === 'STUDENT',
     login,
     registerTutor,
+    registerStudent,
     logout,
   };
 
