@@ -139,6 +139,8 @@ export default function TutorDashboard() {
     }
   };
 
+  const loadBatches = loadTuitions;
+
   // 5. Load Active Cycle for selected student
   const loadStudentCycle = async (studentId, tuitionId = null) => {
     if (!studentId) return;
@@ -306,8 +308,12 @@ export default function TutorDashboard() {
   const handleDeleteBatch = async (batchId) => {
     if (!window.confirm('Are you sure you want to delete this tuition batch?')) return;
     try {
-      await api.deleteBatch(batchId);
-      loadBatches();
+      try {
+        await api.deleteTuition(batchId);
+      } catch (_) {
+        await api.deleteBatch(batchId);
+      }
+      loadTuitions();
     } catch (err) {
       alert(`Delete failed: ${err.message}`);
     }

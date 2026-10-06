@@ -32,6 +32,7 @@ import {
   Settings,
   KeyRound,
   Upload,
+  Clock,
 } from 'lucide-react';
 import MathRenderer from '../common/MathRenderer';
 
