@@ -1,0 +1,132 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-slate-900 text-slate-100 font-sans;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+}
+
+/* Custom modern scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #0f172a;
+}
+::-webkit-scrollbar-thumb {
+  background: #334155;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #475569;
+}
+
+/* Glassmorphism helpers */
+.glass-panel {
+  background: rgba(30, 41, 59, 0.7);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.glass-panel-subtle {
+  background: rgba(15, 23, 42, 0.6);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+/* TipTap Editor and Exam Rich Text Rendering */
+.ProseMirror {
+  outline: none;
+  min-height: 180px;
+}
+
+.ProseMirror p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  color: #64748b;
+  pointer-events: none;
+  height: 0;
+}
+
+.exam-content table,
+.ProseMirror table {
+  border-collapse: collapse;
+  margin: 1.5rem 0;
+  width: 100%;
+  overflow-x: auto;
+  display: block;
+}
+
+.exam-content table td,
+.exam-content table th,
+.ProseMirror table td,
+.ProseMirror table th {
+  min-width: 1em;
+  border: 1px solid #334155;
+  padding: 8px 12px;
+  text-align: left;
+  background-color: rgba(30, 41, 59, 0.4);
+}
+
+.exam-content table th,
+.ProseMirror table th {
+  background-color: rgba(51, 65, 85, 0.6);
+  font-weight: 600;
+  color: #f1f5f9;
+}
+
+.exam-content blockquote,
+.ProseMirror blockquote {
+  border-left: 3px solid #6366f1;
+  padding-left: 1rem;
+  margin: 1rem 0;
+  color: #94a3b8;
+  font-style: italic;
+}
+
+.exam-content code,
+.ProseMirror code {
+  background-color: #0f172a;
+  padding: 0.2rem 0.4rem;
+  border-radius: 0.25rem;
+  font-size: 0.875rem;
+  color: #38bdf8;
+  font-family: monospace;
+}
+
+.exam-content pre,
+.ProseMirror pre {
+  background-color: #0f172a;
+  border: 1px solid #334155;
+  border-radius: 0.5rem;
+  padding: 1rem;
+  margin: 1rem 0;
+  overflow-x: auto;
+}
+
+.exam-content img,
+.ProseMirror img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 0.5rem;
+  margin: 1rem 0;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* KaTeX formula rendering within dark theme */
+.katex {
+  font-size: 1.05em;
+  color: #f8fafc;
+}
+.katex-display {
+  margin: 1em 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0.5em 0;
+}
