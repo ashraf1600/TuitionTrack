@@ -46,7 +46,7 @@ ALLOWED_ATTRIBUTES = {
     # Images — only safe src schemes will survive nh3's URL cleaning
     'img': {'src', 'alt', 'width', 'height', 'title'},
     # Links — restricted href schemes
-    'a': {'href', 'title', 'target', 'rel'},
+    'a': {'href', 'title', 'target'},
     # Table layout
     'th': {'colspan', 'rowspan', 'scope'},
     'td': {'colspan', 'rowspan'},
@@ -81,6 +81,7 @@ def sanitize_exam_html(raw_html: str) -> str:
         attributes=ALLOWED_ATTRIBUTES,
         # Strip dangerous link schemes (javascript:, data:, vbscript:)
         url_schemes={'http', 'https', 'mailto'},
+        link_rel='noopener noreferrer',
         # Strips HTML comments (can be used to hide XSS payloads)
         strip_comments=True,
     )

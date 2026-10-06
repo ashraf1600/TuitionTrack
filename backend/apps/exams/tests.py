@@ -1,0 +1,280 @@
+"""Tests for Exams app — Sanitization, Lifecycle, Submission, Grading & Media Upload"""
+from datetime import timedelta
+import io
+from django.urls import reverse
+from django.utils import timezone
+from django.core.files.uploadedfile import SimpleUploadedFile
+from django.contrib.auth import get_user_model
+from rest_framework import status
+from rest_framework.test import APITestCase
+
+from apps.students.models import StudentProfile
+from apps.exams.models import Exam, ExamSubmission
+from apps.exams.sanitizer import sanitize_exam_html
+
+User = get_user_model()
+
+
+class ExamSanitizerTests(APITestCase):
+    def test_strips_malicious_scripts_and_handlers(self):
+        malicious = (
+            '<p>Solve equation:</p>'
+            '<script>alert("xss")</script>'
+            '<img src="https://example.com/math.png" onerror="stealCookie()" />'
+            '<a href="javascript:alert(1)">Click me</a>'
+        )
+        cleaned = sanitize_exam_html(malicious)
+        self.assertNotIn('<script>', cleaned)
+        self.assertNotIn('alert("xss")', cleaned)
+        self.assertNotIn('onerror', cleaned)
+        self.assertNotIn('javascript:', cleaned)
+        self.assertIn('<p>Solve equation:</p>', cleaned)
+        self.assertIn('<img', cleaned)
+
+    def test_preserves_tables_and_math_attributes(self):
+        rich_html = (
+            '<table>'
+            '<thead><tr><th>x</th><th>f(x)</th></tr></thead>'
+            '<tbody><tr><td>1</td><td><span class="math-inline" data-latex="x^2">x^2</span></td></tr></tbody>'
+            '</table>'
+        )
+        cleaned = sanitize_exam_html(rich_html)
+        self.assertIn('<table>', cleaned)
+        self.assertIn('<th>x</th>', cleaned)
+        self.assertIn('data-latex="x^2"', cleaned)
+
+
+class ExamLifecycleTests(APITestCase):
+    def setUp(self):
+        # Tutor 1
+        self.tutor1 = User.objects.create_user(
+            username='exam_tutor1',
+            password='password123',
+            email='tutor1@example.com',
+            role=User.Role.TUTOR,
+            first_name='Exam',
+            last_name='Tutor'
+        )
+        # Student 1 under Tutor 1
+        self.student1 = User.objects.create_user(
+            username='exam_student1',
+            password='password123',
+            email='student1@example.com',
+            role=User.Role.STUDENT,
+            tutor=self.tutor1,
+            first_name='Student',
+            last_name='One'
+        )
+        StudentProfile.objects.create(user=self.student1, tuition_fee=5000, cycle_length=12)
+
+        # Tutor 2 (for multi-tenant isolation tests)
+        self.tutor2 = User.objects.create_user(
+            username='exam_tutor2',
+            password='password123',
+            email='tutor2@example.com',
+            role=User.Role.TUTOR,
+        )
+
+        self.list_create_url = reverse('exam-list')
+
+    def test_tutor_creates_exam_with_sanitized_html(self):
+        self.client.force_authenticate(user=self.tutor1)
+        start = timezone.now() + timedelta(hours=1)
+        end = timezone.now() + timedelta(hours=3)
+
+        payload = {
+            'title': 'Calculus Midterm',
+            'student_id': str(self.student1.id),
+            'content_html': '<h1>Exam</h1><script>alert(1)</script><p>Find dy/dx.</p>',
+            'total_marks': '100.00',
+            'start_time': start.isoformat(),
+            'end_time': end.isoformat(),
+            'grace_period_minutes': 5,
+        }
+        resp = self.client.post(self.list_create_url, payload, format='json')
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
+
+        exam = Exam.objects.get(title='Calculus Midterm')
+        self.assertEqual(exam.tutor, self.tutor1)
+        self.assertEqual(exam.student, self.student1)
+        # Verify script stripped
+        self.assertNotIn('<script>', exam.content_html)
+        self.assertIn('<p>Find dy/dx.</p>', exam.content_html)
+
+    def test_cannot_schedule_exam_with_end_before_start(self):
+        self.client.force_authenticate(user=self.tutor1)
+        now = timezone.now()
+        payload = {
+            'title': 'Invalid Exam',
+            'student_id': str(self.student1.id),
+            'content_html': '<p>Question</p>',
+            'total_marks': '50.00',
+            'start_time': (now + timedelta(hours=2)).isoformat(),
+            'end_time': (now + timedelta(hours=1)).isoformat(),  # invalid: before start
+        }
+        resp = self.client.post(self.list_create_url, payload, format='json')
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_dynamic_status_states(self):
+        now = timezone.now()
+        # Scheduled exam
+        exam_future = Exam.objects.create(
+            tutor=self.tutor1,
+            student=self.student1,
+            title='Future Exam',
+            content_html='<p>Q</p>',
+            start_time=now + timedelta(hours=1),
+            end_time=now + timedelta(hours=2),
+            grace_period_minutes=5
+        )
+        self.assertEqual(exam_future.get_dynamic_status(), Exam.DynamicStatus.SCHEDULED)
+
+        # Running exam
+        exam_running = Exam.objects.create(
+            tutor=self.tutor1,
+            student=self.student1,
+            title='Running Exam',
+            content_html='<p>Q</p>',
+            start_time=now - timedelta(minutes=30),
+            end_time=now + timedelta(minutes=30),
+            grace_period_minutes=5
+        )
+        self.assertEqual(exam_running.get_dynamic_status(), Exam.DynamicStatus.RUNNING)
+
+        # Missed exam
+        exam_missed = Exam.objects.create(
+            tutor=self.tutor1,
+            student=self.student1,
+            title='Missed Exam',
+            content_html='<p>Q</p>',
+            start_time=now - timedelta(hours=3),
+            end_time=now - timedelta(hours=2),
+            grace_period_minutes=5
+        )
+        self.assertEqual(exam_missed.get_dynamic_status(), Exam.DynamicStatus.MISSED)
+
+    def test_student_submits_exam_on_time_and_prevent_duplicate(self):
+        now = timezone.now()
+        exam = Exam.objects.create(
+            tutor=self.tutor1,
+            student=self.student1,
+            title='Active Exam',
+            content_html='<p>Question</p>',
+            start_time=now - timedelta(minutes=30),
+            end_time=now + timedelta(minutes=30),
+            grace_period_minutes=5
+        )
+        submit_url = reverse('exam-submit', kwargs={'pk': exam.id})
+
+        # Submit as student
+        self.client.force_authenticate(user=self.student1)
+        sub_payload = {
+            'answers_data': {'q1': 'B', 'q2': 'C'},
+            'image_urls': ['/media/uploads/2026/10/cq_sheet1.jpg']
+        }
+        resp = self.client.post(submit_url, sub_payload, format='json')
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
+
+        submission = ExamSubmission.objects.get(exam=exam, student=self.student1)
+        self.assertEqual(submission.status, ExamSubmission.Status.SUBMITTED)
+        self.assertEqual(submission.answers_data['q1'], 'B')
+
+        # Attempt duplicate submission
+        resp_dup = self.client.post(submit_url, sub_payload, format='json')
+        self.assertEqual(resp_dup.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_student_late_submission_in_grace_period_marked_delayed(self):
+        now = timezone.now()
+        # Ended 2 minutes ago, but within 5 minute grace period
+        exam = Exam.objects.create(
+            tutor=self.tutor1,
+            student=self.student1,
+            title='Grace Period Exam',
+            content_html='<p>Question</p>',
+            start_time=now - timedelta(minutes=60),
+            end_time=now - timedelta(minutes=2),
+            grace_period_minutes=5
+        )
+        submit_url = reverse('exam-submit', kwargs={'pk': exam.id})
+
+        self.client.force_authenticate(user=self.student1)
+        resp = self.client.post(submit_url, {'answers_data': {'q1': 'A'}}, format='json')
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
+
+        submission = ExamSubmission.objects.get(exam=exam, student=self.student1)
+        self.assertEqual(submission.status, ExamSubmission.Status.DELAYED)
+
+    def test_submission_rejected_after_grace_period_expired(self):
+        now = timezone.now()
+        exam = Exam.objects.create(
+            tutor=self.tutor1,
+            student=self.student1,
+            title='Expired Exam',
+            content_html='<p>Question</p>',
+            start_time=now - timedelta(minutes=60),
+            end_time=now - timedelta(minutes=10),
+            grace_period_minutes=5
+        )
+        submit_url = reverse('exam-submit', kwargs={'pk': exam.id})
+
+        self.client.force_authenticate(user=self.student1)
+        resp = self.client.post(submit_url, {'answers_data': {'q1': 'A'}}, format='json')
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_tutor_grades_submission(self):
+        now = timezone.now()
+        exam = Exam.objects.create(
+            tutor=self.tutor1,
+            student=self.student1,
+            title='Exam for Grading',
+            content_html='<p>Q</p>',
+            total_marks=50.00,
+            start_time=now - timedelta(minutes=60),
+            end_time=now - timedelta(minutes=10),
+        )
+        submission = ExamSubmission.objects.create(
+            exam=exam,
+            student=self.student1,
+            submitted_at=now - timedelta(minutes=15),
+            answers_data={'q1': 'A'},
+            status=ExamSubmission.Status.SUBMITTED
+        )
+
+        grade_url = reverse('grade-submission', kwargs={'pk': submission.id})
+
+        # Tutor 2 cannot grade (multi-tenancy check)
+        self.client.force_authenticate(user=self.tutor2)
+        resp_unauth = self.client.patch(grade_url, {'obtained_marks': '45.00'}, format='json')
+        self.assertEqual(resp_unauth.status_code, status.HTTP_404_NOT_FOUND)
+
+        # Tutor 1 grades successfully
+        self.client.force_authenticate(user=self.tutor1)
+        resp_grade = self.client.patch(
+            grade_url,
+            {'obtained_marks': '42.50', 'tutor_feedback': 'Well explained!'},
+            format='json'
+        )
+        self.assertEqual(resp_grade.status_code, status.HTTP_200_OK)
+
+        submission.refresh_from_db()
+        self.assertTrue(submission.is_graded)
+        self.assertEqual(float(submission.obtained_marks), 42.50)
+        self.assertEqual(submission.tutor_feedback, 'Well explained!')
+        self.assertIsNotNone(submission.graded_at)
+
+    def test_media_upload_endpoint(self):
+        upload_url = reverse('media-upload')
+        self.client.force_authenticate(user=self.student1)
+
+        # Valid image upload
+        image_content = b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR' + b'mock png content'
+        test_file = SimpleUploadedFile('cq_answer.png', image_content, content_type='image/png')
+        resp = self.client.post(upload_url, {'file': test_file}, format='multipart')
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
+        self.assertIn('url', resp.data)
+        self.assertTrue(resp.data['url'].endswith('.png'))
+
+        # Disallowed file format (.exe)
+        bad_file = SimpleUploadedFile('virus.exe', b'bad', content_type='application/x-msdownload')
+        resp_bad = self.client.post(upload_url, {'file': bad_file}, format='multipart')
+        self.assertEqual(resp_bad.status_code, status.HTTP_400_BAD_REQUEST)
