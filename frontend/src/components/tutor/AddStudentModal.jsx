@@ -1,9 +1,15 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Modal from '../common/Modal';
 import { api } from '../../api/client';
 import { UserPlus, AlertCircle, CheckCircle2 } from 'lucide-react';
 
-export default function AddStudentModal({ isOpen, onClose, onStudentAdded, tuitions = [] }) {
+export default function AddStudentModal({
+  isOpen,
+  onClose,
+  onStudentAdded,
+  tuitions = [],
+  initialTuitionId = '',
+}) {
   const [formData, setFormData] = useState({
     username: '',
     password: '',
@@ -24,6 +30,27 @@ export default function AddStudentModal({ isOpen, onClose, onStudentAdded, tuiti
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+
+  // Sync initialTuitionId when modal opens
+  useEffect(() => {
+    if (isOpen) {
+      setError('');
+      setSuccess('');
+      if (initialTuitionId) {
+        const selectedT = tuitions.find(
+          (t) => t.id === initialTuitionId || String(t.id) === String(initialTuitionId)
+        );
+        if (selectedT) {
+          setFormData((prev) => ({
+            ...prev,
+            tuition_id: selectedT.id,
+            tuition_fee: selectedT.tuition_fee ? String(selectedT.tuition_fee) : prev.tuition_fee,
+            cycle_length: selectedT.cycle_length || prev.cycle_length,
+          }));
+        }
+      }
+    }
+  }, [isOpen, initialTuitionId, tuitions]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -75,7 +102,9 @@ export default function AddStudentModal({ isOpen, onClose, onStudentAdded, tuiti
 
       setSuccess('Student account & Tuition enrollment initialized successfully!');
       setTimeout(() => {
-        onStudentAdded();
+        if (onStudentAdded) {
+          onStudentAdded(res?.student, formData.tuition_id);
+        }
         onClose();
         setFormData({
           username: '',

@@ -4,6 +4,7 @@ import { User, Phone, School, DollarSign, Calendar, Check, X, UserPlus, Power } 
 export default function StudentRoster({
   students,
   selectedStudentId,
+  tuitionTitle = '',
   onSelectStudent,
   onToggleActive,
   onOpenAddModal,
@@ -15,10 +16,10 @@ export default function StudentRoster({
         <div>
           <h3 className="text-lg font-bold text-slate-100 flex items-center gap-2">
             <User className="w-5 h-5 text-indigo-400" />
-            Student Roster
+            {tuitionTitle ? `${tuitionTitle} Roster` : 'Student Roster'}
           </h3>
           <p className="text-xs text-slate-400">
-            {students.length} {students.length === 1 ? 'student' : 'students'} enrolled
+            {students.length} {students.length === 1 ? 'student' : 'students'} {tuitionTitle ? 'enrolled in this tuition' : 'enrolled'}
           </p>
         </div>
 
@@ -40,15 +41,19 @@ export default function StudentRoster({
       ) : students.length === 0 ? (
         <div className="text-center py-10 px-4 rounded-xl border border-dashed border-slate-800 text-slate-400">
           <User className="w-10 h-10 mx-auto text-slate-600 mb-2" />
-          <p className="text-sm font-semibold text-slate-300">No students yet</p>
+          <p className="text-sm font-semibold text-slate-300">
+            {tuitionTitle ? `No students in ${tuitionTitle} yet` : 'No students yet'}
+          </p>
           <p className="text-xs text-slate-500 mt-1 mb-4">
-            Add your first student to automatically initialize Cycle #1
+            {tuitionTitle
+              ? 'Add or assign students to this tuition to begin tracking attendance.'
+              : 'Add your first student to automatically initialize Cycle #1'}
           </p>
           <button
             onClick={onOpenAddModal}
             className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-xs transition"
           >
-            Add Student Now
+            {tuitionTitle ? `Add Student to ${tuitionTitle}` : 'Add Student Now'}
           </button>
         </div>
       ) : (

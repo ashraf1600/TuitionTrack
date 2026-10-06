@@ -141,22 +141,30 @@ export default function TutorDashboard() {
 
   const loadBatches = loadTuitions;
 
-  // 5. Load Active Cycle for selected student
+  // 5. Load Active Cycle for selected student (scoped to selected tuition if specified)
   const loadStudentCycle = async (studentId, tuitionId = null) => {
-    if (!studentId) return;
+    if (!studentId) {
+      setCurrentCycle(null);
+      return;
+    }
     try {
       setLoadingCycle(true);
       let list = [];
-      try {
-        const params = { student: studentId };
-        if (tuitionId && tuitionId !== 'all') {
-          params.tuition = tuitionId;
-        }
-        const attData = await api.getAttendanceCycles(params);
-        list = Array.isArray(attData) ? attData : attData.results || [];
-      } catch (_) {}
+      const isSpecificTuition = tuitionId && tuitionId !== 'all';
 
-      if (list.length === 0) {
+      if (isSpecificTuition) {
+        try {
+          const attData = await api.getAttendanceCycles(tuitionId, studentId);
+          list = Array.isArray(attData) ? attData : attData.results || [];
+        } catch (_) {}
+      } else {
+        try {
+          const attData = await api.getAttendanceCycles(null, studentId);
+          list = Array.isArray(attData) ? attData : attData.results || [];
+        } catch (_) {}
+      }
+
+      if (list.length === 0 && !isSpecificTuition) {
         const data = await api.getCycles(studentId);
         list = Array.isArray(data) ? data : data.results || [];
       }
@@ -195,6 +203,8 @@ export default function TutorDashboard() {
   useEffect(() => {
     if (selectedStudentId) {
       loadStudentCycle(selectedStudentId, selectedTuitionId);
+    } else {
+      setCurrentCycle(null);
     }
   }, [selectedStudentId, selectedTuitionId]);
 
@@ -585,8 +595,18 @@ export default function TutorDashboard() {
                     key={t.id}
                     onClick={() => {
                       setSelectedTuitionId(t.id);
-                      const firstEnrolled = (t.enrollments || [])[0]?.student_id || (t.students || [])[0];
-                      if (firstEnrolled) setSelectedStudentId(firstEnrolled);
+                      const enrolledIds = (t.enrollments || []).map((e) => e.student_id || e.student);
+                      if (t.students) enrolledIds.push(...t.students);
+
+                      // If current selected student is in this tuition, keep it; otherwise switch to first enrolled or null
+                      if (selectedStudentId && enrolledIds.some((id) => String(id) === String(selectedStudentId))) {
+                        loadStudentCycle(selectedStudentId, t.id);
+                      } else if (enrolledIds.length > 0) {
+                        setSelectedStudentId(enrolledIds[0]);
+                      } else {
+                        setSelectedStudentId(null);
+                        setCurrentCycle(null);
+                      }
                     }}
                     className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
                       isSelected
@@ -640,6 +660,7 @@ export default function TutorDashboard() {
                 <StudentRoster
                   students={filteredStudents}
                   selectedStudentId={selectedStudentId}
+                  tuitionTitle={selectedTuition ? (selectedTuition.title || selectedTuition.name) : ''}
                   onSelectStudent={setSelectedStudentId}
                   onToggleActive={handleToggleActive}
                   onOpenAddModal={() => setAddStudentModalOpen(true)}
@@ -651,8 +672,10 @@ export default function TutorDashboard() {
                 <CycleGrid
                   cycle={currentCycle}
                   studentName={studentName}
+                  tuitionTitle={selectedTuition ? (selectedTuition.title || selectedTuition.name) : ''}
                   onToggleClass={handleToggleClass}
                   onResetCycle={handleResetCycle}
+                  onOpenAddStudent={() => setAddStudentModalOpen(true)}
                   loading={loadingCycle}
                 />
               </div>
@@ -1093,10 +1116,17 @@ export default function TutorDashboard() {
         isOpen={addStudentModalOpen}
         onClose={() => setAddStudentModalOpen(false)}
         tuitions={tuitions}
-        onStudentAdded={() => {
+        initialTuitionId={selectedTuitionId !== 'all' ? selectedTuitionId : ''}
+        onStudentAdded={(newStudent, assignedTuitionId) => {
           loadStudents();
           loadTuitions();
           loadAnalytics();
+          if (newStudent?.id) {
+            if (assignedTuitionId && assignedTuitionId !== 'all') {
+              setSelectedTuitionId(assignedTuitionId);
+            }
+            setSelectedStudentId(newStudent.id);
+          }
         }}
       />
 

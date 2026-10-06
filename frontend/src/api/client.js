@@ -122,10 +122,17 @@ export const api = {
   }),
 
   // Attendance & Dynamic Cycles (Per-Tuition Engine)
-  getAttendanceCycles: (tuitionId = null, studentId = null) => {
+  getAttendanceCycles: (arg1 = null, arg2 = null) => {
     const params = new URLSearchParams();
-    if (tuitionId) params.append('tuition_id', tuitionId);
-    if (studentId) params.append('student_id', studentId);
+    if (typeof arg1 === 'object' && arg1 !== null) {
+      const tId = arg1.tuition_id || arg1.tuition;
+      const sId = arg1.student_id || arg1.student;
+      if (tId && tId !== 'all') params.append('tuition_id', tId);
+      if (sId) params.append('student_id', sId);
+    } else {
+      if (arg1 && arg1 !== 'all') params.append('tuition_id', arg1);
+      if (arg2) params.append('student_id', arg2);
+    }
     const query = params.toString() ? `?${params.toString()}` : '';
     return apiRequest(`/attendance-cycles/${query}`);
   },

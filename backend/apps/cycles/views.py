@@ -187,6 +187,27 @@ class AttendanceCycleViewSet(viewsets.ModelViewSet):
         if student_id:
             qs = qs.filter(enrollment__student_id=student_id)
 
+        # Auto-initialize active cycle if student is enrolled in tuition but has no cycle yet
+        if tuition_id and student_id and not qs.exists():
+            from apps.students.models import TuitionEnrollment
+            enrollment = TuitionEnrollment.objects.filter(
+                tuition_id=tuition_id,
+                student_id=student_id
+            ).select_related('tuition').first()
+            if enrollment:
+                AttendanceCycle.objects.get_or_create(
+                    enrollment=enrollment,
+                    status=AttendanceCycle.Status.ACTIVE,
+                    defaults={
+                        'cycle_number': 1,
+                        'classes_data': AttendanceCycle.build_fresh_classes_data(enrollment.tuition.cycle_length),
+                    }
+                )
+                qs = AttendanceCycle.objects.filter(
+                    enrollment__tuition_id=tuition_id,
+                    enrollment__student_id=student_id
+                )
+
         status_param = self.request.query_params.get('status')
         if status_param:
             qs = qs.filter(status=status_param.upper())

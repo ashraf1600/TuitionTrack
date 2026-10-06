@@ -16,8 +16,10 @@ import Modal from '../common/Modal';
 export default function CycleGrid({
   cycle,
   studentName,
+  tuitionTitle = '',
   onToggleClass,
   onResetCycle,
+  onOpenAddStudent = null,
   loading,
 }) {
   const [resetModalOpen, setResetModalOpen] = useState(false);
@@ -33,12 +35,24 @@ export default function CycleGrid({
 
   if (!cycle) {
     return (
-      <div className="glass-panel p-8 rounded-2xl text-center text-slate-400">
-        <Calendar className="w-12 h-12 mx-auto text-slate-600 mb-2" />
-        <p className="text-base font-semibold text-slate-300">No active cycle selected</p>
-        <p className="text-xs text-slate-500 mt-1">
-          Select a student from the roster on the left to view and check off classes.
+      <div className="glass-panel p-8 rounded-2xl text-center text-slate-400 space-y-3">
+        <Calendar className="w-12 h-12 mx-auto text-indigo-400 mb-2" />
+        <h4 className="text-base font-bold text-slate-200">
+          {tuitionTitle ? `${tuitionTitle} — Class Attendance & Billing Engine` : 'No active cycle selected'}
+        </h4>
+        <p className="text-xs text-slate-400 max-w-md mx-auto">
+          {tuitionTitle
+            ? 'No students are currently enrolled in this tuition. Add a student to start tracking attendance and revenue.'
+            : 'Select a student from the roster on the left to view and check off classes.'}
         </p>
+        {onOpenAddStudent && (
+          <button
+            onClick={onOpenAddStudent}
+            className="mt-2 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow-md shadow-indigo-600/30 transition"
+          >
+            + Add Student to {tuitionTitle || 'Tuition'}
+          </button>
+        )}
       </div>
     );
   }
@@ -123,10 +137,15 @@ export default function CycleGrid({
       {/* Header & Stats */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-slate-800">
         <div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <span className="text-xs font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-indigo-900/60 text-indigo-300 border border-indigo-700/50">
               Cycle #{cycle_number}
             </span>
+            {(tuitionTitle || cycle.tuition_title) && (
+              <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 font-mono">
+                {tuitionTitle || cycle.tuition_title}
+              </span>
+            )}
             <span className="text-xs text-slate-400 font-medium">
               for <strong className="text-slate-200">{studentName}</strong>
             </span>
@@ -138,7 +157,7 @@ export default function CycleGrid({
             )}
           </div>
           <h3 className="text-xl font-bold text-slate-100 mt-1">
-            Class Attendance & Billing Engine
+            {(tuitionTitle || cycle.tuition_title) ? `${tuitionTitle || cycle.tuition_title} — ` : ''}Class Attendance & Billing Engine
           </h3>
         </div>
 
