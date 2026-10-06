@@ -76,6 +76,10 @@ export async function apiRequest(endpoint, options = {}) {
   if (!response.ok) {
     // Flatten DRF field errors: {field: [msg]} -> "field: msg"
     let errorMsg = 'Request failed';
+    if ([502, 503, 504].includes(response.status)) {
+      // The dev proxy / gateway answered, but the API behind it did not.
+      throw new Error('Cannot reach the server. Make sure the backend is running, then try again.');
+    }
     if (data && typeof data === 'object') {
       if (data.error || data.detail || data.message) {
         errorMsg = data.error || data.detail || data.message;
@@ -86,6 +90,9 @@ export async function apiRequest(endpoint, options = {}) {
         }
         errorMsg = parts.join(' | ') || errorMsg;
       }
+    } else if (response.status >= 500 || (typeof data === 'string' && /^\s*<(!doctype|html)/i.test(data))) {
+      // A server crash returns an HTML error page; never show that to the user.
+      errorMsg = 'Something went wrong on the server. Please try again.';
     } else if (typeof data === 'string' && data) {
       errorMsg = data;
     }
@@ -98,7 +105,10 @@ export async function apiRequest(endpoint, options = {}) {
       const accumulated = [...data.results];
       let nextUrl = data.next;
       while (nextUrl) {
-        const fetchUrl = nextUrl.startsWith('http') ? nextUrl : `${BASE_URL}${nextUrl}`;
+        // DRF returns an absolute URL built from the backend's host; keep only the
+        // path so the request stays same-origin (through the dev proxy) and avoids CORS.
+        const parsedNext = new URL(nextUrl, window.location.origin);
+        const fetchUrl = `${parsedNext.pathname}${parsedNext.search}`;
         const nextResp = await fetch(fetchUrl, { ...config, headers });
         if (!nextResp.ok) break;
         const nextData = await nextResp.json();
@@ -141,6 +151,20 @@ export const api = {
   registerStudent: (data) => apiRequest('/auth/register/student/', { method: 'POST', body: JSON.stringify(data) }),
   getTutors: (search = '') => apiRequest(`/auth/tutors/${search ? `?search=${encodeURIComponent(search)}` : ''}`),
   getMe: () => apiRequest('/auth/me/'),
+  updateMe: (data) => apiRequest('/auth/me/', { method: 'PATCH', body: JSON.stringify(data) }),
+  changePassword: (currentPassword, newPassword) => apiRequest('/auth/change-password/', {
+    method: 'POST',
+    body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+  }),
+  requestPasswordReset: (identifier) => apiRequest('/auth/password-reset/', {
+    method: 'POST',
+    body: JSON.stringify({ identifier }),
+  }),
+  confirmPasswordReset: (uid, token, newPassword) => apiRequest('/auth/password-reset/confirm/', {
+    method: 'POST',
+    body: JSON.stringify({ uid, token, new_password: newPassword }),
+  }),
+  getNotifications: () => apiRequest('/notifications/'),
 
   // Students & Prospective Roster
   getStudents: () => apiRequest('/students/'),
@@ -149,6 +173,8 @@ export const api = {
   getStudentDetail: (id) => apiRequest(`/students/${id}/`),
   updateStudent: (id, data) => apiRequest(`/students/${id}/`, { method: 'PATCH', body: JSON.stringify(data) }),
   toggleStudentActive: (id) => apiRequest(`/students/${id}/toggle_active/`, { method: 'POST' }),
+  // Sets a new temporary password; the response is the only time it is ever shown.
+  resetStudentPassword: (id) => apiRequest(`/students/${id}/reset_password/`, { method: 'POST' }),
 
   // Tuitions (Tuition-Centric Architecture)
   getTuitions: () => apiRequest('/tuitions/'),
@@ -164,6 +190,28 @@ export const api = {
     method: 'POST',
     body: JSON.stringify({ student_id: studentId }),
   }),
+  enrollManyInTuition: (tuitionId, studentIds) => apiRequest(`/tuitions/${tuitionId}/enroll/`, {
+    method: 'POST',
+    body: JSON.stringify({ student_ids: studentIds }),
+  }),
+  // Marks a class of the group's shared cycle; every enrolled student sees it.
+  markTuitionClass: (tuitionId, classNo, completed, date = null, topic = '') => apiRequest(`/tuitions/${tuitionId}/mark_class/`, {
+    method: 'PATCH',
+    body: JSON.stringify({ class_no: classNo, completed, date, topic }),
+  }),
+
+  // Connection requests (student asks to join a tutor)
+  getConnections: (status = '') => apiRequest(`/connections/${status ? `?status=${encodeURIComponent(status)}` : ''}`),
+  sendConnectionRequest: (tutorId, message = '') => apiRequest('/connections/', {
+    method: 'POST',
+    body: JSON.stringify({ tutor_id: tutorId, message }),
+  }),
+  withdrawConnection: (id) => apiRequest(`/connections/${id}/`, { method: 'DELETE' }),
+  acceptConnection: (id, tuitionId = null) => apiRequest(`/connections/${id}/accept/`, {
+    method: 'POST',
+    body: JSON.stringify(tuitionId ? { tuition_id: tuitionId } : {}),
+  }),
+  rejectConnection: (id) => apiRequest(`/connections/${id}/reject/`, { method: 'POST' }),
 
   // Legacy Tuition Batches (backward compatibility)
   getBatches: () => apiRequest('/batches/'),
@@ -226,9 +274,24 @@ export const api = {
   createExam: (examData) => apiRequest('/exams/', { method: 'POST', body: JSON.stringify(examData) }),
   updateExam: (id, examData) => apiRequest(`/exams/${id}/`, { method: 'PATCH', body: JSON.stringify(examData) }),
   deleteExam: (id) => apiRequest(`/exams/${id}/`, { method: 'DELETE' }),
+  // Opens the exam for the student: starts their timer (timed exams) and returns the questions.
+  startExam: (examId) => apiRequest(`/exams/${examId}/start/`, { method: 'POST' }),
+  duplicateExam: (examId, tuitionId = null) => apiRequest(`/exams/${examId}/duplicate/`, {
+    method: 'POST',
+    body: JSON.stringify(tuitionId ? { tuition_id: tuitionId } : {}),
+  }),
+  getQuestionBank: (search = '') => apiRequest(`/exams/question_bank/${search ? `?search=${encodeURIComponent(search)}` : ''}`),
+  getExamSubmissions: (examId) => apiRequest(`/exams/${examId}/submissions/`),
   submitExam: (examId, submissionData) => apiRequest(`/exams/${examId}/submit/`, {
     method: 'POST',
     body: JSON.stringify(submissionData),
+  }),
+  // Student: the evaluated paper, or {available: false} while results are pending.
+  getExamResult: (examId) => apiRequest(`/exams/${examId}/result/`),
+  // Tutor: publish results now (true) or take them back (false).
+  publishExamResults: (examId, publish = true) => apiRequest(`/exams/${examId}/publish_results/`, {
+    method: 'POST',
+    body: JSON.stringify({ publish }),
   }),
   getExamLeaderboard: (examId) => apiRequest(`/exams/${examId}/leaderboard/`),
   gradeSubmission: (submissionId, gradeData) => apiRequest(`/submissions/${submissionId}/grade/`, {

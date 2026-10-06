@@ -55,3 +55,16 @@ class CycleAdmin(admin.ModelAdmin):
     def get_pending(self, obj):
         return f'{obj.pending_amount}'
     get_pending.short_description = 'Pending (BDT)'
+
+
+from .models import AttendanceCycle  # noqa: E402
+
+
+@admin.register(AttendanceCycle)
+class AttendanceCycleAdmin(admin.ModelAdmin):
+    """Shared per-tuition cycles."""
+    list_display = ['tuition', 'tutor', 'cycle_number', 'status', 'fee_snapshot', 'total_classes', 'completed_classes', 'earned_revenue']
+    list_filter = ['status']
+    search_fields = ['tuition__title', 'tutor__username']
+    raw_id_fields = ['tuition', 'tutor']
+    readonly_fields = ['id', 'created_at', 'updated_at']

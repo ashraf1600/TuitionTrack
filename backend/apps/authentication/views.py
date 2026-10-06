@@ -8,6 +8,10 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenObtainPairView
 
 from .serializers import (
+    ChangePasswordSerializer,
+    PasswordResetConfirmSerializer,
+    PasswordResetRequestSerializer,
+    ProfileUpdateSerializer,
     CustomTokenObtainPairSerializer,
     TutorRegistrationSerializer,
     StudentSelfRegistrationSerializer,
@@ -76,6 +80,90 @@ class MeView(APIView):
     def get(self, request):
         serializer = UserProfileSerializer(request.user)
         return Response(serializer.data)
+
+    def patch(self, request):
+        """PATCH /api/v1/auth/me/ — a user edits their own name, contact and (students) school details."""
+        serializer = ProfileUpdateSerializer(request.user, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        user = serializer.save()
+        return Response(UserProfileSerializer(user).data)
+
+
+class ChangePasswordView(APIView):
+    """POST /api/v1/auth/change-password/ — needs the current password; clears the forced-change flag."""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        serializer = ChangePasswordSerializer(data=request.data, context={'request': request})
+        serializer.is_valid(raise_exception=True)
+        user = request.user
+        user.set_password(serializer.validated_data['new_password'])
+        user.must_change_password = False
+        user.save(update_fields=['password', 'must_change_password', 'updated_at'])
+        return Response({'message': 'Your password has been changed.'})
+
+
+class PasswordResetRequestView(APIView):
+    """
+    POST /api/v1/auth/password-reset/   {identifier: username or email}
+    Emails a one-time reset link. The answer is the same whether or not the
+    account exists, so it cannot be used to discover usernames.
+    """
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        from django.conf import settings
+        from django.contrib.auth import get_user_model
+        from django.contrib.auth.tokens import default_token_generator
+        from django.core.mail import send_mail
+        from django.db.models import Q
+        from django.utils.encoding import force_bytes
+        from django.utils.http import urlsafe_base64_encode
+
+        serializer = PasswordResetRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        identifier = serializer.validated_data['identifier'].strip()
+
+        User = get_user_model()
+        users = User.objects.filter(is_active=True).filter(
+            Q(username__iexact=identifier) | Q(email__iexact=identifier)
+        ).exclude(email='')[:3]
+
+        for user in users:
+            uid = urlsafe_base64_encode(force_bytes(user.pk))
+            token = default_token_generator.make_token(user)
+            link = f"{settings.FRONTEND_URL.rstrip('/')}/reset-password?uid={uid}&token={token}"
+            send_mail(
+                subject='[TuitionTrack] Reset your password',
+                message=(
+                    f'Hello {user.get_full_name() or user.username},\n\n'
+                    f'Use this link to choose a new password for your TuitionTrack account '
+                    f'(username: {user.username}):\n\n{link}\n\n'
+                    f'If you did not ask for this, you can ignore this email.'
+                ),
+                from_email=settings.DEFAULT_FROM_EMAIL,
+                recipient_list=[user.email],
+                fail_silently=True,
+            )
+
+        return Response({
+            'message': 'If that account has an email address, a reset link has been sent to it. '
+                       'Students without an email can ask their tutor to reset the password.'
+        })
+
+
+class PasswordResetConfirmView(APIView):
+    """POST /api/v1/auth/password-reset/confirm/   {uid, token, new_password}"""
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        serializer = PasswordResetConfirmSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = serializer.validated_data['user']
+        user.set_password(serializer.validated_data['new_password'])
+        user.must_change_password = False
+        user.save(update_fields=['password', 'must_change_password', 'updated_at'])
+        return Response({'message': 'Your password has been reset. You can sign in now.'})
 
 
 class TutorDirectoryView(generics.ListAPIView):

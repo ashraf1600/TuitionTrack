@@ -1,134 +1,104 @@
 import React from 'react';
-import { Calendar, Check, Clock, CheckCircle2, CalendarDays, BookOpen } from 'lucide-react';
+import { Calendar, Check, CheckCircle2 } from 'lucide-react';
+import { formatShortDate, formatLongDate } from '../../utils/dates';
 
-export default function StudentCycleProgress({ cycle }) {
+/**
+ * Read-only view of a tuition group's shared cycle for a student:
+ * how many classes are done and when each was held. No fee figures —
+ * the student API does not send any.
+ */
+export default function StudentCycleProgress({ cycle, embedded = false }) {
   if (!cycle) {
     return (
-      <div className="glass-panel p-6 rounded-2xl text-center text-slate-400">
-        <Calendar className="w-10 h-10 mx-auto text-slate-600 mb-2" />
-        <p className="text-sm font-semibold text-slate-300">No active tuition cycle</p>
-        <p className="text-xs text-slate-500 mt-1">Your tutor will record attendance as classes take place.</p>
+      <div className={`${embedded ? '' : 'glass-panel p-6 rounded-2xl'} text-center text-slate-400`}>
+        <Calendar className="w-9 h-9 mx-auto text-slate-600 mb-2" />
+        <p className="text-sm font-semibold text-slate-300">No classes recorded yet</p>
+        <p className="text-xs text-slate-500 mt-1">Your tutor ticks each class here once it has been held.</p>
       </div>
     );
   }
 
-  const {
-    cycle_number,
-    total_classes,
-    completed_classes,
-    progress_percentage: progPct,
-    progress_percent: progPctAlt,
-    is_complete,
-    classes_data = [],
-    tuition_title,
-    batch_name,
-  } = cycle;
-
-  const progress_percentage = progPct !== undefined ? progPct : (progPctAlt !== undefined ? progPctAlt : 0);
-  const title = tuition_title || batch_name || '';
+  const total = Number(cycle.total_classes) || 0;
+  const byNo = new Map((cycle.classes_data || []).map((c) => [Number(c.class_no ?? c.classNo), c]));
+  const classes = Array.from({ length: total }, (_, i) => byNo.get(i + 1) || { class_no: i + 1, completed: false });
+  const completed = classes.filter((c) => c.completed).length;
+  const percent = total ? Math.min(100, Math.round((completed / total) * 100)) : 0;
+  const nextNo = classes.find((c) => !c.completed)?.class_no ?? null;
+  const lastDone = [...classes].reverse().find((c) => c.completed);
 
   return (
-    <div className="glass-panel p-6 rounded-2xl space-y-5">
-      {/* Header — Attendance Only (NO Billing/Fee figures) */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-800">
+    <div className={embedded ? 'space-y-4' : 'glass-panel p-6 rounded-2xl space-y-4'}>
+      <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <div className="flex items-center gap-2">
-            <span className="text-xs font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-indigo-900/60 text-indigo-300 border border-indigo-700/50">
-              Cycle #{cycle_number}
+            <span className="text-[11px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-indigo-500/15 text-indigo-300 border border-indigo-500/30">
+              Cycle #{cycle.cycle_number}
             </span>
-            {title && (
-              <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 font-mono">
-                {title}
-              </span>
-            )}
-            {is_complete && (
-              <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
+            {cycle.is_complete && (
+              <span className="text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
                 <CheckCircle2 className="w-3.5 h-3.5" />
-                Cycle Completed
+                Cycle complete
               </span>
             )}
           </div>
-          <h3 className="text-lg font-bold text-slate-100 mt-1 flex items-center gap-2">
-            {title ? `${title} — ` : ''}Class Attendance & Routine Tracking
-          </h3>
+          <p className="text-xs text-slate-400 mt-1.5">
+            {lastDone
+              ? `Last class: ${formatLongDate(lastDone.date)}${lastDone.topic ? ` — ${lastDone.topic}` : ''}`
+              : 'No class has been held in this cycle yet.'}
+          </p>
         </div>
-
-        <div className="text-sm font-semibold text-slate-300">
-          <span className="text-emerald-400 font-bold text-base">{completed_classes}</span> of{' '}
-          <span className="text-slate-400">{total_classes}</span> classes completed ({progress_percentage}%)
+        <div className="text-right">
+          <div className="text-2xl font-extrabold text-slate-100 leading-none">
+            {completed}<span className="text-sm font-semibold text-slate-500"> / {total}</span>
+          </div>
+          <div className="text-[11px] text-slate-400 mt-1">classes done · {percent}%</div>
         </div>
       </div>
 
-      {/* Progress Bar */}
       <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
         <div
-          className="h-full bg-gradient-to-r from-indigo-500 to-emerald-400 transition-all duration-300"
-          style={{ width: `${progress_percentage}%` }}
+          className="h-full bg-gradient-to-r from-indigo-500 to-emerald-400 transition-all duration-500"
+          style={{ width: `${percent}%` }}
         />
       </div>
 
-      {/* Attendance Schedule Grid with Recorded Dates */}
-      <div>
-        <div className="flex items-center gap-1.5 text-xs text-slate-400 mb-3">
-          <CalendarDays className="w-3.5 h-3.5 text-indigo-400" />
-          <span>Attendance logs for each scheduled class:</span>
-        </div>
-
-        <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-12 gap-2.5">
-          {classes_data.map((cls, idx) => {
-            const classNum = cls.class_no || cls.classNo || (idx + 1);
-            const isCompleted = cls.completed;
-            const dateObj = cls.date ? new Date(cls.date) : null;
-            const formattedDate = dateObj
-              ? dateObj.toLocaleDateString(undefined, {
-                  month: 'short',
-                  day: 'numeric',
-                })
-              : null;
-
-            return (
-              <div
-                key={classNum}
-                title={
-                  isCompleted
-                    ? `Class #${classNum}: Attended on ${dateObj?.toLocaleDateString()}${
-                        cls.topic ? ` (${cls.topic})` : ''
-                      }`
-                    : `Class #${classNum}: Upcoming class`
-                }
-                className={`p-2.5 rounded-xl border flex flex-col items-center justify-center text-center transition ${
-                  isCompleted
-                    ? 'bg-emerald-600/20 border-emerald-500/40 text-emerald-300 shadow-sm shadow-emerald-500/10'
-                    : 'bg-slate-800/40 border-slate-700/60 text-slate-500'
-                }`}
-              >
-                <span className="text-xs font-bold font-mono">#{classNum}</span>
-
-                <div className="my-1">
-                  {isCompleted ? (
-                    <Check className="w-4 h-4 text-emerald-400 stroke-[2.5]" />
-                  ) : (
-                    <Clock className="w-4 h-4 text-slate-600" />
-                  )}
-                </div>
-
-                <span
-                  className={`text-[10px] font-medium truncate max-w-full ${
-                    isCompleted ? 'text-emerald-200' : 'text-slate-500'
-                  }`}
-                >
-                  {formattedDate || 'Upcoming'}
+      <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-2.5">
+        {classes.map((cls) => {
+          const classNo = Number(cls.class_no ?? cls.classNo);
+          const isNext = classNo === Number(nextNo);
+          return (
+            <div
+              key={classNo}
+              title={
+                cls.completed
+                  ? `Class ${classNo} · ${formatLongDate(cls.date)}${cls.topic ? ` · ${cls.topic}` : ''}`
+                  : `Class ${classNo} — not held yet`
+              }
+              className={`rounded-xl border p-3 ${
+                cls.completed
+                  ? 'bg-emerald-500/10 border-emerald-500/40'
+                  : isNext
+                  ? 'bg-indigo-500/10 border-indigo-500/40'
+                  : 'bg-slate-800/40 border-slate-700/70'
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <span className={`text-[11px] font-bold ${cls.completed ? 'text-emerald-300' : 'text-slate-400'}`}>
+                  Class {classNo}
                 </span>
-
-                {cls.topic && isCompleted && (
-                  <span className="text-[9px] text-emerald-300/70 truncate max-w-full mt-0.5">
-                    {cls.topic}
+                {cls.completed && (
+                  <span className="w-4 h-4 rounded-md bg-emerald-500 text-white flex items-center justify-center">
+                    <Check className="w-3 h-3 stroke-[3]" />
                   </span>
                 )}
               </div>
-            );
-          })}
-        </div>
+              <div className={`mt-2 text-xs font-semibold ${cls.completed ? 'text-slate-100' : isNext ? 'text-indigo-300' : 'text-slate-500'}`}>
+                {cls.completed ? formatShortDate(cls.date) || 'Done' : isNext ? 'Up next' : 'Not yet'}
+              </div>
+              <div className="text-[10px] text-slate-400 truncate h-3.5 mt-0.5">{cls.completed ? cls.topic || '' : ''}</div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );

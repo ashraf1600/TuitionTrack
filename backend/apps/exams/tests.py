@@ -299,7 +299,7 @@ class ExamLifecycleTests(APITestCase):
             title='Physics Batch Alpha',
             subject='Physics',
             routine=[{'day': 'Monday', 'start_time': '16:00', 'end_time': '17:30'}],
-            tuition_fee=5000.00,
+            total_fee=5000.00,
             cycle_length=12
         )
         TuitionEnrollment.objects.create(tuition=tuition, student=self.student1)
@@ -349,7 +349,10 @@ class ExamLifecycleTests(APITestCase):
             'image_urls': []
         }, format='json')
         self.assertEqual(resp1.status_code, status.HTTP_201_CREATED)
-        self.assertEqual(resp1.data['submission']['mcq_score'], '10.00')
+        # Marks withheld from student during active exam window per P0 security invariant
+        self.assertIsNone(resp1.data['submission']['mcq_score'])
+        sub1 = ExamSubmission.objects.get(exam=exam, student=self.student1)
+        self.assertEqual(float(sub1.mcq_score), 10.0)
 
         # Student 2 gets only 1 correct: score = 5.0
         self.client.force_authenticate(user=student2)
@@ -358,7 +361,9 @@ class ExamLifecycleTests(APITestCase):
             'image_urls': []
         }, format='json')
         self.assertEqual(resp2.status_code, status.HTTP_201_CREATED)
-        self.assertEqual(resp2.data['submission']['mcq_score'], '5.00')
+        self.assertIsNone(resp2.data['submission']['mcq_score'])
+        sub2 = ExamSubmission.objects.get(exam=exam, student=student2)
+        self.assertEqual(float(sub2.mcq_score), 5.0)
 
         # Fetch Leaderboard
         leaderboard_url = reverse('exam-leaderboard', kwargs={'pk': exam.id})
@@ -380,3 +385,211 @@ class ExamLifecycleTests(APITestCase):
         self.assertEqual(lb[1]['obtained_marks'], 5.0)
         self.assertEqual(lb[1]['percentage'], 50.0)
 
+
+
+class ExamWorkflowUpgradeTests(APITestCase):
+    """Drafts, editing, timed attempts, late work, negative marking, roster and grading."""
+
+    def setUp(self):
+        from apps.students.models import Tuition
+        from apps.students.services import enroll_student
+        self.tutor = User.objects.create_user(username='x_tutor', password='password123', role=User.Role.TUTOR)
+        self.s1 = User.objects.create_user(username='x_s1', password='password123', role=User.Role.STUDENT, tutor=self.tutor, email='s1@example.com')
+        self.s2 = User.objects.create_user(username='x_s2', password='password123', role=User.Role.STUDENT, tutor=self.tutor)
+        self.tuition = Tuition.objects.create(tutor=self.tutor, title='Group X', total_fee=1000, cycle_length=4)
+        enroll_student(self.tuition, self.s1)
+        enroll_student(self.tuition, self.s2)
+        self.now = timezone.now()
+
+    def _payload(self, **extra):
+        data = {
+            'title': 'Quiz', 'exam_type': 'HYBRID', 'category': 'EXAM', 'tuition_id': str(self.tuition.id),
+            'total_marks': '10', 'content_html': '<p>Explain.</p>',
+            'start_time': (self.now - timedelta(minutes=10)).isoformat(),
+            'end_time': (self.now + timedelta(hours=2)).isoformat(),
+            'duration_minutes': None,
+            'mcq_data': [
+                {'question': 'q1', 'options': ['a', 'b', 'c', 'd'], 'correct_answer': 1, 'points': 2},
+                {'question': 'q2', 'options': ['a', 'b', 'c', 'd'], 'correct_answer': 0, 'points': 2},
+            ],
+        }
+        data.update(extra)
+        return data
+
+    def _create(self, **extra):
+        self.client.force_authenticate(user=self.tutor)
+        resp = self.client.post(reverse('exam-list'), self._payload(**extra), format='json')
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED, resp.data)
+        return resp.data['exam']
+
+    def _student_rows(self, user):
+        self.client.force_authenticate(user=user)
+        data = self.client.get(reverse('exam-list')).data
+        return data if isinstance(data, list) else data['results']
+
+    def test_draft_is_hidden_then_published_and_emailed(self):
+        from django.core import mail
+        exam = self._create(is_published=False)
+        self.assertEqual(len(mail.outbox), 0)
+        self.assertEqual(self._student_rows(self.s1), [])
+
+        self.client.force_authenticate(user=self.tutor)
+        rows = self.client.get(reverse('exam-list')).data
+        rows = rows if isinstance(rows, list) else rows['results']
+        self.assertEqual(rows[0]['dynamic_status'], 'Draft')
+
+        resp = self.client.patch(reverse('exam-detail', kwargs={'pk': exam['id']}), {'is_published': True}, format='json')
+        self.assertEqual(resp.status_code, status.HTTP_200_OK, resp.data)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(mail.outbox[0].to, ['s1@example.com'])
+        self.assertEqual(len(self._student_rows(self.s1)), 1)
+
+    def test_edit_regrades_and_delete(self):
+        exam = self._create()
+        q = exam['mcq_data']
+        self.client.force_authenticate(user=self.s1)
+        sub = self.client.post(reverse('exam-submit', kwargs={'pk': exam['id']}), {'answers_data': {q[0]['id']: '1', q[1]['id']: '1'}}, format='json')
+        self.assertEqual(sub.status_code, status.HTTP_201_CREATED, sub.data)
+        submission = ExamSubmission.objects.get(exam_id=exam['id'], student=self.s1)
+        self.assertEqual(float(submission.mcq_score), 2.0)
+
+        # Tutor fixes the key of q2 (was A, should be B) -> the submission is re-marked.
+        self.client.force_authenticate(user=self.tutor)
+        fixed = [dict(q[0]), dict(q[1], correct_answer=1)]
+        resp = self.client.patch(reverse('exam-detail', kwargs={'pk': exam['id']}), {'title': 'Quiz (fixed)', 'mcq_data': fixed}, format='json')
+        self.assertEqual(resp.status_code, status.HTTP_200_OK, resp.data)
+        submission.refresh_from_db()
+        self.assertEqual(float(submission.mcq_score), 4.0)
+
+        self.assertEqual(self.client.delete(reverse('exam-detail', kwargs={'pk': exam['id']})).status_code, status.HTTP_204_NO_CONTENT)
+        self.assertFalse(Exam.objects.filter(id=exam['id']).exists())
+
+    def test_negative_marking(self):
+        exam = self._create(negative_marks_per_wrong='0.5')
+        q = exam['mcq_data']
+        self.client.force_authenticate(user=self.s1)
+        self.client.post(reverse('exam-submit', kwargs={'pk': exam['id']}), {'answers_data': {q[0]['id']: '1', q[1]['id']: '3'}}, format='json')
+        self.assertEqual(float(ExamSubmission.objects.get(exam_id=exam['id'], student=self.s1).mcq_score), 1.5)
+        # Blank answers cost nothing.
+        self.client.force_authenticate(user=self.s2)
+        self.client.post(reverse('exam-submit', kwargs={'pk': exam['id']}), {'answers_data': {q[0]['id']: '1'}, 'text_answer': 'typed'}, format='json')
+        s2 = ExamSubmission.objects.get(exam_id=exam['id'], student=self.s2)
+        self.assertEqual(float(s2.mcq_score), 2.0)
+        self.assertEqual(s2.text_answer, 'typed')
+
+    def test_timed_exam_hides_questions_until_start_and_enforces_personal_timer(self):
+        from apps.exams.models import ExamAttempt
+        exam = self._create(duration_minutes=30)
+        self.client.force_authenticate(user=self.s1)
+        detail = self.client.get(reverse('exam-detail', kwargs={'pk': exam['id']})).data
+        self.assertTrue(detail['requires_start'])
+        self.assertEqual(detail['mcq_data'], [])
+        self.assertEqual(detail['content_html'], '')
+
+        started = self.client.post(reverse('exam-start', kwargs={'pk': exam['id']}))
+        self.assertEqual(started.status_code, status.HTTP_200_OK, started.data)
+        self.assertEqual(len(started.data['exam']['mcq_data']), 2)
+        self.assertNotIn('correct_answer', started.data['exam']['mcq_data'][0])
+        first_start = started.data['started_at']
+        # Starting again never restarts the clock.
+        self.assertEqual(self.client.post(reverse('exam-start', kwargs={'pk': exam['id']})).data['started_at'], first_start)
+
+        # 30 min timer + 5 min grace ran out 10 minutes ago -> refused, although the exam window is still open.
+        ExamAttempt.objects.filter(exam_id=exam['id'], student=self.s1).update(started_at=self.now - timedelta(minutes=45))
+        late = self.client.post(reverse('exam-submit', kwargs={'pk': exam['id']}), {'answers_data': {}}, format='json')
+        self.assertEqual(late.status_code, status.HTTP_400_BAD_REQUEST)
+
+        # Inside the grace period it is accepted but flagged.
+        ExamAttempt.objects.filter(exam_id=exam['id'], student=self.s1).update(started_at=self.now - timedelta(minutes=32))
+        ok = self.client.post(reverse('exam-submit', kwargs={'pk': exam['id']}), {'answers_data': {}}, format='json')
+        self.assertEqual(ok.status_code, status.HTTP_201_CREATED, ok.data)
+        self.assertEqual(ExamSubmission.objects.get(exam_id=exam['id'], student=self.s1).status, 'DELAYED')
+
+    def test_assignment_accepts_late_work_until_cutoff(self):
+        exam = self._create(category='ASSIGNMENT', exam_type='CQ', mcq_data=[], duration_minutes=45,
+                            late_submission_until=(self.now + timedelta(days=3)).isoformat())
+        self.assertIsNone(Exam.objects.get(id=exam['id']).duration_minutes)
+        # Deadline (and grace) passed an hour ago, late window still open.
+        Exam.objects.filter(id=exam['id']).update(end_time=self.now - timedelta(hours=1))
+        rows = self._student_rows(self.s1)
+        self.assertEqual(rows[0]['dynamic_status'], 'Late')
+        self.assertTrue(rows[0]['can_submit'])
+        resp = self.client.post(reverse('exam-submit', kwargs={'pk': exam['id']}), {'text_answer': 'my essay'}, format='json')
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED, resp.data)
+        self.assertEqual(ExamSubmission.objects.get(exam_id=exam['id'], student=self.s1).status, 'DELAYED')
+
+        # After the cutoff it is refused.
+        Exam.objects.filter(id=exam['id']).update(late_submission_until=self.now - timedelta(minutes=1))
+        self.client.force_authenticate(user=self.s2)
+        self.assertEqual(
+            self.client.post(reverse('exam-submit', kwargs={'pk': exam['id']}), {'text_answer': 'x'}, format='json').status_code,
+            status.HTTP_400_BAD_REQUEST,
+        )
+
+    def test_roster_and_written_marks_grading(self):
+        exam = self._create()
+        q = exam['mcq_data']
+        self.client.force_authenticate(user=self.s1)
+        self.client.post(reverse('exam-submit', kwargs={'pk': exam['id']}), {'answers_data': {q[0]['id']: '1'}}, format='json')
+
+        self.client.force_authenticate(user=self.tutor)
+        data = self.client.get(reverse('exam-submissions', kwargs={'pk': exam['id']})).data
+        self.assertEqual(data['assigned_count'], 2)
+        states = {row['username']: row['state'] for row in data['roster']}
+        self.assertEqual(states, {'x_s1': 'submitted', 'x_s2': 'not_submitted'})
+
+        sub_id = next(r for r in data['roster'] if r['username'] == 'x_s1')['submission']['id']
+        graded = self.client.patch(reverse('grade-submission', kwargs={'pk': sub_id}), {'cq_score': '5', 'tutor_feedback': 'Good'}, format='json')
+        self.assertEqual(graded.status_code, status.HTTP_200_OK, graded.data)
+        self.assertEqual(float(graded.data['submission']['obtained_marks']), 7.0)
+        self.assertEqual(float(graded.data['submission']['cq_score']), 5.0)
+
+        # Leaderboard read no longer writes "missed" rows.
+        self.client.get(reverse('exam-leaderboard', kwargs={'pk': exam['id']}))
+        self.assertEqual(ExamSubmission.objects.filter(exam_id=exam['id']).count(), 1)
+
+    def test_shuffle_is_stable_per_student(self):
+        many = [{'question': f'q{i}', 'options': ['a', 'b'], 'correct_answer': 0, 'points': 1} for i in range(8)]
+        exam = self._create(mcq_data=many, shuffle_questions=True)
+        url = reverse('exam-detail', kwargs={'pk': exam['id']})
+        self.client.force_authenticate(user=self.s1)
+        first = [q['question'] for q in self.client.get(url).data['mcq_data']]
+        again = [q['question'] for q in self.client.get(url).data['mcq_data']]
+        self.assertEqual(first, again)
+        self.assertEqual(sorted(first), sorted(f'q{i}' for i in range(8)))
+
+
+class ExamCreateRegressionTests(APITestCase):
+    """What the exam form actually sends: both id names, and an uploaded image in the paper."""
+
+    def setUp(self):
+        from apps.students.models import Tuition
+        self.tutor = User.objects.create_user(username='reg_tutor', password='password123', role=User.Role.TUTOR)
+        self.tuition = Tuition.objects.create(tutor=self.tutor, title='Reg group', total_fee=1000, cycle_length=4)
+        self.client.force_authenticate(user=self.tutor)
+
+    def test_create_with_both_tuition_id_and_batch_id_and_an_image(self):
+        now = timezone.now()
+        image = '<p><img src="/media/uploads/2026/10/abc_note.jpg" alt="note.jpg"></p>'
+        resp = self.client.post(reverse('exam-list'), {
+            'title': 'Polynomial', 'category': 'EXAM', 'exam_type': 'HYBRID',
+            'student_id': None, 'batch_id': str(self.tuition.id), 'tuition_id': str(self.tuition.id),
+            'content_html': image, 'total_marks': 100,
+            'mcq_data': [{'id': 'mcq-1', 'question': 'If \\(P(1)\\) is', 'options': ['-4', '-3', '-2', '0'], 'correct_answer': 0, 'points': 1, 'marks': 1}],
+            'written_scheme': [{'label': 'Q1', 'marks': 10}],
+            'start_time': (now + timedelta(minutes=2)).isoformat(), 'end_time': (now + timedelta(hours=1)).isoformat(),
+            'duration_minutes': None, 'is_published': True,
+        }, format='json')
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED, resp.data)
+        exam = Exam.objects.get(id=resp.data['exam']['id'])
+        self.assertEqual(exam.tuition_id, self.tuition.id)
+        # The uploaded image survives sanitizing (which runs in the serializer and again on save).
+        self.assertEqual(exam.content_html, image)
+
+    def test_sanitizer_keeps_media_urls_and_is_idempotent(self):
+        html = '<p><img src="/media/uploads/a.jpg" alt="a"> <a href="/media/uploads/b.pdf">b</a></p>'
+        once = sanitize_exam_html(html)
+        self.assertIn('src="/media/uploads/a.jpg"', once)
+        self.assertIn('href="/media/uploads/b.pdf"', once)
+        self.assertNotIn('src="src=', once)
+        self.assertEqual(sanitize_exam_html(once), once)

@@ -99,22 +99,15 @@ class ToggleClassSerializer(serializers.Serializer):
         return attrs
 
 
-class AttendanceCycleSerializer(serializers.ModelSerializer):
+class StudentCycleSerializer(serializers.ModelSerializer):
     """
-    Serializer for Tuition-based AttendanceCycle.
-    Calculates completed classes, earned revenue, pending balance, progress percent, per class rate.
-    Strict student privacy: Strips all financial/taka data when accessed by students.
+    What a student sees of their tuition group's shared cycle: progress and the
+    dated class log. This is an allow-list — it has no money fields at all, so
+    nothing financial can leak by a field being added elsewhere.
     """
-    tuition_id = serializers.UUIDField(source='enrollment.tuition.id', read_only=True)
-    tuition_title = serializers.CharField(source='enrollment.tuition.title', read_only=True)
-    student_id = serializers.UUIDField(source='enrollment.student.id', read_only=True)
-    student_name = serializers.SerializerMethodField()
+    tuition_id = serializers.UUIDField(read_only=True)
+    tuition_title = serializers.SerializerMethodField()
     completed_classes = serializers.ReadOnlyField()
-    total_classes = serializers.ReadOnlyField()
-    tuition_fee = serializers.ReadOnlyField()
-    per_class_rate = serializers.ReadOnlyField()
-    earned_revenue = serializers.ReadOnlyField()
-    pending_balance = serializers.ReadOnlyField()
     progress_percent = serializers.ReadOnlyField()
     progress_percentage = serializers.ReadOnlyField()
     is_complete = serializers.ReadOnlyField()
@@ -124,18 +117,11 @@ class AttendanceCycleSerializer(serializers.ModelSerializer):
         model = AttendanceCycle
         fields = [
             'id',
-            'enrollment_id',
             'tuition_id',
             'tuition_title',
-            'student_id',
-            'student_name',
             'cycle_number',
             'completed_classes',
             'total_classes',
-            'tuition_fee',
-            'per_class_rate',
-            'earned_revenue',
-            'pending_balance',
             'progress_percent',
             'progress_percentage',
             'is_complete',
@@ -146,19 +132,45 @@ class AttendanceCycleSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = fields
 
-    def get_student_name(self, obj):
-        if obj.enrollment and obj.enrollment.student:
-            student = obj.enrollment.student
-            return student.get_full_name() or student.username
-        return 'Enrolled Student'
+    def get_tuition_title(self, obj):
+        return obj.tuition.title if obj.tuition_id else ''
+
+
+class AttendanceCycleSerializer(StudentCycleSerializer):
+    """
+    Tutor view of the shared cycle: everything a student sees plus the wallet
+    figures. earned_revenue = (total_fee / total_classes) * completed_classes.
+    """
+    MONEY_FIELDS = ('total_fee', 'tuition_fee', 'per_class_rate', 'earned_revenue', 'pending_balance')
+
+    total_fee = serializers.ReadOnlyField()
+    # Old name for total_fee, kept so existing clients keep working.
+    tuition_fee = serializers.ReadOnlyField(source='total_fee')
+    per_class_rate = serializers.ReadOnlyField()
+    earned_revenue = serializers.ReadOnlyField()
+    pending_balance = serializers.ReadOnlyField()
+    student_count = serializers.SerializerMethodField()
+
+    class Meta(StudentCycleSerializer.Meta):
+        fields = StudentCycleSerializer.Meta.fields + [
+            'total_fee',
+            'tuition_fee',
+            'per_class_rate',
+            'earned_revenue',
+            'pending_balance',
+            'student_count',
+        ]
+        read_only_fields = fields
+
+    def get_student_count(self, obj):
+        return obj.tuition.enrolled_students_count if obj.tuition_id else 0
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
+        # Second line of defence: views pick StudentCycleSerializer for students,
+        # but if this one is ever handed a student request, drop the money anyway.
         request = self.context.get('request')
-        if request and getattr(request.user, 'role', None) == 'STUDENT':
-            data.pop('tuition_fee', None)
-            data.pop('per_class_rate', None)
-            data.pop('earned_revenue', None)
-            data.pop('pending_balance', None)
+        if request and getattr(request.user, 'role', None) != 'TUTOR':
+            for field in self.MONEY_FIELDS:
+                data.pop(field, None)
         return data
-

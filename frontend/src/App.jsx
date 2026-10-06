@@ -7,6 +7,8 @@ import TutorDashboard from './pages/TutorDashboard';
 import StudentPortal from './pages/StudentPortal';
 
 import TuitionWorkspace from './pages/TuitionWorkspace';
+import Toaster from './components/common/Toaster';
+import ResetPasswordPage from './pages/ResetPasswordPage';
 
 function RootRedirect() {
   const { user, token, loading } = useAuth();
@@ -33,6 +35,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<RootRedirect />} />
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/reset-password" element={<ResetPasswordPage />} />
           <Route
             path="/tutor"
             element={
@@ -60,6 +63,7 @@ export default function App() {
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>
+      <Toaster />
     </AuthProvider>
   );
 }

@@ -1,4 +1,5 @@
 """Tests for Students app and Multi-Tenancy Guard"""
+from decimal import Decimal
 from django.urls import reverse
 from django.contrib.auth import get_user_model
 from rest_framework import status
@@ -59,14 +60,8 @@ class StudentsTests(APITestCase):
         self.assertEqual(student.student_profile.grade_level, 'Class 10')
         self.assertEqual(float(student.student_profile.tuition_fee), 5000.00)
 
-        # Check atomic cycle #1 created
-        cycle = Cycle.objects.get(student=student, status=Cycle.Status.ACTIVE)
-        self.assertEqual(cycle.cycle_number, 1)
-        self.assertEqual(cycle.tutor, self.tutor1)
-        self.assertEqual(float(cycle.fee_snapshot), 5000.00)
-        self.assertEqual(cycle.total_classes, 12)
-        self.assertEqual(len(cycle.classes_data), 12)
-        self.assertFalse(cycle.classes_data[0]['completed'])
+        # Verify no ghost legacy cycle created per P1 architecture (cycles are initialized on tuition enrollment)
+        self.assertFalse(Cycle.objects.filter(student=student).exists())
 
     def test_multi_tenancy_isolation_between_tutors(self):
         # Tutor 1 creates student Alice
@@ -156,6 +151,9 @@ class TuitionArchitectureTests(APITestCase):
             first_name='Self',
             last_name='Student'
         )
+        # Picking a tutor at registration leaves a pending request in their inbox.
+        from apps.students.models import ConnectionRequest
+        self.connection = ConnectionRequest.objects.create(student=self.student, tutor=self.tutor)
 
     def test_tutor_directory_and_unassigned_prospective_student(self):
         tutors_url = reverse('tutor_directory')
@@ -172,6 +170,7 @@ class TuitionArchitectureTests(APITestCase):
         self.assertEqual(u_resp.status_code, status.HTTP_200_OK)
         self.assertEqual(len(u_resp.data), 1)
         self.assertEqual(u_resp.data[0]['username'], 'self_student')
+        self.assertEqual(u_resp.data[0]['request_status'], 'PENDING')
 
     def test_tuition_crud_enrollment_and_attendance_cycle(self):
         self.client.force_authenticate(user=self.tutor)
@@ -201,7 +200,7 @@ class TuitionArchitectureTests(APITestCase):
 
         # Check AttendanceCycle was created
         from apps.cycles.models import AttendanceCycle
-        cycle = AttendanceCycle.objects.filter(enrollment__tuition_id=tuition_id, enrollment__student=self.student).first()
+        cycle = AttendanceCycle.objects.filter(tuition_id=tuition_id).first()
         self.assertIsNotNone(cycle)
         self.assertEqual(cycle.total_classes, 12)
         self.assertEqual(cycle.completed_classes, 0)
@@ -230,3 +229,204 @@ class TuitionArchitectureTests(APITestCase):
         self.assertNotIn('pending_balance', s_cycle_resp.data)
         self.assertEqual(s_cycle_resp.data['completed_classes'], 1)
 
+
+
+class GroupTuitionWorkflowTests(APITestCase):
+    """Tutor -> Tuition group -> many students, with one shared cycle."""
+
+    def setUp(self):
+        from apps.students.models import ConnectionRequest
+        self.tutor = User.objects.create_user(username='g_tutor', password='password123', role=User.Role.TUTOR)
+        self.other_tutor = User.objects.create_user(username='g_other', password='password123', role=User.Role.TUTOR)
+        self.students = [
+            User.objects.create_user(username=f'g_student{i}', password='password123', role=User.Role.STUDENT)
+            for i in range(3)
+        ]
+        for s in self.students:
+            ConnectionRequest.objects.create(student=s, tutor=self.tutor)
+
+    def _create_group(self):
+        self.client.force_authenticate(user=self.tutor)
+        resp = self.client.post(reverse('tuition-list'), {
+            'title': 'Class 10 Math Batch',
+            'cycle_length': 8,
+            'total_fee': '12000.00',
+            'student_ids': [str(s.id) for s in self.students],
+        }, format='json')
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED, resp.data)
+        return resp.data
+
+    def test_registration_creates_pending_request_not_a_link(self):
+        from apps.students.models import ConnectionRequest
+        self.client.force_authenticate(user=None)
+        resp = self.client.post(reverse('student_register'), {
+            'username': 'fresh_student', 'password': 'StrongPass123!', 'password_confirm': 'StrongPass123!',
+            'first_name': 'Fresh', 'grade_level': 'Class 10', 'address': 'Dhaka', 'phone': '017',
+            'selected_tutor_id': str(self.tutor.id),
+        }, format='json')
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED, resp.data)
+        student = User.objects.get(username='fresh_student')
+        self.assertIsNone(student.tutor_id)
+        self.assertEqual(student.student_profile.address, 'Dhaka')
+        self.assertEqual(
+            ConnectionRequest.objects.get(student=student, tutor=self.tutor).status,
+            ConnectionRequest.Status.PENDING,
+        )
+
+    def test_student_requests_tutor_then_tutor_accepts_into_group(self):
+        from apps.students.models import ConnectionRequest
+        newcomer = User.objects.create_user(username='g_new', password='password123', role=User.Role.STUDENT)
+        group = self._create_group()
+
+        self.client.force_authenticate(user=newcomer)
+        resp = self.client.post(reverse('connection-list'), {'tutor_id': str(self.tutor.id), 'message': 'Hi'}, format='json')
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED, resp.data)
+        request_id = resp.data['id']
+        # Duplicate pending request is refused
+        dup = self.client.post(reverse('connection-list'), {'tutor_id': str(self.tutor.id)}, format='json')
+        self.assertEqual(dup.status_code, status.HTTP_400_BAD_REQUEST)
+
+        # Another tutor cannot see or act on it
+        self.client.force_authenticate(user=self.other_tutor)
+        self.assertEqual(len(self.client.get(reverse('connection-list')).data), 0)
+        self.assertEqual(
+            self.client.post(reverse('connection-accept', kwargs={'pk': request_id})).status_code,
+            status.HTTP_404_NOT_FOUND,
+        )
+
+        self.client.force_authenticate(user=self.tutor)
+        inbox = self.client.get(reverse('connection-list'), {'status': 'PENDING'})
+        self.assertIn(request_id, [r['id'] for r in inbox.data])
+        acc = self.client.post(reverse('connection-accept', kwargs={'pk': request_id}), {'tuition_id': group['id']}, format='json')
+        self.assertEqual(acc.status_code, status.HTTP_200_OK, acc.data)
+        self.assertEqual(ConnectionRequest.objects.get(id=request_id).status, ConnectionRequest.Status.ACCEPTED)
+        newcomer.refresh_from_db()
+        self.assertEqual(newcomer.tutor_id, self.tutor.id)
+
+        self.client.force_authenticate(user=newcomer)
+        mine = self.client.get(reverse('tuition-list'))
+        rows = mine.data if isinstance(mine.data, list) else mine.data['results']
+        self.assertEqual([t['title'] for t in rows], ['Class 10 Math Batch'])
+
+    def test_rejected_request_gives_tutor_no_access(self):
+        newcomer = User.objects.create_user(username='g_rej', password='password123', role=User.Role.STUDENT)
+        group = self._create_group()
+        self.client.force_authenticate(user=newcomer)
+        request_id = self.client.post(reverse('connection-list'), {'tutor_username': 'g_tutor'}, format='json').data['id']
+
+        self.client.force_authenticate(user=self.tutor)
+        self.assertEqual(self.client.post(reverse('connection-reject', kwargs={'pk': request_id})).status_code, 200)
+        enroll = self.client.post(reverse('tuition-enroll', kwargs={'pk': group['id']}), {'student_id': str(newcomer.id)}, format='json')
+        self.assertEqual(enroll.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_one_shared_cycle_for_the_whole_group(self):
+        from apps.cycles.models import AttendanceCycle
+        group = self._create_group()
+        self.assertEqual(group['enrolled_count'], 3)
+        self.assertEqual(AttendanceCycle.objects.filter(tuition_id=group['id']).count(), 1)
+
+        # One tick by the tutor...
+        resp = self.client.patch(reverse('tuition-mark-class', kwargs={'pk': group['id']}), {
+            'class_no': 1, 'completed': True, 'topic': 'Algebra',
+        }, format='json')
+        self.assertEqual(resp.status_code, status.HTTP_200_OK, resp.data)
+        # Wallet: (12000 / 8) * 1 — for the group, not per student
+        self.assertEqual(resp.data['wallet_summary']['earned_revenue'], 1500.0)
+        self.assertEqual(resp.data['wallet_summary']['pending_balance'], 10500.0)
+
+        wallet = self.client.get(reverse('wallet-analytics')).data
+        self.assertEqual(wallet['total_earned'], 1500.0)
+        self.assertEqual(wallet['total_pending'], 10500.0)
+        self.assertEqual(wallet['total_students'], 3)
+
+        # ...is what every student in the group sees, date-stamped, with no money.
+        for student in self.students:
+            self.client.force_authenticate(user=student)
+            rows = self.client.get(reverse('attendance-cycle-list')).data
+            rows = rows if isinstance(rows, list) else rows['results']
+            self.assertEqual(len(rows), 1)
+            cycle = rows[0]
+            self.assertEqual(cycle['completed_classes'], 1)
+            self.assertTrue(cycle['classes_data'][0]['completed'])
+            self.assertTrue(cycle['classes_data'][0]['date'])
+
+            tuition = self.client.get(reverse('tuition-detail', kwargs={'pk': group['id']})).data
+            self.assertEqual(tuition['active_cycle']['completed_classes'], 1)
+            for payload in (cycle, tuition, tuition['active_cycle']):
+                for key in ('total_fee', 'tuition_fee', 'monthly_fee', 'per_class_rate', 'earned_revenue',
+                            'pending_balance', 'fee_snapshot', 'wallet_summary', 'enrollments', 'students_detail'):
+                    self.assertNotIn(key, payload)
+
+            self.assertEqual(self.client.get(reverse('wallet-analytics')).status_code, status.HTTP_403_FORBIDDEN)
+            self.assertEqual(
+                self.client.patch(reverse('tuition-mark-class', kwargs={'pk': group['id']}), {'class_no': 2, 'completed': True}, format='json').status_code,
+                status.HTTP_403_FORBIDDEN,
+            )
+
+    def test_roster_changes_do_not_touch_the_cycle_or_earnings(self):
+        from apps.cycles.models import AttendanceCycle
+        group = self._create_group()
+        cycle = AttendanceCycle.objects.get(tuition_id=group['id'])
+        for n in (1, 2):
+            self.client.patch(reverse('attendance-cycle-toggle-class', kwargs={'pk': cycle.id}), {'class_no': n, 'completed': True}, format='json')
+
+        resp = self.client.post(reverse('tuition-unenroll', kwargs={'pk': group['id']}), {'student_id': str(self.students[0].id)}, format='json')
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertEqual(resp.data['tuition']['enrolled_count'], 2)
+        self.assertEqual(resp.data['tuition']['wallet_summary']['earned_revenue'], 3000.0)
+        cycle.refresh_from_db()
+        self.assertEqual(cycle.status, AttendanceCycle.Status.ACTIVE)
+        self.assertEqual(cycle.completed_classes, 2)
+
+        # The removed student no longer sees the group
+        self.client.force_authenticate(user=self.students[0])
+        rows = self.client.get(reverse('attendance-cycle-list')).data
+        self.assertEqual(len(rows if isinstance(rows, list) else rows['results']), 0)
+
+    def test_editing_group_updates_current_cycle_but_not_history(self):
+        from apps.cycles.models import AttendanceCycle
+        group = self._create_group()
+        cycle = AttendanceCycle.objects.get(tuition_id=group['id'])
+        for n in range(1, 9):
+            self.client.patch(reverse('attendance-cycle-toggle-class', kwargs={'pk': cycle.id}), {'class_no': n, 'completed': True}, format='json')
+        reset = self.client.post(reverse('attendance-cycle-reset', kwargs={'pk': cycle.id}))
+        self.assertEqual(reset.status_code, status.HTTP_201_CREATED, reset.data)
+        new_cycle_id = reset.data['cycle']['id']
+        self.client.patch(reverse('attendance-cycle-toggle-class', kwargs={'pk': new_cycle_id}), {'class_no': 5, 'completed': True}, format='json')
+
+        # Cannot shrink below a completed class
+        bad = self.client.patch(reverse('tuition-detail', kwargs={'pk': group['id']}), {'cycle_length': 4}, format='json')
+        self.assertEqual(bad.status_code, status.HTTP_400_BAD_REQUEST)
+
+        ok = self.client.patch(reverse('tuition-detail', kwargs={'pk': group['id']}), {'cycle_length': 16, 'total_fee': '16000.00'}, format='json')
+        self.assertEqual(ok.status_code, status.HTTP_200_OK, ok.data)
+        self.assertEqual(ok.data['active_cycle']['total_classes'], 16)
+        self.assertEqual(len(ok.data['active_cycle']['classes_data']), 16)
+        self.assertEqual(ok.data['active_cycle']['completed_classes'], 1)
+        self.assertEqual(ok.data['wallet_summary']['earned_revenue'], 1000.0)
+        self.assertEqual(ok.data['wallet_summary']['archived_earnings'], 12000.0)
+
+        cycle.refresh_from_db()
+        self.assertEqual(cycle.total_classes, 8)
+        self.assertEqual(cycle.earned_revenue, Decimal('12000.00'))
+
+    def test_deleting_group_keeps_lifetime_earnings(self):
+        from apps.cycles.models import AttendanceCycle
+        group = self._create_group()
+        cycle = AttendanceCycle.objects.get(tuition_id=group['id'])
+        self.client.patch(reverse('attendance-cycle-toggle-class', kwargs={'pk': cycle.id}), {'class_no': 1, 'completed': True}, format='json')
+        self.assertEqual(self.client.delete(reverse('tuition-detail', kwargs={'pk': group['id']})).status_code, status.HTTP_204_NO_CONTENT)
+        wallet = self.client.get(reverse('wallet-analytics')).data
+        self.assertEqual(wallet['total_earned'], 0.0)
+        self.assertEqual(wallet['lifetime_archived_earnings'], 1500.0)
+
+    def test_tutor_cannot_take_over_unrelated_student_account_by_username(self):
+        stranger = User.objects.create_user(username='g_stranger', password='OriginalPass123!', role=User.Role.STUDENT)
+        self.client.force_authenticate(user=self.tutor)
+        resp = self.client.post(reverse('student-list-create'), {
+            'username': 'g_stranger', 'password': 'HijackedPass123!', 'first_name': 'X',
+        }, format='json')
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        stranger.refresh_from_db()
+        self.assertTrue(stranger.check_password('OriginalPass123!'))
+        self.assertIsNone(stranger.tutor_id)

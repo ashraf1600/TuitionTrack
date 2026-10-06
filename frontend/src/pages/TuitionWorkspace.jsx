@@ -1,12 +1,14 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { notify } from '../utils/toast';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import Navbar from '../components/common/Navbar';
 import AddStudentModal from '../components/tutor/AddStudentModal';
+import SharedCycleBoard from '../components/tutor/SharedCycleBoard';
+import ExamManager from '../components/tutor/ExamManager';
 import AssignStudentModal from '../components/tutor/AssignStudentModal';
 import TuitionBatchesModal from '../components/tutor/TuitionBatchesModal';
 import ExamAuthoringModal from '../components/tutor/ExamAuthoringModal';
-import SubmissionsGradingModal from '../components/tutor/SubmissionsGradingModal';
-import LeaderboardModal from '../components/common/LeaderboardModal';
+import StudentCredentialsModal from '../components/tutor/StudentCredentialsModal';
 import Modal from '../components/common/Modal';
 import { api } from '../api/client';
 import {
@@ -23,6 +25,7 @@ import {
   Check,
   AlertCircle,
   Award,
+  Key,
   Trophy,
   Edit2,
   Trash2,
@@ -37,6 +40,7 @@ import {
   ChevronRight,
   TrendingUp,
   RefreshCw,
+  Search,
 } from 'lucide-react';
 
 const DAYS_ORDER = ['Saturday', 'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
@@ -78,21 +82,11 @@ export default function TuitionWorkspace() {
   const [gradingModalOpen, setGradingModalOpen] = useState(false);
   const [selectedExamForGrading, setSelectedExamForGrading] = useState(null);
   const [selectedSubmissionForGrading, setSelectedSubmissionForGrading] = useState(null);
-  const [leaderboardModalOpen, setLeaderboardModalOpen] = useState(false);
   const [selectedExamForLeaderboard, setSelectedExamForLeaderboard] = useState(null);
-
-  // Class Attendance Modal (Date Picker & Topic)
-  const [dateModalOpen, setDateModalOpen] = useState(false);
-  const [activeClassData, setActiveClassData] = useState(null);
-  const [classDate, setClassDate] = useState(toLocalDateString(new Date()));
-  const [classTopic, setClassTopic] = useState('');
-  const [isCompletedState, setIsCompletedState] = useState(true);
-  const [savingAttendance, setSavingAttendance] = useState(false);
-
-  // Cycle Reset Modal
-  const [resetModalOpen, setResetModalOpen] = useState(false);
-  const [cycleToReset, setCycleToReset] = useState(null);
-  const [resettingCycle, setResettingCycle] = useState(false);
+  const [selectedStudentForCredentials, setSelectedStudentForCredentials] = useState(null);
+  const [enrollExistingModalOpen, setEnrollExistingModalOpen] = useState(false);
+  const [enrollSearch, setEnrollSearch] = useState('');
+  const [enrollingStudentId, setEnrollingStudentId] = useState(null);
 
   // Routine Slot Editor State
   const [isEditingRoutine, setIsEditingRoutine] = useState(false);
@@ -153,76 +147,19 @@ export default function TuitionWorkspace() {
     loadTuitionData();
   }, [tuitionId]);
 
-  // Derived Financial Analytics
-  const analytics = useMemo(() => {
-    if (!tuition) {
-      return {
-        totalStudents: 0,
-        totalPotentialRevenue: 0,
-        earnedRevenue: 0,
-        pendingBalance: 0,
-        perClassRate: 0,
-        totalCompletedClasses: 0,
-        totalClassesRequired: 0,
-        completionRate: 0,
-      };
-    }
+  // Tuition Wallet for this group. The server owns the maths:
+  // earned = (total fee / classes in the cycle) * completed classes.
+  const activeCycle = tuition?.active_cycle || null;
+  const wallet = tuition?.wallet_summary || {};
+  const pastCycles = useMemo(
+    () => (cycles || []).filter((c) => c.status === 'ARCHIVED').sort((a, b) => b.cycle_number - a.cycle_number),
+    [cycles]
+  );
 
-    const fee = parseFloat(tuition.tuition_fee) || 0;
-    const cycleLen = parseInt(tuition.cycle_length, 10) || 12;
-    const perClassRate = cycleLen > 0 ? fee / cycleLen : 0;
-
-    const enrolledStudents = tuition.enrollments || [];
-    const totalStudents = enrolledStudents.length;
-    const totalPotentialRevenue = fee * totalStudents;
-
-    let earnedRevenue = 0;
-    let totalCompletedClasses = 0;
-
-    // Sum earned per active cycle using that cycle's own fee_snapshot
-    // (fee_snapshot ?? tuition fee), not the global current fee — fees may
-    // change between cycles and must not retroactively alter history.
-    const cycleFeeSnapshot = (cycle) => {
-      const snap = parseFloat(cycle?.fee_snapshot);
-      if (Number.isFinite(snap) && snap > 0) return snap;
-      const live = parseFloat(cycle?.tuition_fee);
-      if (Number.isFinite(live) && live > 0) return live;
-      return fee;
-    };
-    const cycleLengthOf = (cycle) =>
-      parseInt(cycle?.total_classes ?? cycle?.cycle_length ?? cycleLen, 10) || cycleLen;
-
-    enrolledStudents.forEach((enr) => {
-      const activeCycle = (cycles || []).find(
-        (c) => String(c.student_id ?? c.student) === String(enr.student_id ?? enr.student ?? enr.id) && c.status === 'ACTIVE'
-      ) || enr.active_cycle;
-
-      if (activeCycle) {
-        const completed = parseInt(activeCycle.completed_classes, 10) || 0;
-        const len = cycleLengthOf(activeCycle);
-        const rate = len > 0 ? cycleFeeSnapshot(activeCycle) / len : 0;
-        totalCompletedClasses += completed;
-        earnedRevenue += completed * rate;
-      }
-    });
-
-    const pendingBalance = Math.max(0, totalPotentialRevenue - earnedRevenue);
-    const totalClassesRequired = totalStudents * cycleLen;
-    const completionRate = totalClassesRequired > 0
-      ? Math.round((totalCompletedClasses / totalClassesRequired) * 100)
-      : 0;
-
-    return {
-      totalStudents,
-      totalPotentialRevenue,
-      earnedRevenue: Math.round(earnedRevenue * 100) / 100,
-      pendingBalance: Math.round(pendingBalance * 100) / 100,
-      perClassRate: Math.round(perClassRate * 100) / 100,
-      totalCompletedClasses,
-      totalClassesRequired,
-      completionRate,
-    };
-  }, [tuition, cycles]);
+  const handleCycleChange = (cycle) => {
+    setTuition((prev) => (prev ? { ...prev, active_cycle: cycle } : prev));
+    loadTuitionData();
+  };
 
   // Helpers shared by attendance lookups: numeric class-no compare + time overlap.
   const classNoOf = (c) => parseInt(c?.class_no ?? c?.classNo, 10);
@@ -239,89 +176,16 @@ export default function TuitionWorkspace() {
     return Math.max(aS, bS) < Math.min(aE, bE);
   };
 
-  // Toggle Attendance Slot
-  const handleToggleAttendance = async (cycleId, classNum, currentCompleted) => {
-    const cycle = cycles.find((c) => String(c.id) === String(cycleId));
-    if (!cycle) return;
-
-    // If currently incomplete, single-click marks as completed today!
-    if (!currentCompleted) {
-      const todayIso = getLocalTodayIso();
-      try {
-        await api.toggleAttendanceClass(cycleId, classNum, true, todayIso, '');
-        await loadTuitionData();
-      } catch (err) {
-        alert(`Failed to update attendance: ${err.message}`);
-      }
-    } else {
-      // If already completed, open detail modal to adjust date, add topic, or unmark
-      const cls = (cycle.classes_data || []).find(
-        (c) => classNoOf(c) === parseInt(classNum, 10)
-      ) || { class_no: parseInt(classNum, 10), completed: true, date: getLocalTodayIso(), topic: '' };
-
-      setActiveClassData({ cycleId, classNum, cls });
-      setIsCompletedState(true);
-      setClassDate(cls.date ? toLocalDateString(new Date(cls.date)) : toLocalDateString(new Date()));
-      setClassTopic(cls.topic || '');
-      setDateModalOpen(true);
-    }
-  };
-
-  // Save Class Attendance from Modal
-  const handleSaveClassModal = async (e) => {
-    e?.preventDefault();
-    if (!activeClassData) return;
-
-    const { cycleId, classNum } = activeClassData;
-    setSavingAttendance(true);
-    try {
-      const targetDate = isCompletedState
-        ? (classDate ? `${classDate}T12:00:00Z` : getLocalTodayIso())
-        : null;
-
-      await api.toggleAttendanceClass(
-        cycleId,
-        classNum,
-        isCompletedState,
-        targetDate,
-        isCompletedState ? classTopic : ''
-      );
-
-      setDateModalOpen(false);
-      await loadTuitionData();
-    } catch (err) {
-      alert(`Save failed: ${err.message}`);
-    } finally {
-      setSavingAttendance(false);
-    }
-  };
-
-  // Reset Cycle Handler
-  const handleConfirmResetCycle = async () => {
-    if (!cycleToReset) return;
-    setResettingCycle(true);
-    try {
-      await api.resetAttendanceCycle(cycleToReset.id);
-      setResetModalOpen(false);
-      setCycleToReset(null);
-      await loadTuitionData();
-    } catch (err) {
-      alert(`Cycle reset failed: ${err.message}`);
-    } finally {
-      setResettingCycle(false);
-    }
-  };
-
   // Unenroll Student from Tuition
   const handleUnenrollStudent = async (studentId, studentName) => {
-    if (!confirm(`Are you sure you want to remove ${studentName} from "${tuition.title}"?`)) {
+    if (!confirm(`Remove ${studentName} from "${tuition.title}"? They will stop seeing this group's classes and exams. The group's class tracker and earnings are not affected.`)) {
       return;
     }
     try {
       await api.unenrollFromTuition(tuitionId, studentId);
       await loadTuitionData();
     } catch (err) {
-      alert(`Failed to remove student: ${err.message}`);
+      notify(`Failed to remove student: ${err.message}`);
     }
   };
 
@@ -333,7 +197,7 @@ export default function TuitionWorkspace() {
       setIsEditingRoutine(false);
       await loadTuitionData();
     } catch (err) {
-      alert(`Failed to save routine: ${err.message}`);
+      notify(`Failed to save routine: ${err.message}`);
     } finally {
       setSavingRoutine(false);
     }
@@ -357,37 +221,30 @@ export default function TuitionWorkspace() {
   };
 
   // Open Grading Modal
-  const handleOpenGrading = async (exam) => {
-    try {
-      const detail = await api.getExamDetail(exam.id);
-      setSelectedExamForGrading(detail);
-      const sub = (detail.submissions && detail.submissions.length > 0)
-        ? detail.submissions[0]
-        : detail.submission;
-      setSelectedSubmissionForGrading(sub);
-      setGradingModalOpen(true);
-    } catch (err) {
-      alert(`Failed to load submission: ${err.message}`);
-    }
-  };
+  // Hooks must run before the early returns below, so `tuition` may still be null here.
+  const enrolledStudents = useMemo(() => tuition?.enrollments || [], [tuition]);
 
-  // Open Leaderboard Modal
-  const handleOpenLeaderboard = (exam) => {
-    setSelectedExamForLeaderboard(exam);
-    setLeaderboardModalOpen(true);
-  };
+  const candidateStudents = useMemo(() => {
+    const enrolledIds = new Set((enrolledStudents || []).map((e) => String(e.student_id || e.id)));
+    const map = new Map();
+    [...(allStudents || []), ...(unassignedStudents || [])].forEach((s) => {
+      const sid = String(s.student_id || s.id);
+      if (sid && !enrolledIds.has(sid) && !map.has(sid)) {
+        map.set(sid, s);
+      }
+    });
+    return Array.from(map.values());
+  }, [enrolledStudents, allStudents, unassignedStudents]);
 
-  // Toggle Publish Results
-  const handleTogglePublish = async (exam) => {
-    try {
-      await api.updateExam(exam.id, {
-        is_results_published: !exam.is_results_published,
-      });
-      await loadTuitionData();
-    } catch (err) {
-      alert(`Failed to toggle results: ${err.message}`);
-    }
-  };
+  const filteredCandidates = useMemo(() => {
+    if (!enrollSearch.trim()) return candidateStudents;
+    const q = enrollSearch.toLowerCase();
+    return candidateStudents.filter((s) =>
+      (s.full_name || s.username || '').toLowerCase().includes(q) ||
+      (s.email || '').toLowerCase().includes(q) ||
+      (s.profile?.grade_level || s.grade_level || '').toLowerCase().includes(q)
+    );
+  }, [candidateStudents, enrollSearch]);
 
   if (loading && !tuition) {
     return (
@@ -423,7 +280,17 @@ export default function TuitionWorkspace() {
     );
   }
 
-  const enrolledStudents = tuition.enrollments || [];
+  const handleEnrollExistingStudent = async (studentId) => {
+    try {
+      setEnrollingStudentId(studentId);
+      await api.enrollInTuition(tuitionId, studentId);
+      await loadTuitionData();
+    } catch (err) {
+      notify(`Failed to enroll student: ${err.message}`);
+    } finally {
+      setEnrollingStudentId(null);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
@@ -485,9 +352,9 @@ export default function TuitionWorkspace() {
               <p className="text-xs text-slate-400 flex flex-wrap items-center gap-3">
                 <span>Cycle Length: <strong className="text-indigo-300">{tuition.cycle_length} Classes</strong></span>
                 <span>•</span>
-                <span>Fee per Student: <strong className="text-emerald-400 font-mono">৳{Number(tuition.tuition_fee).toLocaleString()}</strong></span>
+                <span>Cycle fee (whole group): <strong className="text-emerald-400 font-mono">৳{Number(tuition.total_fee ?? tuition.tuition_fee).toLocaleString()}</strong></span>
                 <span>•</span>
-                <span>Rate per Class: <strong className="text-emerald-300 font-mono">৳{analytics.perClassRate}</strong></span>
+                <span>Per class: <strong className="text-emerald-300 font-mono">৳{Number(wallet.per_class_rate || 0).toLocaleString()}</strong></span>
               </p>
             </div>
 
@@ -513,54 +380,43 @@ export default function TuitionWorkspace() {
             </div>
           </div>
 
-          {/* Tuition Wallet Summary: Financial Metrics Cards */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 pt-4 border-t border-slate-800/80">
+          {/* Tuition Wallet for this group */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 pt-4 border-t border-slate-800/80">
             <div className="p-4 rounded-2xl bg-slate-900/80 border border-slate-800">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
-                Enrolled Students
-              </span>
+              <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block mb-1">Students</span>
               <div className="text-xl sm:text-2xl font-black text-slate-100 flex items-center gap-2">
                 <Users className="w-5 h-5 text-indigo-400" />
-                <span>{analytics.totalStudents}</span>
+                <span>{enrolledStudents.length}</span>
               </div>
-              <span className="text-[11px] text-slate-500 mt-1 block">
-                Active in this batch
-              </span>
+              <span className="text-[11px] text-slate-500 mt-1 block">share one class tracker</span>
             </div>
 
             <div className="p-4 rounded-2xl bg-slate-900/80 border border-slate-800">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
-                Potential Revenue
-              </span>
-              <div className="text-xl sm:text-2xl font-black text-slate-100 font-mono">
-                ৳{analytics.totalPotentialRevenue.toLocaleString()}
+              <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block mb-1">This cycle</span>
+              <div className="text-xl sm:text-2xl font-black text-slate-100">
+                {wallet.completed_classes ?? 0}
+                <span className="text-sm font-semibold text-slate-500"> / {wallet.total_classes ?? tuition.cycle_length} classes</span>
               </div>
-              <span className="text-[11px] text-slate-500 mt-1 block">
-                ৳{Number(tuition.tuition_fee).toLocaleString()} × {analytics.totalStudents} students
-              </span>
+              <span className="text-[11px] text-slate-500 mt-1 block">Cycle #{activeCycle?.cycle_number ?? 1}</span>
             </div>
 
-            <div className="p-4 rounded-2xl bg-slate-900/80 border border-emerald-500/20 bg-emerald-500/5">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-400 block mb-1">
-                Earned to Date
-              </span>
+            <div className="p-4 rounded-2xl border border-emerald-500/20 bg-emerald-500/5">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-400 block mb-1">Earned this cycle</span>
               <div className="text-xl sm:text-2xl font-black text-emerald-400 font-mono">
-                ৳{analytics.earnedRevenue.toLocaleString()}
+                ৳{Number(wallet.earned_revenue || 0).toLocaleString()}
               </div>
               <span className="text-[11px] text-emerald-300/70 mt-1 block">
-                {analytics.totalCompletedClasses} total classes completed
+                ৳{Number(wallet.pending_balance || 0).toLocaleString()} still to earn
               </span>
             </div>
 
-            <div className="p-4 rounded-2xl bg-slate-900/80 border border-indigo-500/20 bg-indigo-500/5">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-indigo-300 block mb-1">
-                Pending Balance
-              </span>
-              <div className="text-xl sm:text-2xl font-black text-indigo-300 font-mono">
-                ৳{analytics.pendingBalance.toLocaleString()}
+            <div className="p-4 rounded-2xl border border-amber-500/20 bg-amber-500/5">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-amber-300 block mb-1">Lifetime earned</span>
+              <div className="text-xl sm:text-2xl font-black text-amber-300 font-mono">
+                ৳{Number(wallet.lifetime_earnings || 0).toLocaleString()}
               </div>
-              <span className="text-[11px] text-indigo-300/70 mt-1 block">
-                {analytics.completionRate}% cycle completion
+              <span className="text-[11px] text-amber-200/70 mt-1 block">
+                {pastCycles.length} finished cycle{pastCycles.length === 1 ? '' : 's'}
               </span>
             </div>
           </div>
@@ -577,7 +433,7 @@ export default function TuitionWorkspace() {
             }`}
           >
             <Calendar className="w-4 h-4" />
-            <span>Attendance & Dynamic Cycles</span>
+            <span>Class tracker</span>
             <span className="px-1.5 py-0.2 rounded-full bg-slate-900/60 text-[10px] text-slate-300">
               {enrolledStudents.length}
             </span>
@@ -629,344 +485,39 @@ export default function TuitionWorkspace() {
           </button>
         </div>
 
-        {/* Tab 1: Attendance & Dynamic Cycles (Default View) */}
+        {/* Tab 1: Shared class tracker — one cycle for the whole group */}
         {activeTab === 'attendance' && (
           <div className="space-y-6">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <h3 className="text-lg font-bold text-slate-100 flex items-center gap-2">
-                  <Calendar className="w-5 h-5 text-indigo-400" />
-                  Student Attendance Cycles
-                </h3>
-                <p className="text-xs text-slate-400">
-                  Track dynamic class attendance (1 to {tuition.cycle_length}) for each enrolled student. Single-click to mark completed today, or click to set custom date & topic notes.
-                </p>
-              </div>
+            <SharedCycleBoard
+              cycle={activeCycle}
+              tuitionTitle={tuition.title}
+              studentCount={enrolledStudents.length}
+              onCycleChange={handleCycleChange}
+              onAddStudent={() => setAddStudentModalOpen(true)}
+            />
 
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setAddStudentModalOpen(true)}
-                  className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold flex items-center gap-1.5 border border-slate-700 transition"
-                >
-                  <UserPlus className="w-3.5 h-3.5 text-indigo-400" />
-                  <span>Enroll Student</span>
-                </button>
-              </div>
-            </div>
-
-            {enrolledStudents.length === 0 ? (
-              <div className="text-center py-16 px-4 rounded-3xl border border-dashed border-slate-800 bg-slate-900/30 space-y-3">
-                <Users className="w-12 h-12 mx-auto text-slate-600" />
-                <h4 className="text-base font-bold text-slate-200">No Students Enrolled in this Tuition Yet</h4>
-                <p className="text-xs text-slate-400 max-w-md mx-auto">
-                  Add a student directly or assign one from your incoming prospective students queue to activate attendance tracking and wallet analytics.
-                </p>
-                <div className="pt-2 flex flex-wrap items-center justify-center gap-3">
-                  <button
-                    onClick={() => setAddStudentModalOpen(true)}
-                    className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow-md shadow-indigo-600/30 transition flex items-center gap-2"
-                  >
-                    <UserPlus className="w-4 h-4" />
-                    <span>Create & Enroll Student</span>
-                  </button>
-                  {unassignedStudents.length > 0 && (
-                    <button
-                      onClick={() => {
-                        setSelectedStudentForAssign(unassignedStudents[0]);
-                        setAssignModalOpen(true);
-                      }}
-                      className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold transition"
-                    >
-                      Assign from Incoming Queue ({unassignedStudents.length})
-                    </button>
-                  )}
+            {pastCycles.length > 0 && (
+              <div className="rounded-2xl border border-slate-800 bg-slate-900/70 overflow-hidden">
+                <div className="px-5 py-3.5 border-b border-slate-800">
+                  <h3 className="text-sm font-bold text-slate-100">Finished cycles</h3>
+                  <p className="text-[11px] text-slate-400">Earnings here are final — later changes to the fee do not alter them.</p>
                 </div>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {enrolledStudents.map((enr) => {
-                  const studentCycle = (cycles || []).find(
-                    (c) => String(c.student_id ?? c.student) === String(enr.student_id ?? enr.student ?? enr.id) && c.status === 'ACTIVE'
-                  ) || enr.active_cycle;
-
-                  const cycleNum = studentCycle?.cycle_number || 1;
-                  const totalClasses = parseInt(studentCycle?.total_classes ?? tuition.cycle_length, 10) || 12;
-                  const completedClasses = parseInt(studentCycle?.completed_classes, 10) || 0;
-                  const isCycleComplete = completedClasses >= totalClasses;
-                  const classesData = studentCycle?.classes_data || [];
-
-                  // Per-cycle snapshot: never use the global perClassRate here.
-                  const snapFee = parseFloat(studentCycle?.fee_snapshot);
-                  const cycleFee = Number.isFinite(snapFee) && snapFee > 0 ? snapFee : (parseFloat(tuition.tuition_fee) || 0);
-                  const cycleRate = totalClasses > 0 ? cycleFee / totalClasses : 0;
-                  const studentEarned = Math.round(completedClasses * cycleRate * 100) / 100;
-                  const studentPending = Math.round((cycleFee - studentEarned) * 100) / 100;
-                  const studentProgressPct = totalClasses > 0 ? Math.round((completedClasses / totalClasses) * 100) : 0;
-
-                  return (
-                    <div
-                      key={enr.student_id}
-                      className="p-5 sm:p-6 rounded-2xl bg-slate-900/80 border border-slate-800 hover:border-slate-700 transition shadow-lg space-y-4"
-                    >
-                      {/* Student Card Top Bar */}
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                        <div className="flex items-start gap-3">
-                          <div className="w-10 h-10 rounded-xl bg-indigo-600/20 text-indigo-400 border border-indigo-500/30 font-bold flex items-center justify-center text-sm flex-shrink-0">
-                            {enr.student_name?.charAt(0) || 'S'}
-                          </div>
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <h4 className="font-bold text-slate-100 text-sm sm:text-base">
-                                {enr.student_name}
-                              </h4>
-                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-900/60 text-indigo-300 border border-indigo-700/50">
-                                Cycle #{cycleNum}
-                              </span>
-                              {isCycleComplete && (
-                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
-                                  <CheckCircle2 className="w-3 h-3" />
-                                  Cycle Complete
-                                </span>
-                              )}
-                            </div>
-                            <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-slate-400 mt-1">
-                              {enr.email && <span>{enr.email}</span>}
-                              {enr.phone && <span>• {enr.phone}</span>}
-                              {enr.grade_level && <span>• {enr.grade_level}</span>}
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Financial Snapshot & Cycle Reset Button */}
-                        <div className="flex flex-wrap items-center gap-2.5">
-                          <div className="text-right text-xs">
-                            <span className="text-slate-400 block text-[11px]">
-                              {completedClasses} of {totalClasses} Classes ({studentProgressPct}%)
-                            </span>
-                            <span className="font-mono text-emerald-400 font-bold">
-                              ৳{studentEarned.toLocaleString()} earned
-                            </span>
-                            <span className="text-slate-500 font-mono text-[11px] ml-1">
-                              • ৳{studentPending.toLocaleString()} pending
-                            </span>
-                          </div>
-
-                          {isCycleComplete && studentCycle?.id && (
-                            <button
-                              onClick={() => {
-                                setCycleToReset(studentCycle);
-                                setResetModalOpen(true);
-                              }}
-                              className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs flex items-center gap-1.5 shadow-md shadow-emerald-600/20 transition animate-pulse"
-                              title="Archive completed cycle and start next cycle"
-                            >
-                              <RotateCcw className="w-3.5 h-3.5" />
-                              <span>Start Cycle #{cycleNum + 1}</span>
-                            </button>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Interactive Class Attendance Checkboxes */}
-                      <div className="pt-2 border-t border-slate-800">
-                        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-12 gap-2">
-                          {Array.from({ length: totalClasses }, (_, i) => i + 1).map((classNum) => {
-                            const clsItem = classesData.find(
-                              (c) => classNoOf(c) === parseInt(classNum, 10)
-                            ) || { class_no: classNum, completed: false, date: null, topic: '' };
-
-                            const isDone = clsItem.completed;
-                            const dateObj = clsItem.date ? new Date(clsItem.date) : null;
-                            const formattedDate = dateObj
-                              ? dateObj.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
-                              : null;
-
-                            return (
-                              <div
-                                key={classNum}
-                                onClick={() =>
-                                  studentCycle?.id &&
-                                  handleToggleAttendance(studentCycle.id, classNum, isDone)
-                                }
-                                title={
-                                  isDone
-                                    ? `Class #${classNum}: Attended on ${dateObj?.toLocaleDateString()}${clsItem.topic ? ` (${clsItem.topic})` : ''}. Click to edit.`
-                                    : `Class #${classNum}: Unchecked. Click to mark completed today.`
-                                }
-                                className={`p-2 rounded-xl border flex flex-col items-center justify-center cursor-pointer transition select-none ${
-                                  isDone
-                                    ? 'bg-emerald-600/20 border-emerald-500/50 text-emerald-300 shadow-sm shadow-emerald-500/10 hover:border-emerald-400'
-                                    : 'bg-slate-800/40 border-slate-700/60 hover:bg-slate-800 hover:border-indigo-500/60 text-slate-400'
-                                }`}
-                              >
-                                <span className="text-[11px] font-bold font-mono">#{classNum}</span>
-                                <div className="my-1">
-                                  {isDone ? (
-                                    <Check className="w-4 h-4 text-emerald-400 stroke-[2.5]" />
-                                  ) : (
-                                    <div className="w-3.5 h-3.5 rounded border border-slate-600" />
-                                  )}
-                                </div>
-                                <span
-                                  className={`text-[9px] font-medium truncate max-w-full ${
-                                    isDone ? 'text-emerald-200' : 'text-slate-500'
-                                  }`}
-                                >
-                                  {formattedDate || 'Upcoming'}
-                                </span>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Tab 2: Exams & Assessments */}
-        {activeTab === 'exams' && (
-          <div className="space-y-6">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <h3 className="text-lg font-bold text-slate-100 flex items-center gap-2">
-                  <FileText className="w-5 h-5 text-indigo-400" />
-                  Tuition Assessments & Examinations
-                </h3>
-                <p className="text-xs text-slate-400">
-                  Assessments assigned to students enrolled in "{tuition.title}". Features auto-graded MCQs, TipTap written questions, and anti-cheat scheduled releases.
-                </p>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => {
-                    setAuthorCategory('EXAM');
-                    setAuthorExamModalOpen(true);
-                  }}
-                  className="px-3.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs flex items-center gap-1.5 shadow-md shadow-indigo-600/30 transition"
-                >
-                  <Plus className="w-4 h-4" />
-                  <span>Schedule Exam</span>
-                </button>
-                <button
-                  onClick={() => {
-                    setAuthorCategory('ASSIGNMENT');
-                    setAuthorExamModalOpen(true);
-                  }}
-                  className="px-3.5 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-semibold text-xs flex items-center gap-1.5 shadow-md shadow-purple-600/30 transition"
-                >
-                  <Plus className="w-4 h-4" />
-                  <span>Create Assignment</span>
-                </button>
-              </div>
-            </div>
-
-            {exams.length === 0 ? (
-              <div className="text-center py-16 px-4 rounded-3xl border border-dashed border-slate-800 bg-slate-900/30 space-y-3">
-                <FileText className="w-12 h-12 mx-auto text-slate-600" />
-                <h4 className="text-base font-bold text-slate-200">No Assessments Created for this Tuition Yet</h4>
-                <p className="text-xs text-slate-400 max-w-md mx-auto">
-                  Schedule timed examinations or assignments with deadlines. All enrolled students will automatically receive notifications and access.
-                </p>
-                <div className="pt-2 flex items-center justify-center gap-3">
-                  <button
-                    onClick={() => {
-                      setAuthorCategory('EXAM');
-                      setAuthorExamModalOpen(true);
-                    }}
-                    className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow-md shadow-indigo-600/30 transition flex items-center gap-1.5"
-                  >
-                    <Plus className="w-4 h-4" />
-                    <span>Schedule First Exam</span>
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div className="glass-panel overflow-hidden rounded-2xl border border-slate-800">
                 <table className="w-full text-left text-xs">
-                  <thead className="bg-slate-900/90 text-slate-400 uppercase tracking-wider font-semibold border-b border-slate-800">
+                  <thead className="text-[10px] uppercase tracking-wider text-slate-500 border-b border-slate-800">
                     <tr>
-                      <th className="py-3 px-4">Title & Format</th>
-                      <th className="py-3 px-4">Category</th>
-                      <th className="py-3 px-4">Window / Schedule</th>
-                      <th className="py-3 px-4">Status</th>
-                      <th className="py-3 px-4 text-right">Actions</th>
+                      <th className="py-2.5 px-5">Cycle</th>
+                      <th className="py-2.5 px-5">Classes</th>
+                      <th className="py-2.5 px-5">Cycle fee</th>
+                      <th className="py-2.5 px-5 text-right">Earned</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-800/80">
-                    {exams.map((exam) => (
-                      <tr key={exam.id} className="hover:bg-slate-900/50 transition">
-                        <td className="py-3.5 px-4">
-                          <div className="font-bold text-slate-100 text-sm">{exam.title}</div>
-                          <div className="flex items-center gap-2 text-[11px] text-slate-400 mt-0.5">
-                            <span className="font-mono text-emerald-400 font-semibold">
-                              {exam.total_marks} Marks
-                            </span>
-                            <span>•</span>
-                            <span className="font-mono text-indigo-300">
-                              {exam.exam_type}
-                            </span>
-                            {exam.mcq_count > 0 && (
-                              <span>• {exam.mcq_count} MCQs</span>
-                            )}
-                          </div>
-                        </td>
-                        <td className="py-3.5 px-4">
-                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                            exam.category === 'ASSIGNMENT'
-                              ? 'bg-purple-500/15 text-purple-300 border border-purple-500/30'
-                              : 'bg-indigo-500/15 text-indigo-300 border border-indigo-500/30'
-                          }`}>
-                            {exam.category}
-                          </span>
-                        </td>
-                        <td className="py-3.5 px-4 text-slate-300 font-mono text-[11px]">
-                          <div>Start: {new Date(exam.start_time).toLocaleString()}</div>
-                          <div className="text-slate-500">End: {new Date(exam.end_time).toLocaleString()}</div>
-                        </td>
-                        <td className="py-3.5 px-4">
-                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                            exam.dynamic_status === 'Running'
-                              ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 animate-pulse'
-                              : exam.dynamic_status === 'Scheduled'
-                              ? 'bg-amber-500/15 text-amber-300 border border-amber-500/30'
-                              : 'bg-slate-800 text-slate-300 border border-slate-700'
-                          }`}>
-                            {exam.dynamic_status}
-                          </span>
-                        </td>
-                        <td className="py-3.5 px-4 text-right">
-                          <div className="flex items-center justify-end gap-2">
-                            {/* Leaderboard button */}
-                            <button
-                              onClick={() => handleOpenLeaderboard(exam)}
-                              className="px-2.5 py-1 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-300 font-semibold text-xs flex items-center gap-1 transition"
-                              title="View student leaderboard"
-                            >
-                              <Trophy className="w-3.5 h-3.5" />
-                              <span>Rankings</span>
-                            </button>
-
-                            {/* Review & Grade */}
-                            {(exam.has_submission || exam.submissions_count > 0) ? (
-                              <button
-                                onClick={() => handleOpenGrading(exam)}
-                                className="px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs flex items-center gap-1 shadow-md shadow-emerald-600/20 transition"
-                              >
-                                <Award className="w-3.5 h-3.5" />
-                                <span>Grade{exam.submissions_count > 1 ? ` (${exam.submissions_count})` : ''}</span>
-                              </button>
-                            ) : (
-                              <span className="text-[11px] text-slate-500 italic">
-                                Awaiting turn-in
-                              </span>
-                            )}
-                          </div>
-                        </td>
+                  <tbody className="divide-y divide-slate-800/70">
+                    {pastCycles.map((c) => (
+                      <tr key={c.id}>
+                        <td className="py-2.5 px-5 font-semibold text-slate-200">Cycle #{c.cycle_number}</td>
+                        <td className="py-2.5 px-5 text-slate-300">{c.completed_classes} / {c.total_classes}</td>
+                        <td className="py-2.5 px-5 text-slate-300 font-mono">৳{Number(c.total_fee || 0).toLocaleString()}</td>
+                        <td className="py-2.5 px-5 text-right text-emerald-400 font-bold font-mono">৳{Number(c.earned_revenue || 0).toLocaleString()}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -974,6 +525,17 @@ export default function TuitionWorkspace() {
               </div>
             )}
           </div>
+        )}
+
+        {/* Tab 2: Exams & assignments for this group */}
+        {activeTab === 'exams' && (
+          <ExamManager
+            exams={exams}
+            students={allStudents}
+            tuitionId={tuition.id}
+            showGroup={false}
+            onReload={loadTuitionData}
+          />
         )}
 
         {/* Tab 3: Weekly Routine */}
@@ -1131,6 +693,13 @@ export default function TuitionWorkspace() {
 
               <div className="flex items-center gap-2">
                 <button
+                  onClick={() => setEnrollExistingModalOpen(true)}
+                  className="px-3.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-indigo-300 hover:text-indigo-200 font-semibold text-xs flex items-center gap-1.5 transition"
+                >
+                  <Users className="w-4 h-4 text-indigo-400" />
+                  <span>Enroll Existing Student</span>
+                </button>
+                <button
                   onClick={() => setAddStudentModalOpen(true)}
                   className="px-3.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs flex items-center gap-1.5 shadow-md shadow-indigo-600/30 transition"
                 >
@@ -1147,12 +716,20 @@ export default function TuitionWorkspace() {
                 <p className="text-xs text-slate-400 max-w-md mx-auto">
                   Enroll students to link them to this tuition's routine calendar, attendance engine, and assessments.
                 </p>
-                <div className="pt-2 flex items-center justify-center gap-3">
+                <div className="pt-2 flex flex-wrap items-center justify-center gap-3">
+                  <button
+                    onClick={() => setEnrollExistingModalOpen(true)}
+                    className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-indigo-300 text-xs font-semibold transition flex items-center gap-1.5"
+                  >
+                    <Users className="w-4 h-4 text-indigo-400" />
+                    <span>Enroll Existing Student</span>
+                  </button>
                   <button
                     onClick={() => setAddStudentModalOpen(true)}
-                    className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow-md shadow-indigo-600/30 transition"
+                    className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow-md shadow-indigo-600/30 transition flex items-center gap-1.5"
                   >
-                    + Enroll First Student
+                    <UserPlus className="w-4 h-4" />
+                    <span>+ Register New Student</span>
                   </button>
                 </div>
               </div>
@@ -1171,19 +748,36 @@ export default function TuitionWorkspace() {
                           </div>
                           <div>
                             <h4 className="font-bold text-slate-100 text-sm">{enr.student_name}</h4>
-                            <span className="text-[11px] text-slate-400 font-mono block">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              {enr.username && (
+                                <span className="text-[11px] text-slate-400 font-mono">
+                                  @{enr.username}
+                                </span>
+                              )}
+                            </div>
+                            <span className="text-[11px] text-slate-500 font-mono block mt-0.5">
                               Enrolled {enr.joined_at ? new Date(enr.joined_at).toLocaleDateString() : 'Active'}
                             </span>
                           </div>
                         </div>
 
-                        <button
-                          onClick={() => handleUnenrollStudent(enr.student_id, enr.student_name)}
-                          className="p-1.5 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition"
-                          title="Remove from Tuition"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                        <div className="flex items-center gap-1">
+                          <button
+                            onClick={() => setSelectedStudentForCredentials(enr)}
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-amber-300 hover:bg-amber-500/10 transition flex items-center gap-1 text-xs font-medium border border-transparent hover:border-amber-500/30"
+                            title="Give this student a new temporary password"
+                          >
+                            <Key className="w-3.5 h-3.5" />
+                            <span className="hidden sm:inline">Password</span>
+                          </button>
+                          <button
+                            onClick={() => handleUnenrollStudent(enr.student_id, enr.student_name)}
+                            className="p-1.5 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition"
+                            title="Remove from Tuition"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
                       </div>
 
                       <div className="grid grid-cols-2 gap-2 text-xs text-slate-400 mt-4 pt-3 border-t border-slate-800">
@@ -1203,12 +797,8 @@ export default function TuitionWorkspace() {
                     </div>
 
                     <div className="pt-2 border-t border-slate-800/60 flex items-center justify-between text-xs">
-                      <span className="text-slate-400">
-                        Active Cycle: <strong className="text-indigo-300">Cycle #{enr.active_cycle?.cycle_number || 1}</strong>
-                      </span>
-                      <span className="text-emerald-400 font-semibold font-mono">
-                        {enr.active_cycle?.completed_classes || 0} / {tuition.cycle_length} Classes
-                      </span>
+                      <span className="text-slate-400 font-mono">@{enr.username}</span>
+                      <span className="text-slate-500">Shares the group's class tracker</span>
                     </div>
                   </div>
                 ))}
@@ -1217,130 +807,6 @@ export default function TuitionWorkspace() {
           </div>
         )}
       </main>
-
-      {/* Class Attendance Date Picker & Topic Modal */}
-      {activeClassData && (
-        <Modal
-          isOpen={dateModalOpen}
-          onClose={() => setDateModalOpen(false)}
-          title={`Class #${activeClassData.classNum} Attendance Record`}
-          maxWidth="max-w-md"
-        >
-          <form onSubmit={handleSaveClassModal} className="space-y-4">
-            <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-1">
-                Attendance Status
-              </label>
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => setIsCompletedState(true)}
-                  className={`py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition ${
-                    isCompletedState
-                      ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/30'
-                      : 'bg-slate-800 text-slate-400'
-                  }`}
-                >
-                  <CheckCircle2 className="w-4 h-4" />
-                  <span>Completed</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setIsCompletedState(false)}
-                  className={`py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition ${
-                    !isCompletedState
-                      ? 'bg-rose-600 text-white shadow-md shadow-rose-600/30'
-                      : 'bg-slate-800 text-slate-400'
-                  }`}
-                >
-                  <X className="w-4 h-4" />
-                  <span>Incomplete</span>
-                </button>
-              </div>
-            </div>
-
-            {isCompletedState && (
-              <>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">
-                    Class Held Date *
-                  </label>
-                  <input
-                    type="date"
-                    required
-                    value={classDate}
-                    onChange={(e) => setClassDate(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 text-xs focus:outline-none focus:border-indigo-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">
-                    Lesson Topic / Subject Covered
-                  </label>
-                  <input
-                    type="text"
-                    value={classTopic}
-                    onChange={(e) => setClassTopic(e.target.value)}
-                    placeholder="e.g. Chapter 4: Electric Current & Circuits"
-                    className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 text-xs focus:outline-none focus:border-indigo-500"
-                  />
-                </div>
-              </>
-            )}
-
-            <div className="flex justify-end gap-2 pt-2 border-t border-slate-800">
-              <button
-                type="button"
-                onClick={() => setDateModalOpen(false)}
-                className="px-3.5 py-1.5 rounded-xl text-xs font-semibold text-slate-400 hover:text-slate-200"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={savingAttendance}
-                className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold shadow-md shadow-indigo-600/30 transition disabled:opacity-50"
-              >
-                {savingAttendance ? 'Saving...' : 'Save Attendance'}
-              </button>
-            </div>
-          </form>
-        </Modal>
-      )}
-
-      {/* Cycle Reset Confirmation Modal */}
-      {cycleToReset && (
-        <Modal
-          isOpen={resetModalOpen}
-          onClose={() => setResetModalOpen(false)}
-          title={`Archive Cycle #${cycleToReset.cycle_number} & Start Next Cycle`}
-          maxWidth="max-w-md"
-        >
-          <div className="space-y-4">
-            <p className="text-xs text-slate-300 leading-relaxed">
-              All <strong>{tuition.cycle_length} classes</strong> have been attended for this cycle. Archiving will save this cycle to history and atomically initialize <strong>Cycle #{cycleToReset.cycle_number + 1}</strong> with fresh class attendance boxes.
-            </p>
-            <div className="flex justify-end gap-2 pt-2 border-t border-slate-800">
-              <button
-                type="button"
-                onClick={() => setResetModalOpen(false)}
-                className="px-3.5 py-1.5 rounded-xl text-xs text-slate-400 hover:text-slate-200"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleConfirmResetCycle}
-                disabled={resettingCycle}
-                className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-md shadow-emerald-600/30 transition disabled:opacity-50"
-              >
-                {resettingCycle ? 'Resetting...' : `Confirm & Start Cycle #${cycleToReset.cycle_number + 1}`}
-              </button>
-            </div>
-          </div>
-        </Modal>
-      )}
 
       {/* Global Modals pre-linked to this Tuition */}
       <AddStudentModal
@@ -1381,24 +847,94 @@ export default function TuitionWorkspace() {
       />
 
 
-      {selectedExamForGrading && selectedSubmissionForGrading && (
-        <SubmissionsGradingModal
-          isOpen={gradingModalOpen}
-          onClose={() => setGradingModalOpen(false)}
-          exam={selectedExamForGrading}
-          submission={selectedSubmissionForGrading}
-          onGraded={() => loadTuitionData()}
-        />
-      )}
+      {/* Enroll Existing Student Modal */}
+      <Modal
+        isOpen={enrollExistingModalOpen}
+        onClose={() => {
+          setEnrollExistingModalOpen(false);
+          setEnrollSearch('');
+        }}
+        title={`Enroll Existing Student into "${tuition?.title || 'Tuition'}"`}
+        maxWidth="max-w-lg"
+      >
+        <div className="space-y-4">
+          <p className="text-xs text-slate-400">
+            Select any registered student from your account to enroll them into this tuition with active Attendance Cycle #1.
+          </p>
 
-      {selectedExamForLeaderboard && (
-        <LeaderboardModal
-          isOpen={leaderboardModalOpen}
-          onClose={() => setLeaderboardModalOpen(false)}
-          examId={selectedExamForLeaderboard.id}
-          examTitle={selectedExamForLeaderboard.title}
-        />
-      )}
+          <div className="relative">
+            <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-3" />
+            <input
+              type="text"
+              placeholder="Search by student name or username..."
+              value={enrollSearch}
+              onChange={(e) => setEnrollSearch(e.target.value)}
+              className="w-full pl-9 pr-3 py-2 rounded-xl bg-slate-800/80 border border-slate-700 text-xs text-slate-200 focus:outline-none focus:border-indigo-500"
+            />
+          </div>
+
+          <div className="max-h-72 overflow-y-auto space-y-2 pr-1">
+            {filteredCandidates.length === 0 ? (
+              <div className="text-center py-8 text-xs text-slate-500 space-y-2">
+                <p>
+                  {enrollSearch
+                    ? 'No matching students found.'
+                    : 'All your students are already enrolled in this tuition!'}
+                </p>
+                <button
+                  onClick={() => {
+                    setEnrollExistingModalOpen(false);
+                    setAddStudentModalOpen(true);
+                  }}
+                  className="px-3 py-1.5 rounded-lg bg-indigo-600/30 border border-indigo-500/40 text-indigo-300 font-semibold text-xs hover:bg-indigo-600/50 transition inline-flex items-center gap-1"
+                >
+                  <UserPlus className="w-3.5 h-3.5" />
+                  <span>Register a Brand New Student</span>
+                </button>
+              </div>
+            ) : (
+              filteredCandidates.map((s) => {
+                const sid = String(s.student_id || s.id);
+                const isEnrolling = enrollingStudentId === sid;
+                return (
+                  <div
+                    key={sid}
+                    className="p-3 rounded-xl bg-slate-800/50 border border-slate-700/60 hover:border-slate-600 flex items-center justify-between gap-3 transition"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-slate-200 text-xs truncate">
+                          {s.full_name || s.username}
+                        </span>
+                        <span className="text-[11px] font-mono text-slate-400">
+                          @{s.username}
+                        </span>
+                      </div>
+                      <div className="text-[11px] text-slate-400 mt-0.5 flex items-center gap-2">
+                        {s.profile?.grade_level || s.grade_level ? (
+                          <span>Grade: {s.profile?.grade_level || s.grade_level}</span>
+                        ) : null}
+                        {s.institution || s.profile?.institution ? (
+                          <span className="truncate">• {s.institution || s.profile?.institution}</span>
+                        ) : null}
+                      </div>
+                    </div>
+
+                    <button
+                      disabled={isEnrolling}
+                      onClick={() => handleEnrollExistingStudent(sid)}
+                      className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-semibold text-xs transition flex items-center gap-1 flex-shrink-0"
+                    >
+                      <UserPlus className="w-3.5 h-3.5" />
+                      <span>{isEnrolling ? 'Enrolling...' : 'Enroll'}</span>
+                    </button>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

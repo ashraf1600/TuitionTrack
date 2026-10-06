@@ -1,6 +1,6 @@
 """Students Admin Configuration"""
 from django.contrib import admin
-from .models import StudentProfile
+from .models import StudentProfile, Tuition, TuitionEnrollment, ConnectionRequest
 
 
 @admin.register(StudentProfile)
@@ -20,7 +20,7 @@ class StudentProfileAdmin(admin.ModelAdmin):
     fieldsets = (
         ('Student Identity', {'fields': ('id', 'user')}),
         ('Academic Info', {'fields': ('grade_level', 'institution')}),
-        ('Parent / Guardian', {'fields': ('parent_name', 'parent_phone')}),
+        ('Parent / Guardian', {'fields': ('parent_name', 'parent_phone', 'address')}),
         ('Financial & Cycle Config', {
             'fields': ('tuition_fee', 'cycle_length'),
             'description': 'Changes here only affect NEW cycles. Active cycles use their own snapshots.'
@@ -37,3 +37,25 @@ class StudentProfileAdmin(admin.ModelAdmin):
         tutor = obj.user.tutor
         return tutor.get_full_name() or tutor.username if tutor else '—'
     get_tutor_name.short_description = 'Tutor'
+
+
+class TuitionEnrollmentInline(admin.TabularInline):
+    model = TuitionEnrollment
+    extra = 0
+    raw_id_fields = ['student']
+
+
+@admin.register(Tuition)
+class TuitionAdmin(admin.ModelAdmin):
+    list_display = ['title', 'tutor', 'subject', 'cycle_length', 'total_fee', 'enrolled_students_count', 'created_at']
+    search_fields = ['title', 'subject', 'tutor__username']
+    raw_id_fields = ['tutor']
+    inlines = [TuitionEnrollmentInline]
+
+
+@admin.register(ConnectionRequest)
+class ConnectionRequestAdmin(admin.ModelAdmin):
+    list_display = ['student', 'tutor', 'status', 'created_at', 'responded_at']
+    list_filter = ['status']
+    search_fields = ['student__username', 'tutor__username']
+    raw_id_fields = ['student', 'tutor']

@@ -91,7 +91,9 @@ def sanitize_exam_html(raw_html: str) -> str:
 
     def _stash(m):
         key = f'__TTURL{len(placeholders)}__'
-        placeholders[key] = m.group(0)
+        # Stash only the URL: the `src="` prefix stays in the markup, so restoring
+        # the whole match would write the attribute name twice (src="src="/media/…).
+        placeholders[key] = m.group(2)
         prefix = m.group(1)
         return f'{prefix}http://placeholder.local/{key}'
 

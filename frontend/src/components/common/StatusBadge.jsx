@@ -12,6 +12,28 @@ export default function StatusBadge({ status, className = '' }) {
         </span>
       );
 
+    case 'draft':
+      return (
+        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-800 text-slate-400 border border-dashed border-slate-600 ${className}`}>
+          Draft
+        </span>
+      );
+
+    case 'late':
+      return (
+        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-950/80 text-amber-300 border border-amber-500/30 ${className}`}>
+          <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+          Late work open
+        </span>
+      );
+
+    case 'closed':
+      return (
+        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-800 text-slate-300 border border-slate-700 ${className}`}>
+          Closed
+        </span>
+      );
+
     case 'scheduled':
       return (
         <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-800 text-slate-300 border border-slate-700 ${className}`}>

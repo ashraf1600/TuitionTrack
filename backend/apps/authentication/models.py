@@ -60,6 +60,12 @@ class CustomUser(AbstractUser):
         help_text='Selected tutor for students during self-registration.'
     )
     phone = models.CharField(max_length=20, blank=True, verbose_name='Phone Number')
+    must_change_password = models.BooleanField(
+        default=False,
+        verbose_name='Must Change Password',
+        help_text='Set when someone else chose the password (tutor-created account or tutor reset). '
+                  'The user is asked for a new one at next sign-in.',
+    )
 
     # Timestamps
     created_at = models.DateTimeField(auto_now_add=True)

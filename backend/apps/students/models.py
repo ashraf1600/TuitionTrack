@@ -33,6 +33,7 @@ class StudentProfile(models.Model):
     institution = models.CharField(max_length=150, blank=True, verbose_name='School / College')
     parent_name = models.CharField(max_length=100, blank=True, verbose_name="Parent's Name")
     parent_phone = models.CharField(max_length=20, blank=True, verbose_name="Parent's Phone")
+    address = models.CharField(max_length=255, blank=True, default='', verbose_name='Address')
     tuition_fee = models.DecimalField(
         max_digits=10,
         decimal_places=2,
@@ -65,8 +66,11 @@ class StudentProfile(models.Model):
 
 class Tuition(models.Model):
     """
-    Tuition-Centric model: represents a distinct tuition or coaching group.
-    Defines title, dynamic cycle_length, fee per student per cycle, and weekly routine.
+    A tuition group (batch) run by one tutor for one or many students.
+
+    The group — not the individual student — owns the billing cycle: every
+    enrolled student shares the same AttendanceCycle, and `total_fee` is what
+    the tutor earns for one complete cycle of the whole group.
     """
     id = models.UUIDField(
         primary_key=True, default=uuid.uuid4, editable=False
@@ -88,12 +92,13 @@ class Tuition(models.Model):
         verbose_name='Cycle Length (Classes)',
         help_text='Dynamic class count per cycle (e.g., 8, 12, 16).'
     )
-    tuition_fee = models.DecimalField(
+    total_fee = models.DecimalField(
         max_digits=10,
         decimal_places=2,
         default=0.00,
         validators=[MinValueValidator(0)],
-        verbose_name='Tuition Fee per Student per Cycle'
+        verbose_name='Total Fee per Cycle (whole group)',
+        help_text='What the tutor earns for one complete cycle of this tuition.'
     )
     routine = models.JSONField(
         default=list,
@@ -113,7 +118,12 @@ class Tuition(models.Model):
 
     @property
     def enrolled_students_count(self):
-        return self.enrollments.filter(is_active=True).count()
+        return self.enrollments.filter(is_active=True, student__is_active=True).count()
+
+    @property
+    def active_cycle(self):
+        """The single shared cycle every enrolled student currently sees."""
+        return self.cycles.filter(status='ACTIVE').first()
 
 
 class TuitionEnrollment(models.Model):
@@ -126,7 +136,7 @@ class TuitionEnrollment(models.Model):
     )
     tuition = models.ForeignKey(
         Tuition,
-        on_delete=models.PROTECT,
+        on_delete=models.CASCADE,
         related_name='enrollments',
         verbose_name='Tuition'
     )
@@ -157,4 +167,61 @@ class TuitionEnrollment(models.Model):
 
     def __str__(self):
         return f'{self.student.get_full_name() or self.student.username} in {self.tuition.title}'
+
+
+class ConnectionRequest(models.Model):
+    """
+    A student's request to study with a tutor.
+
+    Created when a student picks a tutor (at registration or later). It sits
+    in the tutor's inbox as PENDING until the tutor accepts it — usually by
+    assigning the student to a tuition — or rejects it.
+    """
+
+    class Status(models.TextChoices):
+        PENDING = 'PENDING', 'Pending'
+        ACCEPTED = 'ACCEPTED', 'Accepted'
+        REJECTED = 'REJECTED', 'Rejected'
+
+    id = models.UUIDField(
+        primary_key=True, default=uuid.uuid4, editable=False
+    )
+    student = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='connection_requests',
+        limit_choices_to={'role': 'STUDENT'},
+        verbose_name='Student'
+    )
+    tutor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='incoming_connection_requests',
+        limit_choices_to={'role': 'TUTOR'},
+        verbose_name='Tutor'
+    )
+    status = models.CharField(
+        max_length=10,
+        choices=Status.choices,
+        default=Status.PENDING,
+        db_index=True,
+        verbose_name='Status'
+    )
+    message = models.CharField(max_length=500, blank=True, default='', verbose_name='Message to Tutor')
+    created_at = models.DateTimeField(auto_now_add=True)
+    responded_at = models.DateTimeField(null=True, blank=True, verbose_name='Responded At')
+
+    class Meta:
+        verbose_name = 'Connection Request'
+        verbose_name_plural = 'Connection Requests'
+        ordering = ['-created_at']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['student', 'tutor'],
+                name='unique_connection_request_per_student_tutor'
+            )
+        ]
+
+    def __str__(self):
+        return f'{self.student.username} -> {self.tutor.username} ({self.status})'
 

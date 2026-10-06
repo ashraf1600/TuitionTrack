@@ -33,6 +33,7 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
             'email': self.user.email,
             'role': self.user.role,
             'tutor_id': str(self.user.tutor_id) if self.user.tutor_id else None,
+            'must_change_password': self.user.must_change_password,
         }
         return data
 
@@ -100,7 +101,11 @@ class TutorDirectorySerializer(serializers.ModelSerializer):
 
 
 class StudentSelfRegistrationSerializer(serializers.Serializer):
-    """Handles student self-registration with profile info and selected tutor discovery linking."""
+    """
+    Student self-registration. Picking a tutor here is optional (it can be done
+    later from the student portal); when one is picked it only creates a
+    PENDING ConnectionRequest — the tutor decides whether to accept.
+    """
     username = serializers.CharField(max_length=150)
     password = serializers.CharField(write_only=True, min_length=8)
     password_confirm = serializers.CharField(write_only=True)
@@ -113,6 +118,8 @@ class StudentSelfRegistrationSerializer(serializers.Serializer):
     institution = serializers.CharField(max_length=150, required=False, allow_blank=True, default='')
     parent_name = serializers.CharField(max_length=100, required=False, allow_blank=True, default='')
     parent_phone = serializers.CharField(max_length=20, required=False, allow_blank=True, default='')
+    address = serializers.CharField(max_length=255, required=False, allow_blank=True, default='')
+    message = serializers.CharField(max_length=500, required=False, allow_blank=True, default='')
 
     # Selected Tutor during registration (from public directory)
     selected_tutor_id = serializers.CharField(required=False, allow_blank=True, default='')
@@ -137,13 +144,15 @@ class StudentSelfRegistrationSerializer(serializers.Serializer):
     def validate(self, attrs):
         if attrs['password'] != attrs.pop('password_confirm'):
             raise serializers.ValidationError({'password_confirm': 'Passwords do not match.'})
-        if not (attrs.get('selected_tutor_id', '').strip() or attrs.get('selected_tutor_username', '').strip() or attrs.get('tutor_username', '').strip()):
-            raise serializers.ValidationError('Selecting a tutor is required.')
         return attrs
 
     def create(self, validated_data):
-        from apps.students.models import StudentProfile
-        from apps.cycles.models import Cycle
+        from django.db import transaction
+        with transaction.atomic():
+            return self._create(validated_data)
+
+    def _create(self, validated_data):
+        from apps.students.models import StudentProfile, ConnectionRequest
 
         tutor_id = validated_data.pop('selected_tutor_id', '').strip()
         tutor_user = validated_data.pop('selected_tutor_username', '').strip()
@@ -167,6 +176,8 @@ class StudentSelfRegistrationSerializer(serializers.Serializer):
         institution = validated_data.pop('institution', '')
         parent_name = validated_data.pop('parent_name', '')
         parent_phone = validated_data.pop('parent_phone', '')
+        address = validated_data.pop('address', '')
+        message = validated_data.pop('message', '')
 
         user = User.objects.create_user(
             username=validated_data['username'],
@@ -176,7 +187,7 @@ class StudentSelfRegistrationSerializer(serializers.Serializer):
             email=validated_data.get('email', ''),
             phone=validated_data.get('phone', ''),
             role=User.Role.STUDENT,
-            tutor=target_tutor,
+            # `tutor` stays empty until a tutor accepts the request below.
             selected_tutor=target_tutor,
         )
 
@@ -186,19 +197,134 @@ class StudentSelfRegistrationSerializer(serializers.Serializer):
             institution=institution,
             parent_name=parent_name,
             parent_phone=parent_phone,
+            address=address,
             tuition_fee=0.00,
             cycle_length=12,
         )
+
+        if target_tutor:
+            ConnectionRequest.objects.create(student=user, tutor=target_tutor, message=message)
 
         return user
 
 
 class UserProfileSerializer(serializers.ModelSerializer):
     """Read-only profile serializer for /auth/me/"""
+    # Same display name the login response returns, so it survives a page reload.
+    name = serializers.SerializerMethodField()
+
+    def get_name(self, obj):
+        return obj.get_full_name() or obj.username
+
     class Meta:
         model = User
         fields = [
-            'id', 'username', 'email', 'first_name', 'last_name',
-            'role', 'phone', 'tutor_id', 'created_at'
+            'id', 'username', 'name', 'email', 'first_name', 'last_name',
+            'role', 'phone', 'tutor_id', 'must_change_password', 'profile', 'created_at'
         ]
         read_only_fields = fields
+
+    profile = serializers.SerializerMethodField()
+
+    def get_profile(self, obj):
+        """A student's own academic details (never fee fields)."""
+        profile = getattr(obj, 'student_profile', None) if obj.role == User.Role.STUDENT else None
+        if not profile:
+            return None
+        return {
+            'grade_level': profile.grade_level,
+            'institution': profile.institution,
+            'address': profile.address,
+            'parent_name': profile.parent_name,
+            'parent_phone': profile.parent_phone,
+        }
+
+
+class ProfileUpdateSerializer(serializers.Serializer):
+    """What a user may change about themselves. Username and role are fixed."""
+    first_name = serializers.CharField(max_length=150, required=False)
+    last_name = serializers.CharField(max_length=150, required=False, allow_blank=True)
+    email = serializers.EmailField(required=False, allow_blank=True)
+    phone = serializers.CharField(max_length=20, required=False, allow_blank=True)
+    # Students only
+    grade_level = serializers.CharField(max_length=50, required=False, allow_blank=True)
+    institution = serializers.CharField(max_length=150, required=False, allow_blank=True)
+    address = serializers.CharField(max_length=255, required=False, allow_blank=True)
+    parent_name = serializers.CharField(max_length=100, required=False, allow_blank=True)
+    parent_phone = serializers.CharField(max_length=20, required=False, allow_blank=True)
+
+    USER_FIELDS = ('first_name', 'last_name', 'email', 'phone')
+    PROFILE_FIELDS = ('grade_level', 'institution', 'address', 'parent_name', 'parent_phone')
+
+    def update(self, instance, validated_data):
+        from apps.students.models import StudentProfile
+        changed = [f for f in self.USER_FIELDS if f in validated_data]
+        for field in changed:
+            setattr(instance, field, validated_data[field])
+        if changed:
+            instance.save(update_fields=changed + ['updated_at'])
+
+        profile_changes = {f: validated_data[f] for f in self.PROFILE_FIELDS if f in validated_data}
+        if profile_changes and instance.role == User.Role.STUDENT:
+            # Edit the instance already attached to the user, so the response shows the new values.
+            profile = getattr(instance, 'student_profile', None) or StudentProfile.objects.create(user=instance)
+            for field, value in profile_changes.items():
+                setattr(profile, field, value)
+            profile.save(update_fields=list(profile_changes) + ['updated_at'])
+        return instance
+
+
+def _validated_new_password(value, user):
+    from django.contrib.auth.password_validation import validate_password
+    from django.core.exceptions import ValidationError as DjangoValidationError
+    try:
+        validate_password(value, user=user)
+    except DjangoValidationError as exc:
+        raise serializers.ValidationError(list(exc.messages))
+    return value
+
+
+class ChangePasswordSerializer(serializers.Serializer):
+    current_password = serializers.CharField(write_only=True)
+    new_password = serializers.CharField(write_only=True, min_length=8)
+
+    def validate_current_password(self, value):
+        if not self.context['request'].user.check_password(value):
+            raise serializers.ValidationError('Your current password is not correct.')
+        return value
+
+    def validate_new_password(self, value):
+        return _validated_new_password(value, self.context['request'].user)
+
+    def validate(self, attrs):
+        if attrs['current_password'] == attrs['new_password']:
+            raise serializers.ValidationError({'new_password': 'Choose a password different from the current one.'})
+        return attrs
+
+
+class PasswordResetRequestSerializer(serializers.Serializer):
+    identifier = serializers.CharField(max_length=254, help_text='Username or email address.')
+
+
+class PasswordResetConfirmSerializer(serializers.Serializer):
+    uid = serializers.CharField()
+    token = serializers.CharField()
+    new_password = serializers.CharField(write_only=True, min_length=8)
+
+    def validate(self, attrs):
+        from django.contrib.auth.tokens import default_token_generator
+        from django.utils.encoding import force_str
+        from django.utils.http import urlsafe_base64_decode
+        invalid = serializers.ValidationError('This reset link is invalid or has expired. Please request a new one.')
+        try:
+            user = User.objects.get(pk=force_str(urlsafe_base64_decode(attrs['uid'])), is_active=True)
+        except Exception:
+            raise invalid
+        if not default_token_generator.check_token(user, attrs['token']):
+            raise invalid
+        try:
+            _validated_new_password(attrs['new_password'], user)
+        except serializers.ValidationError as exc:
+            raise serializers.ValidationError({'new_password': exc.detail})
+        attrs['user'] = user
+        return attrs

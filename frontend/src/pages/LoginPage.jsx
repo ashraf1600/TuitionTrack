@@ -2,12 +2,38 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../api/client';
-import { GraduationCap, Lock, User, Mail, Phone, ArrowRight, AlertCircle, ShieldCheck, School, Users } from 'lucide-react';
+import {
+  GraduationCap, Lock, User, Mail, Phone, ArrowRight, AlertCircle, Search, Eye, EyeOff,
+  CalendarCheck, Wallet, FileText, Check, Loader2, BookOpen, Presentation,
+} from 'lucide-react';
+
+const inputCls =
+  'w-full px-3.5 py-2.5 rounded-xl bg-slate-800/80 border border-slate-700 text-slate-100 text-sm placeholder:text-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/25 transition';
+
+const HIGHLIGHTS = [
+  { icon: CalendarCheck, title: 'One class tracker per group', text: 'Tick a class once — every student in the group sees it, with the date.' },
+  { icon: Wallet, title: 'Earnings that add up themselves', text: 'Each completed class moves your tuition wallet. Students never see fees.' },
+  { icon: FileText, title: 'Exams for the whole group', text: 'Set MCQ or written exams with a deadline; grade and rank in one place.' },
+];
+
+function Field({ label, htmlFor, optional, hint, children }) {
+  return (
+    <div>
+      <label htmlFor={htmlFor} className="flex items-baseline justify-between text-sm font-medium text-slate-200 mb-1.5">
+        <span>{label}</span>
+        {optional && <span className="text-xs font-normal text-slate-500">Optional</span>}
+      </label>
+      {children}
+      {hint && <p className="mt-1 text-xs text-slate-400">{hint}</p>}
+    </div>
+  );
+}
 
 export default function LoginPage() {
   const [mode, setMode] = useState('login'); // 'login' | 'register-tutor' | 'register-student'
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
 
   // Register extra fields
   const [email, setEmail] = useState('');
@@ -17,9 +43,9 @@ export default function LoginPage() {
   const [passwordConfirm, setPasswordConfirm] = useState('');
 
   // Student specific
-  const [gradeLevel, setGradeLevel] = useState('Class 10');
+  const [gradeLevel, setGradeLevel] = useState('');
   const [institution, setInstitution] = useState('');
-  const [parentPhone, setParentPhone] = useState('');
+  const [address, setAddress] = useState('');
   const [selectedTutor, setSelectedTutor] = useState(null);
   const [tutorSearch, setTutorSearch] = useState('');
   const [tutorList, setTutorList] = useState([]);
@@ -31,36 +57,45 @@ export default function LoginPage() {
   const { login, registerTutor, registerStudent } = useAuth();
   const navigate = useNavigate();
 
-  // Load tutors for discovery
+  const isRegister = mode !== 'login';
+  const isStudent = mode === 'register-student';
+  const passwordsDiffer = isRegister && passwordConfirm.length > 0 && password !== passwordConfirm;
+  const passwordTooShort = isRegister && password.length > 0 && password.length < 8;
+
+  // Tutor directory for student sign-up
   useEffect(() => {
-    if (mode === 'register-student') {
-      const fetchTutors = async () => {
-        try {
-          setLoadingTutors(true);
-          const res = await api.getTutors(tutorSearch);
-          const list = Array.isArray(res) ? res : res.results || [];
-          setTutorList(list);
-        } catch (err) {
-          console.error('Failed to load tutor directory:', err);
-        } finally {
-          setLoadingTutors(false);
-        }
-      };
-      const timeoutId = setTimeout(fetchTutors, 250);
-      return () => clearTimeout(timeoutId);
-    }
-  }, [mode, tutorSearch]);
+    if (!isStudent) return undefined;
+    const timeoutId = setTimeout(async () => {
+      try {
+        setLoadingTutors(true);
+        const res = await api.getTutors(tutorSearch);
+        setTutorList(Array.isArray(res) ? res : res.results || []);
+      } catch (err) {
+        console.error('Failed to load tutor directory:', err);
+      } finally {
+        setLoadingTutors(false);
+      }
+    }, 250);
+    return () => clearTimeout(timeoutId);
+  }, [isStudent, tutorSearch]);
+
+  const switchMode = (next) => {
+    setMode(next);
+    setError('');
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
-    setLoading(true);
 
+    if (isRegister && password !== passwordConfirm) {
+      setError('The two passwords do not match.');
+      return;
+    }
+
+    setLoading(true);
     try {
       if (mode === 'register-tutor') {
-        if (password !== passwordConfirm) {
-          throw new Error('Passwords do not match.');
-        }
         await registerTutor({
           username,
           password,
@@ -72,9 +107,6 @@ export default function LoginPage() {
         });
         navigate('/tutor');
       } else if (mode === 'register-student') {
-        if (password !== passwordConfirm) {
-          throw new Error('Passwords do not match.');
-        }
         await registerStudent({
           username,
           password,
@@ -85,371 +117,428 @@ export default function LoginPage() {
           phone,
           grade_level: gradeLevel,
           institution,
-          parent_phone: parentPhone,
+          address,
           selected_tutor_id: selectedTutor?.id || '',
           selected_tutor_username: selectedTutor?.username || '',
         });
         navigate('/student');
       } else {
         const user = await login(username, password);
-        if (user.role === 'TUTOR') {
-          navigate('/tutor');
-        } else {
-          navigate('/student');
-        }
+        navigate(user.role === 'TUTOR' ? '/tutor' : '/student');
       }
     } catch (err) {
-      setError(err.message || 'Authentication failed. Please verify credentials.');
+      const message = err.message || '';
+      setError(
+        mode === 'login' && /no active account|credentials/i.test(message)
+          ? 'Wrong username or password. Please try again.'
+          : message || 'Something went wrong. Please try again.'
+      );
     } finally {
       setLoading(false);
     }
   };
 
-  const handleDemoTutor = () => {
-    setUsername('admin');
-    setPassword('admin1234');
-    setMode('login');
-  };
+  if (mode === 'forgot') {
+    return <ForgotPassword onBack={() => switchMode('login')} initialIdentifier={username} />;
+  }
 
-  const handleDemoStudent = () => {
-    setUsername('integration_student_1');
-    setPassword('pass123456');
-    setMode('login');
-  };
+  const heading = mode === 'login' ? 'Welcome back' : isStudent ? 'Create your student account' : 'Create your tutor account';
+  const subheading =
+    mode === 'login'
+      ? 'Sign in to your tuition dashboard.'
+      : isStudent
+      ? 'Join your tutor, follow your classes and take exams.'
+      : 'Set up your groups, track classes and earnings.';
 
   return (
-    <div className="min-h-screen bg-slate-950 flex flex-col justify-center py-12 sm:px-6 lg:px-8 relative overflow-hidden">
-      {/* Background ambient glow */}
-      <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-indigo-600/10 rounded-full blur-[140px] pointer-events-none" />
-
-      <div className="sm:mx-auto sm:w-full sm:max-w-md relative z-10 text-center">
-        <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-tr from-indigo-600 to-indigo-400 text-white shadow-xl shadow-indigo-600/25 mb-4">
-          <GraduationCap className="w-8 h-8" />
+    <div className="min-h-screen bg-slate-950 text-slate-100 grid lg:grid-cols-2">
+      {/* Brand panel (desktop) */}
+      <aside className="hidden lg:flex flex-col justify-between p-12 bg-gradient-to-br from-indigo-950 via-slate-950 to-slate-950 border-r border-slate-800 relative overflow-hidden">
+        <div className="absolute -top-32 -left-32 w-[480px] h-[480px] bg-indigo-600/20 rounded-full blur-[120px] pointer-events-none" />
+        <div className="relative flex items-center gap-3">
+          <span className="w-11 h-11 rounded-xl bg-indigo-600 flex items-center justify-center text-white">
+            <GraduationCap className="w-6 h-6" />
+          </span>
+          <span className="text-2xl font-bold tracking-tight">Tuition<span className="text-indigo-400">Track</span></span>
         </div>
-        <h1 className="text-3xl font-extrabold tracking-tight bg-gradient-to-r from-white via-slate-200 to-slate-400 bg-clip-text text-transparent">
-          Tuition<span className="text-indigo-400">Track</span>
-        </h1>
-        <p className="mt-2 text-sm text-slate-400">
-          Smart Multi-Tenant Tuition Attendance, Batches & Exam Platform
-        </p>
-      </div>
 
-      <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-lg relative z-10 px-4 sm:px-0">
-        <div className="glass-panel py-8 px-6 sm:px-10 rounded-3xl shadow-2xl">
-          {/* 3 Mode Switch Tabs */}
-          <div className="flex rounded-xl bg-slate-800/80 p-1 mb-6 border border-slate-700/60">
-            <button
-              type="button"
-              onClick={() => { setMode('login'); setError(''); }}
-              className={`flex-1 py-2 text-xs font-bold rounded-lg transition ${
-                mode === 'login' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              Sign In
-            </button>
-            <button
-              type="button"
-              onClick={() => { setMode('register-tutor'); setError(''); }}
-              className={`flex-1 py-2 text-xs font-bold rounded-lg transition ${
-                mode === 'register-tutor' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              Tutor Sign Up
-            </button>
-            <button
-              type="button"
-              onClick={() => { setMode('register-student'); setError(''); }}
-              className={`flex-1 py-2 text-xs font-bold rounded-lg transition ${
-                mode === 'register-student' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              Student Sign Up
-            </button>
+        <div className="relative space-y-8 max-w-md">
+          <h2 className="text-4xl font-extrabold leading-tight tracking-tight">
+            Run your tuition groups without the notebook.
+          </h2>
+          <ul className="space-y-5">
+            {HIGHLIGHTS.map(({ icon: Icon, title, text }) => (
+              <li key={title} className="flex gap-4">
+                <span className="w-10 h-10 rounded-xl bg-indigo-500/15 border border-indigo-500/25 text-indigo-300 flex items-center justify-center flex-shrink-0">
+                  <Icon className="w-5 h-5" />
+                </span>
+                <div>
+                  <div className="font-semibold text-slate-100">{title}</div>
+                  <p className="text-sm text-slate-400 leading-relaxed">{text}</p>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        <p className="relative text-xs text-slate-500">For private tutors and their students.</p>
+      </aside>
+
+      {/* Form panel */}
+      <main className="flex flex-col justify-center px-4 py-10 sm:px-8">
+        <div className="w-full max-w-md mx-auto">
+          <div className="lg:hidden flex items-center gap-2.5 mb-8">
+            <span className="w-10 h-10 rounded-xl bg-indigo-600 flex items-center justify-center text-white">
+              <GraduationCap className="w-5 h-5" />
+            </span>
+            <span className="text-xl font-bold tracking-tight">Tuition<span className="text-indigo-400">Track</span></span>
           </div>
 
+          <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">{heading}</h1>
+          <p className="mt-1.5 text-sm text-slate-400">{subheading}</p>
+
+          {/* Role choice when creating an account */}
+          {isRegister && (
+            <div className="mt-6 grid grid-cols-2 gap-3" role="radiogroup" aria-label="Account type">
+              {[
+                { key: 'register-tutor', icon: Presentation, title: "I'm a tutor", text: 'I teach students' },
+                { key: 'register-student', icon: BookOpen, title: "I'm a student", text: 'I learn from a tutor' },
+              ].map(({ key, icon: Icon, title, text }) => {
+                const active = mode === key;
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    role="radio"
+                    aria-checked={active}
+                    onClick={() => switchMode(key)}
+                    className={`text-left p-3.5 rounded-xl border transition ${
+                      active
+                        ? 'bg-indigo-500/10 border-indigo-500 ring-2 ring-indigo-500/25'
+                        : 'bg-slate-900 border-slate-700 hover:border-slate-500'
+                    }`}
+                  >
+                    <Icon className={`w-5 h-5 mb-1.5 ${active ? 'text-indigo-300' : 'text-slate-400'}`} />
+                    <div className="text-sm font-semibold text-slate-100">{title}</div>
+                    <div className="text-xs text-slate-400">{text}</div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
           {error && (
-            <div className="mb-5 p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs flex items-center gap-2">
-              <AlertCircle className="w-4 h-4 flex-shrink-0" />
+            <div role="alert" className="mt-6 p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-200 text-sm flex items-start gap-2.5">
+              <AlertCircle className="w-5 h-5 flex-shrink-0 text-rose-400" />
               <span>{error}</span>
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-1">
-                Username *
-              </label>
+          <form onSubmit={handleSubmit} className="mt-6 space-y-4" noValidate={false}>
+            {isRegister && (
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="First name" htmlFor="first-name">
+                  <input id="first-name" type="text" required autoComplete="given-name" value={firstName} onChange={(e) => setFirstName(e.target.value)} className={inputCls} />
+                </Field>
+                <Field label="Last name" htmlFor="last-name" optional>
+                  <input id="last-name" type="text" autoComplete="family-name" value={lastName} onChange={(e) => setLastName(e.target.value)} className={inputCls} />
+                </Field>
+              </div>
+            )}
+
+            <Field
+              label="Username"
+              htmlFor="username"
+              hint={isRegister ? 'You will use this to sign in.' : undefined}
+            >
               <div className="relative">
+                <User className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                 <input
+                  id="username"
                   type="text"
                   required
+                  autoComplete="username"
+                  autoCapitalize="none"
+                  spellCheck={false}
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
-                  placeholder="Enter username"
-                  className="w-full pl-9 pr-3 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 text-sm focus:outline-none focus:border-indigo-500 transition"
+                  className={`${inputCls} pl-10`}
                 />
-                <User className="w-4 h-4 text-slate-500 absolute left-3 top-3" />
               </div>
-            </div>
+            </Field>
 
-            {mode !== 'login' && (
+            {isRegister && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <Field label="Email" htmlFor="email" optional>
+                  <div className="relative">
+                    <Mail className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    <input id="email" type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" className={`${inputCls} pl-10`} />
+                  </div>
+                </Field>
+                <Field label="Phone" htmlFor="phone" optional>
+                  <div className="relative">
+                    <Phone className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    <input id="phone" type="tel" autoComplete="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="01XXXXXXXXX" className={`${inputCls} pl-10`} />
+                  </div>
+                </Field>
+              </div>
+            )}
+
+            {isStudent && (
               <>
                 <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-300 mb-1">
-                      First Name *
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      value={firstName}
-                      onChange={(e) => setFirstName(e.target.value)}
-                      placeholder="First name"
-                      className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 text-sm focus:outline-none focus:border-indigo-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-300 mb-1">
-                      Last Name
-                    </label>
-                    <input
-                      type="text"
-                      value={lastName}
-                      onChange={(e) => setLastName(e.target.value)}
-                      placeholder="Last name"
-                      className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 text-sm focus:outline-none focus:border-indigo-500"
-                    />
-                  </div>
+                  <Field label="Class" htmlFor="grade" optional>
+                    <input id="grade" type="text" value={gradeLevel} onChange={(e) => setGradeLevel(e.target.value)} placeholder="e.g. Class 10" className={inputCls} />
+                  </Field>
+                  <Field label="School / college" htmlFor="institution" optional>
+                    <input id="institution" type="text" value={institution} onChange={(e) => setInstitution(e.target.value)} className={inputCls} />
+                  </Field>
                 </div>
+                <Field label="Address" htmlFor="address" optional>
+                  <input id="address" type="text" autoComplete="street-address" value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Area, city" className={inputCls} />
+                </Field>
 
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-300 mb-1">
-                      Email
-                    </label>
-                    <div className="relative">
-                      <input
-                        type="email"
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                        placeholder="email@example.com"
-                        className="w-full pl-8 pr-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 text-xs focus:outline-none focus:border-indigo-500"
-                      />
-                      <Mail className="w-3.5 h-3.5 text-slate-500 absolute left-2.5 top-3" />
-                    </div>
+                {/* Tutor picker */}
+                <div className="rounded-xl border border-slate-700 bg-slate-900/60 p-4">
+                  <div className="flex items-baseline justify-between mb-1">
+                    <span className="text-sm font-medium text-slate-200">Your tutor</span>
+                    <span className="text-xs text-slate-500">Optional</span>
                   </div>
+                  <p className="text-xs text-slate-400 mb-3">
+                    We send them a request. When they accept and add you to a group, your classes appear. You can also do this later.
+                  </p>
 
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-300 mb-1">
-                      Phone
-                    </label>
-                    <div className="relative">
-                      <input
-                        type="tel"
-                        value={phone}
-                        onChange={(e) => setPhone(e.target.value)}
-                        placeholder="+88017..."
-                        className="w-full pl-8 pr-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 text-xs focus:outline-none focus:border-indigo-500"
-                      />
-                      <Phone className="w-3.5 h-3.5 text-slate-500 absolute left-2.5 top-3" />
-                    </div>
-                  </div>
-                </div>
-
-                {mode === 'register-student' && (
-                  <div className="space-y-3 pt-2 border-t border-slate-800">
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-300 mb-1">
-                          Grade / Class
-                        </label>
-                        <input
-                          type="text"
-                          value={gradeLevel}
-                          onChange={(e) => setGradeLevel(e.target.value)}
-                          placeholder="e.g. Class 10 / HSC"
-                          className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 text-xs focus:outline-none focus:border-indigo-500"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-300 mb-1">
-                          School / College
-                        </label>
-                        <input
-                          type="text"
-                          value={institution}
-                          onChange={(e) => setInstitution(e.target.value)}
-                          placeholder="Institution name"
-                          className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 text-xs focus:outline-none focus:border-indigo-500"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="col-span-2">
-                        <label className="block text-xs font-semibold text-slate-300 mb-1">
-                          Select Your Desired Tutor *
-                        </label>
-                        <div className="relative mb-2">
-                          <input
-                            type="text"
-                            value={tutorSearch}
-                            onChange={(e) => setTutorSearch(e.target.value)}
-                            placeholder="Search tutor by name or subject (e.g. Physics, Ashraf)..."
-                            className="w-full pl-8 pr-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 text-xs focus:outline-none focus:border-indigo-500"
-                          />
-                          <Users className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5" />
+                  {selectedTutor ? (
+                    <div className="flex items-center justify-between gap-3 p-3 rounded-lg bg-indigo-500/10 border border-indigo-500/40">
+                      <div className="min-w-0">
+                        <div className="text-sm font-semibold text-slate-100 truncate flex items-center gap-1.5">
+                          <Check className="w-4 h-4 text-indigo-300 flex-shrink-0" />
+                          {selectedTutor.name}
                         </div>
-
-                        {selectedTutor && (
-                          <div className="mb-2.5 p-2.5 rounded-xl bg-indigo-500/15 border border-indigo-500/30 flex items-center justify-between text-xs text-indigo-300">
-                            <div>
-                              <span className="font-bold text-white">{selectedTutor.name}</span>
-                              <span className="ml-1.5 text-slate-400">(@{selectedTutor.username})</span>
-                              {selectedTutor.tuitions?.length > 0 && (
-                                <span className="ml-2 text-[11px] text-indigo-400 bg-indigo-900/50 px-1.5 py-0.5 rounded">
-                                  {selectedTutor.tuitions.map(t => t.title).join(', ')}
-                                </span>
-                              )}
-                            </div>
+                        <div className="text-xs text-slate-400 truncate">@{selectedTutor.username}</div>
+                      </div>
+                      <button type="button" onClick={() => setSelectedTutor(null)} className="text-xs font-medium text-indigo-300 hover:text-white underline underline-offset-2">
+                        Change
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="relative">
+                        <Search className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                        <input
+                          type="search"
+                          aria-label="Search tutors"
+                          value={tutorSearch}
+                          onChange={(e) => setTutorSearch(e.target.value)}
+                          placeholder="Search by name or subject"
+                          className={`${inputCls} pl-10`}
+                        />
+                      </div>
+                      <div className="mt-2 max-h-40 overflow-y-auto space-y-1">
+                        {loadingTutors ? (
+                          <p className="flex items-center gap-2 py-2 text-xs text-slate-400"><Loader2 className="w-3.5 h-3.5 animate-spin" /> Searching…</p>
+                        ) : tutorList.length === 0 ? (
+                          <p className="py-2 text-xs text-slate-500">No tutors match that search.</p>
+                        ) : (
+                          tutorList.map((t) => (
                             <button
                               type="button"
-                              onClick={() => setSelectedTutor(null)}
-                              className="text-slate-400 hover:text-white text-xs underline ml-2"
+                              key={t.id}
+                              onClick={() => setSelectedTutor(t)}
+                              className="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-800 border border-transparent hover:border-slate-700 transition"
                             >
-                              Change
+                              <div className="text-sm font-medium text-slate-100">
+                                {t.name} <span className="text-xs font-normal text-slate-500">@{t.username}</span>
+                              </div>
+                              {t.tuitions?.length > 0 && (
+                                <div className="text-xs text-slate-400 truncate">{t.tuitions.map((tu) => tu.title).join(' · ')}</div>
+                              )}
                             </button>
-                          </div>
+                          ))
                         )}
-
-                        <div className="max-h-36 overflow-y-auto space-y-1 rounded-xl border border-slate-800 p-1 bg-slate-900/70">
-                          {loadingTutors ? (
-                            <p className="text-center py-2 text-xs text-slate-500">Searching tutors...</p>
-                          ) : tutorList.length === 0 ? (
-                            <p className="text-center py-2 text-xs text-slate-500">No tutors found.</p>
-                          ) : (
-                            tutorList.map((t) => {
-                              const isSelected = selectedTutor?.id === t.id;
-                              return (
-                                <button
-                                  type="button"
-                                  key={t.id}
-                                  onClick={() => setSelectedTutor(t)}
-                                  className={`w-full text-left p-2 rounded-lg text-xs flex items-center justify-between transition ${
-                                    isSelected
-                                      ? 'bg-indigo-600 text-white font-semibold'
-                                      : 'hover:bg-slate-800 text-slate-300'
-                                  }`}
-                                >
-                                  <div>
-                                    <div className="font-medium text-slate-200">
-                                      {t.name}{' '}
-                                      <span className={isSelected ? 'text-indigo-200' : 'text-slate-400'}>
-                                        (@{t.username})
-                                      </span>
-                                    </div>
-                                    {t.tuitions?.length > 0 && (
-                                      <div className={`text-[10px] ${isSelected ? 'text-indigo-200' : 'text-slate-500'}`}>
-                                        Tuitions: {t.tuitions.map(tu => tu.title).join(', ')}
-                                      </div>
-                                    )}
-                                  </div>
-                                  {isSelected && <span className="text-xs text-white">✓ Selected</span>}
-                                </button>
-                              );
-                            })
-                          )}
-                        </div>
                       </div>
-                    </div>
-                  </div>
-                )}
+                    </>
+                  )}
+                </div>
               </>
             )}
 
-            <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-1">
-                Password *
-              </label>
+            <Field
+              label="Password"
+              htmlFor="password"
+              hint={isRegister ? (passwordTooShort ? undefined : 'At least 8 characters.') : undefined}
+            >
               <div className="relative">
+                <Lock className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                 <input
-                  type="password"
+                  id="password"
+                  type={showPassword ? 'text' : 'password'}
                   required
+                  minLength={isRegister ? 8 : undefined}
+                  autoComplete={isRegister ? 'new-password' : 'current-password'}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
-                  className="w-full pl-9 pr-3 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 text-sm focus:outline-none focus:border-indigo-500 transition"
+                  className={`${inputCls} pl-10 pr-11`}
                 />
-                <Lock className="w-4 h-4 text-slate-500 absolute left-3 top-3" />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((v) => !v)}
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  className="absolute right-1.5 top-1/2 -translate-y-1/2 p-2 rounded-lg text-slate-400 hover:text-slate-100"
+                >
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
               </div>
-            </div>
+              {passwordTooShort && <p className="mt-1 text-xs text-amber-300">Use at least 8 characters.</p>}
+              {mode === 'login' && (
+                <button
+                  type="button"
+                  onClick={() => switchMode('forgot')}
+                  className="mt-1.5 text-xs font-medium text-indigo-300 hover:text-white underline underline-offset-2"
+                >
+                  Forgot your password?
+                </button>
+              )}
+            </Field>
 
-            {mode !== 'login' && (
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">
-                  Confirm Password *
-                </label>
+            {isRegister && (
+              <Field label="Confirm password" htmlFor="password-confirm">
                 <div className="relative">
+                  <Lock className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                   <input
-                    type="password"
+                    id="password-confirm"
+                    type={showPassword ? 'text' : 'password'}
                     required
+                    autoComplete="new-password"
                     value={passwordConfirm}
                     onChange={(e) => setPasswordConfirm(e.target.value)}
-                    placeholder="••••••••"
-                    className="w-full pl-9 pr-3 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 text-sm focus:outline-none focus:border-indigo-500 transition"
+                    aria-invalid={passwordsDiffer}
+                    className={`${inputCls} pl-10 ${passwordsDiffer ? 'border-rose-500 focus:border-rose-500 focus:ring-rose-500/25' : ''}`}
                   />
-                  <Lock className="w-4 h-4 text-slate-500 absolute left-3 top-3" />
                 </div>
-              </div>
+                {passwordsDiffer && <p className="mt-1 text-xs text-rose-300">The passwords do not match yet.</p>}
+              </Field>
             )}
 
             <button
               type="submit"
               disabled={loading}
-              className="w-full mt-3 py-3 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-sm shadow-lg shadow-indigo-600/30 flex items-center justify-center gap-2 transition disabled:opacity-50"
+              className="w-full !mt-6 py-3 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-sm shadow-lg shadow-indigo-600/25 flex items-center justify-center gap-2 transition disabled:opacity-60 disabled:cursor-not-allowed"
             >
               {loading ? (
-                <div className="w-5 h-5 rounded-full border-2 border-white/30 border-t-white animate-spin" />
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>{mode === 'login' ? 'Signing in…' : 'Creating account…'}</span>
+                </>
               ) : (
                 <>
-                  <span>
-                    {mode === 'login'
-                      ? 'Sign In to Portal'
-                      : mode === 'register-tutor'
-                      ? 'Create Tutor Account'
-                      : 'Register as Student'}
-                  </span>
+                  <span>{mode === 'login' ? 'Sign in' : 'Create account'}</span>
                   <ArrowRight className="w-4 h-4" />
                 </>
               )}
             </button>
           </form>
 
-          {/* Quick Demo Credentials */}
-          {mode === 'login' && (
-            <div className="mt-6 pt-5 border-t border-slate-800/80 space-y-2 text-center">
-              <span className="text-[11px] text-slate-500 block">Quick Demo Logins:</span>
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={handleDemoTutor}
-                  className="py-1.5 px-2 rounded-xl bg-slate-800/60 hover:bg-slate-800 border border-slate-700 text-[11px] text-indigo-300 font-semibold flex items-center justify-center gap-1.5 transition"
-                >
-                  <ShieldCheck className="w-3.5 h-3.5 text-indigo-400" />
-                  <span>Admin Tutor</span>
+          <p className="mt-6 text-sm text-slate-400 text-center">
+            {mode === 'login' ? (
+              <>
+                New to TuitionTrack?{' '}
+                <button type="button" onClick={() => switchMode('register-tutor')} className="font-semibold text-indigo-300 hover:text-white underline underline-offset-2">
+                  Create an account
                 </button>
-                <button
-                  type="button"
-                  onClick={handleDemoStudent}
-                  className="py-1.5 px-2 rounded-xl bg-slate-800/60 hover:bg-slate-800 border border-slate-700 text-[11px] text-emerald-300 font-semibold flex items-center justify-center gap-1.5 transition"
-                >
-                  <User className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>Demo Student</span>
+              </>
+            ) : (
+              <>
+                Already have an account?{' '}
+                <button type="button" onClick={() => switchMode('login')} className="font-semibold text-indigo-300 hover:text-white underline underline-offset-2">
+                  Sign in
                 </button>
-              </div>
-            </div>
-          )}
+              </>
+            )}
+          </p>
         </div>
+      </main>
+    </div>
+  );
+}
+
+function ForgotPassword({ onBack, initialIdentifier = '' }) {
+  const [identifier, setIdentifier] = useState(initialIdentifier);
+  const [sending, setSending] = useState(false);
+  const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+    setSending(true);
+    try {
+      const res = await api.requestPasswordReset(identifier.trim());
+      setMessage(res.message);
+    } catch (err) {
+      setError(err.message || 'Could not send the reset link.');
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center px-4 py-10">
+      <div className="w-full max-w-md">
+        <div className="flex items-center gap-2.5 mb-8">
+          <span className="w-10 h-10 rounded-xl bg-indigo-600 flex items-center justify-center text-white">
+            <GraduationCap className="w-5 h-5" />
+          </span>
+          <span className="text-xl font-bold tracking-tight">Tuition<span className="text-indigo-400">Track</span></span>
+        </div>
+
+        <h1 className="text-2xl font-extrabold tracking-tight">Forgot your password?</h1>
+        <p className="mt-1.5 text-sm text-slate-400">
+          Enter your username or email and we will email you a link to choose a new one.
+        </p>
+
+        {message ? (
+          <div className="mt-6 p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-100 text-sm flex items-start gap-2.5">
+            <Check className="w-5 h-5 flex-shrink-0 text-emerald-400" />
+            <span>{message}</span>
+          </div>
+        ) : (
+          <form onSubmit={handleSubmit} className="mt-6 space-y-4">
+            {error && (
+              <div role="alert" className="p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-200 text-sm flex items-start gap-2.5">
+                <AlertCircle className="w-5 h-5 flex-shrink-0 text-rose-400" />
+                <span>{error}</span>
+              </div>
+            )}
+            <Field label="Username or email" htmlFor="reset-identifier">
+              <input
+                id="reset-identifier"
+                type="text"
+                required
+                autoCapitalize="none"
+                spellCheck={false}
+                value={identifier}
+                onChange={(e) => setIdentifier(e.target.value)}
+                className={inputCls}
+              />
+            </Field>
+            <button
+              type="submit"
+              disabled={sending}
+              className="w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-sm flex items-center justify-center gap-2 transition disabled:opacity-60"
+            >
+              {sending && <Loader2 className="w-4 h-4 animate-spin" />}
+              Email me a reset link
+            </button>
+          </form>
+        )}
+
+        <p className="mt-5 text-xs text-slate-400">
+          Student with no email on your account? Ask your tutor — they can give you a new temporary password.
+        </p>
+        <button type="button" onClick={onBack} className="mt-4 text-sm font-semibold text-indigo-300 hover:text-white underline underline-offset-2">
+          Back to sign in
+        </button>
       </div>
     </div>
   );

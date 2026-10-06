@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
+import { notify } from '../../utils/toast';
 import Modal from '../common/Modal';
 import { api } from '../../api/client';
+import StudentCredentialsModal from './StudentCredentialsModal';
 import {
   Users,
   Calendar,
@@ -15,6 +17,7 @@ import {
   X,
   BookOpen,
   DollarSign,
+  Key,
 } from 'lucide-react';
 
 // Canonical Sat-first week order (matches TutorDashboard + TuitionWorkspace).
@@ -67,6 +70,8 @@ export default function TuitionBatchesModal({
   const [newStudentPhone, setNewStudentPhone] = useState('');
   const [newStudentGrade, setNewStudentGrade] = useState('HSC-2026');
   const [creatingStudent, setCreatingStudent] = useState(false);
+  const [credentialsModalOpen, setCredentialsModalOpen] = useState(false);
+  const [createdCredentials, setCreatedCredentials] = useState(null);
 
   // Local student list in case new student is added
   const [studentsList, setStudentsList] = useState(allStudents);
@@ -83,9 +88,9 @@ export default function TuitionBatchesModal({
       setName(batchToEdit.title || batchToEdit.name || '');
       setSubject(batchToEdit.subject || '');
       setDescription(batchToEdit.description || '');
-      setMonthlyFee(String(batchToEdit.tuition_fee || batchToEdit.monthly_fee || '9000.00'));
+      setMonthlyFee(String(batchToEdit.total_fee ?? batchToEdit.tuition_fee ?? '9000.00'));
       setCycleLength(batchToEdit.cycle_length || 12);
-      setSelectedStudentIds(batchToEdit.students || batchToEdit.enrollments?.map(e => e.student_id) || []);
+      setSelectedStudentIds((batchToEdit.students || batchToEdit.enrollments?.map((e) => e.student_id || e.id) || []).map(String));
       
       const loadedRoutine = batchToEdit.routine || batchToEdit.weekly_routine || [];
       setWeeklyRoutine(loadedRoutine.map(r => ({
@@ -112,12 +117,13 @@ export default function TuitionBatchesModal({
   const toggleStudent = (id) => {
     const key = String(id);
     setSelectedStudentIds((prev) =>
-      prev.map(String).includes(key) ? prev.filter((s) => String(s) !== key) : [...prev, id]
+      prev.map(String).includes(key) ? prev.filter((s) => String(s) !== key) : [...prev, key]
     );
   };
 
   const removeStudent = (id) => {
-    setSelectedStudentIds((prev) => prev.filter((s) => String(s) !== String(id)));
+    const key = String(id);
+    setSelectedStudentIds((prev) => prev.filter((s) => String(s) !== key));
   };
 
   const toMinutes = (t) => {
@@ -151,7 +157,7 @@ export default function TuitionBatchesModal({
   const handleCreateAndEnrollStudent = async (e) => {
     e.preventDefault();
     if (!newStudentFirst || !newStudentUsername) {
-      alert('Please provide student first name and username.');
+      notify('Please provide student first name and username.');
       return;
     }
 
@@ -166,8 +172,6 @@ export default function TuitionBatchesModal({
         password: tempPassword,
         phone: newStudentPhone.trim(),
         grade_level: newStudentGrade.trim(),
-        cycle_length: cycleLength,
-        tuition_fee: parseFloat(monthlyFee) || 9000,
       });
 
       const newId = res.student.student_id || res.student.id;
@@ -191,9 +195,13 @@ export default function TuitionBatchesModal({
       setNewStudentEmail('');
       setNewStudentPhone('');
       setShowAddStudentForm(false);
-      alert(`Student registered successfully!\nUsername: ${res.student.username}\nTemporary Password: ${tempPassword}\nPlease share this password with the student.`);
+      setCreatedCredentials({
+        student: newStudentObj,
+        tempPassword,
+      });
+      setCredentialsModalOpen(true);
     } catch (err) {
-      alert(`Failed to add student: ${err.message}`);
+      notify(`Failed to add student: ${err.message}`);
     } finally {
       setCreatingStudent(false);
     }
@@ -221,8 +229,8 @@ export default function TuitionBatchesModal({
         subject: subject.trim(),
         description: description.trim(),
         cycle_length: parseInt(cycleLength, 10) || 12,
-        tuition_fee: parseFloat(monthlyFee) || 0,
-        student_ids: selectedStudentIds.map((id) => parseInt(id, 10)).filter(Number.isFinite),
+        total_fee: parseFloat(monthlyFee) || 0,
+        student_ids: selectedStudentIds.map((id) => String(id)).filter(Boolean),
         routine: normalizedRoutine,
       };
 
@@ -251,7 +259,8 @@ export default function TuitionBatchesModal({
   });
 
   return (
-    <Modal
+    <>
+      <Modal
       isOpen={isOpen}
       onClose={onClose}
       title={batchToEdit ? `Edit Tuition — ${batchToEdit.title || batchToEdit.name}` : 'Create New Tuition & Routine'}
@@ -298,7 +307,7 @@ export default function TuitionBatchesModal({
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div>
             <label className="block text-xs font-semibold text-slate-300 mb-1">
-              Cycle Length (Classes / Cycle)
+              Classes per cycle
             </label>
             <input
               type="number"
@@ -312,7 +321,7 @@ export default function TuitionBatchesModal({
 
           <div>
             <label className="block text-xs font-semibold text-slate-300 mb-1">
-              Fee per Cycle (৳ BDT)
+              Total fee per cycle (৳) — whole group
             </label>
             <input
               type="number"
@@ -321,6 +330,9 @@ export default function TuitionBatchesModal({
               onChange={(e) => setMonthlyFee(e.target.value)}
               className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-emerald-400 font-bold text-sm focus:outline-none focus:border-indigo-500"
             />
+            <span className="block text-[10px] text-slate-400 mt-1">
+              You earn ৳{(parseInt(cycleLength, 10) > 0 ? Math.round(((parseFloat(monthlyFee) || 0) / parseInt(cycleLength, 10)) * 100) / 100 : 0).toLocaleString()} for each class you mark complete. Students never see this.
+            </span>
           </div>
 
           <div>
@@ -506,14 +518,14 @@ export default function TuitionBatchesModal({
           {selectedStudentIds.length > 0 && (
             <div className="flex flex-wrap gap-1.5 p-2 rounded-xl bg-slate-900/40 border border-slate-800 max-h-24 overflow-y-auto">
               {selectedStudentIds.map((stId) => {
-                const st = studentsList.find((s) => s.student_id === stId);
-                if (!st) return null;
+                const st = studentsList.find((s) => String(s.student_id || s.id) === String(stId));
+                const displayName = st ? (st.full_name || st.username) : `Student #${String(stId).slice(0, 8)}`;
                 return (
                   <span
                     key={stId}
                     className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-indigo-950/60 border border-indigo-500/40 text-xs text-indigo-200"
                   >
-                    <span>{st.full_name}</span>
+                    <span>{displayName}</span>
                     <button
                       type="button"
                       onClick={() => removeStudent(stId)}
@@ -546,11 +558,12 @@ export default function TuitionBatchesModal({
               </p>
             ) : (
               filteredStudents.map((st) => {
-                const isSelected = selectedStudentIds.includes(st.student_id);
+                const sid = String(st.student_id || st.id);
+                const isSelected = selectedStudentIds.map(String).includes(sid);
                 return (
                   <div
-                    key={st.student_id}
-                    onClick={() => toggleStudent(st.student_id)}
+                    key={sid}
+                    onClick={() => toggleStudent(sid)}
                     className={`flex items-center justify-between p-2 rounded-lg cursor-pointer transition text-xs ${
                       isSelected
                         ? 'bg-indigo-950/60 border border-indigo-500/40 text-slate-100'
@@ -558,7 +571,7 @@ export default function TuitionBatchesModal({
                     }`}
                   >
                     <div>
-                      <span className="font-semibold">{st.full_name}</span>{' '}
+                      <span className="font-semibold">{st.full_name || st.username}</span>{' '}
                       <span className="text-slate-500 font-mono text-[11px]">(@{st.username})</span>
                       {st.profile?.grade_level && (
                         <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400">
@@ -600,5 +613,13 @@ export default function TuitionBatchesModal({
         </div>
       </form>
     </Modal>
+
+    <StudentCredentialsModal
+      isOpen={credentialsModalOpen}
+      onClose={() => setCredentialsModalOpen(false)}
+      student={createdCredentials?.student}
+      tempPassword={createdCredentials?.tempPassword}
+    />
+  </>
   );
 }

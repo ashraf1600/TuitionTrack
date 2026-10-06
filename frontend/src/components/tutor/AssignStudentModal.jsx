@@ -105,7 +105,7 @@ export default function AssignStudentModal({
                           {t.cycle_length} Classes / Cycle
                         </span>
                         <span className="flex items-center gap-1 font-mono text-emerald-400 font-semibold">
-                          ৳{Number(t.tuition_fee).toLocaleString()}
+                          ৳{Number(t.total_fee ?? t.tuition_fee ?? 0).toLocaleString()} / cycle
                         </span>
                         <span className="text-slate-500">
                           {t.enrolled_count || 0} students

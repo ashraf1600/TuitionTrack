@@ -1,6 +1,7 @@
 import React from 'react';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import ForcePasswordChange from '../pages/ForcePasswordChange';
 
 export function ProtectedRoute({ children, requiredRole }) {
   const { user, token, loading } = useAuth();
@@ -15,6 +16,11 @@ export function ProtectedRoute({ children, requiredRole }) {
 
   if (!token || !user) {
     return <Navigate to="/login" replace />;
+  }
+
+  // A password someone else chose must be replaced before using the app.
+  if (user.must_change_password) {
+    return <ForcePasswordChange />;
   }
 
   if (requiredRole && user.role !== requiredRole) {

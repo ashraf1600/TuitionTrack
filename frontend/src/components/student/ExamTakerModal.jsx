@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import Modal from '../common/Modal';
 import MathRenderer from '../common/MathRenderer';
+import QuestionImage from '../common/QuestionImage';
 import { api } from '../../api/client';
 import {
   Clock,
@@ -31,9 +32,12 @@ export default function ExamTakerModal({
   const [timeLeft, setTimeLeft] = useState('');
   const [isGracePeriod, setIsGracePeriod] = useState(false);
   const [isExpired, setIsExpired] = useState(false);
+  const [isLateWindow, setIsLateWindow] = useState(false);
+  const [textAnswer, setTextAnswer] = useState('');
   const [serverOffsetMs, setServerOffsetMs] = useState(0);
 
   const autoSubmitRef = useRef(null);
+  const autoSubmittedRef = useRef(false);
 
   // Restore draft answers from localStorage if available
   useEffect(() => {
@@ -50,65 +54,85 @@ export default function ExamTakerModal({
           if (parsed.mcqAnswers) setMcqAnswers(parsed.mcqAnswers);
           if (parsed.textAnswers) setTextAnswers(parsed.textAnswers);
           if (parsed.imageUrls) setImageUrls(parsed.imageUrls);
+          setTextAnswer(parsed.textAnswer || '');
         } else {
           setMcqAnswers({});
           setTextAnswers({});
           setImageUrls([]);
+          setTextAnswer('');
         }
       } catch (_) {
         setMcqAnswers({});
         setTextAnswers({});
         setImageUrls([]);
+        setTextAnswer('');
       }
     }
   }, [exam?.id]);
 
   // Persist in-progress answers so closing modal does not lose answers
   useEffect(() => {
-    if (exam?.id && (Object.keys(mcqAnswers).length > 0 || imageUrls.length > 0)) {
+    if (exam?.id && (Object.keys(mcqAnswers).length > 0 || imageUrls.length > 0 || textAnswer)) {
       const storageKey = `exam_draft_${exam.id}`;
-      localStorage.setItem(storageKey, JSON.stringify({ mcqAnswers, textAnswers, imageUrls }));
+      localStorage.setItem(storageKey, JSON.stringify({ mcqAnswers, textAnswers, imageUrls, textAnswer }));
     }
-  }, [exam?.id, mcqAnswers, textAnswers, imageUrls]);
+  }, [exam?.id, mcqAnswers, textAnswers, imageUrls, textAnswer]);
 
-  // Live Countdown Timer (server-offset corrected; auto-submits on expiration)
+  // Live countdown (server-clock corrected).
+  // The on-time deadline is the student's own (timed exams) or the exam end time.
+  // At the deadline the answers are sent automatically once; the server allows a short
+  // grace period for that. If the tutor accepts late work, nothing is auto-sent — the
+  // student can keep working and turn in late.
   useEffect(() => {
-    if (!isOpen || !exam) return;
+    if (!isOpen || !exam) return undefined;
+    autoSubmittedRef.current = false;
 
-    const interval = setInterval(() => {
+    const fmt = (ms) => {
+      const totalSec = Math.max(0, Math.floor(ms / 1000));
+      const d = Math.floor(totalSec / 86400);
+      const h = Math.floor((totalSec % 86400) / 3600);
+      const m = Math.floor((totalSec % 3600) / 60);
+      const sec = totalSec % 60;
+      const hms = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+      return d > 0 ? `${d}d ${hms}` : hms;
+    };
+
+    const tick = () => {
       const now = Date.now() + serverOffsetMs;
-      const endTime = new Date(exam.end_time).getTime();
-      const graceEnd = endTime + (exam.grace_period_minutes ?? 5) * 60 * 1000;
+      const deadline = new Date(exam.attempt_deadline || exam.end_time).getTime();
+      const graceEnd = deadline + (exam.grace_period_minutes ?? 5) * 60 * 1000;
+      const lateEnd = exam.late_submission_until ? new Date(exam.late_submission_until).getTime() : 0;
 
-
-      if (now > graceEnd) {
-        setTimeLeft('00:00:00 (Expired)');
+      if (now <= deadline) {
         setIsGracePeriod(false);
-        setIsExpired(true);
-        clearInterval(interval);
-        // Automatically submit student answers when the timer reaches 0
-        if (autoSubmitRef.current) {
+        setIsLateWindow(false);
+        setTimeLeft(fmt(deadline - now));
+        return;
+      }
+      if (lateEnd > now) {
+        setIsGracePeriod(false);
+        setIsLateWindow(true);
+        setTimeLeft(fmt(lateEnd - now));
+        return;
+      }
+      if (now <= graceEnd) {
+        setIsLateWindow(false);
+        setIsGracePeriod(true);
+        setTimeLeft(fmt(graceEnd - now));
+        if (!autoSubmittedRef.current && autoSubmitRef.current) {
+          autoSubmittedRef.current = true;
           autoSubmitRef.current();
         }
-      } else if (now > endTime) {
-        // In grace period
-        setIsGracePeriod(true);
-        const diff = graceEnd - now;
-        const mins = Math.floor((diff / (1000 * 60)) % 60);
-        const secs = Math.floor((diff / 1000) % 60);
-        setTimeLeft(`Grace: ${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`);
-      } else {
-        setIsGracePeriod(false);
-        const diff = endTime - now;
-        const hours = Math.floor(diff / (1000 * 60 * 60));
-        const mins = Math.floor((diff / (1000 * 60)) % 60);
-        const secs = Math.floor((diff / 1000) % 60);
-        setTimeLeft(
-          `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`
-        );
+        return;
       }
-    }, 1000);
+      setIsGracePeriod(false);
+      setIsLateWindow(false);
+      setIsExpired(true);
+      setTimeLeft('00:00:00');
+    };
 
+    tick();
+    const interval = setInterval(tick, 1000);
     return () => clearInterval(interval);
   }, [isOpen, exam, serverOffsetMs]);
 
@@ -177,8 +201,9 @@ export default function ExamTakerModal({
         ...mcqAnswers,
       };
 
-      await api.submitExam(exam.id, {
+      const response = await api.submitExam(exam.id, {
         answers_data: answersData,
+        text_answer: textAnswer.trim(),
         image_urls: imageUrls,
         uploaded_images: imageUrls,
       });
@@ -186,7 +211,7 @@ export default function ExamTakerModal({
       if (exam?.id) {
         localStorage.removeItem(`exam_draft_${exam.id}`);
       }
-      onExamSubmitted();
+      onExamSubmitted(response, exam);
       onClose();
     } catch (err) {
       setError(err.message || 'Submission failed.');
@@ -195,12 +220,9 @@ export default function ExamTakerModal({
     }
   };
 
-  useEffect(() => {
-    autoSubmitRef.current = () => {
-      // Auto-submit whatever has been answered so far
-      doSubmit();
-    };
-  });
+  // Auto-submit whatever has been answered so far. Assigned directly rather than in
+  // an effect: this sits below the `!exam` early return, where a hook is not allowed.
+  autoSubmitRef.current = doSubmit;
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -218,13 +240,13 @@ export default function ExamTakerModal({
     }
 
     const needsCQ = !isMCQOnly && exam.content_html && exam.content_html !== '<p></p>' && exam.content_html !== '<p>Multiple Choice Examination</p>';
-    if (!isMCQOnly && imageUrls.length === 0 && answeredCount === 0) {
-      setError('Please answer the questions or upload a photo of your written answer script.');
+    const hasWritten = imageUrls.length > 0 || textAnswer.trim().length > 0;
+    if (!isMCQOnly && !hasWritten && answeredCount === 0) {
+      setError('Answer the questions, type your answer, or upload a photo of your written work.');
       return;
     }
-    if (needsCQ && imageUrls.length === 0 && exam.exam_type !== 'MCQ') {
-      // HYBRID/CQ with written section requires an upload
-      setError('Please upload your written answer script for the CQ section.');
+    if (needsCQ && !hasWritten && exam.exam_type !== 'MCQ') {
+      setError('The written part needs an answer: type it below or upload a photo.');
       return;
     }
 
@@ -244,7 +266,7 @@ export default function ExamTakerModal({
         {/* Countdown Timer Banner */}
         <div
           className={`flex flex-col sm:flex-row items-center justify-between gap-3 p-4 rounded-xl border ${
-            isGracePeriod
+            isGracePeriod || isLateWindow
               ? 'bg-amber-950/40 border-amber-500/40 text-amber-300'
               : isAssignment
               ? 'bg-purple-950/40 border-purple-500/40 text-purple-300'
@@ -263,11 +285,17 @@ export default function ExamTakerModal({
             />
             <div>
               <span className="text-xs font-semibold uppercase tracking-wider block">
-                {isGracePeriod
-                  ? 'Grace Period Active (Late Turn-in)'
+                {isExpired
+                  ? 'Time is up'
+                  : isLateWindow
+                  ? 'Deadline passed — late work accepted for'
+                  : isGracePeriod
+                  ? 'Time is up — sending your answers'
+                  : exam.is_timed
+                  ? 'Your time remaining'
                   : isAssignment
-                  ? 'Time Remaining Until Deadline'
-                  : 'Time Remaining'}
+                  ? 'Time until the deadline'
+                  : 'Time remaining'}
               </span>
               <span className="text-xl font-mono font-bold tracking-tight">
                 {timeLeft || 'Calculating...'}
@@ -323,8 +351,9 @@ export default function ExamTakerModal({
                           <span className="w-6 h-6 rounded-full bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 flex items-center justify-center font-bold text-xs flex-shrink-0 mt-0.5">
                             {idx + 1}
                           </span>
-                          <div className="text-sm font-semibold text-slate-100">
-                            <MathRenderer content={q.question} />
+                          <div className="text-sm font-semibold text-slate-100 space-y-2 min-w-0">
+                            {q.question && <MathRenderer plain content={q.question} />}
+                            <QuestionImage src={q.image_url} alt={`Question ${idx + 1}`} />
                           </div>
                         </div>
 
@@ -337,7 +366,7 @@ export default function ExamTakerModal({
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pl-8">
                         {(q.options || []).map((opt, optIdx) => {
                           const isSelected = selectedOpt === optIdx;
-                          const letter = ['A', 'B', 'C', 'D'][optIdx] || String(optIdx + 1);
+                          const letter = ['A', 'B', 'C', 'D', 'E'][optIdx] || String(optIdx + 1);
 
                           return (
                             <button
@@ -359,8 +388,8 @@ export default function ExamTakerModal({
                               >
                                 {letter}
                               </span>
-                              <span className="text-xs font-medium flex-1">
-                                <MathRenderer content={opt} />
+                              <span className="text-sm font-medium flex-1 min-w-0 break-words">
+                                <MathRenderer plain inline content={opt} />
                               </span>
                             </button>
                           );
@@ -391,8 +420,17 @@ export default function ExamTakerModal({
             <div className="pt-2">
               <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider mb-2 flex items-center gap-2">
                 <Camera className="w-4 h-4 text-emerald-400" />
-                Upload Written Script / Handwritten Answer Sheets
+                Your written answer
               </h4>
+
+              <textarea
+                rows={5}
+                value={textAnswer}
+                maxLength={20000}
+                onChange={(e) => setTextAnswer(e.target.value)}
+                placeholder="Type your answer here, or upload photos of your handwritten work below (or both)."
+                className="w-full mb-3 p-3 rounded-xl bg-slate-900 border border-slate-700 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-indigo-500"
+              />
 
               <div className="flex flex-col sm:flex-row items-center gap-3">
                 <label className="w-full sm:w-auto px-4 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 border border-dashed border-slate-600 text-slate-300 text-xs font-semibold flex items-center justify-center gap-2 cursor-pointer transition">
@@ -401,7 +439,6 @@ export default function ExamTakerModal({
                   <input
                     type="file"
                     accept="image/*,application/pdf"
-                    capture="environment"
                     multiple
                     onChange={handlePhotoUpload}
                     className="hidden"

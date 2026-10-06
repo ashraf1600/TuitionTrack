@@ -10,7 +10,13 @@ export default {
   theme: {
     extend: {
       fontFamily: {
-        sans: ['Outfit', 'Inter', 'system-ui', 'sans-serif'],
+        // Inter for reading; Outfit only where a heading asks for it.
+        sans: ['Inter', 'system-ui', 'sans-serif'],
+        display: ['Outfit', 'Inter', 'system-ui', 'sans-serif'],
+      },
+      fontSize: {
+        // The UI leans on text-xs for body copy; 12px was too small to read comfortably.
+        xs: ['0.8125rem', { lineHeight: '1.15rem' }],
       },
       colors: {
         brand: {

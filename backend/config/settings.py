@@ -117,6 +117,10 @@ AUTH_PASSWORD_VALIDATORS = [
 # ─── Internationalisation ─────────────────────────────────────────────────────
 LANGUAGE_CODE = 'en-us'
 TIME_ZONE = 'UTC'
+# Zone used when a time is written out for people (emails). Storage stays UTC.
+DISPLAY_TIME_ZONE = os.getenv('DISPLAY_TIME_ZONE', 'Asia/Dhaka')
+# Where the React app is served; used to build links in emails (password reset).
+FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:5173')
 USE_I18N = True
 USE_TZ = True  # All datetimes stored as UTC — critical for exam time engine
 

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { notify } from '../../utils/toast';
 import Modal from '../common/Modal';
 import { api } from '../../api/client';
 import { Award, CheckCircle2, AlertCircle, FileText, ExternalLink, Image as ImageIcon } from 'lucide-react';
@@ -66,7 +67,7 @@ export default function SubmissionsGradingModal({
       if (submissionsList.length <= 1) {
         onClose();
       } else {
-        alert(`Grade saved for ${activeSubmission.student_name}!`);
+        notify(`Grade saved for ${activeSubmission.student_name}!`);
       }
     } catch (err) {
       setError(err.message || 'Failed to grade submission.');

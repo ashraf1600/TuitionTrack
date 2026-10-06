@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { notify } from '../../utils/toast';
 import {
   Check,
   RotateCcw,
@@ -96,7 +97,7 @@ export default function CycleGrid({
       await onToggleClass(cycle.id, classNum, isCompletedState, targetDate, isCompletedState ? classTopic : '');
       setDateModalOpen(false);
     } catch (err) {
-      alert(`Save failed: ${err.message}`);
+      notify(`Save failed: ${err.message}`);
     } finally {
       setSavingClass(false);
     }

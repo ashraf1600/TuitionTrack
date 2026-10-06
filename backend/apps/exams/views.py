@@ -7,6 +7,8 @@ Endpoints:
   GET    /api/v1/exams/<id>/             — Scoped detail view
   PATCH  /api/v1/exams/<id>/             — Tutor edits exam
   POST   /api/v1/exams/<id>/submit/      — Student submits answers/images (auto-grades MCQs, time-validated)
+  GET    /api/v1/exams/<id>/result/      — Student's evaluated paper, only once results are released
+  POST   /api/v1/exams/<id>/publish_results/ — Tutor publishes or hides results by hand
   GET    /api/v1/exams/<id>/leaderboard/ — Dynamic leaderboard ranking for tuition batch / exam
   PATCH  /api/v1/submissions/<id>/grade/ — Tutor marks and grades submission
   POST   /api/v1/media/upload/           — Multipart file upload for diagrams and answer sheets
@@ -30,10 +32,12 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.parsers import MultiPartParser, FormParser
 
 from apps.authentication.permissions import IsTutor, IsStudent, IsTutorOrStudent
-from .models import Exam, ExamSubmission
+from .models import Exam, ExamAttempt, ExamSubmission
 from .serializers import (
     ExamListSerializer,
     ExamDetailSerializer,
+    StudentExamSerializer,
+    ExamResultSerializer,
     ExamCreateUpdateSerializer,
     ExamSubmissionSerializer,
     SubmitExamSerializer,
@@ -54,9 +58,11 @@ class ExamViewSet(viewsets.ModelViewSet):
     http_method_names = ['get', 'post', 'patch', 'delete', 'head', 'options']
 
     def get_permissions(self):
-        if self.action in ['create', 'update', 'partial_update', 'destroy', 'submissions']:
+        if self.action in [
+            'create', 'update', 'partial_update', 'destroy', 'submissions', 'duplicate', 'question_bank', 'publish_results',
+        ]:
             return [IsAuthenticated(), IsTutor()]
-        if self.action == 'submit':
+        if self.action in ('submit', 'start', 'result'):
             return [IsAuthenticated(), IsStudent()]
         return [IsAuthenticated(), IsTutorOrStudent()]
 
@@ -103,13 +109,34 @@ class ExamViewSet(viewsets.ModelViewSet):
         if self.action in ['create', 'partial_update', 'update']:
             return ExamCreateUpdateSerializer
         elif self.action == 'retrieve':
-            return ExamDetailSerializer
+            # Students get a serializer that has no answer-bearing field at all.
+            return ExamDetailSerializer if self.request.user.role == 'TUTOR' else StudentExamSerializer
         return ExamListSerializer
 
     def perform_create(self, serializer):
-        """Create exam and dispatch email notification asynchronously/safely."""
         exam = serializer.save(tutor=self.request.user)
+        if exam.is_published:
+            self._notify_students(exam)
 
+    def perform_update(self, serializer):
+        was_published = serializer.instance.is_published
+        exam = serializer.save()
+        # A draft that has just been published is news to the students.
+        if exam.is_published and not was_published:
+            self._notify_students(exam)
+
+    def _assigned_students(self, exam):
+        """Active students this exam is for."""
+        students = {}
+        if exam.student_id and exam.student.is_active:
+            students[exam.student_id] = exam.student
+        if exam.tuition_id:
+            for enr in exam.tuition.enrollments.filter(is_active=True, student__is_active=True).select_related('student'):
+                students[enr.student_id] = enr.student
+        return list(students.values())
+
+    def _notify_students(self, exam):
+        """Email each assigned student separately (never exposes other addresses)."""
         # Collect recipient emails (individual student, tuition enrollments, or batch)
         # active students only; sending individual emails avoids exposing recipient addresses.
         recipients = []
@@ -118,7 +145,7 @@ class ExamViewSet(viewsets.ModelViewSet):
         if exam.tuition_id:
             recipients += [
                 enr.student.email
-                for enr in exam.tuition.enrollments.select_related('student').all()
+                for enr in exam.tuition.enrollments.filter(is_active=True, student__is_active=True).select_related('student')
                 if enr.student.email and enr.student.is_active
             ]
         # Dedupe while preserving order
@@ -126,8 +153,14 @@ class ExamViewSet(viewsets.ModelViewSet):
 
         if recipients:
             subject = f'[TuitionTrack] New {exam.category.capitalize()}: {exam.title}'
-            start_str = exam.start_time.strftime('%Y-%m-%d %H:%M UTC')
-            end_str = exam.end_time.strftime('%Y-%m-%d %H:%M UTC')
+            from zoneinfo import ZoneInfo
+            try:
+                zone = ZoneInfo(settings.DISPLAY_TIME_ZONE)
+            except Exception:
+                zone = ZoneInfo('UTC')
+            time_format = f'%a %d %b %Y, %I:%M %p ({zone.key})'
+            start_str = exam.start_time.astimezone(zone).strftime(time_format)
+            end_str = exam.end_time.astimezone(zone).strftime(time_format)
             target_desc = f'Tuition: {exam.tuition.title}' if exam.tuition else f'Student: {exam.student.get_full_name() or exam.student.username}'
             body = (
                 f"Hello,\n\n"
@@ -223,7 +256,7 @@ class ExamViewSet(viewsets.ModelViewSet):
         # Tenant check: Student must be 1-on-1 or enrolled in tuition
         is_assigned = (
             (exam.student_id == request.user.id) or
-            (exam.tuition_id and exam.tuition.enrollments.filter(student=request.user).exists())
+            (exam.tuition_id and exam.tuition.enrollments.filter(student=request.user, is_active=True).exists())
         )
         if not is_assigned:
             return Response(
@@ -237,35 +270,30 @@ class ExamViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # Duplicate check
-        if ExamSubmission.objects.filter(exam=exam, student=request.user).exists():
+        # One real submission per student. An old auto-created "missed" placeholder does not count.
+        existing = ExamSubmission.objects.filter(exam=exam, student=request.user).first()
+        if existing and existing.status != ExamSubmission.Status.MISSED:
             return Response(
                 {'error': 'You have already submitted this exam.'},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # Time validation against server UTC time
         now = timezone.now()
-        grace_limit = exam.end_time + timedelta(minutes=exam.grace_period_minutes)
-
         if now < exam.start_time:
             return Response(
                 {'error': 'Exam has not started yet.'},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        if now > grace_limit:
+        # On time, late (grace period or the late-work window), or refused.
+        attempt = ExamAttempt.objects.filter(exam=exam, student=request.user).first()
+        started_at = attempt.started_at if attempt else now
+        sub_status = exam.submission_status_at(now, started_at)
+        if sub_status is None:
             return Response(
                 {'error': 'Submission window is closed. Exam deadline and grace period have expired.'},
                 status=status.HTTP_400_BAD_REQUEST
             )
-
-        # Determine status: SUBMITTED (on time) or DELAYED (during grace period)
-        if now <= exam.end_time:
-            sub_status = ExamSubmission.Status.SUBMITTED
-        else:
-            sub_status = ExamSubmission.Status.DELAYED
-
         serializer = SubmitExamSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
@@ -274,11 +302,15 @@ class ExamViewSet(viewsets.ModelViewSet):
         from django.db import IntegrityError, transaction
         try:
             with transaction.atomic():
+                if existing:
+                    existing.delete()
                 submission = ExamSubmission.objects.create(
                     exam=exam,
                     student=request.user,
                     submitted_at=now,
+                    started_at=started_at,
                     answers_data=serializer.validated_data.get('answers_data', {}),
+                    text_answer=serializer.validated_data.get('text_answer', ''),
                     uploaded_images=images_val,
                     image_urls=images_val,
                     status=sub_status,
@@ -293,38 +325,255 @@ class ExamViewSet(viewsets.ModelViewSet):
         submission.calculate_mcq_score()
         submission.save(update_fields=['mcq_score', 'obtained_marks', 'is_graded', 'graded_at', 'updated_at'])
 
-        if exam.is_results_published and now > grace_limit:
+        released = exam.results_released(submission)
+        if released and exam.mcq_data:
             msg = f'Exam submitted successfully ({sub_status.capitalize()}). MCQs auto-graded: {submission.mcq_score} marks.'
         else:
             msg = f'Exam submitted successfully ({sub_status.capitalize()}).'
 
-
         return Response(
             {
                 'message': msg,
+                # The marks inside `submission` stay blank until results are released.
                 'submission': ExamSubmissionSerializer(submission, context={'request': request}).data,
+                'results_released': released,
+                'result_status': {
+                    'released': released,
+                    'mode': exam.result_publish_mode,
+                    'publish_at': exam.results_release_time,
+                },
             },
             status=status.HTTP_201_CREATED
         )
+
+    @action(detail=True, methods=['get'], permission_classes=[IsAuthenticated, IsStudent])
+    def result(self, request, pk=None):
+        """
+        GET /api/v1/exams/<id>/result/
+        The student's evaluated paper. Until results are released for them this
+        returns only `available: false` and when to expect them — no marks, no
+        answer key.
+        """
+        exam = get_object_or_404(self.get_queryset(), id=pk)
+        submission = ExamSubmission.objects.filter(exam=exam, student=request.user).exclude(
+            status=ExamSubmission.Status.MISSED
+        ).select_related('exam').first()
+
+        base = {
+            'submitted': submission is not None,
+            'mode': exam.result_publish_mode,
+            'publish_at': exam.results_release_time,
+        }
+        if not exam.results_released(submission):
+            return Response({'available': False, **base, 'submitted_at': submission.submitted_at if submission else None})
+        submission.exam = exam
+        return Response({
+            'available': True,
+            **base,
+            'result': ExamResultSerializer(submission, context={'request': request}).data,
+        })
+
+    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated, IsTutor])
+    def publish_results(self, request, pk=None):
+        """
+        POST /api/v1/exams/<id>/publish_results/   {publish: true|false}
+        Publish results now, or take them back. Either way the exam moves to
+        manual control, so a schedule cannot undo what the tutor just decided.
+        """
+        exam = get_object_or_404(self.get_queryset(), id=pk)
+        publish = request.data.get('publish', True)
+        if isinstance(publish, str):
+            publish = publish.strip().lower() not in ('false', '0', 'no', '')
+        exam.result_publish_mode = Exam.ResultPublishMode.MANUAL
+        exam.publish_time = None
+        exam.is_results_published = bool(publish)
+        exam.save(update_fields=['result_publish_mode', 'publish_time', 'is_results_published', 'updated_at'])
+        return Response({
+            'message': 'Results are now visible to students who submitted.' if publish else 'Results are hidden from students.',
+            'exam': ExamListSerializer(exam, context={'request': request}).data,
+        })
+
+    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated, IsTutor])
+    def duplicate(self, request, pk=None):
+        """
+        POST /api/v1/exams/<id>/duplicate/   {tuition_id?}
+        Copies an exam — questions, marking scheme, solutions and settings — as a
+        DRAFT, optionally for another of the tutor's groups. The copy is scheduled
+        for the same time of day one week after today so nothing goes out by accident;
+        the tutor adjusts the dates and publishes.
+        """
+        import copy
+        from apps.students.models import Tuition
+
+        source = get_object_or_404(self.get_queryset(), id=pk)
+        tuition, student = source.tuition, source.student
+        tuition_id = request.data.get('tuition_id')
+        if tuition_id:
+            try:
+                tuition = Tuition.objects.filter(id=tuition_id, tutor=request.user).first()
+            except Exception:
+                tuition = None
+            if not tuition:
+                return Response({'tuition_id': ['Selected tuition does not exist.']}, status=status.HTTP_400_BAD_REQUEST)
+            student = None
+
+        now = timezone.now()
+        window = source.end_time - source.start_time
+        start = source.start_time.replace(year=now.year, month=now.month, day=now.day) + timedelta(days=7)
+        late_gap = (source.late_submission_until - source.end_time) if source.late_submission_until else None
+
+        clone = Exam.objects.create(
+            tutor=request.user,
+            tuition=tuition,
+            student=student,
+            category=source.category,
+            exam_type=source.exam_type,
+            title=f'{source.title} (copy)'[:255],
+            content_html=source.content_html,
+            mcq_data=copy.deepcopy(source.mcq_data),
+            written_scheme=copy.deepcopy(source.written_scheme),
+            solution_html=source.solution_html,
+            solution_media_url=source.solution_media_url,
+            # Same rule for results; a manually published original starts unpublished again.
+            result_publish_mode=source.result_publish_mode,
+            is_results_published=False if source.result_publish_mode == Exam.ResultPublishMode.MANUAL else source.is_results_published,
+            publish_time=(start + window + (source.publish_time - source.end_time)) if source.publish_time else None,
+            total_marks=source.total_marks,
+            start_time=start,
+            end_time=start + window,
+            duration_minutes=source.duration_minutes,
+            grace_period_minutes=source.grace_period_minutes,
+            late_submission_until=(start + window + late_gap) if late_gap else None,
+            shuffle_questions=source.shuffle_questions,
+            negative_marks_per_wrong=source.negative_marks_per_wrong,
+            is_published=False,
+        )
+        return Response({
+            'message': 'Copied as a draft. Check the dates, then publish.',
+            'exam': ExamDetailSerializer(clone, context={'request': request}).data,
+        }, status=status.HTTP_201_CREATED)
+
+    @action(detail=False, methods=['get'], permission_classes=[IsAuthenticated, IsTutor])
+    def question_bank(self, request):
+        """
+        GET /api/v1/exams/question_bank/?search=...
+        Every MCQ the tutor has written in any of their exams, newest first and
+        de-duplicated, so questions can be reused instead of retyped.
+        """
+        search = (request.query_params.get('search') or '').strip().lower()
+        seen, items = set(), []
+        for exam in self.get_queryset().order_by('-created_at'):
+            for q in (exam.mcq_data or []):
+                question = str(q.get('question', '')).strip()
+                options = [str(o) for o in (q.get('options') or [])]
+                if not question:
+                    continue
+                key = (question.lower(), tuple(o.lower() for o in options))
+                if key in seen:
+                    continue
+                if search and search not in question.lower() and not any(search in o.lower() for o in options):
+                    continue
+                seen.add(key)
+                items.append({
+                    'question': question,
+                    'options': options,
+                    'correct_answer': q.get('correct_answer'),
+                    'points': q.get('points') if q.get('points') is not None else q.get('marks', 1),
+                    'explanation': q.get('explanation', ''),
+                    'image_url': q.get('image_url', ''),
+                    'source_exam': exam.title,
+                })
+                if len(items) >= 200:
+                    break
+            if len(items) >= 200:
+                break
+        return Response({'count': len(items), 'questions': items})
+
+    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated, IsStudent])
+    def start(self, request, pk=None):
+        """
+        POST /api/v1/exams/<id>/start/
+        The student opens the exam. Records when they started — for a timed exam
+        this starts their personal countdown — and returns the questions.
+        Calling it again never restarts the clock.
+        """
+        exam = get_object_or_404(self.get_queryset(), id=pk)
+        now = timezone.now()
+        if now < exam.start_time:
+            return Response({'error': 'Exam has not started yet.'}, status=status.HTTP_400_BAD_REQUEST)
+        if ExamSubmission.objects.filter(exam=exam, student=request.user).exclude(
+            status=ExamSubmission.Status.MISSED
+        ).exists():
+            return Response({'error': 'You have already submitted this exam.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        attempt = ExamAttempt.objects.filter(exam=exam, student=request.user).first()
+        if exam.submission_status_at(now, attempt.started_at if attempt else now) is None:
+            return Response(
+                {'error': 'Submission window is closed. Exam deadline and grace period have expired.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        if not attempt:
+            attempt, _ = ExamAttempt.objects.get_or_create(exam=exam, student=request.user, defaults={'started_at': now})
+
+        return Response({
+            'started_at': attempt.started_at,
+            'deadline': exam.personal_deadline(attempt.started_at),
+            'exam': StudentExamSerializer(exam, context={'request': request}).data,
+        })
 
     @action(detail=True, methods=['get'], permission_classes=[IsAuthenticated, IsTutor])
     def submissions(self, request, pk=None):
         """
         GET /api/v1/exams/<id>/submissions/
-        Allows tutors to view all student submissions for this exam for review and grading.
+        Everything a tutor needs to follow up and grade: one row per assigned
+        student — submitted, late, graded, in progress, not submitted or missing.
         """
         exam = get_object_or_404(self.get_queryset(), id=pk)
-        if exam.tutor_id != request.user.id and (not exam.tuition_id or exam.tuition.tutor_id != request.user.id):
-            return Response({'error': 'Unauthorized'}, status=status.HTTP_403_FORBIDDEN)
 
-        submissions = exam.submissions.select_related('student').order_by('-submitted_at')
-        serializer = ExamSubmissionSerializer(submissions, many=True, context={'request': request})
+        submissions = {
+            sub.student_id: sub
+            for sub in exam.submissions.select_related('student').exclude(status=ExamSubmission.Status.MISSED)
+        }
+        attempts = {a.student_id: a for a in exam.attempts.all()}
+        students = {s.id: s for s in self._assigned_students(exam)}
+        # Keep students who submitted and later left the group.
+        for sub in submissions.values():
+            students.setdefault(sub.student_id, sub.student)
+
+        closed = timezone.now() > exam.final_deadline
+        roster = []
+        for student in sorted(students.values(), key=lambda u: (u.get_full_name() or u.username).lower()):
+            sub = submissions.get(student.id)
+            attempt = attempts.get(student.id)
+            if sub:
+                state = 'graded' if sub.is_graded else ('late' if sub.status == ExamSubmission.Status.DELAYED else 'submitted')
+            elif closed:
+                state = 'missing'
+            elif attempt:
+                state = 'in_progress'
+            else:
+                state = 'not_submitted'
+            roster.append({
+                'student_id': str(student.id),
+                'student_name': student.get_full_name() or student.username,
+                'username': student.username,
+                'state': state,
+                'is_late': bool(sub and sub.status == ExamSubmission.Status.DELAYED),
+                'started_at': attempt.started_at if attempt else (sub.started_at if sub else None),
+                'submission': ExamSubmissionSerializer(sub, context={'request': request}).data if sub else None,
+            })
+
+        subs = sorted(submissions.values(), key=lambda x: x.submitted_at or timezone.now(), reverse=True)
         return Response({
             'exam_id': str(exam.id),
             'exam_title': exam.title,
             'total_marks': float(exam.total_marks),
-            'count': submissions.count(),
-            'submissions': serializer.data,
+            'count': len(subs),
+            'assigned_count': len(students),
+            'graded_count': sum(1 for x in subs if x.is_graded),
+            'is_closed': closed,
+            'roster': roster,
+            'submissions': ExamSubmissionSerializer(subs, many=True, context={'request': request}).data,
         })
 
     @action(detail=True, methods=['get'])
@@ -344,49 +593,17 @@ class ExamViewSet(viewsets.ModelViewSet):
         if user.role == 'STUDENT':
             is_assigned = (
                 (exam.student_id == user.id) or
-                (exam.tuition_id and exam.tuition.enrollments.filter(student=user).exists())
+                (exam.tuition_id and exam.tuition.enrollments.filter(student=user, is_active=True).exists())
             )
             if not is_assigned:
                 return Response({'error': 'Unauthorized'}, status=status.HTTP_403_FORBIDDEN)
-            if not exam.is_results_published:
+            own = ExamSubmission.objects.filter(exam=exam, student=user).first()
+            if not (exam.results_released(own) or exam.results_public()):
                 return Response({'error': 'Results are not published yet.'}, status=status.HTTP_403_FORBIDDEN)
 
-        now = timezone.now()
-        grace_limit = exam.end_time + timedelta(minutes=exam.grace_period_minutes)
-        if now > grace_limit:
-            assigned_students = set()
-            if exam.student_id:
-                assigned_students.add(exam.student)
-            if exam.tuition_id:
-                for enr in exam.tuition.enrollments.filter(is_active=True).select_related('student'):
-                    assigned_students.add(enr.student)
-
-            existing_submitted_ids = set(
-                exam.submissions.values_list('student_id', flat=True)
-            )
-            for student in assigned_students:
-                if student.id not in existing_submitted_ids:
-                    try:
-                        ExamSubmission.objects.create(
-                            exam=exam,
-                            student=student,
-                            status=ExamSubmission.Status.MISSED,
-                            submitted_at=exam.end_time,
-                            obtained_marks=0,
-                            mcq_score=0,
-                            cq_score=0,
-                            is_graded=True,
-                            graded_at=now,
-                            tutor_feedback='Missed deadline.',
-                        )
-                    except Exception:
-                        pass
-
-        submissions = exam.submissions.select_related('student').order_by(
-            models.F('obtained_marks').desc(nulls_last=True),
-            'submitted_at'
-        )
-
+        submissions = list(exam.submissions.select_related('student').exclude(
+            status=ExamSubmission.Status.MISSED
+        ).order_by(models.F('obtained_marks').desc(nulls_last=True), 'submitted_at'))
 
         total_marks = float(exam.total_marks)
         leaderboard_data = []
@@ -415,6 +632,25 @@ class ExamViewSet(viewsets.ModelViewSet):
                 'is_graded': sub.is_graded,
             })
 
+        # Once nobody can submit any more, students who never did are shown at the bottom with zero.
+        if timezone.now() > exam.final_deadline:
+            submitted_ids = {sub.student_id for sub in submissions}
+            for student in sorted(self._assigned_students(exam), key=lambda u: (u.get_full_name() or u.username).lower()):
+                if student.id not in submitted_ids:
+                    leaderboard_data.append({
+                        'rank': len(submissions) + 1,
+                        'student_id': student.id,
+                        'student_name': student.get_full_name() or student.username,
+                        'obtained_marks': 0.0,
+                        'total_marks': total_marks,
+                        'percentage': 0.0,
+                        'mcq_score': 0.0,
+                        'cq_score': None,
+                        'status': ExamSubmission.Status.MISSED,
+                        'submitted_at': None,
+                        'is_graded': True,
+                    })
+
         target_title = exam.tuition.title if exam.tuition_id else None
 
         return Response({
@@ -424,7 +660,8 @@ class ExamViewSet(viewsets.ModelViewSet):
             'batch_name': target_title,
             'tuition_title': target_title,
             'total_marks': total_marks,
-            'is_results_published': exam.is_results_published,
+            'is_results_published': exam.results_public(),
+            'result_publish_mode': exam.result_publish_mode,
             'leaderboard': leaderboard_data,
         })
 
@@ -452,6 +689,8 @@ class GradeSubmissionView(APIView):
 
         cq_val = serializer.validated_data.get('cq_score')
         obtained_val = serializer.validated_data.get('obtained_marks')
+        if 'cq_breakdown' in serializer.validated_data:
+            submission.cq_breakdown = serializer.validated_data['cq_breakdown']
 
         from decimal import Decimal
         total = Decimal(str(submission.exam.total_marks))
@@ -491,12 +730,12 @@ class GradeSubmissionView(APIView):
         submission.tutor_feedback = serializer.validated_data.get('tutor_feedback', submission.tutor_feedback)
         submission.is_graded = True
         submission.graded_at = timezone.now()
-        submission.save(update_fields=['cq_score', 'obtained_marks', 'tutor_feedback', 'is_graded', 'graded_at', 'updated_at'])
+        submission.save(update_fields=['cq_score', 'cq_breakdown', 'obtained_marks', 'tutor_feedback', 'is_graded', 'graded_at', 'updated_at'])
 
         return Response(
             {
                 'message': 'Submission graded successfully.',
-                'submission': ExamSubmissionSerializer(submission).data,
+                'submission': ExamSubmissionSerializer(submission, context={'request': request}).data,
             },
             status=status.HTTP_200_OK
         )

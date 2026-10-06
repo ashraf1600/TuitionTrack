@@ -1,16 +1,16 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { notify } from '../utils/toast';
 import { useNavigate } from 'react-router-dom';
 import Navbar from '../components/common/Navbar';
 import WalletWidget from '../components/tutor/WalletWidget';
 import StudentRoster from '../components/tutor/StudentRoster';
-import CycleGrid from '../components/tutor/CycleGrid';
+import SharedCycleBoard from '../components/tutor/SharedCycleBoard';
+import ConnectionRequestsPanel from '../components/tutor/ConnectionRequestsPanel';
+import TodayClassesPanel from '../components/tutor/TodayClassesPanel';
 import AddStudentModal from '../components/tutor/AddStudentModal';
-import AssignStudentModal from '../components/tutor/AssignStudentModal';
 import ExamAuthoringModal from '../components/tutor/ExamAuthoringModal';
-import SubmissionsGradingModal from '../components/tutor/SubmissionsGradingModal';
+import ExamManager from '../components/tutor/ExamManager';
 import TuitionBatchesModal from '../components/tutor/TuitionBatchesModal';
-import LeaderboardModal from '../components/common/LeaderboardModal';
-import StatusBadge from '../components/common/StatusBadge';
 import { api } from '../api/client';
 
 // Sat-first canonical week order shared with TuitionWorkspace (Sat -> Fri for BD context).
@@ -50,40 +50,31 @@ import {
 
 export default function TutorDashboard() {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState('attendance'); // 'attendance' | 'batches' | 'exams'
+  const [activeTab, setActiveTab] = useState('batches'); // 'batches' | 'attendance' | 'exams'
 
   // Data states
   const [analytics, setAnalytics] = useState(null);
   const [students, setStudents] = useState([]);
   const [unassignedStudents, setUnassignedStudents] = useState([]);
   const [selectedStudentId, setSelectedStudentId] = useState(null);
-  const [currentCycle, setCurrentCycle] = useState(null);
   const [batches, setBatches] = useState([]);
   const [tuitions, setTuitions] = useState([]);
-  const [selectedTuitionId, setSelectedTuitionId] = useState('all');
+  const [selectedTuitionId, setSelectedTuitionId] = useState(null);
   const [exams, setExams] = useState([]);
 
   // Loading states
   const [loadingAnalytics, setLoadingAnalytics] = useState(true);
   const [loadingStudents, setLoadingStudents] = useState(true);
   const [loadingUnassigned, setLoadingUnassigned] = useState(false);
-  const [loadingCycle, setLoadingCycle] = useState(false);
   const [loadingBatches, setLoadingBatches] = useState(false);
   const [loadingExams, setLoadingExams] = useState(false);
 
   // Modals
   const [addStudentModalOpen, setAddStudentModalOpen] = useState(false);
-  const [assignModalOpen, setAssignModalOpen] = useState(false);
-  const [selectedStudentForAssign, setSelectedStudentForAssign] = useState(null);
   const [authorExamModalOpen, setAuthorExamModalOpen] = useState(false);
   const [batchModalOpen, setBatchModalOpen] = useState(false);
   const [selectedBatchToEdit, setSelectedBatchToEdit] = useState(null);
   const [initialBatchForExam, setInitialBatchForExam] = useState('');
-  const [gradingModalOpen, setGradingModalOpen] = useState(false);
-  const [selectedExamForGrading, setSelectedExamForGrading] = useState(null);
-  const [selectedSubmissionForGrading, setSelectedSubmissionForGrading] = useState(null);
-  const [leaderboardModalOpen, setLeaderboardModalOpen] = useState(false);
-  const [selectedExamForLeaderboard, setSelectedExamForLeaderboard] = useState(null);
 
   // 1. Load Analytics
   const loadAnalytics = async () => {
@@ -155,43 +146,6 @@ export default function TutorDashboard() {
 
   const loadBatches = loadTuitions;
 
-  // 5. Load Active Cycle for selected student (scoped to selected tuition if specified)
-  const loadStudentCycle = async (studentId, tuitionId = null) => {
-    if (!studentId) {
-      setCurrentCycle(null);
-      return;
-    }
-    try {
-      setLoadingCycle(true);
-      let list = [];
-      const isSpecificTuition = tuitionId && tuitionId !== 'all';
-
-      if (isSpecificTuition) {
-        try {
-          const attData = await api.getAttendanceCycles(tuitionId, studentId);
-          list = Array.isArray(attData) ? attData : attData.results || [];
-        } catch (_) {}
-      } else {
-        try {
-          const attData = await api.getAttendanceCycles(null, studentId);
-          list = Array.isArray(attData) ? attData : attData.results || [];
-        } catch (_) {}
-      }
-
-      if (list.length === 0 && !isSpecificTuition) {
-        const data = await api.getCycles(studentId);
-        list = Array.isArray(data) ? data : data.results || [];
-      }
-
-      const active = list.find((c) => c.status === 'ACTIVE') || list[0] || null;
-      setCurrentCycle(active);
-    } catch (err) {
-      console.error('Failed to load cycle:', err);
-    } finally {
-      setLoadingCycle(false);
-    }
-  };
-
   // 6. Load Exams
   const loadExams = async () => {
     try {
@@ -214,153 +168,42 @@ export default function TutorDashboard() {
     loadExams();
   }, []);
 
-  useEffect(() => {
-    if (selectedStudentId) {
-      loadStudentCycle(selectedStudentId, selectedTuitionId);
-    } else {
-      setCurrentCycle(null);
-    }
-  }, [selectedStudentId, selectedTuitionId]);
-
   // Actions
   const handleToggleActive = async (studentId) => {
     try {
       await api.toggleStudentActive(studentId);
       loadStudents();
     } catch (err) {
-      alert(`Action failed: ${err.message}`);
+      notify(`Action failed: ${err.message}`);
     }
   };
 
   const [authorCategory, setAuthorCategory] = useState('EXAM');
 
-  const handleToggleClass = async (cycleId, classNo, completed, date = null, topic = '') => {
-    const numToMatch = parseInt(classNo, 10);
-    if (currentCycle) {
-      const targetIso = completed ? (date ? new Date(date).toISOString() : new Date().toISOString()) : null;
-      const updatedClasses = (currentCycle.classes_data || []).map((c) => {
-        const cNum = parseInt(c.class_no ?? c.classNo, 10);
-        if (cNum === numToMatch) {
-          return {
-            ...c,
-            completed,
-            date: targetIso,
-            topic: completed ? topic : '',
-          };
-        }
-        return c;
-      });
-
-      const completedCount = updatedClasses.filter((c) => c.completed).length;
-      const totalCount = currentCycle.total_classes || currentCycle.cycle_length || 12;
-      const feeSnapshot = currentCycle.fee_snapshot || currentCycle.tuition_fee || 0;
-      const rate = totalCount > 0 ? feeSnapshot / totalCount : 0;
-      const earned = Math.round(rate * completedCount * 100) / 100;
-      const pending = Math.round((feeSnapshot - earned) * 100) / 100;
-
-      setCurrentCycle({
-        ...currentCycle,
-        classes_data: updatedClasses,
-        completed_classes: completedCount,
-        earned_amount: earned,
-        earned_revenue: earned,
-        pending_amount: pending,
-        pending_balance: pending,
-        progress_percentage: Math.round((completedCount / totalCount) * 100),
-      });
-    }
-
-    try {
-      let res;
-      const isTuitionCycle = Boolean(currentCycle?.enrollment || currentCycle?.tuition_id);
-      if (isTuitionCycle) {
-        try {
-          res = await api.toggleAttendanceClass(cycleId, numToMatch, completed, date, topic);
-        } catch (fallbackErr) {
-          // Only fall back to the legacy endpoint when the tuition endpoint 404s.
-          // A 400/403 means validation/permission rejected the request — surfacing it
-          // instead of silently retrying the wrong API.
-          if (!isNotFoundError(fallbackErr)) throw fallbackErr;
-          res = await api.toggleClass(cycleId, numToMatch, completed, date, topic);
-        }
-      } else {
-        try {
-          res = await api.toggleClass(cycleId, numToMatch, completed, date, topic);
-        } catch (fallbackErr) {
-          if (!isNotFoundError(fallbackErr)) throw fallbackErr;
-          res = await api.toggleAttendanceClass(cycleId, numToMatch, completed, date, topic);
-        }
-      }
-      if (res) {
-        setCurrentCycle(res.cycle || res);
-        loadAnalytics();
-        loadTuitions();
-      }
-    } catch (err) {
-      console.error('Toggle failed:', err);
-      alert(`Toggle failed: ${err.message}`);
-      loadStudentCycle(selectedStudentId, selectedTuitionId);
-    }
+  // The cycle belongs to the tuition group: one board, shared by every student in it.
+  const handleCycleChange = (tuitionId, cycle) => {
+    setTuitions((prev) => prev.map((t) => (String(t.id) === String(tuitionId) ? { ...t, active_cycle: cycle } : t)));
+    setBatches((prev) => prev.map((t) => (String(t.id) === String(tuitionId) ? { ...t, active_cycle: cycle } : t)));
+    loadAnalytics();
+    loadTuitions();
   };
 
-  const handleResetCycle = async (cycleId) => {
-    try {
-      let res;
-      try {
-        res = await api.resetAttendanceCycle(cycleId);
-      } catch (_) {
-        res = await api.resetCycle(cycleId);
-      }
-      setCurrentCycle(res.cycle || res);
-      loadAnalytics();
-      loadTuitions();
-      alert(res.message || 'New cycle started successfully!');
-    } catch (err) {
-      alert(`Cycle reset failed: ${err.message}`);
-    }
-  };
-
-  const openGradingModal = async (exam) => {
-    try {
-      const detail = await api.getExamDetail(exam.id);
-      setSelectedExamForGrading(detail);
-      const sub = (detail.submissions && detail.submissions.length > 0)
-        ? detail.submissions[0]
-        : detail.submission;
-      setSelectedSubmissionForGrading(sub);
-      setGradingModalOpen(true);
-    } catch (err) {
-      alert(`Failed to load submission: ${err.message}`);
-    }
-  };
-
-  const openLeaderboard = (exam) => {
-    setSelectedExamForLeaderboard(exam);
-    setLeaderboardModalOpen(true);
-  };
-
-  const handleTogglePublishResults = async (exam) => {
-    try {
-      await api.updateExam(exam.id, {
-        is_results_published: !exam.is_results_published,
-      });
-      loadExams();
-    } catch (err) {
-      alert(`Failed to update status: ${err.message}`);
-    }
+  const refreshRoster = () => {
+    loadUnassignedStudents();
+    loadTuitions();
+    loadStudents();
+    loadAnalytics();
   };
 
   const handleDeleteBatch = async (batchId) => {
-    if (!window.confirm('Are you sure you want to delete this tuition batch?')) return;
+    if (!window.confirm('Delete this tuition group? Its students and exams are removed from it. What it has already earned stays in your lifetime earnings.')) return;
     try {
-      try {
-        await api.deleteTuition(batchId);
-      } catch (_) {
-        await api.deleteBatch(batchId);
-      }
+      await api.deleteTuition(batchId);
       loadTuitions();
+      loadAnalytics();
+      loadUnassignedStudents();
     } catch (err) {
-      alert(`Delete failed: ${err.message}`);
+      notify(`Delete failed: ${err.message}`);
     }
   };
 
@@ -369,12 +212,9 @@ export default function TutorDashboard() {
     setAuthorExamModalOpen(true);
   };
 
-  const selectedStudent = students.find((s) => normId(s) === String(selectedStudentId));
-  const studentName = selectedStudent ? selectedStudent.full_name : 'Student';
-
+  // No "all students" view any more: the tracker is always one tuition group.
   const selectedTuition = useMemo(() => {
-    if (selectedTuitionId === 'all') return null;
-    return tuitions.find((t) => t.id === selectedTuitionId || String(t.id) === String(selectedTuitionId)) || null;
+    return tuitions.find((t) => String(t.id) === String(selectedTuitionId)) || tuitions[0] || null;
   }, [tuitions, selectedTuitionId]);
 
   const filteredStudents = useMemo(() => {
@@ -426,90 +266,82 @@ export default function TutorDashboard() {
       <Navbar />
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
-        {/* Section 1: Gamified Wallet Widget */}
-        <WalletWidget analytics={analytics} loading={loadingAnalytics} />
-
-        {/* Section 1.5: Incoming / Unassigned Prospective Students Panel */}
-        {unassignedStudents.length > 0 && (
-          <div className="p-5 rounded-2xl bg-gradient-to-r from-amber-500/10 via-indigo-500/10 to-purple-500/10 border border-amber-500/30 space-y-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-amber-500/20 text-amber-300 flex items-center justify-center border border-amber-500/30">
-                  <UserPlus className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="font-extrabold text-slate-100 text-sm sm:text-base flex items-center gap-2">
-                    Incoming / Unassigned Prospective Students
-                    <span className="px-2 py-0.5 rounded-full text-xs bg-amber-500 text-slate-950 font-black">
-                      {unassignedStudents.length} New
-                    </span>
-                  </h3>
-                  <p className="text-xs text-slate-400">
-                    Students selected you during public registration. Review and assign them to a Tuition batch.
-                  </p>
-                </div>
-              </div>
-
-              <button
-                onClick={loadUnassignedStudents}
-                className="p-2 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-400 hover:text-slate-200 border border-slate-700 transition"
-                title="Refresh incoming students"
-              >
-                <RefreshCw className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
-              {unassignedStudents.map((st) => (
-                <div
-                  key={st.id}
-                  className="p-4 rounded-xl bg-slate-900/90 border border-slate-700/70 hover:border-indigo-500/50 transition flex items-center justify-between gap-3"
-                >
-                  <div className="min-w-0">
-                    <h4 className="font-bold text-slate-100 text-xs sm:text-sm truncate">
-                      {st.full_name || st.username}
-                    </h4>
-                    <span className="text-[11px] text-indigo-400 font-mono block">
-                      @{st.username}
-                    </span>
-                    <div className="flex flex-wrap items-center gap-2 text-[10px] text-slate-400 mt-1">
-                      {st.grade_level && <span className="text-slate-300 font-semibold">{st.grade_level}</span>}
-                      {st.institution && <span>• {st.institution}</span>}
-                      <span>• Registered {new Date(st.created_at).toLocaleDateString()}</span>
-                    </div>
-                  </div>
-
-                  <button
-                    onClick={() => {
-                      setSelectedStudentForAssign(st);
-                      setAssignModalOpen(true);
-                    }}
-                    className="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs shadow-md shadow-indigo-600/30 transition flex items-center gap-1.5 flex-shrink-0"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    <span>Assign to Tuition</span>
-                  </button>
-                </div>
-              ))}
-            </div>
+        {/* Page header & quick actions */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-extrabold text-slate-100">Tutor dashboard</h1>
+            <p className="text-sm text-slate-400 mt-0.5">
+              {tuitions.length} tuition group{tuitions.length === 1 ? '' : 's'} · {students.length} student{students.length === 1 ? '' : 's'}
+              {unassignedStudents.length > 0 && (
+                <span className="text-amber-300"> · {unassignedStudents.length} waiting for a group</span>
+              )}
+            </p>
           </div>
-        )}
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={() => {
+                setSelectedBatchToEdit(null);
+                setBatchModalOpen(true);
+              }}
+              className="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-lg shadow-indigo-600/25 transition"
+            >
+              <Plus className="w-4 h-4" />
+              New tuition group
+            </button>
+            <button
+              onClick={() => setAddStudentModalOpen(true)}
+              className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-100 border border-slate-700 font-semibold text-xs flex items-center gap-1.5 transition"
+            >
+              <UserPlus className="w-4 h-4 text-indigo-400" />
+              Add student
+            </button>
+            <button
+              onClick={() => {
+                setAuthorCategory('EXAM');
+                setInitialBatchForExam('');
+                setAuthorExamModalOpen(true);
+              }}
+              disabled={tuitions.length === 0}
+              title={tuitions.length === 0 ? 'Create a tuition group first' : 'Schedule an exam for a group'}
+              className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-100 border border-slate-700 font-semibold text-xs flex items-center gap-1.5 transition disabled:opacity-50"
+            >
+              <FileText className="w-4 h-4 text-indigo-400" />
+              Schedule exam
+            </button>
+          </div>
+        </div>
+
+        {/* Students who asked to join, or have no group yet */}
+        <ConnectionRequestsPanel
+          students={unassignedStudents}
+          tuitions={tuitions}
+          onChanged={refreshRoster}
+          onRefresh={loadUnassignedStudents}
+          onCreateTuition={() => {
+            setSelectedBatchToEdit(null);
+            setBatchModalOpen(true);
+          }}
+        />
+
+        {/* Routine -> tracker: today's classes and any scheduled class that was never recorded */}
+        <TodayClassesPanel
+          tuitions={tuitions}
+          onChanged={() => {
+            loadTuitions();
+            loadAnalytics();
+          }}
+        />
+
+        {/* Tuition Wallet (tutor only) */}
+        <WalletWidget
+          analytics={analytics}
+          loading={loadingAnalytics}
+          onOpenTuition={(id) => navigate(`/tuitions/${id}`)}
+        />
 
         {/* Section 2: Tab Navigation */}
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-2">
           <div className="flex items-center gap-2">
-            <button
-              onClick={() => setActiveTab('attendance')}
-              className={`flex items-center gap-2 py-2 px-4 rounded-xl text-xs font-bold transition ${
-                activeTab === 'attendance'
-                  ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
-              }`}
-            >
-              <Calendar className="w-4 h-4" />
-              <span>Attendance & Cycles</span>
-            </button>
-
             <button
               onClick={() => setActiveTab('batches')}
               className={`flex items-center gap-2 py-2 px-4 rounded-xl text-xs font-bold transition ${
@@ -519,12 +351,24 @@ export default function TutorDashboard() {
               }`}
             >
               <Layers className="w-4 h-4" />
-              <span>Tuition Batches & Routine</span>
+              <span>Tuition groups</span>
               {tuitions.length > 0 && (
                 <span className="px-1.5 py-0.2 rounded-full bg-slate-800 text-[10px] text-slate-300">
                   {tuitions.length}
                 </span>
               )}
+            </button>
+
+            <button
+              onClick={() => setActiveTab('attendance')}
+              className={`flex items-center gap-2 py-2 px-4 rounded-xl text-xs font-bold transition ${
+                activeTab === 'attendance'
+                  ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+              }`}
+            >
+              <Calendar className="w-4 h-4" />
+              <span>Class tracker</span>
             </button>
 
             <button
@@ -536,7 +380,7 @@ export default function TutorDashboard() {
               }`}
             >
               <FileText className="w-4 h-4" />
-              <span>Exam Authoring & Grading</span>
+              <span>Exams</span>
               {exams.length > 0 && (
                 <span className="px-1.5 py-0.2 rounded-full bg-slate-800 text-[10px] text-slate-300">
                   {exams.length}
@@ -555,167 +399,97 @@ export default function TutorDashboard() {
                 className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs flex items-center gap-1.5 shadow-md shadow-indigo-600/20 transition"
               >
                 <Plus className="w-4 h-4" />
-                <span>Create Tuition Batch</span>
+                <span>New tuition group</span>
               </button>
             )}
 
-            {activeTab === 'exams' && (
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => {
-                    setAuthorCategory('EXAM');
-                    setInitialBatchForExam('');
-                    setAuthorExamModalOpen(true);
-                  }}
-                  className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs flex items-center gap-1.5 shadow-md shadow-indigo-600/20 transition"
-                >
-                  <Plus className="w-4 h-4" />
-                  <span>Schedule Exam</span>
-                </button>
-                <button
-                  onClick={() => {
-                    setAuthorCategory('ASSIGNMENT');
-                    setInitialBatchForExam('');
-                    setAuthorExamModalOpen(true);
-                  }}
-                  className="px-3.5 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-semibold text-xs flex items-center gap-1.5 shadow-md shadow-purple-600/20 transition"
-                >
-                  <Plus className="w-4 h-4" />
-                  <span>Create Assignment</span>
-                </button>
-              </div>
-            )}
 
           </div>
         </div>
 
-        {/* Tab Content A: Attendance & Dynamic Cycle Engine */}
+        {/* Tab Content A: Shared class tracker (one cycle per tuition group) */}
         {activeTab === 'attendance' && (
           <div className="space-y-4">
-            {/* Tuition Selector Filter Bar */}
-            <div className="p-3 rounded-2xl bg-slate-900/80 border border-slate-800 flex flex-wrap items-center gap-2">
-              <span className="text-xs font-semibold text-slate-400 flex items-center gap-1.5 mr-2">
-                <Layers className="w-3.5 h-3.5 text-indigo-400" />
-                Select Tuition:
-              </span>
-              <button
-                onClick={() => {
-                  setSelectedTuitionId('all');
-                  if (students.length > 0) setSelectedStudentId(normId(students[0]));
-                }}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${
-                  selectedTuitionId === 'all'
-                    ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
-                    : 'bg-slate-800 text-slate-400 hover:text-slate-200 hover:bg-slate-700'
-                }`}
-              >
-                All Students ({students.length})
-              </button>
-              {tuitions.map((t) => {
-                const isSelected = selectedTuitionId === t.id || String(selectedTuitionId) === String(t.id);
-                const enrolledCount = t.student_count || t.enrollment_count || t.enrollments?.length || 0;
-                return (
-                  <button
-                    key={t.id}
-                    onClick={() => {
-                      setSelectedTuitionId(t.id);
-                      const enrolledIds = [
-                        ...((t.enrollments || []).map((e) => String(e.student_id ?? e.student ?? e))),
-                        ...((t.students || []).map((s) => String(s?.student_id ?? s?.id ?? s))),
-                        ...((t.student_ids || []).map((s) => String(s))),
-                      ];
-
-                      // If current selected student is in this tuition, keep it; otherwise switch to first enrolled or null
-                      if (selectedStudentId && enrolledIds.some((id) => String(id) === String(selectedStudentId))) {
-                        loadStudentCycle(selectedStudentId, t.id);
-                      } else if (enrolledIds.length > 0) {
-                        setSelectedStudentId(String(enrolledIds[0]));
-                      } else {
-                        setSelectedStudentId(null);
-                        setCurrentCycle(null);
-                      }
-                    }}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
-                      isSelected
-                        ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
-                        : 'bg-slate-800 text-slate-400 hover:text-slate-200 hover:bg-slate-700'
-                    }`}
-                  >
-                    <span>{t.title || t.name}</span>
-                    <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-slate-900 text-slate-300">
-                      {enrolledCount}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* Tuition Summary Bar if specific tuition is selected */}
-            {selectedTuition && (
-              <div className="p-4 rounded-2xl bg-indigo-950/20 border border-indigo-500/20 flex flex-wrap items-center justify-between gap-4">
-                <div>
-                  <h4 className="font-extrabold text-slate-100 text-sm sm:text-base flex items-center gap-2">
-                    <span>{selectedTuition.title || selectedTuition.name}</span>
-                    {selectedTuition.subject && (
-                      <span className="text-xs text-indigo-400 font-semibold">({selectedTuition.subject})</span>
-                    )}
-                  </h4>
-                  <div className="flex flex-wrap items-center gap-3 text-xs text-slate-400 mt-1">
-                    <span>Cycle Length: <strong className="text-indigo-300 font-bold">{selectedTuition.cycle_length || 12} Classes</strong></span>
-                    <span>•</span>
-                    <span>Fee: <strong className="text-emerald-400 font-bold">৳{selectedTuition.tuition_fee || selectedTuition.monthly_fee || 0}</strong></span>
-                    <span>•</span>
-                    <span>Enrolled: <strong className="text-slate-200 font-bold">{selectedTuition.enrollments?.length || selectedTuition.students?.length || 0} Students</strong></span>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-3">
-                  {selectedTuition.active_cycle_summary && (
-                    <div className="flex items-center gap-2 text-xs">
-                      <div className="px-3 py-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 font-bold">
-                        Earned: ৳{selectedTuition.active_cycle_summary.total_earned}
-                      </div>
-                      <div className="px-3 py-1.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-300 font-bold">
-                        Pending: ৳{selectedTuition.active_cycle_summary.total_pending}
-                      </div>
-                    </div>
+            {tuitions.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-slate-700 bg-slate-900/40 p-10 text-center">
+                <Layers className="w-10 h-10 mx-auto text-slate-600 mb-3" />
+                <p className="text-sm font-semibold text-slate-200">Create a tuition group to start tracking classes</p>
+                <p className="text-xs text-slate-400 mt-1 mb-4 max-w-md mx-auto">
+                  Each group has one class tracker that all of its students share.
+                </p>
+                <button
+                  onClick={() => {
+                    setSelectedBatchToEdit(null);
+                    setBatchModalOpen(true);
+                  }}
+                  className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold"
+                >
+                  New tuition group
+                </button>
+              </div>
+            ) : (
+              <>
+                {/* Tuition group picker */}
+                <div className="flex flex-wrap items-center gap-2">
+                  {tuitions.map((t) => {
+                    const isSelected = selectedTuition && String(selectedTuition.id) === String(t.id);
+                    const cyc = t.active_cycle;
+                    return (
+                      <button
+                        key={t.id}
+                        onClick={() => setSelectedTuitionId(t.id)}
+                        className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 border ${
+                          isSelected
+                            ? 'bg-indigo-600 border-indigo-500 text-white shadow-md shadow-indigo-600/30'
+                            : 'bg-slate-900 border-slate-800 text-slate-300 hover:border-slate-600'
+                        }`}
+                      >
+                        <span>{t.title || t.name}</span>
+                        {cyc && (
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${isSelected ? 'bg-indigo-500/60' : 'bg-slate-800 text-slate-400'}`}>
+                            {cyc.completed_classes}/{cyc.total_classes}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                  {selectedTuition && (
+                    <button
+                      onClick={() => navigate(`/tuitions/${selectedTuition.id}`)}
+                      className="ml-auto px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-semibold text-xs flex items-center gap-1.5 transition"
+                    >
+                      <span>Open workspace</span>
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
                   )}
-                  <button
-                    onClick={() => navigate(`/tuitions/${selectedTuition.id}`)}
-                    className="px-3.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-md shadow-indigo-600/30 transition"
-                  >
-                    <span>Open Workspace</span>
-                    <ChevronRight className="w-4 h-4" />
-                  </button>
                 </div>
-              </div>
+
+                {selectedTuition && (
+                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+                    <div className="lg:col-span-8">
+                      <SharedCycleBoard
+                        cycle={selectedTuition.active_cycle}
+                        tuitionTitle={selectedTuition.title || selectedTuition.name}
+                        studentCount={selectedTuition.enrolled_count ?? selectedTuition.enrollments?.length ?? 0}
+                        onCycleChange={(cycle) => handleCycleChange(selectedTuition.id, cycle)}
+                        onAddStudent={() => setAddStudentModalOpen(true)}
+                      />
+                    </div>
+                    <div className="lg:col-span-4">
+                      <StudentRoster
+                        students={filteredStudents}
+                        selectedStudentId={selectedStudentId}
+                        tuitionTitle={selectedTuition.title || selectedTuition.name}
+                        onSelectStudent={setSelectedStudentId}
+                        onToggleActive={handleToggleActive}
+                        onOpenAddModal={() => setAddStudentModalOpen(true)}
+                        loading={loadingStudents}
+                      />
+                    </div>
+                  </div>
+                )}
+              </>
             )}
-
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-              <div className="lg:col-span-4">
-                <StudentRoster
-                  students={filteredStudents}
-                  selectedStudentId={selectedStudentId}
-                  tuitionTitle={selectedTuition ? (selectedTuition.title || selectedTuition.name) : ''}
-                  onSelectStudent={setSelectedStudentId}
-                  onToggleActive={handleToggleActive}
-                  onOpenAddModal={() => setAddStudentModalOpen(true)}
-                  loading={loadingStudents}
-                />
-              </div>
-
-              <div className="lg:col-span-8">
-                <CycleGrid
-                  cycle={currentCycle}
-                  studentName={studentName}
-                  tuitionTitle={selectedTuition ? (selectedTuition.title || selectedTuition.name) : ''}
-                  onToggleClass={handleToggleClass}
-                  onResetCycle={handleResetCycle}
-                  onOpenAddStudent={() => setAddStudentModalOpen(true)}
-                  loading={loadingCycle}
-                />
-              </div>
-            </div>
           </div>
         )}
 
@@ -726,7 +500,7 @@ export default function TutorDashboard() {
               <div>
                 <h3 className="text-xl font-bold text-slate-100 flex items-center gap-2">
                   <Layers className="w-5 h-5 text-indigo-400" />
-                  Tuitions & Batch Schedules
+                  Tuition groups
                 </h3>
                 <p className="text-xs text-slate-400 mt-0.5">
                   Organize students into group tuitions with custom weekly days, times, and unified exams
@@ -751,7 +525,7 @@ export default function TutorDashboard() {
             ) : batches.length === 0 ? (
               <div className="text-center py-14 px-4 rounded-xl border border-dashed border-slate-800 text-slate-400">
                 <Layers className="w-12 h-12 mx-auto text-slate-600 mb-2" />
-                <p className="text-sm font-semibold text-slate-300">No tuition batches created yet</p>
+                <p className="text-sm font-semibold text-slate-300">No tuition groups yet</p>
                 <p className="text-xs text-slate-500 mt-1 mb-4">
                   Create a batch to group multiple students together with a weekly routine and collective exams.
                 </p>
@@ -762,7 +536,7 @@ export default function TutorDashboard() {
                   }}
                   className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold"
                 >
-                  Create Your First Batch
+                  Create your first group
                 </button>
               </div>
             ) : (
@@ -825,7 +599,7 @@ export default function TutorDashboard() {
                         <div className="mt-3.5 flex flex-wrap items-center gap-2 text-xs">
                           <div className="px-2.5 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 font-bold flex items-center gap-1">
                             <DollarSign className="w-3 h-3" />
-                            <span>৳{tuitionFee}/cycle</span>
+                            <span>৳{Number(tuitionFee).toLocaleString()} per cycle</span>
                           </div>
                           <div className="px-2.5 py-1 rounded-lg bg-indigo-500/10 border border-indigo-500/20 text-indigo-300 font-semibold flex items-center gap-1">
                             <Clock className="w-3 h-3" />
@@ -836,6 +610,22 @@ export default function TutorDashboard() {
                             <span>{studentCount} Students</span>
                           </div>
                         </div>
+
+                        {/* Shared cycle progress for the whole group */}
+                        {batch.active_cycle && (
+                          <div className="mt-4">
+                            <div className="flex items-center justify-between text-[11px] text-slate-400 mb-1">
+                              <span>Cycle #{batch.active_cycle.cycle_number} · {batch.active_cycle.completed_classes}/{batch.active_cycle.total_classes} classes</span>
+                              <span className="font-mono text-emerald-400 font-semibold">৳{Number(batch.active_cycle.earned_revenue || 0).toLocaleString()} earned</span>
+                            </div>
+                            <div className="h-1.5 rounded-full bg-slate-800 overflow-hidden">
+                              <div
+                                className="h-full bg-gradient-to-r from-indigo-500 to-emerald-400 transition-all duration-500"
+                                style={{ width: `${batch.active_cycle.progress_percent || 0}%` }}
+                              />
+                            </div>
+                          </div>
+                        )}
 
                         {/* Scheduled Weekly Routine Pills */}
                         <div className="mt-4 pt-3 border-t border-slate-800">
@@ -873,6 +663,17 @@ export default function TutorDashboard() {
                         <div className="flex items-center gap-2">
                           <button
                             onClick={() => {
+                              setSelectedBatchToEdit(batch);
+                              setBatchModalOpen(true);
+                            }}
+                            className="flex-1 py-1.5 px-2 rounded-lg bg-indigo-950/40 hover:bg-indigo-900/50 text-indigo-300 hover:text-indigo-200 font-semibold text-xs border border-indigo-800/40 flex items-center justify-center gap-1 transition"
+                            title="Enroll and Manage Students"
+                          >
+                            <UserPlus className="w-3 h-3 text-indigo-400" />
+                            <span>Enroll Students ({studentCount})</span>
+                          </button>
+                          <button
+                            onClick={() => {
                               setAuthorCategory('EXAM');
                               handleScheduleForBatch(batch.id);
                             }}
@@ -880,16 +681,6 @@ export default function TutorDashboard() {
                           >
                             <Plus className="w-3 h-3 text-indigo-400" />
                             <span>Schedule Exam</span>
-                          </button>
-                          <button
-                            onClick={() => {
-                              setAuthorCategory('ASSIGNMENT');
-                              handleScheduleForBatch(batch.id);
-                            }}
-                            className="flex-1 py-1.5 px-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs border border-slate-700/60 flex items-center justify-center gap-1 transition"
-                          >
-                            <Plus className="w-3 h-3 text-purple-400" />
-                            <span>Assignment</span>
                           </button>
                         </div>
                       </div>
@@ -974,199 +765,14 @@ export default function TutorDashboard() {
           </div>
         )}
 
-        {/* Tab Content C: Exam Management & Submissions Review */}
+        {/* Tab Content C: Exams & assignments */}
         {activeTab === 'exams' && (
-          <div className="glass-panel p-6 rounded-2xl">
-            <div className="flex items-center justify-between mb-6">
-              <div>
-                <h3 className="text-xl font-bold text-slate-100 flex items-center gap-2">
-                  <FileText className="w-5 h-5 text-indigo-400" />
-                  Exam Management, Leaderboards & Grading
-                </h3>
-                <p className="text-xs text-slate-400 mt-0.5">
-                  Author KaTeX & MCQ exams, view ranked leaderboards, and grade CQ submissions
-                </p>
-              </div>
-
-              <button
-                onClick={loadExams}
-                className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 border border-slate-700 transition"
-                title="Refresh Exams"
-              >
-                <RefreshCw className="w-4 h-4" />
-              </button>
-            </div>
-
-            {loadingExams ? (
-              <div className="space-y-3">
-                {[1, 2, 3].map((i) => (
-                  <div key={i} className="h-16 rounded-xl bg-slate-800/40 animate-pulse" />
-                ))}
-              </div>
-            ) : exams.length === 0 ? (
-              <div className="text-center py-12 px-4 rounded-xl border border-dashed border-slate-800 text-slate-400">
-                <FileText className="w-12 h-12 mx-auto text-slate-600 mb-2" />
-                <p className="text-sm font-semibold text-slate-300">No exams scheduled yet</p>
-                <p className="text-xs text-slate-500 mt-1 mb-4">
-                  Use our TipTap WYSIWYG editor with LaTeX & smart MCQ parser to schedule exams
-                </p>
-                <button
-                  onClick={() => {
-                    setInitialBatchForExam('');
-                    setAuthorExamModalOpen(true);
-                  }}
-                  className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold"
-                >
-                  Schedule Your First Exam
-                </button>
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-sm border-collapse">
-                  <thead>
-                    <tr className="border-b border-slate-800 text-[11px] font-bold text-slate-400 uppercase tracking-wider">
-                      <th className="py-3 px-4">Title</th>
-                      <th className="py-3 px-4">Category</th>
-                      <th className="py-3 px-4">Format</th>
-                      <th className="py-3 px-4">Assigned To</th>
-                      <th className="py-3 px-4">Schedule / Deadline</th>
-                      <th className="py-3 px-4">Marks</th>
-                      <th className="py-3 px-4">Status</th>
-                      <th className="py-3 px-4">Results</th>
-                      <th className="py-3 px-4 text-right">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-800/60">
-                    {exams.map((exam) => (
-                      <tr key={exam.id} className="hover:bg-slate-800/30 transition">
-                        <td className="py-3 px-4 font-semibold text-slate-200">
-                          {exam.title}
-                        </td>
-                        <td className="py-3 px-4">
-                          {exam.category === 'ASSIGNMENT' ? (
-                            <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-purple-500/20 text-purple-300 border border-purple-500/30">
-                              ASSIGNMENT
-                            </span>
-                          ) : (
-                            <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
-                              EXAM
-                            </span>
-                          )}
-                        </td>
-                        <td className="py-3 px-4">
-                          <span
-                            className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold ${
-                              exam.exam_type === 'MCQ'
-                                ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-                                : exam.exam_type === 'CQ'
-                                ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30'
-                                : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                            }`}
-                          >
-                            {exam.exam_type || 'HYBRID'}
-                            {exam.mcq_count > 0 && ` (${exam.mcq_count}Q)`}
-                          </span>
-                        </td>
-                        <td className="py-3 px-4 text-xs">
-                          {exam.tuition_title ? (
-                            <span className="px-2 py-0.5 rounded-lg bg-indigo-900/40 border border-indigo-500/30 text-indigo-300 font-semibold text-[11px]">
-                              Tuition: {exam.tuition_title}
-                            </span>
-                          ) : exam.batch_name ? (
-                            <span className="px-2 py-0.5 rounded-lg bg-indigo-900/40 border border-indigo-500/30 text-indigo-300 font-semibold text-[11px]">
-                              Batch: {exam.batch_name}
-                            </span>
-                          ) : (
-                            <span className="text-slate-300 font-medium">{exam.student_name}</span>
-                          )}
-                        </td>
-                        <td className="py-3 px-4 text-xs text-slate-400">
-                          {exam.category === 'ASSIGNMENT' ? (
-                            <span className="text-purple-300 font-mono">
-                              Deadline:{' '}
-                              {new Date(exam.end_time).toLocaleDateString(undefined, {
-                                month: 'short',
-                                day: 'numeric',
-                                hour: '2-digit',
-                                minute: '2-digit',
-                              })}
-                            </span>
-                          ) : (
-                            <span>
-                              {new Date(exam.start_time).toLocaleDateString(undefined, {
-                                month: 'short',
-                                day: 'numeric',
-                                hour: '2-digit',
-                                minute: '2-digit',
-                              })}
-                            </span>
-                          )}
-                        </td>
-
-                        <td className="py-3 px-4 text-xs font-bold text-emerald-400">
-                          {exam.total_marks}
-                        </td>
-                        <td className="py-3 px-4">
-                          <StatusBadge status={exam.dynamic_status} />
-                        </td>
-                        <td className="py-3 px-4">
-                          <button
-                            onClick={() => handleTogglePublishResults(exam)}
-                            className={`px-2 py-1 rounded-lg text-[10px] font-bold flex items-center gap-1 transition ${
-                              exam.is_results_published
-                                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                                : 'bg-slate-800 text-slate-400 border border-slate-700 hover:text-slate-200'
-                            }`}
-                            title="Click to toggle results and solution visibility"
-                          >
-                            {exam.is_results_published ? (
-                              <>
-                                <Eye className="w-3 h-3" />
-                                <span>Published</span>
-                              </>
-                            ) : (
-                              <>
-                                <EyeOff className="w-3 h-3" />
-                                <span>Hidden</span>
-                              </>
-                            )}
-                          </button>
-                        </td>
-                        <td className="py-3 px-4 text-right">
-                          <div className="flex items-center justify-end gap-2">
-                            {/* Leaderboard button */}
-                            <button
-                              onClick={() => openLeaderboard(exam)}
-                              className="px-2.5 py-1 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-300 font-semibold text-xs flex items-center gap-1 transition"
-                              title="View student leaderboard"
-                            >
-                              <Trophy className="w-3.5 h-3.5" />
-                              <span>Rankings</span>
-                            </button>
-
-                            {/* Review & Grade */}
-                            {(exam.has_submission || exam.submissions_count > 0) ? (
-                              <button
-                                onClick={() => openGradingModal(exam)}
-                                className="px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs flex items-center gap-1 shadow-md shadow-emerald-600/20"
-                              >
-                                <Award className="w-3.5 h-3.5" />
-                                <span>Grade{exam.submissions_count > 1 ? ` (${exam.submissions_count})` : ''}</span>
-                              </button>
-                            ) : (
-                              <span className="text-[11px] text-slate-500 italic">
-                                Awaiting turn-in
-                              </span>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
+          <ExamManager
+            exams={exams}
+            loading={loadingExams}
+            students={students}
+            onReload={loadExams}
+          />
         )}
       </main>
 
@@ -1175,33 +781,10 @@ export default function TutorDashboard() {
         isOpen={addStudentModalOpen}
         onClose={() => setAddStudentModalOpen(false)}
         tuitions={tuitions}
-        initialTuitionId={selectedTuitionId !== 'all' ? selectedTuitionId : ''}
+        initialTuitionId={activeTab === 'attendance' && selectedTuition ? selectedTuition.id : ''}
         onStudentAdded={(newStudent, assignedTuitionId) => {
-          loadStudents();
-          loadTuitions();
-          loadAnalytics();
-          if (newStudent?.student_id || newStudent?.id) {
-            if (assignedTuitionId && assignedTuitionId !== 'all') {
-              setSelectedTuitionId(assignedTuitionId);
-            }
-            setSelectedStudentId(normId(newStudent));
-          }
-        }}
-      />
-
-      <AssignStudentModal
-        isOpen={assignModalOpen}
-        onClose={() => {
-          setAssignModalOpen(false);
-          setSelectedStudentForAssign(null);
-        }}
-        student={selectedStudentForAssign}
-        tuitions={tuitions}
-        onAssigned={() => {
-          loadUnassignedStudents();
-          loadTuitions();
-          loadStudents();
-          loadAnalytics();
+          refreshRoster();
+          if (assignedTuitionId) setSelectedTuitionId(assignedTuitionId);
         }}
       />
 
@@ -1210,20 +793,15 @@ export default function TutorDashboard() {
         onClose={() => setBatchModalOpen(false)}
         allStudents={students}
         batchToEdit={selectedBatchToEdit}
-        onBatchSaved={() => {
-          loadTuitions();
-          loadBatches();
-          loadAnalytics();
-        }}
+        onBatchSaved={refreshRoster}
       />
 
       <ExamAuthoringModal
-        key={`exam-author-${authorExamModalOpen ? 'open' : 'closed'}-${selectedStudentId || 'all'}-${initialBatchForExam || 'none'}`}
+        key={`exam-author-${authorExamModalOpen ? 'open' : 'closed'}-${initialBatchForExam || 'none'}`}
         isOpen={authorExamModalOpen}
         onClose={() => setAuthorExamModalOpen(false)}
         students={students}
-        initialStudentId={selectedStudentId}
-        initialBatchId={initialBatchForExam}
+        initialBatchId={initialBatchForExam || selectedTuition?.id || ''}
         initialCategory={authorCategory}
         onExamCreated={() => {
           loadExams();
@@ -1233,27 +811,6 @@ export default function TutorDashboard() {
 
 
 
-      {selectedExamForGrading && selectedSubmissionForGrading && (
-        <SubmissionsGradingModal
-          isOpen={gradingModalOpen}
-          onClose={() => setGradingModalOpen(false)}
-          exam={selectedExamForGrading}
-          submission={selectedSubmissionForGrading}
-          onGraded={() => {
-            loadExams();
-            loadAnalytics();
-          }}
-        />
-      )}
-
-      {selectedExamForLeaderboard && (
-        <LeaderboardModal
-          isOpen={leaderboardModalOpen}
-          onClose={() => setLeaderboardModalOpen(false)}
-          examId={selectedExamForLeaderboard.id}
-          examTitle={selectedExamForLeaderboard.title}
-        />
-      )}
     </div>
   );
 }

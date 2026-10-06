@@ -100,6 +100,15 @@ class Exam(models.Model):
         help_text='List of structured MCQs with 4 options and answers for auto-grading.',
     )
 
+    # Optional marking scheme for the written part, so it can be marked question by question.
+    # Schema: [{"id": "<uuid>", "label": "Q1 (a)", "marks": 5}]
+    written_scheme = models.JSONField(
+        default=list,
+        blank=True,
+        verbose_name='Written Marking Scheme',
+        help_text='List of written questions with their maximum marks.',
+    )
+
     # Model solutions & explanations for CQ & MCQ
     solution_html = models.TextField(
         blank=True,
@@ -119,6 +128,28 @@ class Exam(models.Model):
         help_text='When enabled, students can view marks, rankings, and solutions.',
     )
 
+    class ResultPublishMode(models.TextChoices):
+        IMMEDIATE = 'IMMEDIATE', 'Right after each student submits'
+        MANUAL = 'MANUAL', 'When the tutor publishes them'
+        SCHEDULED = 'SCHEDULED', 'At a set time (or when the exam closes)'
+
+    result_publish_mode = models.CharField(
+        max_length=10,
+        choices=ResultPublishMode.choices,
+        default=ResultPublishMode.SCHEDULED,
+        verbose_name='Result Publication Mode',
+        help_text=(
+            'IMMEDIATE: a student sees marks and answers as soon as they submit. '
+            'MANUAL: only while is_results_published is on. '
+            'SCHEDULED: from publish_time, or once the exam has closed if no time is set.'
+        ),
+    )
+    publish_time = models.DateTimeField(
+        null=True, blank=True,
+        verbose_name='Publish Results At (UTC)',
+        help_text='Only for SCHEDULED mode. Empty means "as soon as nobody can submit any more".',
+    )
+
     total_marks = models.DecimalField(
         max_digits=6,
         decimal_places=2,
@@ -131,7 +162,28 @@ class Exam(models.Model):
     duration_minutes = models.PositiveIntegerField(
         null=True, blank=True,
         verbose_name='Duration (Minutes)',
-        help_text='Informational. If set, displayed to student as exam duration.'
+        help_text=(
+            'Time limit per student for timed exams. The clock starts when the student '
+            'opens the exam and never runs past end_time. Ignored for assignments.'
+        )
+    )
+    late_submission_until = models.DateTimeField(
+        null=True, blank=True,
+        verbose_name='Accept Late Work Until (UTC)',
+        help_text='If set, submissions after the deadline are accepted until this time and flagged late.'
+    )
+    shuffle_questions = models.BooleanField(
+        default=False,
+        verbose_name='Shuffle MCQ Order',
+        help_text='Each student gets the MCQs in a different (stable) order.'
+    )
+    negative_marks_per_wrong = models.DecimalField(
+        max_digits=4,
+        decimal_places=2,
+        default=0,
+        validators=[MinValueValidator(0)],
+        verbose_name='Negative Marks per Wrong MCQ',
+        help_text='Marks deducted for each wrong MCQ answer. Unanswered questions cost nothing.'
     )
     grace_period_minutes = models.PositiveIntegerField(
         default=5,
@@ -196,11 +248,55 @@ class Exam(models.Model):
     # This prevents stale status values and ensures server-authoritative accuracy.
 
     class DynamicStatus:
+        DRAFT = 'Draft'
         SCHEDULED = 'Scheduled'
         RUNNING = 'Running'
+        LATE = 'Late'          # deadline passed, late work still accepted
         SUBMITTED = 'Submitted'
         DELAYED = 'Delayed'
         MISSED = 'Missed'
+        CLOSED = 'Closed'      # tutor-side word for a finished group exam
+
+    # ── Time rules (single source of truth for views and serializers) ────────
+
+    @property
+    def grace_end(self):
+        from datetime import timedelta
+        return self.end_time + timedelta(minutes=self.grace_period_minutes)
+
+    @property
+    def final_deadline(self):
+        """Last moment any submission is accepted (grace period or the late-work window)."""
+        if self.late_submission_until and self.late_submission_until > self.grace_end:
+            return self.late_submission_until
+        return self.grace_end
+
+    @property
+    def is_timed(self):
+        """True when each student gets their own countdown from the moment they start."""
+        return bool(self.duration_minutes) and self.category == self.AssessmentCategory.EXAM
+
+    def personal_deadline(self, started_at=None):
+        """When this student's on-time window ends: their own timer, capped at end_time."""
+        from datetime import timedelta
+        if self.is_timed and started_at:
+            return min(started_at + timedelta(minutes=self.duration_minutes), self.end_time)
+        return self.end_time
+
+    def submission_status_at(self, now, started_at=None):
+        """
+        'SUBMITTED' (on time), 'DELAYED' (grace period or late-work window), or
+        None when a submission at `now` must be refused.
+        """
+        from datetime import timedelta
+        deadline = self.personal_deadline(started_at)
+        if now <= deadline:
+            return ExamSubmission.Status.SUBMITTED
+        if now <= deadline + timedelta(minutes=self.grace_period_minutes):
+            return ExamSubmission.Status.DELAYED
+        if self.late_submission_until and now <= self.late_submission_until:
+            return ExamSubmission.Status.DELAYED
+        return None
 
     def get_dynamic_status(self, submission=None) -> str:
         """
@@ -218,6 +314,8 @@ class Exam(models.Model):
         now = timezone.now()
         grace_end = self.end_time + timedelta(minutes=self.grace_period_minutes)
 
+        if submission and submission.status == ExamSubmission.Status.MISSED:
+            submission = None
         if submission:
             return (
                 self.DynamicStatus.SUBMITTED
@@ -231,17 +329,76 @@ class Exam(models.Model):
             return self.DynamicStatus.RUNNING
         elif self.end_time < now <= grace_end:
             return self.DynamicStatus.RUNNING   # Still accepting during grace
+        elif now <= self.final_deadline:
+            return self.DynamicStatus.LATE
         else:
             return self.DynamicStatus.MISSED
 
+    # ── Result publication (single source of truth for every serializer and view) ──
+
+    @property
+    def results_release_time(self):
+        """When results come out by the clock; None when that is not decided by time."""
+        if self.result_publish_mode == self.ResultPublishMode.SCHEDULED:
+            return self.publish_time or self.final_deadline
+        return None
+
+    def results_public(self, now=None) -> bool:
+        """True once results are out for the whole group (drives the leaderboard)."""
+        now = now or timezone.now()
+        mode = self.result_publish_mode
+        if mode == self.ResultPublishMode.MANUAL:
+            return bool(self.is_results_published)
+        if mode == self.ResultPublishMode.IMMEDIATE:
+            return now > self.final_deadline
+        if self.publish_time:
+            return now >= self.publish_time
+        return now > self.final_deadline
+
+    def results_released(self, submission, now=None) -> bool:
+        """
+        May this student see marks, correct answers and solutions?
+        Never without a real submission of their own, so answers cannot reach
+        someone who could still sit the exam.
+        """
+        if not submission or submission.status == ExamSubmission.Status.MISSED:
+            return False
+        if self.result_publish_mode == self.ResultPublishMode.IMMEDIATE:
+            return True
+        return self.results_public(now)
+
     def can_submit(self) -> bool:
-        """Returns True if the student can still submit (within window + grace)."""
-        from datetime import timedelta
+        """Returns True if a student can still submit (window, grace, or late-work window)."""
         if not self.is_published:
             return False
         now = timezone.now()
-        grace_end = self.end_time + timedelta(minutes=self.grace_period_minutes)
-        return self.start_time <= now <= grace_end
+        return self.start_time <= now <= self.final_deadline
+
+
+class ExamAttempt(models.Model):
+    """
+    Records when a student opened an exam. For timed exams this starts their
+    personal countdown; it also tells the tutor how long the student took.
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    exam = models.ForeignKey(Exam, on_delete=models.CASCADE, related_name='attempts')
+    student = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='exam_attempts',
+        limit_choices_to={'role': 'STUDENT'},
+    )
+    started_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        verbose_name = 'Exam Attempt'
+        verbose_name_plural = 'Exam Attempts'
+        constraints = [
+            models.UniqueConstraint(fields=['exam', 'student'], name='unique_attempt_per_exam_student')
+        ]
+
+    def __str__(self):
+        return f'{self.exam.title} — {self.student.username} started {self.started_at:%Y-%m-%d %H:%M}'
 
 
 class ExamSubmission(models.Model):
@@ -297,6 +454,17 @@ class ExamSubmission(models.Model):
         verbose_name='CQ Image Uploads (Legacy)',
         help_text='List of uploaded CQ answer sheet image file paths.'
     )
+    text_answer = models.TextField(
+        blank=True,
+        default='',
+        verbose_name='Typed Answer',
+        help_text='Written answer typed by the student (alternative to photo uploads).'
+    )
+    started_at = models.DateTimeField(
+        null=True, blank=True,
+        verbose_name='Started At (UTC)',
+        help_text='When the student opened the exam.'
+    )
     feedback = models.TextField(
         blank=True,
         default='',
@@ -326,6 +494,12 @@ class ExamSubmission(models.Model):
         blank=True,
         validators=[MinValueValidator(0)],
         verbose_name='CQ Awarded Marks',
+    )
+    cq_breakdown = models.JSONField(
+        default=dict,
+        blank=True,
+        verbose_name='Written Marks per Question',
+        help_text='Marks per written_scheme item id, e.g. {"<id>": 4.5}. cq_score is their sum.',
     )
     obtained_marks = models.DecimalField(
         max_digits=6,
@@ -370,6 +544,61 @@ class ExamSubmission(models.Model):
         student_name = self.student.get_full_name() or self.student.username
         return f'{self.exam.title} — {student_name} ({self.status})'
 
+    @staticmethod
+    def _choice_key(value):
+        """Canonical form of a chosen option: 'B' and 1 both become '1'. Blank stays ''."""
+        if value is None:
+            return ''
+        text = str(value).strip().upper()
+        if len(text) == 1 and 'A' <= text <= 'E':
+            return str(ord(text) - ord('A'))
+        return text
+
+    def mcq_review(self):
+        """
+        Mark every MCQ: one row per question with the student's choice, the correct
+        choice and the marks it earned. Used for the score and for the result page,
+        so the two can never disagree. It contains the answers, so it must never be
+        sent to a student before results are released.
+        """
+        answers = self.answers_data if isinstance(self.answers_data, dict) else {}
+        penalty = float(self.exam.negative_marks_per_wrong or 0)
+        rows = []
+        for idx, q in enumerate(self.exam.mcq_data or []):
+            q_id = str(q.get('id', f'mcq-{idx}'))
+            correct = self._choice_key(q.get('correct_answer'))
+
+            # Look up by question id, falling back to the older index-based keys (0 is a valid answer).
+            student_val = None
+            for key in [q_id, f'mcq_{idx}', str(idx)]:
+                if key in answers:
+                    student_val = answers[key]
+                    break
+            selected = self._choice_key(student_val)
+
+            raw_points = q.get('points') if q.get('points') is not None else q.get('marks')
+            try:
+                points = float(raw_points) if raw_points is not None else 1.0
+            except (TypeError, ValueError):
+                points = 1.0
+
+            if selected and selected == correct:
+                outcome, awarded = 'correct', points
+            elif selected:
+                # Answered but wrong: optional negative marking. Blank answers cost nothing.
+                outcome, awarded = 'wrong', -penalty
+            else:
+                outcome, awarded = 'skipped', 0.0
+            rows.append({
+                'id': q_id,
+                'points': points,
+                'correct_answer': int(correct) if correct.isdigit() else None,
+                'selected': int(selected) if selected.isdigit() else None,
+                'outcome': outcome,
+                'awarded': awarded,
+            })
+        return rows
+
     def calculate_mcq_score(self):
         """
         Automatically grades student MCQ answers against exam.mcq_data.
@@ -380,37 +609,8 @@ class ExamSubmission(models.Model):
         if not self.exam.mcq_data:
             return 0.0
 
-        LETTER_MAP = {'0': 'A', '1': 'B', '2': 'C', '3': 'D', 'A': 'A', 'B': 'B', 'C': 'C', 'D': 'D'}
-
-        total_mcq = 0.0
-        for idx, q in enumerate(self.exam.mcq_data):
-            q_id = str(q.get('id', f'mcq-{idx}'))
-            raw_correct = str(q.get('correct_answer', '')).strip().upper()
-            correct_norm = LETTER_MAP.get(raw_correct, raw_correct)
-
-            # Check by specific ID or by index fallback safely (0 is not None)
-            student_val = None
-            for key in [q_id, f'mcq_{idx}', str(idx)]:
-                if key in self.answers_data:
-                    student_val = self.answers_data[key]
-                    break
-
-            student_raw = str(student_val).strip().upper() if student_val is not None else ''
-            student_norm = LETTER_MAP.get(student_raw, student_raw)
-
-
-            q_points = q.get('points')
-            q_marks_raw = q.get('marks')
-            if q_points is not None:
-                q_marks = float(q_points)
-            elif q_marks_raw is not None:
-                q_marks = float(q_marks_raw)
-            else:
-                q_marks = 1.0
-
-            if student_norm and student_norm == correct_norm:
-                total_mcq += q_marks
-
+        total_mcq = sum(row['awarded'] for row in self.mcq_review())
+        total_mcq = max(0.0, round(total_mcq, 2))
         max_marks = float(self.exam.total_marks)
         self.mcq_score = min(total_mcq, max_marks)
         if self.exam.exam_type == Exam.ExamType.MCQ:

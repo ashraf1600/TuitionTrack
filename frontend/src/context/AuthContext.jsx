@@ -60,10 +60,19 @@ export function AuthProvider({ children }) {
     setUser(null);
   };
 
+  // Re-read the signed-in user after they change their details or password.
+  const refreshUser = async () => {
+    const profile = await api.getMe();
+    setUser(profile);
+    localStorage.setItem('user_data', JSON.stringify(profile));
+    return profile;
+  };
+
   const value = {
     user,
     token,
     loading,
+    refreshUser,
     isTutor: user?.role === 'TUTOR',
     isStudent: user?.role === 'STUDENT',
     login,

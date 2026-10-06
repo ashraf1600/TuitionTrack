@@ -59,7 +59,7 @@ class SecurityAndPermissionsTests(APITestCase):
         self.tuition_a = Tuition.objects.create(
             tutor=self.tutor_a,
             title='Physics Batch A',
-            tuition_fee=Decimal('5000.00'),
+            total_fee=Decimal('5000.00'),
             cycle_length=12,
         )
         self.enrollment_a = TuitionEnrollment.objects.create(
@@ -68,7 +68,7 @@ class SecurityAndPermissionsTests(APITestCase):
             is_active=True,
         )
         self.cycle_a = AttendanceCycle.objects.create(
-            enrollment=self.enrollment_a,
+            tuition=self.tuition_a,
             tutor=self.tutor_a,
             fee_snapshot=Decimal('5000.00'),
             total_classes=12,
@@ -243,8 +243,6 @@ class SecurityAndPermissionsTests(APITestCase):
         cycle = self.cycle_a
         cycle.fee_snapshot = Decimal('5000.00')
         cycle.total_classes = 12
-        if hasattr(cycle, 'total_classes_snapshot'):
-            cycle.total_classes_snapshot = 12
 
         classes = AttendanceCycle.build_fresh_classes_data(12)
         for c in classes:
@@ -280,7 +278,7 @@ class ConcurrencyAttendanceToggleTests(APITransactionTestCase):
         tuition = Tuition.objects.create(
             tutor=tutor,
             title='Concurrency Tuition',
-            tuition_fee=Decimal('5000.00'),
+            total_fee=Decimal('5000.00'),
             cycle_length=12,
         )
         enrollment = TuitionEnrollment.objects.create(
@@ -289,7 +287,7 @@ class ConcurrencyAttendanceToggleTests(APITransactionTestCase):
             is_active=True,
         )
         cycle = AttendanceCycle.objects.create(
-            enrollment=enrollment,
+            tuition=tuition,
             tutor=tutor,
             fee_snapshot=Decimal('5000.00'),
             total_classes=12,

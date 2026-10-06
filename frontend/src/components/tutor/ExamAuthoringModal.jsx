@@ -1,11 +1,14 @@
 import React, { useState, useEffect } from 'react';
+import { notify } from '../../utils/toast';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import { Table, TableRow, TableHeader, TableCell } from '@tiptap/extension-table';
 import { Image } from '@tiptap/extension-image';
 import Modal from '../common/Modal';
 import { api } from '../../api/client';
-import { parseRawMCQText } from '../../utils/mcqParser';
+import { parseWrittenQuestions } from '../../utils/mcqParser';
+import McqBuilder, { questionProblems } from './McqBuilder';
+import { htmlWithLatex, pasteWithLatex } from '../../utils/clipboard';
 import {
   Bold,
   Italic,
@@ -24,9 +27,7 @@ import {
   Plus,
   Trash2,
   FileText,
-  Sparkles,
   ClipboardPaste,
-  HelpCircle,
   Users,
   User,
   Settings,
@@ -54,11 +55,13 @@ export default function ExamAuthoringModal({
   initialStudentId = '',
   initialBatchId = '',
   initialCategory = 'EXAM',
+  examToEdit = null, // full exam detail -> the modal edits it instead of creating a new one
 }) {
+  const isEditing = Boolean(examToEdit?.id);
   const [activeTab, setActiveTab] = useState('questions'); // 'questions' | 'schedule' | 'solutions'
   const [category, setCategory] = useState(initialCategory || 'EXAM'); // 'EXAM' | 'ASSIGNMENT'
   const [examType, setExamType] = useState('HYBRID'); // 'HYBRID' | 'MCQ' | 'CQ'
-  const [targetType, setTargetType] = useState(initialBatchId ? 'batch' : 'student'); // 'student' | 'batch'
+  const [targetType, setTargetType] = useState(initialStudentId && !initialBatchId ? 'student' : 'batch'); // 'batch' (tuition group) | 'student'
 
 
   // Batches state
@@ -70,8 +73,18 @@ export default function ExamAuthoringModal({
   // Exam Details
   const [title, setTitle] = useState('');
   const [totalMarks, setTotalMarks] = useState('100.00');
-  const [durationMinutes, setDurationMinutes] = useState('60');
+  const [durationMinutes, setDurationMinutes] = useState('');
   const [gracePeriod, setGracePeriod] = useState('5');
+  const [lateUntil, setLateUntil] = useState('');
+  const [shuffleQuestions, setShuffleQuestions] = useState(false);
+  const [negativeMarks, setNegativeMarks] = useState('0');
+  // Written part marked question by question: [{id?, label, marks}]
+  const [writtenScheme, setWrittenScheme] = useState([]);
+  // Pasting written questions into the editor
+  const [writtenPasteOpen, setWrittenPasteOpen] = useState(false);
+  const [writtenPaste, setWrittenPaste] = useState('');
+  // The written paper as HTML, kept in step with the editor for the live preview.
+  const [writtenHtml, setWrittenHtml] = useState('');
 
   // Dates
   const now = new Date();
@@ -82,13 +95,14 @@ export default function ExamAuthoringModal({
 
   // MCQ questions state (empty by default - never ship sample content)
   const [mcqList, setMcqList] = useState([]);
-  const [rawMCQInput, setRawMCQInput] = useState('');
-  const [showPasteModal, setShowPasteModal] = useState(false);
 
   // Solutions & Keys
   const [solutionHtml, setSolutionHtml] = useState('');
   const [solutionMediaUrl, setSolutionMediaUrl] = useState('');
-  const [isResultsPublished, setIsResultsPublished] = useState(false);
+  // When students see results: 'IMMEDIATE' | 'CLOSE' | 'TIME' | 'MANUAL'
+  // (CLOSE and TIME are both the server's SCHEDULED mode, without and with a time.)
+  const [resultsMode, setResultsMode] = useState('MANUAL');
+  const [resultsAt, setResultsAt] = useState('');
   const [uploadingSolution, setUploadingSolution] = useState(false);
 
   // Editor states
@@ -97,20 +111,66 @@ export default function ExamAuthoringModal({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
+  // Load an existing exam into the form (edit mode)
+  const loadExamIntoForm = (exam) => {
+    setError('');
+    setActiveTab('questions');
+    setTitle(exam.title || '');
+    setCategory(exam.category || 'EXAM');
+    setExamType(exam.exam_type === 'MIXED' ? 'HYBRID' : exam.exam_type || 'HYBRID');
+    setTargetType(exam.tuition_id ? 'batch' : 'student');
+    setBatchId(exam.tuition_id || '');
+    setStudentId(exam.student || '');
+    setTotalMarks(String(exam.total_marks ?? '100'));
+    setDurationMinutes(exam.duration_minutes ? String(exam.duration_minutes) : '');
+    setGracePeriod(String(exam.grace_period_minutes ?? 5));
+    setLateUntil(exam.late_submission_until ? formatLocalInputDateTime(new Date(exam.late_submission_until)) : '');
+    setShuffleQuestions(Boolean(exam.shuffle_questions));
+    setNegativeMarks(String(exam.negative_marks_per_wrong ?? '0'));
+    setStartTime(formatLocalInputDateTime(new Date(exam.start_time)));
+    setEndTime(formatLocalInputDateTime(new Date(exam.end_time)));
+    setMcqList(Array.isArray(exam.mcq_data) ? exam.mcq_data.map((q) => ({ ...q, points: q.points ?? q.marks ?? 1 })) : []);
+    setWrittenPaste('');
+    setWrittenPasteOpen(false);
+    setSolutionHtml(exam.solution_html || '');
+    setSolutionMediaUrl(exam.solution_media_url || '');
+    setWrittenScheme(Array.isArray(exam.written_scheme) ? exam.written_scheme.map((w) => ({ ...w, marks: String(w.marks) })) : []);
+    if (exam.result_publish_mode === 'SCHEDULED') {
+      setResultsMode(exam.publish_time ? 'TIME' : 'CLOSE');
+    } else {
+      setResultsMode(exam.result_publish_mode || 'MANUAL');
+    }
+    setResultsAt(exam.publish_time ? formatLocalInputDateTime(new Date(exam.publish_time)) : '');
+    if (editor) {
+      editor.commands.setContent(exam.exam_type === 'MCQ' ? '' : exam.content_html || '');
+    }
+  };
+
   // Reset helper to ensure clean state and no stale demo data
   const resetForm = () => {
     setTitle('');
     setError('');
+    setActiveTab('questions');
+    setExamType('HYBRID');
+    setTotalMarks('100');
+    setDurationMinutes('');
+    setGracePeriod('5');
+    setLateUntil('');
+    setShuffleQuestions(false);
+    setNegativeMarks('0');
+    setWrittenScheme([]);
+    setWrittenPaste('');
+    setWrittenPasteOpen(false);
     setCategory(initialCategory || 'EXAM');
     const firstSid = initialStudentId || (students[0]?.id || students[0]?.student_id || '');
     setStudentId(firstSid);
     setBatchId(initialBatchId || '');
-    setTargetType(initialBatchId ? 'batch' : (firstSid ? 'student' : (students.length > 0 ? 'student' : 'batch')));
+    setTargetType(initialStudentId && !initialBatchId ? 'student' : 'batch');
     setMcqList([]);
-    setRawMCQInput('');
     setSolutionHtml('');
     setSolutionMediaUrl('');
-    setIsResultsPublished(false);
+    setResultsMode('MANUAL');
+    setResultsAt('');
     const dNow = new Date();
     setStartTime(formatLocalInputDateTime(new Date(dNow.getTime() + 10 * 60 * 1000)));
     setEndTime(formatLocalInputDateTime(new Date(dNow.getTime() + 70 * 60 * 1000)));
@@ -122,10 +182,14 @@ export default function ExamAuthoringModal({
   // Sync category, target, and reset state whenever modal opens
   useEffect(() => {
     if (isOpen) {
-      resetForm();
+      if (examToEdit?.id) {
+        loadExamIntoForm(examToEdit);
+      } else {
+        resetForm();
+      }
       loadBatches();
     }
-  }, [isOpen, initialCategory, initialStudentId, initialBatchId]);
+  }, [isOpen, initialCategory, initialStudentId, initialBatchId, examToEdit?.id]);
 
   const loadBatches = async () => {
     try {
@@ -152,7 +216,7 @@ export default function ExamAuthoringModal({
   useEffect(() => {
     if (initialStudentId) {
       setStudentId(initialStudentId);
-      setTargetType('student');
+      if (!initialBatchId) setTargetType('student');
     } else if (students.length > 0 && !studentId) {
       setStudentId(students[0].id || students[0].student_id);
     }
@@ -185,7 +249,11 @@ export default function ExamAuthoringModal({
       attributes: {
         class: 'prose prose-invert max-w-none focus:outline-none min-h-[180px] p-4 text-slate-100',
       },
+      // Text copied from a ChatGPT page carries each formula as drawn symbols plus hidden
+      // LaTeX; keep only the LaTeX so it is typeset again instead of pasted twice as garble.
+      transformPastedHTML: (html) => htmlWithLatex(html),
     },
+    onTransaction: ({ editor: current }) => setWrittenHtml(current.getHTML()),
   });
 
   // LaTeX Formula prompt
@@ -209,7 +277,7 @@ export default function ExamAuthoringModal({
       const res = await api.uploadMedia(formData);
       editor.chain().focus().setImage({ src: res.url, alt: res.filename }).run();
     } catch (err) {
-      alert(`Image upload failed: ${err.message}`);
+      notify(`Image upload failed: ${err.message}`);
     } finally {
       setUploadingImage(false);
       e.target.value = '';
@@ -228,7 +296,7 @@ export default function ExamAuthoringModal({
       const res = await api.uploadMedia(formData);
       setSolutionMediaUrl(res.url);
     } catch (err) {
-      alert(`Solution upload failed: ${err.message}`);
+      notify(`Solution upload failed: ${err.message}`);
     } finally {
       setUploadingSolution(false);
       e.target.value = '';
@@ -240,61 +308,42 @@ export default function ExamAuthoringModal({
     editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run();
   };
 
-  // MCQ operations
-  const handleAddMCQ = () => {
-    setMcqList((prev) => [
-      ...prev,
-      {
-        id: `mcq-${Date.now()}`,
-        question: 'Enter question text here...',
-        options: ['Option A', 'Option B', 'Option C', 'Option D'],
-        correct_answer: 0,
-        explanation: '',
-        points: 1,
-      },
-    ]);
-  };
-
-  const handleUpdateMCQ = (index, field, value) => {
-    setMcqList((prev) => {
-      const copy = [...prev];
-      copy[index] = { ...copy[index], [field]: value };
-      if (field === 'points') {
-        copy[index].marks = value;
-      }
-      return copy;
-    });
-  };
-
-  const handleUpdateMCQOption = (qIndex, optIndex, value) => {
-    setMcqList((prev) => {
-      const copy = [...prev];
-      const opts = [...copy[qIndex].options];
-      opts[optIndex] = value;
-      copy[qIndex] = { ...copy[qIndex], options: opts };
-      return copy;
-    });
-  };
-
-  const handleRemoveMCQ = (index) => {
-    setMcqList((prev) => prev.filter((_, i) => i !== index));
-  };
-
-  // Smart Parse raw text (ChatGPT / pasted)
-  const handleSmartParse = () => {
-    if (!rawMCQInput.trim()) return;
-    const parsed = parseRawMCQText(rawMCQInput);
-    if (parsed.length === 0) {
-      alert('Could not parse any MCQs. Please verify the format (Numbered questions with A, B, C, D options).');
-      return;
+  // Pasted written questions go into the editor; marks (when given) fill the marking scheme.
+  const insertWrittenQuestions = () => {
+    const items = parseWrittenQuestions(writtenPaste);
+    if (items.length === 0 || !editor) return;
+    const esc = (text) => text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const html = items
+      .map((item) => `<p><strong>${esc(item.label)}.</strong> ${esc(item.text).replace(/\n/g, '<br>')}${item.marks ? ` <em>[${item.marks}]</em>` : ''}</p>`)
+      .join('');
+    editor.chain().focus('end').insertContent(html).run();
+    if (items.every((item) => item.marks > 0)) {
+      setWrittenScheme((prev) => [...prev, ...items.map((item) => ({ label: item.label, marks: String(item.marks) }))]);
     }
-    setMcqList((prev) => [...prev, ...parsed]);
-    setRawMCQInput('');
-    setShowPasteModal(false);
+    notify.success(`Added ${items.length} written question${items.length === 1 ? '' : 's'}.`);
+    setWrittenPaste('');
+    setWrittenPasteOpen(false);
   };
 
-  // Handle Form Submit
-  const handleSubmit = async (e) => {
+  // Written marking scheme helpers
+  const addSchemeRow = () => setWrittenScheme((prev) => [...prev, { label: `Q${prev.length + 1}`, marks: '5' }]);
+  const updateSchemeRow = (index, field, value) =>
+    setWrittenScheme((prev) => prev.map((row, i) => (i === index ? { ...row, [field]: value } : row)));
+  const removeSchemeRow = (index) => setWrittenScheme((prev) => prev.filter((_, i) => i !== index));
+
+  const mcqPointsTotal = examType !== 'CQ' ? mcqList.reduce((sum, q) => sum + (Number(q.points ?? q.marks) || 0), 0) : 0;
+  const writtenPointsTotal = examType !== 'MCQ' ? writtenScheme.reduce((sum, w) => sum + (parseFloat(w.marks) || 0), 0) : 0;
+  const allocatedTotal = Math.round((mcqPointsTotal + writtenPointsTotal) * 100) / 100;
+
+  // The editor mounts a moment after the modal opens; fill it once it exists.
+  useEffect(() => {
+    if (isOpen && editor && examToEdit?.id && examToEdit.exam_type !== 'MCQ') {
+      editor.commands.setContent(examToEdit.content_html || '');
+    }
+  }, [editor, isOpen, examToEdit?.id]);
+
+  // Handle Form Submit. `publish` false saves a draft students cannot see.
+  const handleSubmit = async (e, publish = true) => {
     e.preventDefault();
     setError('');
 
@@ -319,14 +368,54 @@ export default function ExamAuthoringModal({
       return;
     }
 
-    if (examType === 'MCQ' && mcqList.length === 0) {
+    if (examType !== 'MCQ' && writtenScheme.some((w) => !(parseFloat(w.marks) > 0))) {
+      setError('Every written question in the marking scheme needs marks above 0.');
+      setActiveTab('questions');
+      return;
+    }
+
+    if (allocatedTotal > parseFloat(totalMarks)) {
+      setError(`MCQ points (${mcqPointsTotal}) plus written marks (${writtenPointsTotal}) come to ${allocatedTotal}, which is more than the total of ${totalMarks}.`);
+      setActiveTab('schedule');
+      return;
+    }
+
+    if (lateUntil && new Date(lateUntil) <= new Date(endTime)) {
+      setError('"Accept late work until" must be after the deadline.');
+      setActiveTab('schedule');
+      return;
+    }
+
+    if (publish && examType === 'MCQ' && mcqList.length === 0) {
       setError('Please add at least one MCQ question or choose CQ exam type.');
       setActiveTab('questions');
       return;
     }
 
+    if (publish && examType !== 'CQ') {
+      const unfinished = mcqList.findIndex((q) => questionProblems(q).length > 0);
+      if (unfinished !== -1) {
+        setError(`Question ${unfinished + 1} is not ready: ${questionProblems(mcqList[unfinished])[0].toLowerCase()}. You can still save it as a draft.`);
+        setActiveTab('questions');
+        return;
+      }
+    }
+
+    if (resultsMode === 'TIME') {
+      if (!resultsAt) {
+        setError('Choose the date and time when results should be published.');
+        setActiveTab('solutions');
+        return;
+      }
+      if (new Date(resultsAt) <= new Date(startTime)) {
+        setError('Results cannot be published before the exam starts.');
+        setActiveTab('solutions');
+        return;
+      }
+    }
+
     const htmlContent = editor?.getHTML() || '';
-    if (examType === 'CQ' && (!htmlContent || htmlContent.trim() === '<p></p>')) {
+    if (publish && examType === 'CQ' && (!htmlContent || htmlContent.trim() === '<p></p>')) {
       setError('Written CQ section cannot be empty.');
       setActiveTab('questions');
       return;
@@ -344,23 +433,39 @@ export default function ExamAuthoringModal({
         tuition_id: targetType === 'batch' ? batchId : null,
         content_html: examType === 'MCQ' ? '<p>Multiple Choice Examination</p>' : htmlContent,
         mcq_data: examType !== 'CQ' ? mcqList : [],
+        written_scheme: examType !== 'MCQ'
+          ? writtenScheme.map((w) => ({ id: w.id, label: (w.label || '').trim(), marks: parseFloat(w.marks) }))
+          : [],
         solution_html: solutionHtml,
         solution_media_url: solutionMediaUrl,
         total_marks: parseFloat(totalMarks),
         start_time: new Date(startTime).toISOString(),
         end_time: new Date(endTime).toISOString(),
-        duration_minutes: parseInt(durationMinutes) || null,
+        duration_minutes: category === 'EXAM' ? parseInt(durationMinutes, 10) || null : null,
         grace_period_minutes: isNaN(parsedGrace) ? 5 : parsedGrace,
-        is_published: true,
-        is_results_published: isResultsPublished,
+        late_submission_until: lateUntil ? new Date(lateUntil).toISOString() : null,
+        shuffle_questions: examType !== 'CQ' && shuffleQuestions,
+        negative_marks_per_wrong: examType !== 'CQ' ? parseFloat(negativeMarks) || 0 : 0,
+        is_published: publish,
+        result_publish_mode: resultsMode === 'CLOSE' || resultsMode === 'TIME' ? 'SCHEDULED' : resultsMode,
+        publish_time: resultsMode === 'TIME' ? new Date(resultsAt).toISOString() : null,
       };
 
-      await api.createExam(payload);
+      if (isEditing) {
+        await api.updateExam(examToEdit.id, payload);
+      } else {
+        await api.createExam(payload);
+      }
+      notify.success(
+        isEditing
+          ? (publish ? 'Changes saved.' : 'Saved as draft — students cannot see it.')
+          : (publish ? 'Published. Students have been notified.' : 'Draft saved — publish it when you are ready.')
+      );
       onExamCreated();
       resetForm();
       onClose();
     } catch (err) {
-      setError(err.message || 'Failed to schedule exam.');
+      setError(err.message || 'Failed to save.');
     } finally {
       setLoading(false);
     }
@@ -370,7 +475,7 @@ export default function ExamAuthoringModal({
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title={category === 'ASSIGNMENT' ? 'Create & Schedule Assignment' : 'Author, Schedule & Grade Exam'}
+      title={`${isEditing ? 'Edit' : 'New'} ${category === 'ASSIGNMENT' ? 'assignment' : 'exam'}`}
       maxWidth="max-w-4xl"
     >
       <form onSubmit={handleSubmit} className="space-y-4">
@@ -453,7 +558,7 @@ export default function ExamAuthoringModal({
               }`}
             >
               <KeyRound className="w-3.5 h-3.5" />
-              <span>Answer Keys & Solutions</span>
+              <span>Results &amp; Solutions</span>
             </button>
           </div>
         </div>
@@ -481,33 +586,8 @@ export default function ExamAuthoringModal({
 
           <div className="sm:col-span-3">
             <label className="block text-[11px] font-bold text-slate-300 uppercase tracking-wider mb-1">
-              Assign Target
+              Tuition group
             </label>
-            <div className="flex gap-1 mb-1.5">
-              <button
-                type="button"
-                onClick={() => setTargetType('batch')}
-                className={`flex-1 py-1.5 text-[10px] font-bold rounded-lg border transition ${
-                  targetType === 'batch'
-                    ? 'bg-indigo-600 border-indigo-500 text-white shadow'
-                    : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                Tuition (Group / Batch)
-              </button>
-              <button
-                type="button"
-                onClick={() => setTargetType('student')}
-                className={`flex-1 py-1.5 text-[10px] font-bold rounded-lg border transition ${
-                  targetType === 'student'
-                    ? 'bg-indigo-600 border-indigo-500 text-white shadow'
-                    : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                1-on-1 Student
-              </button>
-            </div>
-
             {targetType === 'student' ? (
               <div>
                 <select
@@ -533,17 +613,17 @@ export default function ExamAuthoringModal({
                   className="w-full px-2.5 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-100 text-xs focus:outline-none focus:border-indigo-500"
                 >
                   {batches.length === 0 ? (
-                    <option value="">No tuitions created yet</option>
+                    <option value="">Create a tuition group first</option>
                   ) : (
                     batches.map((b) => (
                       <option key={b.id} value={b.id}>
-                        {b.title || b.name} ({b.student_count || b.enrollment_count || b.enrollments?.length || 0} students enrolled)
+                        {b.title || b.name} ({b.enrolled_count ?? b.enrollments?.length ?? 0} students)
                       </option>
                     ))
                   )}
                 </select>
                 <span className="block text-[10px] text-emerald-400 mt-1">
-                  ✓ All enrolled students in this tuition will automatically receive this assessment.
+                  Every student in this group gets it and submits their own answers.
                 </span>
               </div>
             )}
@@ -579,168 +659,7 @@ export default function ExamAuthoringModal({
         {activeTab === 'questions' && (
           <div className="space-y-4">
             {/* MCQ SECTION */}
-            {examType !== 'CQ' && (
-              <div className="rounded-xl border border-slate-700/80 bg-slate-900/60 p-4 space-y-4">
-                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-3">
-                  <div className="flex items-center gap-2">
-                    <Sparkles className="w-4 h-4 text-amber-400" />
-                    <h4 className="text-xs font-bold text-slate-200 uppercase tracking-wider">
-                      Multiple Choice Questions (MCQ) — {mcqList.length} Items
-                    </h4>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setShowPasteModal(true)}
-                      className="px-2.5 py-1 rounded-lg bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/40 text-xs font-semibold flex items-center gap-1.5 transition"
-                    >
-                      <ClipboardPaste className="w-3.5 h-3.5" />
-                      <span>Paste from ChatGPT / Text</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={handleAddMCQ}
-                      className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold flex items-center gap-1 shadow transition"
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                      <span>Add Question</span>
-                    </button>
-                  </div>
-                </div>
-
-                {/* MCQ Paste helper container */}
-                {showPasteModal && (
-                  <div className="p-3.5 rounded-xl bg-slate-800/80 border border-indigo-500/40 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-indigo-300 flex items-center gap-1.5">
-                        <ClipboardPaste className="w-4 h-4" />
-                        Paste Raw Questions (Any format with 4 options A, B, C, D)
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => setShowPasteModal(false)}
-                        className="text-slate-400 hover:text-slate-200 text-xs"
-                      >
-                        ✕
-                      </button>
-                    </div>
-                    <textarea
-                      rows={5}
-                      value={rawMCQInput}
-                      onChange={(e) => setRawMCQInput(e.target.value)}
-                      placeholder={`1. What is the unit of power?\nA) Joule\nB) Watt\nC) Newton\nD) Pascal\nAnswer: B\nExplanation: Watt is the SI unit of power.`}
-                      className="w-full p-2.5 rounded-lg bg-slate-900 border border-slate-700 text-slate-100 text-xs font-mono focus:outline-none focus:border-indigo-500"
-                    />
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] text-slate-400">
-                        Supports questions with LaTeX ($E = mc^2$), keys like <code>Answer: C</code> or <code>Ans: 3</code>.
-                      </span>
-                      <button
-                        type="button"
-                        onClick={handleSmartParse}
-                        className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold shadow flex items-center gap-1"
-                      >
-                        <Sparkles className="w-3.5 h-3.5" />
-                        <span>Parse & Auto-Add</span>
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {/* List of MCQ cards */}
-                <div className="space-y-3 max-h-[360px] overflow-y-auto pr-1">
-                  {mcqList.map((q, qIdx) => (
-                    <div
-                      key={q.id || qIdx}
-                      className="p-3.5 rounded-xl bg-slate-800/40 border border-slate-700/60 space-y-2.5 relative group"
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-2 flex-1">
-                          <span className="w-6 h-6 rounded-full bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 flex items-center justify-center font-bold text-xs flex-shrink-0">
-                            {qIdx + 1}
-                          </span>
-                          <input
-                            type="text"
-                            value={q.question}
-                            onChange={(e) => handleUpdateMCQ(qIdx, 'question', e.target.value)}
-                            placeholder="Question Prompt (supports LaTeX like $x^2$)..."
-                            className="flex-1 px-2.5 py-1 rounded bg-slate-900 border border-slate-700 text-xs text-slate-100 focus:outline-none focus:border-indigo-500"
-                          />
-                        </div>
-
-                        <div className="flex items-center gap-2">
-                          <span className="text-[10px] text-slate-400 font-mono">
-                            Pts:
-                            <input
-                              type="number"
-                              min="0.5"
-                              step="0.5"
-                              value={q.points || 1}
-                              onChange={(e) => handleUpdateMCQ(qIdx, 'points', parseFloat(e.target.value) || 1)}
-                              className="w-10 ml-1 px-1 py-0.5 rounded bg-slate-900 border border-slate-700 text-center text-xs text-emerald-400 font-bold"
-                            />
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveMCQ(qIdx)}
-                            className="p-1 rounded text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 transition"
-                            title="Delete question"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* 4 Options Grid */}
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pl-8">
-                        {['A', 'B', 'C', 'D'].map((letter, optIdx) => (
-                          <div
-                            key={optIdx}
-                            className={`flex items-center gap-2 p-1.5 rounded-lg border transition ${
-                              (q.correct_answer === optIdx || (typeof q.correct_answer === 'string' && q.correct_answer.toUpperCase() === letter))
-                                ? 'bg-emerald-950/40 border-emerald-500/60 text-emerald-300'
-                                : 'bg-slate-900/60 border-slate-700/60 text-slate-300'
-                            }`}
-                          >
-                            <label className="flex items-center cursor-pointer">
-                              <input
-                                type="radio"
-                                name={`correct-${qIdx}`}
-                                checked={q.correct_answer === optIdx || (typeof q.correct_answer === 'string' && q.correct_answer.toUpperCase() === letter)}
-                                onChange={() => handleUpdateMCQ(qIdx, 'correct_answer', optIdx)}
-                                className="accent-emerald-500"
-                              />
-                              <span className="ml-1 text-[11px] font-bold uppercase">{letter}</span>
-                            </label>
-                            <input
-                              type="text"
-                              value={q.options[optIdx] || ''}
-                              onChange={(e) => handleUpdateMCQOption(qIdx, optIdx, e.target.value)}
-                              placeholder={`Option ${letter}`}
-                              className="flex-1 px-2 py-0.5 rounded bg-transparent text-xs text-slate-100 focus:outline-none"
-                            />
-                          </div>
-                        ))}
-                      </div>
-
-                      {/* Explanation note */}
-                      <div className="pl-8 flex items-center gap-2">
-                        <HelpCircle className="w-3.5 h-3.5 text-slate-500 flex-shrink-0" />
-                        <input
-                          type="text"
-                          value={q.explanation || ''}
-                          onChange={(e) => handleUpdateMCQ(qIdx, 'explanation', e.target.value)}
-                          placeholder="Explanation / Solution hint for student after grading (optional)..."
-                          className="flex-1 px-2 py-0.5 rounded bg-slate-900/40 border border-slate-800 text-[11px] text-slate-400 focus:outline-none focus:border-indigo-500"
-                        />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
+            {examType !== 'CQ' && <McqBuilder questions={mcqList} onChange={setMcqList} />}
 
             {/* WRITTEN CQ SECTION (TipTap Editor) */}
             {examType !== 'MCQ' && (
@@ -832,19 +751,65 @@ export default function ExamAuthoringModal({
                     </label>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={() => setPreviewMode(!previewMode)}
-                    className={`px-2.5 py-1 rounded text-xs font-semibold flex items-center gap-1 border transition ${
-                      previewMode
-                        ? 'bg-indigo-600 text-white border-indigo-500'
-                        : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'
-                    }`}
-                  >
-                    <Eye className="w-3.5 h-3.5" />
-                    <span>{previewMode ? 'Edit Mode' : 'KaTeX Preview'}</span>
-                  </button>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setWrittenPasteOpen((v) => !v)}
+                      className={`px-2.5 py-1 rounded text-xs font-semibold flex items-center gap-1 border transition ${
+                        writtenPasteOpen
+                          ? 'bg-indigo-600 text-white border-indigo-500'
+                          : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'
+                      }`}
+                    >
+                      <ClipboardPaste className="w-3.5 h-3.5" />
+                      <span>Paste questions</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPreviewMode(!previewMode)}
+                      className={`px-2.5 py-1 rounded text-xs font-semibold flex items-center gap-1 border transition ${
+                        previewMode
+                          ? 'bg-indigo-600 text-white border-indigo-500'
+                          : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'
+                      }`}
+                    >
+                      <Eye className="w-3.5 h-3.5" />
+                      <span>{previewMode ? 'Back to editing' : 'Preview'}</span>
+                    </button>
+                  </div>
                 </div>
+
+                {writtenPasteOpen && (
+                  <div className="p-3 bg-slate-800/60 border-b border-slate-700 space-y-2">
+                    <p className="text-xs text-slate-300">
+                      Paste written questions from ChatGPT or a document. Numbered questions are kept apart and maths stays as written.
+                      If every question ends with its marks — <code>[10]</code> or <code>(5 marks)</code> — the marking scheme is filled in too.
+                    </p>
+                    <textarea
+                      rows={6}
+                      value={writtenPaste}
+                      onChange={(e) => setWrittenPaste(e.target.value)}
+                      onPaste={(e) => pasteWithLatex(e, writtenPaste, setWrittenPaste)}
+                      aria-label="Paste written questions here"
+                      spellCheck={false}
+                      placeholder={'1. A particle moves with velocity \\(v(t) = 3t^2 - 4t\\). Find its acceleration at t = 2 s. [5]\n\n2. Evaluate $$\\int_0^\\pi \\sin^2 x\\,dx$$ (10 marks)'}
+                      className="w-full p-3 rounded-lg bg-slate-900 border border-slate-700 text-slate-100 text-xs font-mono leading-relaxed focus:outline-none focus:border-indigo-500"
+                    />
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs text-slate-400" aria-live="polite">
+                        {writtenPaste.trim() ? `Found ${parseWrittenQuestions(writtenPaste).length} question(s)` : 'They are added at the end of the paper.'}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={insertWrittenQuestions}
+                        disabled={!writtenPaste.trim()}
+                        className="px-3.5 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold transition disabled:opacity-50"
+                      >
+                        Add to the paper
+                      </button>
+                    </div>
+                  </div>
+                )}
 
                 <div className="min-h-[200px] max-h-[320px] overflow-y-auto">
                   {previewMode ? (
@@ -855,8 +820,76 @@ export default function ExamAuthoringModal({
                     <EditorContent editor={editor} />
                   )}
                 </div>
+
+                {/* Formulas are typed as LaTeX; show how they will look without leaving the editor. */}
+                {!previewMode && /\$[^$]+\$|\\\(|\\\[/.test(writtenHtml) && (
+                  <div className="border-t border-slate-700 bg-slate-950/50 p-4 max-h-[260px] overflow-y-auto">
+                    <span className="block text-[10px] uppercase tracking-wider text-slate-500 mb-1">Students will see</span>
+                    <MathRenderer content={writtenHtml} />
+                  </div>
+                )}
               </div>
             )}
+
+            {/* Marking scheme for the written part */}
+            {examType !== 'MCQ' && (
+              <div className="rounded-xl border border-slate-700/80 bg-slate-900/60 p-4 space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <h4 className="text-xs font-bold text-slate-200 uppercase tracking-wider">Marks per written question</h4>
+                    <p className="text-[11px] text-slate-400 mt-0.5">
+                      Optional. List each written question and what it is worth, and you can mark them one by one. Leave empty to give one overall written mark.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={addSchemeRow}
+                    className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold flex items-center gap-1 transition"
+                  >
+                    <Plus className="w-3.5 h-3.5" /> Add question
+                  </button>
+                </div>
+                {writtenScheme.length > 0 && (
+                  <ul className="space-y-2">
+                    {writtenScheme.map((row, i) => (
+                      <li key={row.id || i} className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          value={row.label}
+                          maxLength={120}
+                          onChange={(e) => updateSchemeRow(i, 'label', e.target.value)}
+                          aria-label={`Written question ${i + 1} label`}
+                          placeholder="e.g. Q1 (a) Derivation"
+                          className="flex-1 px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-xs text-slate-100 focus:outline-none focus:border-indigo-500"
+                        />
+                        <input
+                          type="number"
+                          min="0.25"
+                          step="0.25"
+                          value={row.marks}
+                          onChange={(e) => updateSchemeRow(i, 'marks', e.target.value)}
+                          aria-label={`Marks for written question ${i + 1}`}
+                          className="w-20 px-2 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-xs text-emerald-400 font-bold text-center focus:outline-none focus:border-indigo-500"
+                        />
+                        <span className="text-[11px] text-slate-500">marks</span>
+                        <button
+                          type="button"
+                          onClick={() => removeSchemeRow(i)}
+                          aria-label={`Remove written question ${i + 1}`}
+                          className="p-1.5 rounded text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 transition"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
+
+            <p className={`text-[11px] ${allocatedTotal > parseFloat(totalMarks) ? 'text-rose-300 font-semibold' : 'text-slate-400'}`}>
+              Marks set so far: {mcqPointsTotal} MCQ{examType !== 'MCQ' && writtenScheme.length > 0 ? ` + ${writtenPointsTotal} written` : ''} = {allocatedTotal} of {totalMarks} total.
+            </p>
           </div>
         )}
 
@@ -913,18 +946,73 @@ export default function ExamAuthoringModal({
                 />
               </div>
 
+              {category === 'EXAM' && (
+                <div>
+                  <label className="block text-xs font-bold text-slate-300 mb-1">
+                    Time limit per student (minutes)
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={durationMinutes}
+                    onChange={(e) => setDurationMinutes(e.target.value)}
+                    placeholder="No limit — open until the end time"
+                    className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-xs text-slate-100 focus:outline-none focus:border-indigo-500"
+                  />
+                  <span className="block text-[10px] text-slate-400 mt-1">
+                    Each student's clock starts when they open the exam and never runs past the end time. Leave empty for no limit.
+                  </span>
+                </div>
+              )}
+
               <div>
                 <label className="block text-xs font-bold text-slate-300 mb-1">
-                  Allowed Duration (Minutes)
+                  Accept late work until
                 </label>
                 <input
-                  type="number"
-                  min="5"
-                  value={durationMinutes}
-                  onChange={(e) => setDurationMinutes(e.target.value)}
+                  type="datetime-local"
+                  value={lateUntil}
+                  onChange={(e) => setLateUntil(e.target.value)}
                   className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-xs text-slate-100 focus:outline-none focus:border-indigo-500"
                 />
+                <span className="block text-[10px] text-slate-400 mt-1">
+                  Optional. After the deadline, students can still turn in until this time and are marked "Late".
+                </span>
               </div>
+
+              {examType !== 'CQ' && (
+                <>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-300 mb-1">
+                      Marks deducted per wrong MCQ
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.25"
+                      value={negativeMarks}
+                      onChange={(e) => setNegativeMarks(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-xs text-slate-100 focus:outline-none focus:border-indigo-500"
+                    />
+                    <span className="block text-[10px] text-slate-400 mt-1">
+                      0 means no negative marking. Unanswered questions never lose marks.
+                    </span>
+                  </div>
+
+                  <label className="flex items-start gap-2.5 p-3 rounded-xl bg-slate-900/60 border border-slate-700/60 cursor-pointer self-start">
+                    <input
+                      type="checkbox"
+                      checked={shuffleQuestions}
+                      onChange={(e) => setShuffleQuestions(e.target.checked)}
+                      className="w-4 h-4 mt-0.5 accent-indigo-600 rounded"
+                    />
+                    <span>
+                      <span className="text-xs font-bold text-slate-200 block">Shuffle MCQ order</span>
+                      <span className="text-[10px] text-slate-400">Each student sees the questions in a different order.</span>
+                    </span>
+                  </label>
+                </>
+              )}
 
               <div>
                 <label className="block text-xs font-bold text-slate-300 mb-1">
@@ -945,7 +1033,7 @@ export default function ExamAuthoringModal({
           </div>
         )}
 
-        {/* TAB 3: Answer Keys & Solutions */}
+        {/* TAB 3: Results & Solutions */}
         {activeTab === 'solutions' && (
           <div className="space-y-4">
             <div className="p-4 rounded-xl bg-slate-800/40 border border-slate-700/60 space-y-4">
@@ -987,33 +1075,69 @@ export default function ExamAuthoringModal({
                   )}
                 </div>
 
-                <div className="flex flex-col justify-center">
-                  <label className="flex items-center gap-2 cursor-pointer p-3 rounded-xl bg-slate-900/60 border border-slate-700/60">
-                    <input
-                      type="checkbox"
-                      checked={isResultsPublished}
-                      onChange={(e) => setIsResultsPublished(e.target.checked)}
-                      className="w-4 h-4 accent-indigo-600 rounded"
-                    />
-                    <div>
-                      <span className="text-xs font-bold text-slate-200 block">
-                        Publish Results & Leaderboard Immediately
-                      </span>
-                      <span className="text-[10px] text-slate-400">
-                        Allow students to see model solutions and batch rankings upon submission.
-                      </span>
-                    </div>
-                  </label>
-                </div>
               </div>
             </div>
+
+            <fieldset className="p-4 rounded-xl bg-slate-800/40 border border-slate-700/60 space-y-2.5">
+              <legend className="px-1 text-xs font-bold text-slate-200">When do students see their results?</legend>
+              <p className="text-[11px] text-slate-400">
+                Until then a student who has submitted sees only “Results pending” — no marks, no correct answers, no solutions.
+              </p>
+              {[
+                {
+                  value: 'IMMEDIATE',
+                  label: 'As soon as each student submits',
+                  hint: targetType === 'batch'
+                    ? 'Marks and correct answers appear the moment they hand in. In a group, someone who finishes early could pass the answers on.'
+                    : 'Marks and correct answers appear the moment they hand in.',
+                },
+                { value: 'CLOSE', label: 'When the exam closes', hint: 'After the deadline and any late-work time, when nobody can still be answering.' },
+                { value: 'TIME', label: 'At a time I choose', hint: 'Results come out automatically at the date and time you set.' },
+                { value: 'MANUAL', label: 'When I publish them', hint: 'Results stay hidden until you press “Publish results” on the exam.' },
+              ].map((option) => (
+                <label
+                  key={option.value}
+                  className={`flex items-start gap-2.5 p-3 rounded-xl border cursor-pointer transition ${
+                    resultsMode === option.value ? 'bg-indigo-500/10 border-indigo-500/60' : 'bg-slate-900/60 border-slate-700/60 hover:border-slate-500'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="results-mode"
+                    value={option.value}
+                    checked={resultsMode === option.value}
+                    onChange={() => setResultsMode(option.value)}
+                    className="mt-0.5 w-4 h-4 accent-indigo-600"
+                  />
+                  <span className="flex-1">
+                    <span className="text-xs font-bold text-slate-100 block">{option.label}</span>
+                    <span className="text-[11px] text-slate-400 block">{option.hint}</span>
+                    {option.value === 'TIME' && resultsMode === 'TIME' && (
+                      <input
+                        type="datetime-local"
+                        value={resultsAt}
+                        min={startTime}
+                        onChange={(e) => setResultsAt(e.target.value)}
+                        aria-label="Publish results at"
+                        className="mt-2 px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-xs text-slate-100 focus:outline-none focus:border-indigo-500"
+                      />
+                    )}
+                  </span>
+                </label>
+              ))}
+              {examType !== 'MCQ' && (
+                <p className="text-[11px] text-slate-400">
+                  MCQs are marked automatically. A written part shows as “awaiting marking” until you have marked it.
+                </p>
+              )}
+            </fieldset>
           </div>
         )}
 
         {/* Action Buttons */}
         <div className="pt-3 flex items-center justify-between border-t border-slate-800">
           <p className="text-[11px] text-slate-400 hidden sm:block">
-            💡 Scheduled exam notifications are dispatched automatically to all students.
+            Students are emailed when it is published. Drafts stay private.
           </p>
 
           <div className="flex items-center gap-3 ml-auto">
@@ -1024,6 +1148,16 @@ export default function ExamAuthoringModal({
             >
               Cancel
             </button>
+            {(!isEditing || !examToEdit.is_published) && (
+              <button
+                type="button"
+                disabled={loading}
+                onClick={(e) => handleSubmit(e, false)}
+                className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-100 font-semibold text-xs transition disabled:opacity-50"
+              >
+                Save as draft
+              </button>
+            )}
             <button
               type="submit"
               disabled={loading}
@@ -1032,12 +1166,12 @@ export default function ExamAuthoringModal({
               {loading ? (
                 <>
                   <div className="w-4 h-4 rounded-full border-2 border-white/30 border-t-white animate-spin" />
-                  <span>Scheduling Exam...</span>
+                  <span>Saving…</span>
                 </>
               ) : (
                 <>
                   <Send className="w-4 h-4" />
-                  <span>Schedule & Publish Exam</span>
+                  <span>{isEditing && examToEdit.is_published ? 'Save changes' : 'Publish'}</span>
                 </>
               )}
             </button>
