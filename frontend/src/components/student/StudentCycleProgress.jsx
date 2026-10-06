@@ -16,10 +16,16 @@ export default function StudentCycleProgress({ cycle }) {
     cycle_number,
     total_classes,
     completed_classes,
-    progress_percentage,
+    progress_percentage: progPct,
+    progress_percent: progPctAlt,
     is_complete,
     classes_data = [],
+    tuition_title,
+    batch_name,
   } = cycle;
+
+  const progress_percentage = progPct !== undefined ? progPct : (progPctAlt !== undefined ? progPctAlt : 0);
+  const title = tuition_title || batch_name || '';
 
   return (
     <div className="glass-panel p-6 rounded-2xl space-y-5">
@@ -30,6 +36,11 @@ export default function StudentCycleProgress({ cycle }) {
             <span className="text-xs font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-indigo-900/60 text-indigo-300 border border-indigo-700/50">
               Cycle #{cycle_number}
             </span>
+            {title && (
+              <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 font-mono">
+                {title}
+              </span>
+            )}
             {is_complete && (
               <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
                 <CheckCircle2 className="w-3.5 h-3.5" />
@@ -38,7 +49,7 @@ export default function StudentCycleProgress({ cycle }) {
             )}
           </div>
           <h3 className="text-lg font-bold text-slate-100 mt-1 flex items-center gap-2">
-            Class Attendance & Routine Tracking
+            {title ? `${title} — ` : ''}Class Attendance & Routine Tracking
           </h3>
         </div>
 

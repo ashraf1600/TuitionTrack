@@ -11,19 +11,35 @@ export default function SubmissionsGradingModal({
   submission,
   onGraded,
 }) {
+  const submissionsList = (exam?.submissions && exam.submissions.length > 0)
+    ? exam.submissions
+    : (submission ? [submission] : []);
+
+  const [selectedSubId, setSelectedSubId] = useState(submission?.id || (submissionsList[0]?.id));
+  const activeSubmission = submissionsList.find(s => s.id === selectedSubId) || submissionsList[0] || submission;
+
   const [obtainedMarks, setObtainedMarks] = useState('');
   const [feedback, setFeedback] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
-    if (submission) {
-      setObtainedMarks(submission.obtained_marks !== null ? submission.obtained_marks : '');
-      setFeedback(submission.tutor_feedback || '');
+    if (submission?.id) {
+      setSelectedSubId(submission.id);
+    } else if (submissionsList[0]?.id) {
+      setSelectedSubId(submissionsList[0].id);
     }
-  }, [submission]);
+  }, [submission, exam]);
 
-  if (!submission || !exam) return null;
+  useEffect(() => {
+    if (activeSubmission) {
+      setObtainedMarks(activeSubmission.obtained_marks !== null ? activeSubmission.obtained_marks : '');
+      setFeedback(activeSubmission.tutor_feedback || '');
+      setError('');
+    }
+  }, [activeSubmission]);
+
+  if (!activeSubmission || !exam) return null;
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -42,12 +58,16 @@ export default function SubmissionsGradingModal({
 
     setLoading(true);
     try {
-      await api.gradeSubmission(submission.id, {
+      await api.gradeSubmission(activeSubmission.id, {
         obtained_marks: marksNum,
         tutor_feedback: feedback,
       });
       onGraded();
-      onClose();
+      if (submissionsList.length <= 1) {
+        onClose();
+      } else {
+        alert(`Grade saved for ${activeSubmission.student_name}!`);
+      }
     } catch (err) {
       setError(err.message || 'Failed to grade submission.');
     } finally {
@@ -58,22 +78,42 @@ export default function SubmissionsGradingModal({
   return (
     <Modal isOpen={isOpen} onClose={onClose} title={`Grade Submission — ${exam.title}`} maxWidth="max-w-3xl">
       <div className="space-y-5">
+        {/* Multi-student submission selector for group / tuition exams */}
+        {submissionsList.length > 1 && (
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-3 rounded-xl bg-slate-800/80 border border-indigo-500/30">
+            <span className="text-xs text-indigo-300 font-semibold">
+              Select Submission ({submissionsList.length} students):
+            </span>
+            <select
+              value={activeSubmission.id}
+              onChange={(e) => setSelectedSubId(e.target.value)}
+              className="bg-slate-900 text-slate-100 text-xs rounded-lg px-3 py-1.5 border border-slate-700 focus:outline-none focus:border-indigo-500"
+            >
+              {submissionsList.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.student_name} — {s.is_graded ? `Graded (${s.obtained_marks}/${exam.total_marks})` : 'Pending'} ({new Date(s.submitted_at).toLocaleDateString()})
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
         {/* Student submission metadata */}
         <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-xl bg-slate-800/40 border border-slate-700/60 text-xs">
           <div>
             <span className="text-slate-400">Student: </span>
-            <strong className="text-slate-200">{submission.student_name}</strong>
+            <strong className="text-slate-200">{activeSubmission.student_name}</strong>
           </div>
           <div>
             <span className="text-slate-400">Submitted: </span>
             <span className="text-slate-200">
-              {submission.submitted_at
-                ? new Date(submission.submitted_at).toLocaleString()
+              {activeSubmission.submitted_at
+                ? new Date(activeSubmission.submitted_at).toLocaleString()
                 : 'Pending'}
             </span>
           </div>
           <div>
-            <StatusBadge status={submission.status} />
+            <StatusBadge status={activeSubmission.status} />
           </div>
           <div>
             <span className="text-slate-400">Total Exam Marks: </span>

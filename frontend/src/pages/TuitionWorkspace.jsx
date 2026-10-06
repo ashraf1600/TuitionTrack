@@ -46,6 +46,10 @@ const toLocalDateString = (d = new Date()) => {
   return dt.getFullYear() + '-' + String(dt.getMonth() + 1).padStart(2, '0') + '-' + String(dt.getDate()).padStart(2, '0');
 };
 
+const getLocalTodayIso = () => {
+  return `${toLocalDateString(new Date())}T12:00:00Z`;
+};
+
 export default function TuitionWorkspace() {
   const { id: tuitionId } = useParams();
   const navigate = useNavigate();
@@ -242,7 +246,7 @@ export default function TuitionWorkspace() {
 
     // If currently incomplete, single-click marks as completed today!
     if (!currentCompleted) {
-      const todayIso = new Date().toISOString();
+      const todayIso = getLocalTodayIso();
       try {
         await api.toggleAttendanceClass(cycleId, classNum, true, todayIso, '');
         await loadTuitionData();
@@ -253,7 +257,7 @@ export default function TuitionWorkspace() {
       // If already completed, open detail modal to adjust date, add topic, or unmark
       const cls = (cycle.classes_data || []).find(
         (c) => classNoOf(c) === parseInt(classNum, 10)
-      ) || { class_no: parseInt(classNum, 10), completed: true, date: new Date().toISOString(), topic: '' };
+      ) || { class_no: parseInt(classNum, 10), completed: true, date: getLocalTodayIso(), topic: '' };
 
       setActiveClassData({ cycleId, classNum, cls });
       setIsCompletedState(true);
@@ -272,7 +276,7 @@ export default function TuitionWorkspace() {
     setSavingAttendance(true);
     try {
       const targetDate = isCompletedState
-        ? (classDate ? new Date(classDate).toISOString() : new Date().toISOString())
+        ? (classDate ? `${classDate}T12:00:00Z` : getLocalTodayIso())
         : null;
 
       await api.toggleAttendanceClass(

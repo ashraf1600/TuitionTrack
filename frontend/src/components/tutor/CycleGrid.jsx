@@ -92,7 +92,7 @@ export default function CycleGrid({
     const classNum = selectedClass.class_no ?? selectedClass.classNo;
     setSavingClass(true);
     try {
-      const targetDate = isCompletedState ? (classDate ? new Date(classDate).toISOString() : new Date().toISOString()) : null;
+      const targetDate = isCompletedState ? (classDate ? `${classDate}T12:00:00Z` : `${toLocalDateString(new Date())}T12:00:00Z`) : null;
       await onToggleClass(cycle.id, classNum, isCompletedState, targetDate, isCompletedState ? classTopic : '');
       setDateModalOpen(false);
     } catch (err) {
@@ -107,7 +107,7 @@ export default function CycleGrid({
     const classNum = selectedClass.class_no ?? selectedClass.classNo;
     setSavingClass(true);
     try {
-      const todayIso = new Date().toISOString();
+      const todayIso = `${toLocalDateString(new Date())}T12:00:00Z`;
       await onToggleClass(cycle.id, classNum, true, todayIso, classTopic);
       setDateModalOpen(false);
     } finally {
@@ -168,12 +168,14 @@ export default function CycleGrid({
 
         {/* Action Button: Start New Cycle */}
         <button
-          onClick={() => setResetModalOpen(true)}
+          onClick={() => is_complete && setResetModalOpen(true)}
+          disabled={!is_complete}
           className={`px-4 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 transition shadow-md ${
             is_complete
-              ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-600/30 animate-bounce'
-              : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700'
+              ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-600/30 cursor-pointer'
+              : 'bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed opacity-50'
           }`}
+          title={is_complete ? 'Cycle complete! Archive and roll over to new cycle' : 'Complete all classes before starting a new cycle'}
         >
           <RotateCcw className="w-4 h-4" />
           <span>Start New Cycle</span>

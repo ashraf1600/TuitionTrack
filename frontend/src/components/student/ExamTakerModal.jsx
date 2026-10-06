@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Modal from '../common/Modal';
 import MathRenderer from '../common/MathRenderer';
 import { api } from '../../api/client';
@@ -33,21 +33,45 @@ export default function ExamTakerModal({
   const [isExpired, setIsExpired] = useState(false);
   const [serverOffsetMs, setServerOffsetMs] = useState(0);
 
-  // Reset when exam changes
+  const autoSubmitRef = useRef(null);
+
+  // Restore draft answers from localStorage if available
   useEffect(() => {
-    if (exam) {
-      setMcqAnswers({});
-      setTextAnswers({});
-      setImageUrls([]);
+    if (exam?.id) {
       setError('');
       setIsExpired(false);
-      // Estimate server-client clock offset from API Date header (prevents
-      // trivial bypass by changing OS clock; backend remains authoritative).
       api.fetchServerOffset().then(setServerOffsetMs).catch(() => setServerOffsetMs(0));
-    }
-  }, [exam]);
 
-  // Live Countdown Timer (server-offset corrected; backend still enforces)
+      const storageKey = `exam_draft_${exam.id}`;
+      try {
+        const saved = localStorage.getItem(storageKey);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (parsed.mcqAnswers) setMcqAnswers(parsed.mcqAnswers);
+          if (parsed.textAnswers) setTextAnswers(parsed.textAnswers);
+          if (parsed.imageUrls) setImageUrls(parsed.imageUrls);
+        } else {
+          setMcqAnswers({});
+          setTextAnswers({});
+          setImageUrls([]);
+        }
+      } catch (_) {
+        setMcqAnswers({});
+        setTextAnswers({});
+        setImageUrls([]);
+      }
+    }
+  }, [exam?.id]);
+
+  // Persist in-progress answers so closing modal does not lose answers
+  useEffect(() => {
+    if (exam?.id && (Object.keys(mcqAnswers).length > 0 || imageUrls.length > 0)) {
+      const storageKey = `exam_draft_${exam.id}`;
+      localStorage.setItem(storageKey, JSON.stringify({ mcqAnswers, textAnswers, imageUrls }));
+    }
+  }, [exam?.id, mcqAnswers, textAnswers, imageUrls]);
+
+  // Live Countdown Timer (server-offset corrected; auto-submits on expiration)
   useEffect(() => {
     if (!isOpen || !exam) return;
 
@@ -61,6 +85,10 @@ export default function ExamTakerModal({
         setIsGracePeriod(false);
         setIsExpired(true);
         clearInterval(interval);
+        // Automatically submit student answers when the timer reaches 0
+        if (autoSubmitRef.current) {
+          autoSubmitRef.current();
+        }
       } else if (now > endTime) {
         // In grace period
         setIsGracePeriod(true);
@@ -139,6 +167,40 @@ export default function ExamTakerModal({
     setImageUrls((prev) => prev.filter((_, i) => i !== index));
   };
 
+  const doSubmit = async () => {
+    if (submitting) return;
+    setSubmitting(true);
+    try {
+      const answersData = {
+        ...textAnswers,
+        ...mcqAnswers,
+      };
+
+      await api.submitExam(exam.id, {
+        answers_data: answersData,
+        image_urls: imageUrls,
+        uploaded_images: imageUrls,
+      });
+
+      if (exam?.id) {
+        localStorage.removeItem(`exam_draft_${exam.id}`);
+      }
+      onExamSubmitted();
+      onClose();
+    } catch (err) {
+      setError(err.message || 'Submission failed.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  useEffect(() => {
+    autoSubmitRef.current = () => {
+      // Auto-submit whatever has been answered so far
+      doSubmit();
+    };
+  });
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
@@ -165,26 +227,7 @@ export default function ExamTakerModal({
       return;
     }
 
-    setSubmitting(true);
-    try {
-      const answersData = {
-        ...textAnswers,
-        ...mcqAnswers,
-      };
-
-      await api.submitExam(exam.id, {
-        answers_data: answersData,
-        image_urls: imageUrls,
-        uploaded_images: imageUrls,
-      });
-
-      onExamSubmitted();
-      onClose();
-    } catch (err) {
-      setError(err.message || 'Submission failed.');
-    } finally {
-      setSubmitting(false);
-    }
+    await doSubmit();
   };
 
   const isAssignment = exam.category === 'ASSIGNMENT';

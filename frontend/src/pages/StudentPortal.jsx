@@ -11,6 +11,7 @@ import { Calendar, FileText, Sparkles, RefreshCw, Layers, Clock, DollarSign, Use
 
 export default function StudentPortal() {
   const { user } = useAuth();
+  const [cycles, setCycles] = useState([]);
   const [cycle, setCycle] = useState(null);
   const [batches, setBatches] = useState([]);
   const [exams, setExams] = useState([]);
@@ -42,6 +43,7 @@ export default function StudentPortal() {
         const cyclesData = await api.getCycles();
         list = Array.isArray(cyclesData) ? cyclesData : cyclesData.results || [];
       }
+      setCycles(list);
       const active = list.find((c) => c.status === 'ACTIVE') || list[0] || null;
       setCycle(active);
     } catch (err) {
@@ -227,8 +229,14 @@ export default function StudentPortal() {
         </section>
 
         {/* Section 2: Billing Cycle Attendance Progress */}
-        <section>
-          <StudentCycleProgress cycle={cycle} />
+        <section className="space-y-4">
+          {cycles.length > 1 ? (
+            cycles.map((c) => (
+              <StudentCycleProgress key={c.id} cycle={c} />
+            ))
+          ) : (
+            <StudentCycleProgress cycle={cycle || cycles[0]} />
+          )}
         </section>
 
         {/* Section 3: Assigned Exams */}
