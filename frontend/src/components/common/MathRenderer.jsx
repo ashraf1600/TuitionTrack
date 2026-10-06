@@ -12,10 +12,19 @@ export default function MathRenderer({ content, className = '' }) {
 
     let processed = content;
 
+    const unescapeLatex = (str) => {
+      return str
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&amp;/g, '&')
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'");
+    };
+
     // 1. Replace block math $$...$$
     processed = processed.replace(/\$\$([\s\S]*?)\$\$/g, (match, formula) => {
       try {
-        return katex.renderToString(formula.trim(), {
+        return katex.renderToString(unescapeLatex(formula.trim()), {
           displayMode: true,
           throwOnError: false,
         });
@@ -31,7 +40,7 @@ export default function MathRenderer({ content, className = '' }) {
         return match;
       }
       try {
-        return katex.renderToString(formula.trim(), {
+        return katex.renderToString(unescapeLatex(formula.trim()), {
           displayMode: false,
           throwOnError: false,
         });
@@ -39,6 +48,7 @@ export default function MathRenderer({ content, className = '' }) {
         return match;
       }
     });
+
 
     // 3. Client-side sanitization pass using DOMPurify
     return DOMPurify.sanitize(processed, {

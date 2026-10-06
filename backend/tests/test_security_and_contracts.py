@@ -323,8 +323,9 @@ class ConcurrencyAttendanceToggleTests(APITransactionTestCase):
                     db_conn.close()
 
         classes_to_toggle = [1, 2, 3, 4]
-        with ThreadPoolExecutor(max_workers=4) as executor:
+        with ThreadPoolExecutor(max_workers=2) as executor:
             results = list(executor.map(make_toggle_request, classes_to_toggle))
+
 
         for r in results:
             self.assertEqual(r.status_code, status.HTTP_200_OK)

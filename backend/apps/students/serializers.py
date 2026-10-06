@@ -175,17 +175,9 @@ class StudentCreateSerializer(serializers.Serializer):
             notes=validated_data.get('notes', ''),
         )
 
-        # ── Step 3: Initialize Cycle #1 with snapshotted values (Only if not in tuition) ──────────────
-        if not tuition_id:
-            Cycle.objects.create(
-                tutor=tutor,
-                student=student_user,
-                cycle_number=1,
-                fee_snapshot=profile.tuition_fee,
-                total_classes=profile.cycle_length,
-                classes_data=Cycle.build_fresh_classes_data(profile.cycle_length),
-                status=Cycle.Status.ACTIVE,
-            )
+        # Legacy cycle creation removed per P1 specification to prevent ghost pending balances.
+        # Cycles are managed exclusively via TuitionEnrollment and AttendanceCycle.
+
 
         # ── Step 4: Optional Tuition Enrollment ──────────────────────────────
         if tuition_id:
@@ -207,99 +199,6 @@ class StudentCreateSerializer(serializers.Serializer):
         return student_user
 
 
-class TuitionBatchStudentSerializer(serializers.ModelSerializer):
-    student_id = serializers.UUIDField(source='id', read_only=True)
-    full_name = serializers.SerializerMethodField()
-
-    class Meta:
-        model = User
-        fields = ['student_id', 'username', 'full_name', 'email', 'phone']
-
-    def get_full_name(self, obj):
-        return obj.get_full_name() or obj.username
-
-    def to_representation(self, instance):
-        data = super().to_representation(instance)
-        request = self.context.get('request')
-        is_student = request and getattr(request.user, 'role', None) == 'STUDENT'
-        if is_student and str(instance.id) != str(request.user.id):
-            data['email'] = ''
-            data['phone'] = ''
-        return data
-
-
-class TuitionBatchSerializer(serializers.ModelSerializer):
-    tutor_name = serializers.SerializerMethodField()
-    students_detail = TuitionBatchStudentSerializer(source='students', many=True, read_only=True)
-    student_count = serializers.SerializerMethodField()
-
-    class Meta:
-        from .models import TuitionBatch
-        model = TuitionBatch
-        fields = [
-            'id', 'tutor', 'tutor_name', 'name', 'subject', 'description',
-            'students', 'students_detail', 'student_count',
-            'weekly_routine', 'monthly_fee', 'is_active', 'created_at', 'updated_at'
-        ]
-        read_only_fields = ['id', 'tutor', 'tutor_name', 'created_at', 'updated_at']
-
-    def get_tutor_name(self, obj):
-        return obj.tutor.get_full_name() or obj.tutor.username
-
-    def get_student_count(self, obj):
-        return obj.students.count()
-
-
-class TuitionBatchCreateUpdateSerializer(serializers.ModelSerializer):
-    student_ids = serializers.ListField(
-        child=serializers.UUIDField(),
-        required=False,
-        default=list,
-        write_only=True
-    )
-
-    class Meta:
-        from .models import TuitionBatch
-        model = TuitionBatch
-        fields = [
-            'id', 'name', 'subject', 'description', 'student_ids',
-            'weekly_routine', 'monthly_fee', 'is_active'
-        ]
-        read_only_fields = ['id']
-
-    def validate_student_ids(self, value):
-        request = self.context.get('request')
-        tutor = request.user if request else None
-        if tutor and value:
-            for s_id in value:
-                student = User.objects.filter(id=s_id, role=User.Role.STUDENT).first()
-                if not student:
-                    raise serializers.ValidationError(f'Student with ID {s_id} does not exist.')
-                if student.tutor and student.tutor != tutor:
-                    raise serializers.ValidationError(f'Cannot add student {s_id} belonging to another tutor.')
-        return value
-
-    def create(self, validated_data):
-        from .models import TuitionBatch
-        student_ids = validated_data.pop('student_ids', [])
-        tutor = self.context['request'].user
-        batch = TuitionBatch.objects.create(tutor=tutor, **validated_data)
-        if student_ids:
-            students = User.objects.filter(id__in=student_ids, role=User.Role.STUDENT)
-            batch.students.set(students)
-        return batch
-
-    def update(self, instance, validated_data):
-        student_ids = validated_data.pop('student_ids', None)
-        for attr, val in validated_data.items():
-            setattr(instance, attr, val)
-        instance.save()
-        if student_ids is not None:
-            students = User.objects.filter(id__in=student_ids, role=User.Role.STUDENT)
-            instance.students.set(students)
-        return instance
-
-
 # ── Tuition-Centric Serializers ──────────────────────────────────────────
 
 class TuitionSerializer(serializers.ModelSerializer):
@@ -307,8 +206,12 @@ class TuitionSerializer(serializers.ModelSerializer):
     Serializer for Tuition model with routine, enrollments, and wallet calculations.
     Ensures strict privacy: students never receive tuition_fee or billing numbers.
     """
+    name = serializers.CharField(source='title', read_only=True)
+    weekly_routine = serializers.JSONField(source='routine', read_only=True)
+    monthly_fee = serializers.DecimalField(source='tuition_fee', max_digits=10, decimal_places=2, read_only=True)
     tutor_name = serializers.SerializerMethodField()
     enrollments = serializers.SerializerMethodField()
+    students_detail = serializers.SerializerMethodField()
     enrolled_count = serializers.SerializerMethodField()
     wallet_summary = serializers.SerializerMethodField()
 
@@ -316,9 +219,9 @@ class TuitionSerializer(serializers.ModelSerializer):
         from .models import Tuition
         model = Tuition
         fields = [
-            'id', 'tutor', 'tutor_name', 'title', 'subject', 'description',
-            'cycle_length', 'tuition_fee',
-            'routine', 'enrollments', 'enrolled_count', 'wallet_summary',
+            'id', 'tutor', 'tutor_name', 'title', 'name', 'subject', 'description',
+            'cycle_length', 'tuition_fee', 'monthly_fee',
+            'routine', 'weekly_routine', 'enrollments', 'students_detail', 'enrolled_count', 'wallet_summary',
             'created_at', 'updated_at'
         ]
         read_only_fields = ['id', 'tutor', 'tutor_name', 'created_at', 'updated_at']
@@ -328,6 +231,7 @@ class TuitionSerializer(serializers.ModelSerializer):
         request = self.context.get('request')
         if request and getattr(request.user, 'role', '') == 'STUDENT':
             data.pop('tuition_fee', None)
+            data.pop('monthly_fee', None)
             data.pop('wallet_summary', None)
         return data
 
@@ -336,6 +240,9 @@ class TuitionSerializer(serializers.ModelSerializer):
 
     def get_enrolled_count(self, obj):
         return obj.enrollments.filter(is_active=True).count()
+
+    def get_students_detail(self, obj):
+        return self.get_enrollments(obj)
 
     def get_enrollments(self, obj):
         request = self.context.get('request')
@@ -357,6 +264,7 @@ class TuitionSerializer(serializers.ModelSerializer):
                     'completed_classes': active_c.completed_classes,
                     'total_classes': active_c.total_classes,
                     'progress_percent': active_c.progress_percent,
+                    'progress_percentage': active_c.progress_percent,
                     'status': active_c.status,
                     'classes_data': active_c.classes_data,
                 }
@@ -370,8 +278,9 @@ class TuitionSerializer(serializers.ModelSerializer):
 
             phone_val = getattr(enr.student, 'phone', '') or getattr(getattr(enr.student, 'student_profile', None), 'parent_phone', '')
             entry = {
-                'enrollment_id': str(enr.id),
+                'id': str(enr.student.id),
                 'student_id': str(enr.student.id),
+                'enrollment_id': str(enr.id),
                 'student_name': enr.student.get_full_name() or enr.student.username,
                 'joined_at': enr.joined_at,
                 'active_cycle': cycle_info,

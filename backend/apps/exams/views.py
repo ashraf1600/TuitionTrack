@@ -54,14 +54,17 @@ class ExamViewSet(viewsets.ModelViewSet):
     http_method_names = ['get', 'post', 'patch', 'delete', 'head', 'options']
 
     def get_permissions(self):
-        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+        if self.action in ['create', 'update', 'partial_update', 'destroy', 'submissions']:
             return [IsAuthenticated(), IsTutor()]
+        if self.action == 'submit':
+            return [IsAuthenticated(), IsStudent()]
         return [IsAuthenticated(), IsTutorOrStudent()]
+
 
     def get_queryset(self):
         import uuid as _uuid
         user = self.request.user
-        qs = Exam.objects.select_related('tutor', 'student', 'batch', 'tuition').prefetch_related('submissions')
+        qs = Exam.objects.select_related('tutor', 'student', 'tuition').prefetch_related('submissions')
 
         if user.role == 'TUTOR':
             qs = qs.filter(models.Q(tutor=user) | models.Q(tuition__tutor=user))
@@ -79,7 +82,7 @@ class ExamViewSet(viewsets.ModelViewSet):
                     _uuid.UUID(str(batch_id))
                 except (ValueError, AttributeError, TypeError):
                     return qs.none()
-                qs = qs.filter(batch_id=batch_id)
+                qs = qs.filter(tuition_id=batch_id)
             if tuition_id:
                 try:
                     _uuid.UUID(str(tuition_id))
@@ -89,8 +92,7 @@ class ExamViewSet(viewsets.ModelViewSet):
         elif user.role == 'STUDENT':
             qs = qs.filter(is_published=True).filter(
                 models.Q(student=user) |
-                models.Q(tuition__enrollments__student=user) |
-                models.Q(batch__students=user)
+                models.Q(tuition__enrollments__student=user, tuition__enrollments__is_active=True)
             ).distinct()
         else:
             qs = qs.none()
@@ -119,8 +121,6 @@ class ExamViewSet(viewsets.ModelViewSet):
                 for enr in exam.tuition.enrollments.select_related('student').all()
                 if enr.student.email and enr.student.is_active
             ]
-        if exam.batch_id:
-            recipients += [s.email for s in exam.batch.students.filter(is_active=True).all() if s.email]
         # Dedupe while preserving order
         recipients = list(dict.fromkeys(recipients))
 
@@ -128,7 +128,7 @@ class ExamViewSet(viewsets.ModelViewSet):
             subject = f'[TuitionTrack] New {exam.category.capitalize()}: {exam.title}'
             start_str = exam.start_time.strftime('%Y-%m-%d %H:%M UTC')
             end_str = exam.end_time.strftime('%Y-%m-%d %H:%M UTC')
-            target_desc = f'Tuition: {exam.tuition.title}' if exam.tuition else (f'Batch: {exam.batch.name}' if exam.batch else f'Student: {exam.student.get_full_name() or exam.student.username}')
+            target_desc = f'Tuition: {exam.tuition.title}' if exam.tuition else f'Student: {exam.student.get_full_name() or exam.student.username}'
             body = (
                 f"Hello,\n\n"
                 f"A new assessment has been published by {exam.tutor.get_full_name() or exam.tutor.username}.\n\n"
@@ -220,11 +220,10 @@ class ExamViewSet(viewsets.ModelViewSet):
         # Scoped lookup: students see only published, assigned exams (no oracle).
         exam = get_object_or_404(self.get_queryset(), id=pk)
 
-        # Tenant check: Student must be 1-on-1, enrolled in tuition, or enrolled in batch
+        # Tenant check: Student must be 1-on-1 or enrolled in tuition
         is_assigned = (
             (exam.student_id == request.user.id) or
-            (exam.tuition_id and exam.tuition.enrollments.filter(student=request.user).exists()) or
-            (exam.batch_id and exam.batch.students.filter(id=request.user.id).exists())
+            (exam.tuition_id and exam.tuition.enrollments.filter(student=request.user).exists())
         )
         if not is_assigned:
             return Response(
@@ -308,6 +307,26 @@ class ExamViewSet(viewsets.ModelViewSet):
             status=status.HTTP_201_CREATED
         )
 
+    @action(detail=True, methods=['get'], permission_classes=[IsAuthenticated, IsTutor])
+    def submissions(self, request, pk=None):
+        """
+        GET /api/v1/exams/<id>/submissions/
+        Allows tutors to view all student submissions for this exam for review and grading.
+        """
+        exam = get_object_or_404(self.get_queryset(), id=pk)
+        if exam.tutor_id != request.user.id and (not exam.tuition_id or exam.tuition.tutor_id != request.user.id):
+            return Response({'error': 'Unauthorized'}, status=status.HTTP_403_FORBIDDEN)
+
+        submissions = exam.submissions.select_related('student').order_by('-submitted_at')
+        serializer = ExamSubmissionSerializer(submissions, many=True, context={'request': request})
+        return Response({
+            'exam_id': str(exam.id),
+            'exam_title': exam.title,
+            'total_marks': float(exam.total_marks),
+            'count': submissions.count(),
+            'submissions': serializer.data,
+        })
+
     @action(detail=True, methods=['get'])
     def leaderboard(self, request, pk=None):
         """
@@ -325,18 +344,49 @@ class ExamViewSet(viewsets.ModelViewSet):
         if user.role == 'STUDENT':
             is_assigned = (
                 (exam.student_id == user.id) or
-                (exam.tuition_id and exam.tuition.enrollments.filter(student=user).exists()) or
-                (exam.batch_id and exam.batch.students.filter(id=user.id).exists())
+                (exam.tuition_id and exam.tuition.enrollments.filter(student=user).exists())
             )
             if not is_assigned:
                 return Response({'error': 'Unauthorized'}, status=status.HTTP_403_FORBIDDEN)
             if not exam.is_results_published:
                 return Response({'error': 'Results are not published yet.'}, status=status.HTTP_403_FORBIDDEN)
 
+        now = timezone.now()
+        grace_limit = exam.end_time + timedelta(minutes=exam.grace_period_minutes)
+        if now > grace_limit:
+            assigned_students = set()
+            if exam.student_id:
+                assigned_students.add(exam.student)
+            if exam.tuition_id:
+                for enr in exam.tuition.enrollments.filter(is_active=True).select_related('student'):
+                    assigned_students.add(enr.student)
+
+            existing_submitted_ids = set(
+                exam.submissions.values_list('student_id', flat=True)
+            )
+            for student in assigned_students:
+                if student.id not in existing_submitted_ids:
+                    try:
+                        ExamSubmission.objects.create(
+                            exam=exam,
+                            student=student,
+                            status=ExamSubmission.Status.MISSED,
+                            submitted_at=exam.end_time,
+                            obtained_marks=0,
+                            mcq_score=0,
+                            cq_score=0,
+                            is_graded=True,
+                            graded_at=now,
+                            tutor_feedback='Missed deadline.',
+                        )
+                    except Exception:
+                        pass
+
         submissions = exam.submissions.select_related('student').order_by(
             models.F('obtained_marks').desc(nulls_last=True),
             'submitted_at'
         )
+
 
         total_marks = float(exam.total_marks)
         leaderboard_data = []
@@ -365,7 +415,7 @@ class ExamViewSet(viewsets.ModelViewSet):
                 'is_graded': sub.is_graded,
             })
 
-        target_title = exam.tuition.title if exam.tuition_id else (exam.batch.name if exam.batch_id else None)
+        target_title = exam.tuition.title if exam.tuition_id else None
 
         return Response({
             'exam_id': str(exam.id),

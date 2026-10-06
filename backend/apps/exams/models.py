@@ -53,16 +53,6 @@ class Exam(models.Model):
         verbose_name='Student (1-on-1)',
         help_text='Set if this exam is assigned to a specific individual student.',
     )
-    batch = models.ForeignKey(
-        'students.TuitionBatch',
-        on_delete=models.CASCADE,
-        related_name='batch_exams',
-        null=True,
-        blank=True,
-        db_index=True,
-        verbose_name='Tuition Batch',
-        help_text='Set if this exam is assigned to all students in a tuition batch.',
-    )
 
     class ExamType(models.TextChoices):
         MCQ = 'MCQ', 'Multiple Choice'
@@ -174,7 +164,6 @@ class Exam(models.Model):
                 condition=(
                     models.Q(tuition__isnull=False)
                     | models.Q(student__isnull=False)
-                    | models.Q(batch__isnull=False)
                 ),
                 name='exam_requires_target',
             ),
@@ -185,8 +174,6 @@ class Exam(models.Model):
             target = self.student.get_full_name() or self.student.username
         elif self.tuition:
             target = f'Tuition: {self.tuition.title}'
-        elif self.batch:
-            target = f'Batch: {self.batch.name}'
         else:
             target = 'Unassigned'
         return f'{self.title} — {target}'

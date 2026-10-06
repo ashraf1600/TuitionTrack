@@ -207,6 +207,12 @@ class AttendanceCycle(models.Model):
         verbose_name='Total Classes',
         help_text='Copy of cycle_length at the time this cycle was created.'
     )
+    total_classes_snapshot = models.PositiveIntegerField(
+        default=12,
+        validators=[MinValueValidator(1)],
+        verbose_name='Total Classes Snapshot',
+        help_text='Frozen copy of cycle_length at cycle creation.'
+    )
     classes_data = models.JSONField(
         default=list,
         verbose_name='Classes Attendance Data',
@@ -238,6 +244,7 @@ class AttendanceCycle(models.Model):
         return f'{self.enrollment or "Archived"} — Cycle #{self.cycle_number} ({self.status})'
 
     def save(self, *args, **kwargs):
+        from decimal import Decimal
         # Snapshot only on creation so later Tuition fee edits never rewrite history.
         if self._state.adding and self.enrollment_id:
             try:
@@ -248,12 +255,16 @@ class AttendanceCycle(models.Model):
                 if self.tutor_id is None:
                     self.tutor = tuition.tutor
                 # fee_snapshot default 0.00 means "unset" -> snapshot live fee
-                if self.fee_snapshot is None or float(self.fee_snapshot) == 0.0:
-                    self.fee_snapshot = tuition.tuition_fee
-                # total_classes default is 12; snapshot live length on creation
-                # (explicit values passed by callers are already set before save)
+                if self.fee_snapshot is None or Decimal(str(self.fee_snapshot)) == Decimal('0.00'):
+                    self.fee_snapshot = Decimal(str(tuition.tuition_fee))
                 if not kwargs.get('update_fields'):
-                    self.total_classes = tuition.cycle_length
+                    if not self.total_classes_snapshot or self.total_classes_snapshot == 12:
+                        self.total_classes_snapshot = tuition.cycle_length
+                    self.total_classes = self.total_classes_snapshot
+        if self.total_classes_snapshot and not self.total_classes:
+            self.total_classes = self.total_classes_snapshot
+        elif self.total_classes and not self.total_classes_snapshot:
+            self.total_classes_snapshot = self.total_classes
         super().save(*args, **kwargs)
 
     @property
@@ -262,46 +273,54 @@ class AttendanceCycle(models.Model):
         return sum(1 for c in self.classes_data if c.get('completed', False))
 
     @property
+    def total_classes_count(self) -> int:
+        return self.total_classes_snapshot or self.total_classes or 12
+
+    @property
     def tuition_fee(self):
-        if self.fee_snapshot is not None and float(self.fee_snapshot) > 0:
-            return self.fee_snapshot
-        if self.enrollment_id and getattr(self, 'enrollment', None) and getattr(self.enrollment, 'tuition', None):
-            return self.enrollment.tuition.tuition_fee
-        return self.fee_snapshot or 0.00
+        from decimal import Decimal
+        return Decimal(str(self.fee_snapshot or '0.00'))
 
     @property
     def per_class_rate(self):
         from decimal import Decimal
-        if not self.total_classes:
-            return 0.00
-        return float(round(Decimal(str(self.tuition_fee)) / self.total_classes, 2))
+        total = self.total_classes_count
+        if not total:
+            return Decimal('0.00')
+        return (self.tuition_fee / Decimal(total)).quantize(Decimal('0.01'))
 
     @property
     def earned_revenue(self):
         from decimal import Decimal
-        if not self.total_classes:
-            return 0.00
-        fee = Decimal(str(self.tuition_fee))
-        if self.completed_classes >= self.total_classes:
-            return float(fee)
-        return float(round((fee * self.completed_classes) / self.total_classes, 2))
+        total = self.total_classes_count
+        if not total:
+            return Decimal('0.00')
+        fee = self.tuition_fee
+        completed = self.completed_classes
+        if completed >= total:
+            return fee.quantize(Decimal('0.01'))
+        earned = (fee * Decimal(completed)) / Decimal(total)
+        return earned.quantize(Decimal('0.01'))
 
     @property
     def pending_balance(self):
         from decimal import Decimal
-        if not self.total_classes:
-            return 0.00
-        fee = Decimal(str(self.tuition_fee))
-        earned = Decimal(str(self.earned_revenue))
-        if self.completed_classes >= self.total_classes:
-            return 0.00
-        return float(round(fee - earned, 2))
+        total = self.total_classes_count
+        if not total:
+            return Decimal('0.00')
+        fee = self.tuition_fee
+        if self.completed_classes >= total:
+            return Decimal('0.00')
+        pending = fee - self.earned_revenue
+        return max(Decimal('0.00'), pending.quantize(Decimal('0.01')))
 
     @property
     def progress_percent(self):
-        if not self.total_classes:
+        total = self.total_classes_count
+        if not total:
             return 0
-        return min(100, round((self.completed_classes / self.total_classes) * 100))
+        return min(100, round((self.completed_classes / total) * 100))
+
 
     @property
     def progress_percentage(self):

@@ -296,50 +296,61 @@ class AttendanceCycleViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        with transaction.atomic():
-            cycle = AttendanceCycle.objects.select_for_update().get(id=cycle.id)
-            if cycle.status != AttendanceCycle.Status.ACTIVE:
-                return Response(
-                    {'error': 'Cannot toggle attendance on an archived cycle.'},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            classes_data = list(cycle.classes_data)
-            found = False
-            date_iso = custom_date.isoformat() if custom_date else timezone.now().isoformat()
+        import time
+        from django.db.utils import OperationalError
+        for attempt in range(5):
+            try:
+                with transaction.atomic():
+                    cycle = AttendanceCycle.objects.select_for_update().get(id=cycle.id)
+                    if cycle.status != AttendanceCycle.Status.ACTIVE:
+                        return Response(
+                            {'error': 'Cannot toggle attendance on an archived cycle.'},
+                            status=status.HTTP_400_BAD_REQUEST
+                        )
+                    classes_data = list(cycle.classes_data)
+                    found = False
+                    date_iso = custom_date.isoformat() if custom_date else timezone.now().isoformat()
 
-            for item in classes_data:
-                num = item.get('class_no') or item.get('classNo')
-                try:
-                    match = int(num or 0) == int(class_no)
-                except (TypeError, ValueError):
+                    for item in classes_data:
+                        num = item.get('class_no') or item.get('classNo')
+                        try:
+                            match = int(num or 0) == int(class_no)
+                        except (TypeError, ValueError):
+                            continue
+                        if match:
+                            item['completed'] = completed
+                            item['date'] = date_iso if completed else None
+                            if completed and topic_val:
+                                item['topic'] = topic_val
+                            elif not completed:
+                                item.pop('topic', None)
+                            found = True
+                            break
+
+                    if not found:
+                        if len(classes_data) >= cycle.total_classes:
+                            return Response(
+                                {'error': 'Cycle already has maximum number of class entries.'},
+                                status=status.HTTP_400_BAD_REQUEST
+                            )
+                        entry = {
+                            'class_no': class_no,
+                            'completed': completed,
+                            'date': date_iso if completed else None
+                        }
+                        if completed and topic_val:
+                            entry['topic'] = topic_val
+                        classes_data.append(entry)
+
+                    cycle.classes_data = classes_data
+                    cycle.save(update_fields=['classes_data', 'updated_at'])
+                break
+            except OperationalError as exc:
+                if 'locked' in str(exc).lower() and attempt < 4:
+                    time.sleep(0.05 * (attempt + 1))
                     continue
-                if match:
-                    item['completed'] = completed
-                    item['date'] = date_iso if completed else None
-                    if completed and topic_val:
-                        item['topic'] = topic_val
-                    elif not completed:
-                        item.pop('topic', None)
-                    found = True
-                    break
+                raise
 
-            if not found:
-                if len(classes_data) >= cycle.total_classes:
-                    return Response(
-                        {'error': 'Cycle already has maximum number of class entries.'},
-                        status=status.HTTP_400_BAD_REQUEST
-                    )
-                entry = {
-                    'class_no': class_no,
-                    'completed': completed,
-                    'date': date_iso if completed else None
-                }
-                if completed and topic_val:
-                    entry['topic'] = topic_val
-                classes_data.append(entry)
-
-            cycle.classes_data = classes_data
-            cycle.save(update_fields=['classes_data', 'updated_at'])
 
         return Response({
             'message': f'Class #{class_no} marked as {"completed" if completed else "incomplete"}.',

@@ -280,7 +280,7 @@ class ExamLifecycleTests(APITestCase):
         self.assertEqual(resp_bad.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_tuition_batch_mcq_auto_grading_and_leaderboard(self):
-        from apps.students.models import TuitionBatch
+        from apps.students.models import Tuition, TuitionEnrollment
 
         # Create another student under tutor1
         student2 = User.objects.create_user(
@@ -293,17 +293,19 @@ class ExamLifecycleTests(APITestCase):
             last_name='Student'
         )
 
-        # Create tuition batch
-        batch = TuitionBatch.objects.create(
+        # Create tuition
+        tuition = Tuition.objects.create(
             tutor=self.tutor1,
-            name='Physics Batch Alpha',
+            title='Physics Batch Alpha',
             subject='Physics',
-            weekly_routine=[{'day': 'Monday', 'time': '16:00'}, {'day': 'Wednesday', 'time': '16:00'}],
-            monthly_fee=5000.00
+            routine=[{'day': 'Monday', 'start_time': '16:00', 'end_time': '17:30'}],
+            tuition_fee=5000.00,
+            cycle_length=12
         )
-        batch.students.add(self.student1, student2)
+        TuitionEnrollment.objects.create(tuition=tuition, student=self.student1)
+        TuitionEnrollment.objects.create(tuition=tuition, student=student2)
 
-        # Create MCQ Exam for this batch
+        # Create MCQ Exam for this tuition
         mcqs = [
             {
                 'id': 'mcq-1',
@@ -326,7 +328,7 @@ class ExamLifecycleTests(APITestCase):
         now = timezone.now()
         exam = Exam.objects.create(
             tutor=self.tutor1,
-            batch=batch,
+            tuition=tuition,
             title='Mechanics MCQ Assessment',
             exam_type=Exam.ExamType.MCQ,
             total_marks=10.00,

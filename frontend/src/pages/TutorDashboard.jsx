@@ -1218,6 +1218,7 @@ export default function TutorDashboard() {
       />
 
       <ExamAuthoringModal
+        key={`exam-author-${authorExamModalOpen ? 'open' : 'closed'}-${selectedStudentId || 'all'}-${initialBatchForExam || 'none'}`}
         isOpen={authorExamModalOpen}
         onClose={() => setAuthorExamModalOpen(false)}
         students={students}
@@ -1229,6 +1230,7 @@ export default function TutorDashboard() {
           setActiveTab('exams');
         }}
       />
+
 
 
       {selectedExamForGrading && selectedSubmissionForGrading && (

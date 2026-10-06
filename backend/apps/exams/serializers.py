@@ -106,7 +106,6 @@ class ExamListSerializer(serializers.ModelSerializer):
             'tuition_title',
             'student',
             'student_name',
-            'batch',
             'batch_name',
             'total_marks',
             'start_time',
@@ -132,14 +131,10 @@ class ExamListSerializer(serializers.ModelSerializer):
             return obj.student.get_full_name() or obj.student.username
         if obj.tuition:
             return f'Tuition: {obj.tuition.title}'
-        if obj.batch:
-            return f'Batch: {obj.batch.name}'
         return 'Unassigned'
 
     def get_batch_name(self, obj):
-        if obj.tuition:
-            return obj.tuition.title
-        return obj.batch.name if obj.batch else None
+        return obj.tuition.title if obj.tuition else None
 
     def get_mcq_count(self, obj):
         return len(obj.mcq_data) if isinstance(obj.mcq_data, list) else 0
@@ -207,7 +202,6 @@ class ExamDetailSerializer(serializers.ModelSerializer):
             'tuition_title',
             'student',
             'student_name',
-            'batch',
             'batch_name',
             'total_marks',
             'start_time',
@@ -263,16 +257,12 @@ class ExamDetailSerializer(serializers.ModelSerializer):
     def get_student_name(self, obj):
         if obj.student:
             return obj.student.get_full_name() or obj.student.username
-        if obj.batch:
-            return f'Batch: {obj.batch.name}'
         if obj.tuition:
             return f'Tuition: {obj.tuition.title}'
         return 'All Enrolled Students'
 
     def get_batch_name(self, obj):
-        if obj.tuition:
-            return obj.tuition.title
-        return obj.batch.name if obj.batch else None
+        return obj.tuition.title if obj.tuition else None
 
     def _get_submission(self, obj):
         if not hasattr(obj, '_cached_submission'):
@@ -411,6 +401,76 @@ class ExamCreateUpdateSerializer(serializers.ModelSerializer):
 
         total_marks = attrs.get('total_marks') or (self.instance.total_marks if self.instance else None)
         mcq_data = attrs.get('mcq_data') if 'mcq_data' in attrs else (self.instance.mcq_data if self.instance else None)
+
+        if 'mcq_data' in attrs and attrs['mcq_data'] is not None:
+            raw_mcq = attrs['mcq_data']
+            if not isinstance(raw_mcq, list):
+                raise serializers.ValidationError({'mcq_data': 'mcq_data must be a list of questions.'})
+
+            is_published = attrs.get('is_published') if 'is_published' in attrs else (self.instance.is_published if self.instance else False)
+            normalized_mcq = []
+            import uuid
+
+            placeholder_choices = {'option 1', 'option 2', 'option 3', 'option 4', 'choice 1', 'choice 2', 'sample option'}
+
+            for idx, q in enumerate(raw_mcq):
+                if not isinstance(q, dict):
+                    raise serializers.ValidationError({'mcq_data': f'Question item #{idx+1} must be an object.'})
+
+                # Server-side UUID generation for question items
+                q_id = str(q.get('id') or '')
+                try:
+                    uuid.UUID(q_id)
+                except (ValueError, AttributeError):
+                    q_id = str(uuid.uuid4())
+
+                question_text = str(q.get('question', '')).strip()
+                options = q.get('options', [])
+                if not isinstance(options, list) or len(options) < 2:
+                    raise serializers.ValidationError({'mcq_data': f'Question #{idx+1} must contain at least 2 options.'})
+
+                # Reject default placeholder choices when published
+                if is_published:
+                    for opt in options:
+                        if str(opt).strip().lower() in placeholder_choices:
+                            raise serializers.ValidationError({
+                                'mcq_data': f'Question #{idx+1} contains default placeholder choice "{opt}". Please provide real answer choices before publishing.'
+                            })
+
+                # Normalize question answer keys to 0-based numeric indices
+                raw_ans = q.get('correct_answer')
+                if raw_ans is None or raw_ans == '':
+                    if is_published:
+                        raise serializers.ValidationError({
+                            'mcq_data': f'Question #{idx+1} is missing a correct answer key.'
+                        })
+                    correct_idx = None
+                else:
+                    try:
+                        if isinstance(raw_ans, str) and raw_ans.strip().upper() in ('A', 'B', 'C', 'D', 'E'):
+                            correct_idx = ord(raw_ans.strip().upper()) - ord('A')
+                        else:
+                            correct_idx = int(raw_ans)
+                    except (ValueError, TypeError):
+                        raise serializers.ValidationError({
+                            'mcq_data': f'Question #{idx+1} has invalid correct_answer key: {raw_ans}'
+                        })
+                    if correct_idx < 0 or correct_idx >= len(options):
+                        raise serializers.ValidationError({
+                            'mcq_data': f'Question #{idx+1} correct_answer index ({correct_idx}) is out of bounds for {len(options)} options.'
+                        })
+
+                normalized_q = dict(q)
+                normalized_q['id'] = q_id
+                normalized_q['question'] = question_text
+                normalized_q['options'] = [str(o).strip() for o in options]
+                if correct_idx is not None:
+                    normalized_q['correct_answer'] = correct_idx
+                normalized_mcq.append(normalized_q)
+
+            attrs['mcq_data'] = normalized_mcq
+            mcq_data = normalized_mcq
+
         if mcq_data and isinstance(mcq_data, list) and total_marks is not None:
             sum_points = 0.0
             for q in mcq_data:
@@ -424,20 +484,20 @@ class ExamCreateUpdateSerializer(serializers.ModelSerializer):
                     'mcq_data': f'Sum of MCQ points ({sum_points}) cannot exceed total marks ({total_marks}).'
                 })
 
-        request = self.context.get('request')
-        from apps.students.models import Tuition, TuitionBatch
 
-        tuition_id = attrs.pop('tuition_id', None)
-        batch_id = attrs.pop('batch_id', None)
+        request = self.context.get('request')
+        from apps.students.models import Tuition
+
+        tuition_id = attrs.pop('tuition_id', None) or attrs.pop('batch_id', None)
         student_id = attrs.pop('student_id', None)
 
-        provided = [bool(tuition_id), bool(batch_id), bool(student_id)]
+        provided = [bool(tuition_id), bool(student_id)]
         if sum(provided) > 1:
-            raise serializers.ValidationError('Assign the exam to exactly one target: tuition, batch, or student.')
+            raise serializers.ValidationError('Assign the exam to exactly one target: tuition or student.')
         # Partial update without target keys: keep existing targets.
         if not any(provided):
             if not self.instance:
-                raise serializers.ValidationError('You must assign the exam to a Tuition, Batch, or Student.')
+                raise serializers.ValidationError('You must assign the exam to a Tuition or Student.')
             return attrs
 
         if tuition_id:
@@ -446,15 +506,6 @@ class ExamCreateUpdateSerializer(serializers.ModelSerializer):
             except Tuition.DoesNotExist:
                 raise serializers.ValidationError({'tuition_id': 'Selected tuition does not exist.'})
             attrs['tuition'] = tuition
-            attrs['batch'] = None
-            attrs['student'] = None
-        elif batch_id:
-            try:
-                batch = TuitionBatch.objects.get(id=batch_id, tutor=request.user)
-            except TuitionBatch.DoesNotExist:
-                raise serializers.ValidationError({'batch_id': 'Selected tuition batch does not exist.'})
-            attrs['batch'] = batch
-            attrs['tuition'] = None
             attrs['student'] = None
         elif student_id:
             try:
@@ -467,7 +518,6 @@ class ExamCreateUpdateSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError({'student_id': 'Selected student does not exist or belongs to another tutor.'})
             attrs['student'] = student
             attrs['tuition'] = None
-            attrs['batch'] = None
 
 
         return attrs

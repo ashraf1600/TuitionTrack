@@ -78,7 +78,8 @@ export default function ExamTakerModal({
     const interval = setInterval(() => {
       const now = Date.now() + serverOffsetMs;
       const endTime = new Date(exam.end_time).getTime();
-      const graceEnd = endTime + (exam.grace_period_minutes || 5) * 60 * 1000;
+      const graceEnd = endTime + (exam.grace_period_minutes ?? 5) * 60 * 1000;
+
 
       if (now > graceEnd) {
         setTimeLeft('00:00:00 (Expired)');

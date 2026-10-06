@@ -1371,6 +1371,7 @@ export default function TuitionWorkspace() {
       />
 
       <ExamAuthoringModal
+        key={`exam-author-${authorExamModalOpen ? 'open' : 'closed'}-${tuition?.id || 'none'}`}
         isOpen={authorExamModalOpen}
         onClose={() => setAuthorExamModalOpen(false)}
         students={allStudents}
@@ -1378,6 +1379,7 @@ export default function TuitionWorkspace() {
         initialCategory={authorCategory}
         onExamCreated={() => loadTuitionData()}
       />
+
 
       {selectedExamForGrading && selectedSubmissionForGrading && (
         <SubmissionsGradingModal

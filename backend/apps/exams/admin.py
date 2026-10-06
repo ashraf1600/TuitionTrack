@@ -44,12 +44,19 @@ class ExamAdmin(admin.ModelAdmin):
     )
 
     def get_student_name(self, obj):
-        return obj.student.get_full_name() or obj.student.username
-    get_student_name.short_description = 'Student'
+        if obj.student:
+            return obj.student.get_full_name() or obj.student.username
+        if getattr(obj, 'tuition', None):
+            return f'Tuition: {obj.tuition.title}'
+        if getattr(obj, 'batch', None):
+            return f'Batch: {obj.batch.name}'
+        return 'All Enrolled Students'
+    get_student_name.short_description = 'Student / Target'
 
     def get_tutor_name(self, obj):
         return obj.tutor.get_full_name() or obj.tutor.username
     get_tutor_name.short_description = 'Tutor'
+
 
 
 @admin.register(ExamSubmission)

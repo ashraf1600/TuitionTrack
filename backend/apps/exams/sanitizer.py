@@ -110,4 +110,15 @@ def sanitize_exam_html(raw_html: str) -> str:
     )
     for key, original in placeholders.items():
         sanitized = sanitized.replace(f'http://placeholder.local/{key}', original)
+
+    # Fix KaTeX double-encoding: unescape &, <, > inside math containers and data-latex
+    def _unescape_math_block(match):
+        text = match.group(0)
+        return text.replace('&lt;', '<').replace('&gt;', '>').replace('&amp;', '&')
+
+    sanitized = re.sub(r'\$\$[\s\S]*?\$\$', _unescape_math_block, sanitized)
+    sanitized = re.sub(r'\$[^\$\n\r]+?\$', _unescape_math_block, sanitized)
+    sanitized = re.sub(r'data-latex="[^"]*"', _unescape_math_block, sanitized)
+
     return sanitized
+

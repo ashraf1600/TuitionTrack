@@ -141,86 +141,6 @@ class StudentToggleActiveView(APIView):
         )
 
 
-class TuitionBatchViewSet(generics.ListCreateAPIView, viewsets.GenericViewSet):
-    """
-    ViewSet for TuitionBatches (Tuitions).
-    - Tutors can create, list, view, update, and manage student enrollments.
-    - Students can list batches they are enrolled in and view weekly routines.
-    """
-    from apps.authentication.permissions import IsTutorOrStudent, IsTutor
-    permission_classes = [IsAuthenticated, IsTutorOrStudent]
-
-    def get_permissions(self):
-        if self.action in ['create', 'update', 'partial_update', 'destroy', 'add_student', 'remove_student']:
-            return [IsAuthenticated(), IsTutor()]
-        return [IsAuthenticated(), IsTutorOrStudent()]
-
-    def get_queryset(self):
-        from .models import TuitionBatch
-        user = self.request.user
-        if user.role == 'TUTOR':
-            return TuitionBatch.objects.filter(tutor=user).prefetch_related('students')
-        elif user.role == 'STUDENT':
-            return TuitionBatch.objects.filter(students=user, is_active=True).prefetch_related('students')
-        return TuitionBatch.objects.none()
-
-    def get_serializer_class(self):
-        from .serializers import TuitionBatchSerializer, TuitionBatchCreateUpdateSerializer
-        if self.request.method in ['POST', 'PUT', 'PATCH']:
-            return TuitionBatchCreateUpdateSerializer
-        return TuitionBatchSerializer
-
-    def create(self, request, *args, **kwargs):
-        if request.user.role != 'TUTOR':
-            return Response({'error': 'Only tutors can create batches.'}, status=status.HTTP_403_FORBIDDEN)
-        return super().create(request, *args, **kwargs)
-
-    def retrieve(self, request, pk=None):
-        from .serializers import TuitionBatchSerializer
-        batch = get_object_or_404(self.get_queryset(), pk=pk)
-        return Response(TuitionBatchSerializer(batch).data)
-
-    def partial_update(self, request, pk=None):
-        from .serializers import TuitionBatchSerializer, TuitionBatchCreateUpdateSerializer
-        batch = get_object_or_404(self.get_queryset(), pk=pk)
-        if request.user.role != 'TUTOR':
-            return Response({'error': 'Only tutors can edit batches.'}, status=status.HTTP_403_FORBIDDEN)
-        serializer = TuitionBatchCreateUpdateSerializer(batch, data=request.data, partial=True, context={'request': request})
-        serializer.is_valid(raise_exception=True)
-        updated_batch = serializer.save()
-        return Response(TuitionBatchSerializer(updated_batch).data)
-
-    def destroy(self, request, pk=None):
-        batch = get_object_or_404(self.get_queryset(), pk=pk)
-        if request.user.role != 'TUTOR':
-            return Response({'error': 'Only tutors can delete batches.'}, status=status.HTTP_403_FORBIDDEN)
-        batch.delete()
-        return Response({'message': 'Tuition batch deleted.'}, status=status.HTTP_204_NO_CONTENT)
-
-    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated, IsTutor])
-    def add_student(self, request, pk=None):
-        from .serializers import TuitionBatchSerializer
-        batch = get_object_or_404(self.get_queryset(), pk=pk)
-        student_id = request.data.get('student_id')
-        student = get_object_or_404(User, id=student_id, role=User.Role.STUDENT, tutor=request.user)
-        batch.students.add(student)
-        return Response({
-            'message': f'Student "{student.get_full_name() or student.username}" added to batch.',
-            'batch': TuitionBatchSerializer(batch).data
-        })
-
-    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated, IsTutor])
-    def remove_student(self, request, pk=None):
-        from .serializers import TuitionBatchSerializer
-        batch = get_object_or_404(self.get_queryset(), pk=pk)
-        student_id = request.data.get('student_id')
-        student = get_object_or_404(User, id=student_id, role=User.Role.STUDENT, tutor=request.user)
-        batch.students.remove(student)
-        return Response({
-            'message': f'Student "{student.get_full_name() or student.username}" removed from batch.',
-            'batch': TuitionBatchSerializer(batch).data
-        })
-
 
 # ── Tuition-Centric ViewSet & Unassigned Students ────────────────────────
 
@@ -361,7 +281,9 @@ class TuitionViewSet(viewsets.ModelViewSet):
             return Response({'error': 'Student is not enrolled in this tuition.'}, status=status.HTTP_404_NOT_FOUND)
 
         enrollment.is_active = False
-        enrollment.save(update_fields=['is_active'])
+        enrollment.left_at = timezone.now()
+        enrollment.save(update_fields=['is_active', 'left_at'])
+
         AttendanceCycle.objects.filter(enrollment=enrollment, status=AttendanceCycle.Status.ACTIVE).update(
             status=AttendanceCycle.Status.ARCHIVED
         )
@@ -370,6 +292,18 @@ class TuitionViewSet(viewsets.ModelViewSet):
             'message': f'Student "{student.get_full_name() or student.username}" removed from {tuition.title}.',
             'tuition': TuitionSerializer(tuition, context={'request': request}).data
         }, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated, IsTutor])
+    def add_student(self, request, pk=None):
+        return self.enroll(request, pk)
+
+    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated, IsTutor])
+    def remove_student(self, request, pk=None):
+        return self.unenroll(request, pk)
+
+
+# Unified alias for backwards compatibility
+TuitionBatchViewSet = TuitionViewSet
 
 
 class UnassignedStudentsView(APIView):
