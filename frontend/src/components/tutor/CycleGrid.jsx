@@ -55,7 +55,8 @@ export default function CycleGrid({
 
   const handleOpenClassModal = (cls) => {
     setSelectedClass(cls);
-    setIsCompletedState(cls.completed);
+    // Always default to Completed (true) on open so calendar date picker is immediately visible and ready to save
+    setIsCompletedState(true);
     if (cls.date) {
       setClassDate(new Date(cls.date).toISOString().slice(0, 10));
     } else {
@@ -72,9 +73,11 @@ export default function CycleGrid({
     const classNum = selectedClass.class_no ?? selectedClass.classNo;
     setSavingClass(true);
     try {
-      const targetDate = isCompletedState && classDate ? new Date(classDate).toISOString() : null;
-      await onToggleClass(cycle.id, classNum, isCompletedState, targetDate, classTopic);
+      const targetDate = isCompletedState ? (classDate ? new Date(classDate).toISOString() : new Date().toISOString()) : null;
+      await onToggleClass(cycle.id, classNum, isCompletedState, targetDate, isCompletedState ? classTopic : '');
       setDateModalOpen(false);
+    } catch (err) {
+      alert(`Save failed: ${err.message}`);
     } finally {
       setSavingClass(false);
     }
@@ -283,43 +286,47 @@ export default function CycleGrid({
             <div className="flex items-center justify-between p-3 rounded-xl bg-slate-900 border border-slate-800">
               <div>
                 <span className="text-xs font-bold text-slate-200 block">Attendance Status</span>
-                <span className="text-[11px] text-slate-400">Mark whether this class took place</span>
+                <span className="text-[11px] text-slate-400">
+                  {isCompletedState ? 'Mark class as attended / completed' : 'Class will be unmarked as incomplete'}
+                </span>
               </div>
               <div className="flex items-center gap-1 bg-slate-800 p-1 rounded-lg">
                 <button
                   type="button"
                   onClick={() => setIsCompletedState(true)}
-                  className={`px-3 py-1 rounded text-xs font-bold transition ${
-                    isCompletedState ? 'bg-emerald-600 text-white' : 'text-slate-400 hover:text-slate-200'
+                  className={`px-3 py-1.5 rounded-md text-xs font-bold transition flex items-center gap-1 ${
+                    isCompletedState ? 'bg-emerald-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'
                   }`}
                 >
-                  Completed
+                  <Check className="w-3.5 h-3.5" />
+                  <span>Completed</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => setIsCompletedState(false)}
-                  className={`px-3 py-1 rounded text-xs font-bold transition ${
-                    !isCompletedState ? 'bg-rose-600 text-white' : 'text-slate-400 hover:text-slate-200'
+                  className={`px-3 py-1.5 rounded-md text-xs font-bold transition flex items-center gap-1 ${
+                    !isCompletedState ? 'bg-rose-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'
                   }`}
                 >
-                  Incomplete
+                  <X className="w-3.5 h-3.5" />
+                  <span>Incomplete</span>
                 </button>
               </div>
             </div>
 
-            {isCompletedState && (
+            {isCompletedState ? (
               <div className="space-y-3 p-3.5 rounded-xl bg-slate-800/40 border border-slate-700/60">
                 <div>
                   <div className="flex items-center justify-between mb-1">
                     <label className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
                       <CalendarDays className="w-4 h-4 text-indigo-400" />
-                      Class Date *
+                      Class Date (Calendar) *
                     </label>
                     <div className="flex items-center gap-1">
                       <button
                         type="button"
                         onClick={() => setClassDate(new Date().toISOString().slice(0, 10))}
-                        className="text-[10px] px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-indigo-300 border border-slate-700"
+                        className="text-[10px] px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-indigo-300 border border-slate-700 transition"
                       >
                         Today
                       </button>
@@ -330,7 +337,7 @@ export default function CycleGrid({
                           y.setDate(y.getDate() - 1);
                           setClassDate(y.toISOString().slice(0, 10));
                         }}
-                        className="text-[10px] px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700"
+                        className="text-[10px] px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition"
                       >
                         Yesterday
                       </button>
@@ -341,7 +348,7 @@ export default function CycleGrid({
                     required={isCompletedState}
                     value={classDate}
                     onChange={(e) => setClassDate(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs text-slate-100 font-mono focus:outline-none focus:border-indigo-500"
+                    className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs text-slate-100 font-mono focus:outline-none focus:border-indigo-500 cursor-pointer"
                   />
                   <span className="text-[10px] text-slate-400 block mt-1">
                     This exact date will appear in the student dashboard attendance record.
@@ -361,6 +368,10 @@ export default function CycleGrid({
                     className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs text-slate-100 focus:outline-none focus:border-indigo-500"
                   />
                 </div>
+              </div>
+            ) : (
+              <div className="p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-300 text-xs flex items-center gap-2">
+                <span>Saving will remove attendance and unmark this class.</span>
               </div>
             )}
 

@@ -80,7 +80,8 @@ class CycleViewSet(TenantScopedViewSet):
         topic_val = serializer.validated_data.get('topic', '')
 
         for item in classes_data:
-            if item.get('classNo') == class_no:
+            num = item.get('classNo') or item.get('class_no')
+            if int(num or 0) == int(class_no):
                 item['completed'] = completed
                 item['date'] = date_iso if completed else None
                 if completed and topic_val:
@@ -237,7 +238,7 @@ class AttendanceCycleViewSet(viewsets.ModelViewSet):
 
         for item in classes_data:
             num = item.get('class_no') or item.get('classNo')
-            if num == class_no:
+            if int(num or 0) == int(class_no):
                 item['completed'] = completed
                 item['date'] = date_iso if completed else None
                 if completed and topic_val:

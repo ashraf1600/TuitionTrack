@@ -211,11 +211,12 @@ export default function TutorDashboard() {
   const [authorCategory, setAuthorCategory] = useState('EXAM');
 
   const handleToggleClass = async (cycleId, classNo, completed, date = null, topic = '') => {
+    const numToMatch = parseInt(classNo, 10);
     if (currentCycle) {
       const targetIso = completed ? (date ? new Date(date).toISOString() : new Date().toISOString()) : null;
       const updatedClasses = (currentCycle.classes_data || []).map((c) => {
-        const cNum = c.class_no || c.classNo;
-        if (cNum === classNo) {
+        const cNum = parseInt(c.class_no ?? c.classNo, 10);
+        if (cNum === numToMatch) {
           return {
             ...c,
             completed,
@@ -247,15 +248,27 @@ export default function TutorDashboard() {
 
     try {
       let res;
-      try {
-        res = await api.toggleAttendanceClass(cycleId, classNo, completed, date, topic);
-      } catch (_) {
-        res = await api.toggleClass(cycleId, classNo, completed, date, topic);
+      const isTuitionCycle = Boolean(currentCycle?.enrollment || currentCycle?.tuition_id);
+      if (isTuitionCycle) {
+        try {
+          res = await api.toggleAttendanceClass(cycleId, numToMatch, completed, date, topic);
+        } catch (_) {
+          res = await api.toggleClass(cycleId, numToMatch, completed, date, topic);
+        }
+      } else {
+        try {
+          res = await api.toggleClass(cycleId, numToMatch, completed, date, topic);
+        } catch (_) {
+          res = await api.toggleAttendanceClass(cycleId, numToMatch, completed, date, topic);
+        }
       }
-      setCurrentCycle(res.cycle || res);
-      loadAnalytics();
-      loadTuitions();
+      if (res) {
+        setCurrentCycle(res.cycle || res);
+        loadAnalytics();
+        loadTuitions();
+      }
     } catch (err) {
+      console.error('Toggle failed:', err);
       alert(`Toggle failed: ${err.message}`);
       loadStudentCycle(selectedStudentId, selectedTuitionId);
     }
