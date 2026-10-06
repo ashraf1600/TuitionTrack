@@ -29,16 +29,18 @@ export default function TuitionBatchesModal({
   const [name, setName] = useState('');
   const [subject, setSubject] = useState('');
   const [description, setDescription] = useState('');
-  const [monthlyFee, setMonthlyFee] = useState('5000.00');
+  const [monthlyFee, setMonthlyFee] = useState('9000.00');
+  const [cycleLength, setCycleLength] = useState(12);
   const [selectedStudentIds, setSelectedStudentIds] = useState([]);
   const [weeklyRoutine, setWeeklyRoutine] = useState([
-    { day: 'Sunday', time: '18:00' },
-    { day: 'Tuesday', time: '18:00' },
+    { day: 'Sunday', start_time: '18:00', end_time: '19:30' },
+    { day: 'Tuesday', start_time: '18:00', end_time: '19:30' },
   ]);
 
   // Slot being added
   const [slotDay, setSlotDay] = useState('Sunday');
-  const [slotTime, setSlotTime] = useState('18:00');
+  const [slotStartTime, setSlotStartTime] = useState('18:00');
+  const [slotEndTime, setSlotEndTime] = useState('19:30');
 
   // Student Search & Inline Quick Register
   const [studentSearch, setStudentSearch] = useState('');
@@ -63,21 +65,29 @@ export default function TuitionBatchesModal({
 
   useEffect(() => {
     if (batchToEdit) {
-      setName(batchToEdit.name || '');
+      setName(batchToEdit.title || batchToEdit.name || '');
       setSubject(batchToEdit.subject || '');
       setDescription(batchToEdit.description || '');
-      setMonthlyFee(batchToEdit.monthly_fee || '5000.00');
-      setSelectedStudentIds(batchToEdit.students || []);
-      setWeeklyRoutine(batchToEdit.weekly_routine || []);
+      setMonthlyFee(String(batchToEdit.tuition_fee || batchToEdit.monthly_fee || '9000.00'));
+      setCycleLength(batchToEdit.cycle_length || 12);
+      setSelectedStudentIds(batchToEdit.students || batchToEdit.enrollments?.map(e => e.student_id) || []);
+      
+      const loadedRoutine = batchToEdit.routine || batchToEdit.weekly_routine || [];
+      setWeeklyRoutine(loadedRoutine.map(r => ({
+        day: r.day,
+        start_time: r.start_time || r.time || '18:00',
+        end_time: r.end_time || '19:30',
+      })));
     } else {
       setName('');
       setSubject('');
       setDescription('');
-      setMonthlyFee('5000.00');
+      setMonthlyFee('9000.00');
+      setCycleLength(12);
       setSelectedStudentIds([]);
       setWeeklyRoutine([
-        { day: 'Sunday', time: '18:00' },
-        { day: 'Tuesday', time: '18:00' },
+        { day: 'Sunday', start_time: '18:00', end_time: '19:30' },
+        { day: 'Tuesday', start_time: '18:00', end_time: '19:30' },
       ]);
     }
     setShowAddStudentForm(false);
@@ -95,17 +105,20 @@ export default function TuitionBatchesModal({
   };
 
   const addRoutineSlot = () => {
-    if (weeklyRoutine.some((s) => s.day === slotDay && s.time === slotTime)) {
+    if (weeklyRoutine.some((s) => s.day === slotDay && s.start_time === slotStartTime)) {
       return;
     }
-    setWeeklyRoutine((prev) => [...prev, { day: slotDay, time: slotTime }]);
+    setWeeklyRoutine((prev) => [
+      ...prev,
+      { day: slotDay, start_time: slotStartTime, end_time: slotEndTime, time: slotStartTime }
+    ]);
   };
 
   const removeRoutineSlot = (index) => {
     setWeeklyRoutine((prev) => prev.filter((_, i) => i !== index));
   };
 
-  // Quick Register Student Directly into Batch
+  // Quick Register Student Directly into Tuition
   const handleCreateAndEnrollStudent = async (e) => {
     e.preventDefault();
     if (!newStudentFirst || !newStudentUsername) {
@@ -123,12 +136,13 @@ export default function TuitionBatchesModal({
         password: 'pass' + Math.floor(100000 + Math.random() * 900000),
         phone: newStudentPhone.trim(),
         grade_level: newStudentGrade.trim(),
-        total_classes: 12,
-        fee_amount: parseFloat(monthlyFee) || 5000,
+        total_classes: cycleLength,
+        fee_amount: parseFloat(monthlyFee) || 9000,
       });
 
       const newStudentObj = {
         student_id: res.student.id,
+        id: res.student.id,
         username: res.student.username,
         full_name: `${newStudentFirst} ${newStudentLast}`.trim(),
         email: res.student.email,
@@ -158,31 +172,49 @@ export default function TuitionBatchesModal({
     setError('');
 
     if (!name.trim()) {
-      setError('Please enter a tuition batch name.');
+      setError('Please enter a tuition name.');
       return;
     }
 
     setLoading(true);
     try {
+      const normalizedRoutine = weeklyRoutine.map(r => ({
+        day: r.day,
+        start_time: r.start_time || r.time || '18:00',
+        end_time: r.end_time || '19:30',
+      }));
+
       const payload = {
-        name,
-        subject,
-        description,
+        title: name.trim(),
+        name: name.trim(),
+        subject: subject.trim(),
+        description: description.trim(),
+        cycle_length: parseInt(cycleLength, 10) || 12,
+        tuition_fee: parseFloat(monthlyFee) || 0,
         monthly_fee: parseFloat(monthlyFee) || 0,
         student_ids: selectedStudentIds,
-        weekly_routine: weeklyRoutine,
+        routine: normalizedRoutine,
+        weekly_routine: normalizedRoutine,
       };
 
       if (batchToEdit) {
-        await api.updateBatch(batchToEdit.id, payload);
+        try {
+          await api.updateTuition(batchToEdit.id, payload);
+        } catch (_) {
+          await api.updateBatch(batchToEdit.id, payload);
+        }
       } else {
-        await api.createBatch(payload);
+        try {
+          await api.createTuition(payload);
+        } catch (_) {
+          await api.createBatch(payload);
+        }
       }
 
       onBatchSaved();
       onClose();
     } catch (err) {
-      setError(err.message || 'Failed to save tuition batch.');
+      setError(err.message || 'Failed to save tuition.');
     } finally {
       setLoading(false);
     }
@@ -242,10 +274,24 @@ export default function TuitionBatchesModal({
           </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div>
             <label className="block text-xs font-semibold text-slate-300 mb-1">
-              Monthly Fee per Student (৳ BDT)
+              Cycle Length (Classes / Cycle)
+            </label>
+            <input
+              type="number"
+              min="1"
+              max="100"
+              value={cycleLength}
+              onChange={(e) => setCycleLength(parseInt(e.target.value) || 12)}
+              className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-indigo-300 font-bold text-sm focus:outline-none focus:border-indigo-500"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-300 mb-1">
+              Fee per Cycle (৳ BDT)
             </label>
             <input
               type="number"
@@ -295,12 +341,25 @@ export default function TuitionBatchesModal({
               ))}
             </select>
 
-            <input
-              type="time"
-              value={slotTime}
-              onChange={(e) => setSlotTime(e.target.value)}
-              className="px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-xs text-slate-200"
-            />
+            <div className="flex items-center gap-1.5 text-xs text-slate-400">
+              <span>Start:</span>
+              <input
+                type="time"
+                value={slotStartTime}
+                onChange={(e) => setSlotStartTime(e.target.value)}
+                className="px-2.5 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-xs text-slate-200"
+              />
+            </div>
+
+            <div className="flex items-center gap-1.5 text-xs text-slate-400">
+              <span>End:</span>
+              <input
+                type="time"
+                value={slotEndTime}
+                onChange={(e) => setSlotEndTime(e.target.value)}
+                className="px-2.5 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-xs text-slate-200"
+              />
+            </div>
 
             <button
               type="button"
@@ -308,7 +367,7 @@ export default function TuitionBatchesModal({
               className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold flex items-center gap-1 transition"
             >
               <Plus className="w-3.5 h-3.5" />
-              <span>Add Day & Time</span>
+              <span>Add Day Slot</span>
             </button>
           </div>
 
@@ -324,7 +383,9 @@ export default function TuitionBatchesModal({
                 >
                   <Clock className="w-3.5 h-3.5 text-indigo-400" />
                   <span className="font-semibold text-slate-100">{slot.day}</span>
-                  <span className="text-slate-400">@ {slot.time}</span>
+                  <span className="text-slate-400">
+                    {slot.start_time || slot.time} - {slot.end_time || '19:30'}
+                  </span>
                   <button
                     type="button"
                     onClick={() => removeRoutineSlot(idx)}

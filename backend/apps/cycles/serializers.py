@@ -97,3 +97,63 @@ class ToggleClassSerializer(serializers.Serializer):
         attrs['resolved_class_no'] = class_num
         return attrs
 
+
+class AttendanceCycleSerializer(serializers.ModelSerializer):
+    """
+    Serializer for Tuition-based AttendanceCycle.
+    Calculates completed classes, earned revenue, pending balance, progress percent, per class rate.
+    Strict student privacy: Strips all financial/taka data when accessed by students.
+    """
+    tuition_id = serializers.UUIDField(source='enrollment.tuition.id', read_only=True)
+    tuition_title = serializers.CharField(source='enrollment.tuition.title', read_only=True)
+    student_id = serializers.UUIDField(source='enrollment.student.id', read_only=True)
+    student_name = serializers.SerializerMethodField()
+    completed_classes = serializers.ReadOnlyField()
+    total_classes = serializers.ReadOnlyField()
+    tuition_fee = serializers.ReadOnlyField()
+    per_class_rate = serializers.ReadOnlyField()
+    earned_revenue = serializers.ReadOnlyField()
+    pending_balance = serializers.ReadOnlyField()
+    progress_percent = serializers.ReadOnlyField()
+    is_complete = serializers.ReadOnlyField()
+
+    class Meta:
+        from .models import AttendanceCycle
+        model = AttendanceCycle
+        fields = [
+            'id',
+            'enrollment_id',
+            'tuition_id',
+            'tuition_title',
+            'student_id',
+            'student_name',
+            'cycle_number',
+            'completed_classes',
+            'total_classes',
+            'tuition_fee',
+            'per_class_rate',
+            'earned_revenue',
+            'pending_balance',
+            'progress_percent',
+            'is_complete',
+            'status',
+            'classes_data',
+            'created_at',
+            'updated_at',
+        ]
+        read_only_fields = fields
+
+    def get_student_name(self, obj):
+        student = obj.enrollment.student
+        return student.get_full_name() or student.username
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        request = self.context.get('request')
+        if request and getattr(request.user, 'role', None) == 'STUDENT':
+            data.pop('tuition_fee', None)
+            data.pop('per_class_rate', None)
+            data.pop('earned_revenue', None)
+            data.pop('pending_balance', None)
+        return data
+

@@ -113,3 +113,88 @@ class TuitionBatch(models.Model):
 
     def __str__(self):
         return f'{self.name} ({self.subject}) — Tutor: {self.tutor.username}'
+
+
+class Tuition(models.Model):
+    """
+    Tuition-Centric model: represents a distinct tuition or coaching group.
+    Defines title, dynamic cycle_length, fee per student per cycle, and weekly routine.
+    """
+    id = models.UUIDField(
+        primary_key=True, default=uuid.uuid4, editable=False
+    )
+    tutor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='tuitions',
+        limit_choices_to={'role': 'TUTOR'},
+        db_index=True,
+        verbose_name='Tutor',
+    )
+    title = models.CharField(max_length=200, verbose_name='Tuition Title')
+    cycle_length = models.PositiveIntegerField(
+        default=12,
+        validators=[MinValueValidator(1)],
+        verbose_name='Cycle Length (Classes)',
+        help_text='Dynamic class count per cycle (e.g., 8, 12, 16).'
+    )
+    tuition_fee = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=0.00,
+        validators=[MinValueValidator(0)],
+        verbose_name='Tuition Fee per Student per Cycle'
+    )
+    routine = models.JSONField(
+        default=list,
+        verbose_name='Weekly Routine',
+        help_text='List of {"day": str, "start_time": str, "end_time": str}'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'Tuition'
+        verbose_name_plural = 'Tuitions'
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'{self.title} — Tutor: {self.tutor.username}'
+
+    @property
+    def enrolled_students_count(self):
+        return self.enrollments.count()
+
+
+class TuitionEnrollment(models.Model):
+    """
+    Connects a Student to a Tuition.
+    A student can be enrolled in multiple tuitions under one or more tutors.
+    """
+    id = models.UUIDField(
+        primary_key=True, default=uuid.uuid4, editable=False
+    )
+    tuition = models.ForeignKey(
+        Tuition,
+        on_delete=models.CASCADE,
+        related_name='enrollments',
+        verbose_name='Tuition'
+    )
+    student = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='enrolled_tuitions',
+        limit_choices_to={'role': 'STUDENT'},
+        verbose_name='Student'
+    )
+    joined_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = 'Tuition Enrollment'
+        verbose_name_plural = 'Tuition Enrollments'
+        unique_together = ('tuition', 'student')
+        ordering = ['-joined_at']
+
+    def __str__(self):
+        return f'{self.student.get_full_name() or self.student.username} in {self.tuition.title}'
+

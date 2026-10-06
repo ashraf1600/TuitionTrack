@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import Navbar from '../components/common/Navbar';
 import WalletWidget from '../components/tutor/WalletWidget';
 import StudentRoster from '../components/tutor/StudentRoster';
 import CycleGrid from '../components/tutor/CycleGrid';
 import AddStudentModal from '../components/tutor/AddStudentModal';
+import AssignStudentModal from '../components/tutor/AssignStudentModal';
 import ExamAuthoringModal from '../components/tutor/ExamAuthoringModal';
 import SubmissionsGradingModal from '../components/tutor/SubmissionsGradingModal';
 import TuitionBatchesModal from '../components/tutor/TuitionBatchesModal';
@@ -29,6 +30,9 @@ import {
   Eye,
   EyeOff,
   Sparkles,
+  UserPlus,
+  CalendarDays,
+  Check,
 } from 'lucide-react';
 
 export default function TutorDashboard() {
@@ -37,20 +41,26 @@ export default function TutorDashboard() {
   // Data states
   const [analytics, setAnalytics] = useState(null);
   const [students, setStudents] = useState([]);
+  const [unassignedStudents, setUnassignedStudents] = useState([]);
   const [selectedStudentId, setSelectedStudentId] = useState(null);
   const [currentCycle, setCurrentCycle] = useState(null);
   const [batches, setBatches] = useState([]);
+  const [tuitions, setTuitions] = useState([]);
+  const [selectedTuitionId, setSelectedTuitionId] = useState('all');
   const [exams, setExams] = useState([]);
 
   // Loading states
   const [loadingAnalytics, setLoadingAnalytics] = useState(true);
   const [loadingStudents, setLoadingStudents] = useState(true);
+  const [loadingUnassigned, setLoadingUnassigned] = useState(false);
   const [loadingCycle, setLoadingCycle] = useState(false);
   const [loadingBatches, setLoadingBatches] = useState(false);
   const [loadingExams, setLoadingExams] = useState(false);
 
   // Modals
   const [addStudentModalOpen, setAddStudentModalOpen] = useState(false);
+  const [assignModalOpen, setAssignModalOpen] = useState(false);
+  const [selectedStudentForAssign, setSelectedStudentForAssign] = useState(null);
   const [authorExamModalOpen, setAuthorExamModalOpen] = useState(false);
   const [batchModalOpen, setBatchModalOpen] = useState(false);
   const [selectedBatchToEdit, setSelectedBatchToEdit] = useState(null);
@@ -83,7 +93,7 @@ export default function TutorDashboard() {
       setStudents(list);
 
       if (list.length > 0 && !selectedStudentId) {
-        setSelectedStudentId(list[0].student_id);
+        setSelectedStudentId(list[0].student_id || list[0].id);
       }
     } catch (err) {
       console.error('Failed to load students:', err);
@@ -92,13 +102,63 @@ export default function TutorDashboard() {
     }
   };
 
-  // 3. Load Active Cycle for selected student
-  const loadStudentCycle = async (studentId) => {
+  // 3. Load Unassigned Prospective Students
+  const loadUnassignedStudents = async () => {
+    try {
+      setLoadingUnassigned(true);
+      const data = await api.getUnassignedStudents();
+      const list = Array.isArray(data) ? data : data.results || [];
+      setUnassignedStudents(list);
+    } catch (err) {
+      console.error('Failed to load unassigned students:', err);
+    } finally {
+      setLoadingUnassigned(false);
+    }
+  };
+
+  // 4. Load Tuitions & Batches
+  const loadTuitions = async () => {
+    try {
+      setLoadingBatches(true);
+      let list = [];
+      try {
+        const tData = await api.getTuitions();
+        list = Array.isArray(tData) ? tData : tData.results || [];
+      } catch (_) {}
+
+      if (list.length === 0) {
+        const bData = await api.getBatches();
+        list = Array.isArray(bData) ? bData : bData.results || [];
+      }
+      setBatches(list);
+      setTuitions(list);
+    } catch (err) {
+      console.error('Failed to load tuition batches:', err);
+    } finally {
+      setLoadingBatches(false);
+    }
+  };
+
+  // 5. Load Active Cycle for selected student
+  const loadStudentCycle = async (studentId, tuitionId = null) => {
     if (!studentId) return;
     try {
       setLoadingCycle(true);
-      const data = await api.getCycles(studentId);
-      const list = Array.isArray(data) ? data : data.results || [];
+      let list = [];
+      try {
+        const params = { student: studentId };
+        if (tuitionId && tuitionId !== 'all') {
+          params.tuition = tuitionId;
+        }
+        const attData = await api.getAttendanceCycles(params);
+        list = Array.isArray(attData) ? attData : attData.results || [];
+      } catch (_) {}
+
+      if (list.length === 0) {
+        const data = await api.getCycles(studentId);
+        list = Array.isArray(data) ? data : data.results || [];
+      }
+
       const active = list.find((c) => c.status === 'ACTIVE') || list[0] || null;
       setCurrentCycle(active);
     } catch (err) {
@@ -108,21 +168,7 @@ export default function TutorDashboard() {
     }
   };
 
-  // 4. Load Tuition Batches
-  const loadBatches = async () => {
-    try {
-      setLoadingBatches(true);
-      const data = await api.getBatches();
-      const list = Array.isArray(data) ? data : data.results || [];
-      setBatches(list);
-    } catch (err) {
-      console.error('Failed to load tuition batches:', err);
-    } finally {
-      setLoadingBatches(false);
-    }
-  };
-
-  // 5. Load Exams
+  // 6. Load Exams
   const loadExams = async () => {
     try {
       setLoadingExams(true);
@@ -139,15 +185,16 @@ export default function TutorDashboard() {
   useEffect(() => {
     loadAnalytics();
     loadStudents();
-    loadBatches();
+    loadUnassignedStudents();
+    loadTuitions();
     loadExams();
   }, []);
 
   useEffect(() => {
     if (selectedStudentId) {
-      loadStudentCycle(selectedStudentId);
+      loadStudentCycle(selectedStudentId, selectedTuitionId);
     }
-  }, [selectedStudentId]);
+  }, [selectedStudentId, selectedTuitionId]);
 
   // Actions
   const handleToggleActive = async (studentId) => {
@@ -164,48 +211,66 @@ export default function TutorDashboard() {
   const handleToggleClass = async (cycleId, classNo, completed, date = null, topic = '') => {
     if (currentCycle) {
       const targetIso = completed ? (date ? new Date(date).toISOString() : new Date().toISOString()) : null;
-      const updatedClasses = currentCycle.classes_data.map((c) =>
-        c.classNo === classNo
-          ? {
-              ...c,
-              completed,
-              date: targetIso,
-              topic: completed ? topic : '',
-            }
-          : c
-      );
+      const updatedClasses = (currentCycle.classes_data || []).map((c) => {
+        const cNum = c.class_no || c.classNo;
+        if (cNum === classNo) {
+          return {
+            ...c,
+            completed,
+            date: targetIso,
+            topic: completed ? topic : '',
+          };
+        }
+        return c;
+      });
+
       const completedCount = updatedClasses.filter((c) => c.completed).length;
-      const rate = currentCycle.fee_snapshot / currentCycle.total_classes;
+      const totalCount = currentCycle.total_classes || currentCycle.cycle_length || 12;
+      const feeSnapshot = currentCycle.fee_snapshot || currentCycle.tuition_fee || 0;
+      const rate = totalCount > 0 ? feeSnapshot / totalCount : 0;
       const earned = Math.round(rate * completedCount * 100) / 100;
-      const pending = Math.round((currentCycle.fee_snapshot - earned) * 100) / 100;
+      const pending = Math.round((feeSnapshot - earned) * 100) / 100;
 
       setCurrentCycle({
         ...currentCycle,
         classes_data: updatedClasses,
         completed_classes: completedCount,
         earned_amount: earned,
+        earned_revenue: earned,
         pending_amount: pending,
-        progress_percentage: Math.round((completedCount / currentCycle.total_classes) * 100),
+        pending_balance: pending,
+        progress_percentage: Math.round((completedCount / totalCount) * 100),
       });
     }
 
     try {
-      const res = await api.toggleClass(cycleId, classNo, completed, date, topic);
-      setCurrentCycle(res.cycle);
+      let res;
+      try {
+        res = await api.toggleAttendanceClass(cycleId, classNo, completed, date, topic);
+      } catch (_) {
+        res = await api.toggleClass(cycleId, classNo, completed, date, topic);
+      }
+      setCurrentCycle(res.cycle || res);
       loadAnalytics();
+      loadTuitions();
     } catch (err) {
       alert(`Toggle failed: ${err.message}`);
-      loadStudentCycle(selectedStudentId);
+      loadStudentCycle(selectedStudentId, selectedTuitionId);
     }
   };
 
-
   const handleResetCycle = async (cycleId) => {
     try {
-      const res = await api.resetCycle(cycleId);
-      setCurrentCycle(res.cycle);
+      let res;
+      try {
+        res = await api.resetAttendanceCycle(cycleId);
+      } catch (_) {
+        res = await api.resetCycle(cycleId);
+      }
+      setCurrentCycle(res.cycle || res);
       loadAnalytics();
-      alert(res.message);
+      loadTuitions();
+      alert(res.message || 'New cycle started successfully!');
     } catch (err) {
       alert(`Cycle reset failed: ${err.message}`);
     }
@@ -253,8 +318,55 @@ export default function TutorDashboard() {
     setAuthorExamModalOpen(true);
   };
 
-  const selectedStudent = students.find((s) => s.student_id === selectedStudentId);
+  const selectedStudent = students.find((s) => s.student_id === selectedStudentId || s.id === selectedStudentId);
   const studentName = selectedStudent ? selectedStudent.full_name : 'Student';
+
+  const selectedTuition = useMemo(() => {
+    if (selectedTuitionId === 'all') return null;
+    return tuitions.find((t) => t.id === selectedTuitionId || String(t.id) === String(selectedTuitionId)) || null;
+  }, [tuitions, selectedTuitionId]);
+
+  const filteredStudents = useMemo(() => {
+    if (!selectedTuition) return students;
+    const enrolledIds = (selectedTuition.enrollments || []).map((e) => e.student_id || e.student);
+    if (selectedTuition.students) {
+      enrolledIds.push(...selectedTuition.students);
+    }
+    return students.filter((s) => enrolledIds.includes(s.student_id || s.id));
+  }, [students, selectedTuition]);
+
+  const DAYS_ORDER = ['Saturday', 'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+
+  const weeklyScheduleByDay = useMemo(() => {
+    const schedule = {};
+    DAYS_ORDER.forEach((day) => {
+      schedule[day] = [];
+    });
+
+    tuitions.forEach((t) => {
+      const routine = t.routine || t.weekly_routine || [];
+      routine.forEach((slot) => {
+        const dayMatch = DAYS_ORDER.find((d) => d.toLowerCase() === (slot.day || '').toLowerCase());
+        if (dayMatch) {
+          schedule[dayMatch].push({
+            tuitionId: t.id,
+            tuitionTitle: t.title || t.name,
+            subject: t.subject || '',
+            startTime: slot.start_time || slot.time || '18:00',
+            endTime: slot.end_time || '19:30',
+            studentCount: t.student_count || t.enrollment_count || t.enrollments?.length || 0,
+            fee: t.tuition_fee || t.monthly_fee || 0,
+          });
+        }
+      });
+    });
+
+    DAYS_ORDER.forEach((day) => {
+      schedule[day].sort((a, b) => a.startTime.localeCompare(b.startTime));
+    });
+
+    return schedule;
+  }, [tuitions]);
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
@@ -263,6 +375,72 @@ export default function TutorDashboard() {
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
         {/* Section 1: Gamified Wallet Widget */}
         <WalletWidget analytics={analytics} loading={loadingAnalytics} />
+
+        {/* Section 1.5: Incoming / Unassigned Prospective Students Panel */}
+        {unassignedStudents.length > 0 && (
+          <div className="p-5 rounded-2xl bg-gradient-to-r from-amber-500/10 via-indigo-500/10 to-purple-500/10 border border-amber-500/30 space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-amber-500/20 text-amber-300 flex items-center justify-center border border-amber-500/30">
+                  <UserPlus className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-slate-100 text-sm sm:text-base flex items-center gap-2">
+                    Incoming / Unassigned Prospective Students
+                    <span className="px-2 py-0.5 rounded-full text-xs bg-amber-500 text-slate-950 font-black">
+                      {unassignedStudents.length} New
+                    </span>
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    Students selected you during public registration. Review and assign them to a Tuition batch.
+                  </p>
+                </div>
+              </div>
+
+              <button
+                onClick={loadUnassignedStudents}
+                className="p-2 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-400 hover:text-slate-200 border border-slate-700 transition"
+                title="Refresh incoming students"
+              >
+                <RefreshCw className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
+              {unassignedStudents.map((st) => (
+                <div
+                  key={st.id}
+                  className="p-4 rounded-xl bg-slate-900/90 border border-slate-700/70 hover:border-indigo-500/50 transition flex items-center justify-between gap-3"
+                >
+                  <div className="min-w-0">
+                    <h4 className="font-bold text-slate-100 text-xs sm:text-sm truncate">
+                      {st.full_name || st.username}
+                    </h4>
+                    <span className="text-[11px] text-indigo-400 font-mono block">
+                      @{st.username}
+                    </span>
+                    <div className="flex flex-wrap items-center gap-2 text-[10px] text-slate-400 mt-1">
+                      {st.grade_level && <span className="text-slate-300 font-semibold">{st.grade_level}</span>}
+                      {st.institution && <span>• {st.institution}</span>}
+                      <span>• Registered {new Date(st.created_at).toLocaleDateString()}</span>
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={() => {
+                      setSelectedStudentForAssign(st);
+                      setAssignModalOpen(true);
+                    }}
+                    className="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs shadow-md shadow-indigo-600/30 transition flex items-center gap-1.5 flex-shrink-0"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Assign to Tuition</span>
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Section 2: Tab Navigation */}
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-2">
@@ -289,9 +467,9 @@ export default function TutorDashboard() {
             >
               <Layers className="w-4 h-4" />
               <span>Tuition Batches & Routine</span>
-              {batches.length > 0 && (
+              {tuitions.length > 0 && (
                 <span className="px-1.5 py-0.2 rounded-full bg-slate-800 text-[10px] text-slate-300">
-                  {batches.length}
+                  {tuitions.length}
                 </span>
               )}
             </button>
@@ -360,26 +538,105 @@ export default function TutorDashboard() {
 
         {/* Tab Content A: Attendance & Dynamic Cycle Engine */}
         {activeTab === 'attendance' && (
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-            <div className="lg:col-span-4">
-              <StudentRoster
-                students={students}
-                selectedStudentId={selectedStudentId}
-                onSelectStudent={setSelectedStudentId}
-                onToggleActive={handleToggleActive}
-                onOpenAddModal={() => setAddStudentModalOpen(false) || setAddStudentModalOpen(true)}
-                loading={loadingStudents}
-              />
+          <div className="space-y-4">
+            {/* Tuition Selector Filter Bar */}
+            <div className="p-3 rounded-2xl bg-slate-900/80 border border-slate-800 flex flex-wrap items-center gap-2">
+              <span className="text-xs font-semibold text-slate-400 flex items-center gap-1.5 mr-2">
+                <Layers className="w-3.5 h-3.5 text-indigo-400" />
+                Select Tuition:
+              </span>
+              <button
+                onClick={() => {
+                  setSelectedTuitionId('all');
+                  if (students.length > 0) setSelectedStudentId(students[0].student_id || students[0].id);
+                }}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${
+                  selectedTuitionId === 'all'
+                    ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
+                    : 'bg-slate-800 text-slate-400 hover:text-slate-200 hover:bg-slate-700'
+                }`}
+              >
+                All Students ({students.length})
+              </button>
+              {tuitions.map((t) => {
+                const isSelected = selectedTuitionId === t.id || String(selectedTuitionId) === String(t.id);
+                const enrolledCount = t.student_count || t.enrollment_count || t.enrollments?.length || 0;
+                return (
+                  <button
+                    key={t.id}
+                    onClick={() => {
+                      setSelectedTuitionId(t.id);
+                      const firstEnrolled = (t.enrollments || [])[0]?.student_id || (t.students || [])[0];
+                      if (firstEnrolled) setSelectedStudentId(firstEnrolled);
+                    }}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
+                      isSelected
+                        ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
+                        : 'bg-slate-800 text-slate-400 hover:text-slate-200 hover:bg-slate-700'
+                    }`}
+                  >
+                    <span>{t.title || t.name}</span>
+                    <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-slate-900 text-slate-300">
+                      {enrolledCount}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
 
-            <div className="lg:col-span-8">
-              <CycleGrid
-                cycle={currentCycle}
-                studentName={studentName}
-                onToggleClass={handleToggleClass}
-                onResetCycle={handleResetCycle}
-                loading={loadingCycle}
-              />
+            {/* Tuition Summary Bar if specific tuition is selected */}
+            {selectedTuition && (
+              <div className="p-4 rounded-2xl bg-indigo-950/20 border border-indigo-500/20 flex flex-wrap items-center justify-between gap-4">
+                <div>
+                  <h4 className="font-extrabold text-slate-100 text-sm sm:text-base flex items-center gap-2">
+                    <span>{selectedTuition.title}</span>
+                    {selectedTuition.subject && (
+                      <span className="text-xs text-indigo-400 font-semibold">({selectedTuition.subject})</span>
+                    )}
+                  </h4>
+                  <div className="flex flex-wrap items-center gap-3 text-xs text-slate-400 mt-1">
+                    <span>Cycle Length: <strong className="text-indigo-300 font-bold">{selectedTuition.cycle_length} Classes</strong></span>
+                    <span>•</span>
+                    <span>Fee: <strong className="text-emerald-400 font-bold">৳{selectedTuition.tuition_fee}</strong></span>
+                    <span>•</span>
+                    <span>Enrolled: <strong className="text-slate-200 font-bold">{selectedTuition.enrollments?.length || selectedTuition.students?.length || 0} Students</strong></span>
+                  </div>
+                </div>
+
+                {selectedTuition.active_cycle_summary && (
+                  <div className="flex items-center gap-2 text-xs">
+                    <div className="px-3 py-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 font-bold">
+                      Earned: ৳{selectedTuition.active_cycle_summary.total_earned}
+                    </div>
+                    <div className="px-3 py-1.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-300 font-bold">
+                      Pending: ৳{selectedTuition.active_cycle_summary.total_pending}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+              <div className="lg:col-span-4">
+                <StudentRoster
+                  students={filteredStudents}
+                  selectedStudentId={selectedStudentId}
+                  onSelectStudent={setSelectedStudentId}
+                  onToggleActive={handleToggleActive}
+                  onOpenAddModal={() => setAddStudentModalOpen(true)}
+                  loading={loadingStudents}
+                />
+              </div>
+
+              <div className="lg:col-span-8">
+                <CycleGrid
+                  cycle={currentCycle}
+                  studentName={studentName}
+                  onToggleClass={handleToggleClass}
+                  onResetCycle={handleResetCycle}
+                  loading={loadingCycle}
+                />
+              </div>
             </div>
           </div>
         )}
@@ -478,14 +735,18 @@ export default function TutorDashboard() {
                       )}
 
                       {/* Fee & Enrolled count */}
-                      <div className="mt-3 flex items-center gap-3 text-xs">
+                      <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
                         <div className="px-2.5 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 font-bold flex items-center gap-1">
                           <DollarSign className="w-3 h-3" />
-                          <span>{batch.monthly_fee}/mo</span>
+                          <span>৳{batch.tuition_fee || batch.monthly_fee}/cycle</span>
                         </div>
                         <div className="px-2.5 py-1 rounded-lg bg-indigo-500/10 border border-indigo-500/20 text-indigo-300 font-semibold flex items-center gap-1">
-                          <Users className="w-3 h-3" />
-                          <span>{batch.student_count || 0} Students</span>
+                          <Clock className="w-3 h-3" />
+                          <span>{batch.cycle_length || 12} Classes</span>
+                        </div>
+                        <div className="px-2.5 py-1 rounded-lg bg-slate-800 border border-slate-700 text-slate-300 font-medium flex items-center gap-1">
+                          <Users className="w-3 h-3 text-indigo-400" />
+                          <span>{batch.student_count || batch.enrollment_count || batch.enrollments?.length || 0} Students</span>
                         </div>
                       </div>
 
@@ -495,14 +756,14 @@ export default function TutorDashboard() {
                           <Clock className="w-3 h-3 text-indigo-400" />
                           Weekly Routine Days & Time:
                         </span>
-                        {batch.weekly_routine && batch.weekly_routine.length > 0 ? (
+                        {(batch.routine || batch.weekly_routine) && (batch.routine || batch.weekly_routine).length > 0 ? (
                           <div className="flex flex-wrap gap-1.5">
-                            {batch.weekly_routine.map((slot, i) => (
+                            {(batch.routine || batch.weekly_routine).map((slot, i) => (
                               <span
                                 key={i}
-                                className="px-2 py-0.5 rounded-md bg-slate-800 border border-slate-700 text-slate-300 text-[11px] font-mono"
+                                className="px-2 py-0.5 rounded-md bg-slate-800 border border-slate-700 text-slate-200 text-[11px] font-mono"
                               >
-                                {slot.day?.slice(0, 3)} @ {slot.time}
+                                {slot.day?.slice(0, 3)} @ {slot.start_time || slot.time} {slot.end_time ? `- ${slot.end_time}` : ''}
                               </span>
                             ))}
                           </div>
@@ -540,6 +801,79 @@ export default function TutorDashboard() {
                 ))}
               </div>
             )}
+
+            {/* Section 2: Weekly Routine Agenda / Master Calendar */}
+            <div className="pt-6 border-t border-slate-800/80 space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="text-base sm:text-lg font-bold text-slate-100 flex items-center gap-2">
+                    <CalendarDays className="w-5 h-5 text-indigo-400" />
+                    Weekly Routine Agenda & Master Calendar
+                  </h4>
+                  <p className="text-xs text-slate-400">
+                    Unified 7-day schedule across all active tuitions and student cohorts
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
+                {DAYS_ORDER.map((day) => {
+                  const daySlots = weeklyScheduleByDay[day] || [];
+                  const isToday = new Date().toLocaleDateString('en-US', { weekday: 'long' }) === day;
+                  return (
+                    <div
+                      key={day}
+                      className={`p-3 rounded-2xl border transition flex flex-col min-h-[160px] ${
+                        isToday
+                          ? 'bg-indigo-950/30 border-indigo-500/50 shadow-sm shadow-indigo-500/10'
+                          : 'bg-slate-900/60 border-slate-800'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between border-b border-slate-800 pb-2 mb-2.5">
+                        <span className={`text-xs font-bold ${isToday ? 'text-indigo-300' : 'text-slate-300'}`}>
+                          {day.slice(0, 3)}
+                        </span>
+                        {isToday && (
+                          <span className="text-[9px] uppercase tracking-wider font-extrabold px-1.5 py-0.2 rounded-full bg-indigo-500 text-white">
+                            Today
+                          </span>
+                        )}
+                        <span className="text-[10px] text-slate-500 font-mono">
+                          {daySlots.length} class{daySlots.length === 1 ? '' : 'es'}
+                        </span>
+                      </div>
+
+                      <div className="flex-1 space-y-2">
+                        {daySlots.length === 0 ? (
+                          <div className="h-full flex items-center justify-center text-center py-6">
+                            <span className="text-[11px] text-slate-600 italic">No classes</span>
+                          </div>
+                        ) : (
+                          daySlots.map((slot, sIdx) => (
+                            <div
+                              key={sIdx}
+                              className="p-2 rounded-xl bg-slate-800/90 border border-slate-700/60 text-xs space-y-1 hover:border-indigo-500/40 transition"
+                            >
+                              <div className="font-bold text-slate-200 text-[11px] truncate" title={slot.tuitionTitle}>
+                                {slot.tuitionTitle}
+                              </div>
+                              <div className="flex items-center justify-between text-[10px] text-slate-400 font-mono">
+                                <span className="text-indigo-300 font-semibold">
+                                  {slot.startTime} - {slot.endTime}
+                                </span>
+                                <span className="px-1.5 py-0.2 rounded-md bg-slate-900 text-slate-400">
+                                  {slot.studentCount}s
+                                </span>
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
           </div>
         )}
 
@@ -745,13 +1079,31 @@ export default function TutorDashboard() {
         }}
       />
 
+      <AssignStudentModal
+        isOpen={assignModalOpen}
+        onClose={() => {
+          setAssignModalOpen(false);
+          setSelectedStudentForAssign(null);
+        }}
+        student={selectedStudentForAssign}
+        tuitions={tuitions}
+        onAssigned={() => {
+          loadUnassignedStudents();
+          loadTuitions();
+          loadStudents();
+          loadAnalytics();
+        }}
+      />
+
       <TuitionBatchesModal
         isOpen={batchModalOpen}
         onClose={() => setBatchModalOpen(false)}
         allStudents={students}
         batchToEdit={selectedBatchToEdit}
         onBatchSaved={() => {
+          loadTuitions();
           loadBatches();
+          loadAnalytics();
         }}
       />
 

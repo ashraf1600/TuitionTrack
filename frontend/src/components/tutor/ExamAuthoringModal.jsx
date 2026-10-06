@@ -105,8 +105,14 @@ export default function ExamAuthoringModal({
   const loadBatches = async () => {
     try {
       setLoadingBatches(true);
-      const res = await api.getBatches();
-      const list = Array.isArray(res) ? res : res.results || [];
+      let list = [];
+      try {
+        const resTuitions = await api.getTuitions();
+        list = Array.isArray(resTuitions) ? resTuitions : resTuitions.results || [];
+      } catch (_) {
+        const res = await api.getBatches();
+        list = Array.isArray(res) ? res : res.results || [];
+      }
       setBatches(list);
       if (list.length > 0 && !batchId) {
         setBatchId(list[0].id);
@@ -306,6 +312,7 @@ export default function ExamAuthoringModal({
         exam_type: examType,
         student_id: targetType === 'student' ? studentId : null,
         batch_id: targetType === 'batch' ? batchId : null,
+        tuition_id: targetType === 'batch' ? batchId : null,
         content_html: examType === 'MCQ' ? '<p>Multiple Choice Examination</p>' : htmlContent,
         mcq_data: examType !== 'CQ' ? mcqList : [],
         solution_html: solutionHtml,
@@ -491,7 +498,7 @@ export default function ExamAuthoringModal({
                 ) : (
                   batches.map((b) => (
                     <option key={b.id} value={b.id}>
-                      {b.name} ({b.student_count || 0} students)
+                      {b.title || b.name} ({b.student_count || b.enrollment_count || b.enrollments?.length || 0} students)
                     </option>
                   ))
                 )}

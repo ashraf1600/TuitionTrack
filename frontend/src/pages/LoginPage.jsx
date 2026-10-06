@@ -19,13 +19,36 @@ export default function LoginPage() {
   const [gradeLevel, setGradeLevel] = useState('Class 10');
   const [institution, setInstitution] = useState('');
   const [parentPhone, setParentPhone] = useState('');
-  const [tutorUsername, setTutorUsername] = useState('');
+  const [selectedTutor, setSelectedTutor] = useState(null);
+  const [tutorSearch, setTutorSearch] = useState('');
+  const [tutorList, setTutorList] = useState([]);
+  const [loadingTutors, setLoadingTutors] = useState(false);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
   const { login, registerTutor, registerStudent } = useAuth();
   const navigate = useNavigate();
+
+  // Load tutors for discovery
+  useEffect(() => {
+    if (mode === 'register-student') {
+      const fetchTutors = async () => {
+        try {
+          setLoadingTutors(true);
+          const res = await api.getTutors(tutorSearch);
+          const list = Array.isArray(res) ? res : res.results || [];
+          setTutorList(list);
+        } catch (err) {
+          console.error('Failed to load tutor directory:', err);
+        } finally {
+          setLoadingTutors(false);
+        }
+      };
+      const timeoutId = setTimeout(fetchTutors, 250);
+      return () => clearTimeout(timeoutId);
+    }
+  }, [mode, tutorSearch]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -62,7 +85,8 @@ export default function LoginPage() {
           grade_level: gradeLevel,
           institution,
           parent_phone: parentPhone,
-          tutor_username: tutorUsername,
+          selected_tutor_id: selectedTutor?.id || '',
+          selected_tutor_username: selectedTutor?.username || '',
         });
         navigate('/student');
       } else {
@@ -261,29 +285,80 @@ export default function LoginPage() {
                     </div>
 
                     <div className="grid grid-cols-2 gap-3">
-                      <div>
+                      <div className="col-span-2">
                         <label className="block text-xs font-semibold text-slate-300 mb-1">
-                          Guardian Phone
+                          Select Your Desired Tutor *
                         </label>
-                        <input
-                          type="tel"
-                          value={parentPhone}
-                          onChange={(e) => setParentPhone(e.target.value)}
-                          placeholder="+88018..."
-                          className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 text-xs focus:outline-none focus:border-indigo-500"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-300 mb-1">
-                          Tutor Username (Optional)
-                        </label>
-                        <input
-                          type="text"
-                          value={tutorUsername}
-                          onChange={(e) => setTutorUsername(e.target.value)}
-                          placeholder="e.g. admin"
-                          className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-indigo-300 text-xs focus:outline-none focus:border-indigo-500"
-                        />
+                        <div className="relative mb-2">
+                          <input
+                            type="text"
+                            value={tutorSearch}
+                            onChange={(e) => setTutorSearch(e.target.value)}
+                            placeholder="Search tutor by name or subject (e.g. Physics, Ashraf)..."
+                            className="w-full pl-8 pr-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 text-xs focus:outline-none focus:border-indigo-500"
+                          />
+                          <Users className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5" />
+                        </div>
+
+                        {selectedTutor && (
+                          <div className="mb-2.5 p-2.5 rounded-xl bg-indigo-500/15 border border-indigo-500/30 flex items-center justify-between text-xs text-indigo-300">
+                            <div>
+                              <span className="font-bold text-white">{selectedTutor.name}</span>
+                              <span className="ml-1.5 text-slate-400">(@{selectedTutor.username})</span>
+                              {selectedTutor.tuitions?.length > 0 && (
+                                <span className="ml-2 text-[11px] text-indigo-400 bg-indigo-900/50 px-1.5 py-0.5 rounded">
+                                  {selectedTutor.tuitions.map(t => t.title).join(', ')}
+                                </span>
+                              )}
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setSelectedTutor(null)}
+                              className="text-slate-400 hover:text-white text-xs underline ml-2"
+                            >
+                              Change
+                            </button>
+                          </div>
+                        )}
+
+                        <div className="max-h-36 overflow-y-auto space-y-1 rounded-xl border border-slate-800 p-1 bg-slate-900/70">
+                          {loadingTutors ? (
+                            <p className="text-center py-2 text-xs text-slate-500">Searching tutors...</p>
+                          ) : tutorList.length === 0 ? (
+                            <p className="text-center py-2 text-xs text-slate-500">No tutors found.</p>
+                          ) : (
+                            tutorList.map((t) => {
+                              const isSelected = selectedTutor?.id === t.id;
+                              return (
+                                <button
+                                  type="button"
+                                  key={t.id}
+                                  onClick={() => setSelectedTutor(t)}
+                                  className={`w-full text-left p-2 rounded-lg text-xs flex items-center justify-between transition ${
+                                    isSelected
+                                      ? 'bg-indigo-600 text-white font-semibold'
+                                      : 'hover:bg-slate-800 text-slate-300'
+                                  }`}
+                                >
+                                  <div>
+                                    <div className="font-medium text-slate-200">
+                                      {t.name}{' '}
+                                      <span className={isSelected ? 'text-indigo-200' : 'text-slate-400'}>
+                                        (@{t.username})
+                                      </span>
+                                    </div>
+                                    {t.tuitions?.length > 0 && (
+                                      <div className={`text-[10px] ${isSelected ? 'text-indigo-200' : 'text-slate-500'}`}>
+                                        Tuitions: {t.tuitions.map(tu => tu.title).join(', ')}
+                                      </div>
+                                    )}
+                                  </div>
+                                  {isSelected && <span className="text-xs text-white">✓ Selected</span>}
+                                </button>
+                              );
+                            })
+                          )}
+                        </div>
                       </div>
                     </div>
                   </div>

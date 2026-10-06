@@ -48,6 +48,17 @@ class CustomUser(AbstractUser):
         verbose_name='Parent Tutor',
         help_text='Null for Tutors. Required for Students, points to their managing tutor.'
     )
+    # Selected tutor for students during self-registration (unassigned prospective students)
+    selected_tutor = models.ForeignKey(
+        'self',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='prospective_students',
+        limit_choices_to={'role': Role.TUTOR},
+        verbose_name='Selected Tutor',
+        help_text='Selected tutor for students during self-registration.'
+    )
     phone = models.CharField(max_length=20, blank=True, verbose_name='Phone Number')
 
     # Timestamps

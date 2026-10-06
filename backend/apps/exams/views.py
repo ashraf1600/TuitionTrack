@@ -55,19 +55,24 @@ class ExamViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
-        qs = Exam.objects.select_related('tutor', 'student', 'batch').prefetch_related('submissions')
+        qs = Exam.objects.select_related('tutor', 'student', 'batch', 'tuition').prefetch_related('submissions')
 
         if user.role == 'TUTOR':
-            qs = qs.filter(tutor=user)
+            qs = qs.filter(models.Q(tutor=user) | models.Q(tuition__tutor=user))
             student_id = self.request.query_params.get('student_id')
             batch_id = self.request.query_params.get('batch_id')
+            tuition_id = self.request.query_params.get('tuition_id')
             if student_id:
                 qs = qs.filter(student_id=student_id)
             if batch_id:
                 qs = qs.filter(batch_id=batch_id)
+            if tuition_id:
+                qs = qs.filter(tuition_id=tuition_id)
         elif user.role == 'STUDENT':
             qs = qs.filter(is_published=True).filter(
-                models.Q(student=user) | models.Q(batch__students=user)
+                models.Q(student=user) |
+                models.Q(tuition__enrollments__student=user) |
+                models.Q(batch__students=user)
             ).distinct()
         else:
             qs = qs.none()
@@ -85,30 +90,37 @@ class ExamViewSet(viewsets.ModelViewSet):
         """Create exam and dispatch email notification asynchronously/safely."""
         exam = serializer.save(tutor=self.request.user)
 
-        # Collect recipient emails (individual student or entire batch)
+        # Collect recipient emails (individual student, tuition enrollments, or batch)
         recipients = []
         if exam.student and exam.student.email:
             recipients.append(exam.student.email)
+        elif exam.tuition:
+            recipients = [
+                enr.student.email
+                for enr in exam.tuition.enrollments.select_related('student').all()
+                if enr.student.email
+            ]
         elif exam.batch:
             recipients = [s.email for s in exam.batch.students.all() if s.email]
 
         if recipients:
             try:
-                subject = f'[TuitionTrack] New Exam Scheduled: {exam.title}'
+                subject = f'[TuitionTrack] New {exam.category.capitalize()}: {exam.title}'
                 start_str = exam.start_time.strftime('%Y-%m-%d %H:%M UTC')
                 end_str = exam.end_time.strftime('%Y-%m-%d %H:%M UTC')
-                target_desc = f'Batch: {exam.batch.name}' if exam.batch else f'Student: {exam.student.get_full_name() or exam.student.username}'
+                target_desc = f'Tuition: {exam.tuition.title}' if exam.tuition else (f'Batch: {exam.batch.name}' if exam.batch else f'Student: {exam.student.get_full_name() or exam.student.username}')
                 body = (
                     f"Hello,\n\n"
-                    f"A new examination has been scheduled by {exam.tutor.get_full_name() or exam.tutor.username}.\n\n"
-                    f"Exam: {exam.title}\n"
+                    f"A new assessment has been published by {exam.tutor.get_full_name() or exam.tutor.username}.\n\n"
+                    f"Title: {exam.title}\n"
+                    f"Category: {exam.category}\n"
                     f"Type: {exam.get_exam_type_display()}\n"
                     f"Target: {target_desc}\n"
                     f"Total Marks: {exam.total_marks}\n"
                     f"Start Time: {start_str}\n"
-                    f"End Time: {end_str}\n"
+                    f"End / Deadline: {end_str}\n"
                     f"Grace Period: {exam.grace_period_minutes} minutes\n\n"
-                    f"Please log in to TuitionTrack before the examination starts.\n\n"
+                    f"Please log in to TuitionTrack before the deadline.\n\n"
                     f"— TuitionTrack Team"
                 )
                 send_mail(
@@ -146,14 +158,15 @@ class ExamViewSet(viewsets.ModelViewSet):
         """
         exam = get_object_or_404(Exam, id=pk)
 
-        # Tenant check: Student must be either the 1-on-1 student OR enrolled in the exam's batch
+        # Tenant check: Student must be 1-on-1, enrolled in tuition, or enrolled in batch
         is_assigned = (
             (exam.student == request.user) or
+            (exam.tuition and exam.tuition.enrollments.filter(student=request.user).exists()) or
             (exam.batch and exam.batch.students.filter(id=request.user.id).exists())
         )
         if not is_assigned:
             return Response(
-                {'error': 'You are not assigned to this exam or tuition batch.'},
+                {'error': 'You are not assigned to this exam or tuition.'},
                 status=status.HTTP_403_FORBIDDEN
             )
 
@@ -195,12 +208,15 @@ class ExamViewSet(viewsets.ModelViewSet):
         serializer = SubmitExamSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
+        images_val = serializer.validated_data.get('uploaded_images') or serializer.validated_data.get('image_urls') or []
+
         submission = ExamSubmission.objects.create(
             exam=exam,
             student=request.user,
             submitted_at=now,
             answers_data=serializer.validated_data.get('answers_data', {}),
-            image_urls=serializer.validated_data.get('image_urls', []),
+            uploaded_images=images_val,
+            image_urls=images_val,
             status=sub_status,
         )
 
@@ -227,11 +243,12 @@ class ExamViewSet(viewsets.ModelViewSet):
 
         # Check access permission
         user = request.user
-        if user.role == 'TUTOR' and exam.tutor != user:
+        if user.role == 'TUTOR' and (exam.tutor != user and (not exam.tuition or exam.tuition.tutor != user)):
             return Response({'error': 'Unauthorized'}, status=status.HTTP_403_FORBIDDEN)
         if user.role == 'STUDENT':
             is_assigned = (
                 (exam.student == user) or
+                (exam.tuition and exam.tuition.enrollments.filter(student=user).exists()) or
                 (exam.batch and exam.batch.students.filter(id=user.id).exists())
             )
             if not is_assigned:
@@ -263,11 +280,14 @@ class ExamViewSet(viewsets.ModelViewSet):
                 'is_graded': sub.is_graded,
             })
 
+        target_title = exam.tuition.title if exam.tuition else (exam.batch.name if exam.batch else None)
+
         return Response({
             'exam_id': str(exam.id),
             'exam_title': exam.title,
             'exam_type': exam.exam_type,
-            'batch_name': exam.batch.name if exam.batch else None,
+            'batch_name': target_title,
+            'tuition_title': target_title,
             'total_marks': total_marks,
             'is_results_published': exam.is_results_published,
             'leaderboard': leaderboard_data,

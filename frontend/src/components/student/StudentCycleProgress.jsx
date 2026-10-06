@@ -64,7 +64,8 @@ export default function StudentCycleProgress({ cycle }) {
         </div>
 
         <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-12 gap-2.5">
-          {classes_data.map((cls) => {
+          {classes_data.map((cls, idx) => {
+            const classNum = cls.class_no || cls.classNo || (idx + 1);
             const isCompleted = cls.completed;
             const dateObj = cls.date ? new Date(cls.date) : null;
             const formattedDate = dateObj
@@ -76,13 +77,13 @@ export default function StudentCycleProgress({ cycle }) {
 
             return (
               <div
-                key={cls.classNo}
+                key={classNum}
                 title={
                   isCompleted
-                    ? `Class #${cls.classNo}: Attended on ${dateObj?.toLocaleDateString()}${
+                    ? `Class #${classNum}: Attended on ${dateObj?.toLocaleDateString()}${
                         cls.topic ? ` (${cls.topic})` : ''
                       }`
-                    : `Class #${cls.classNo}: Upcoming class`
+                    : `Class #${classNum}: Upcoming class`
                 }
                 className={`p-2.5 rounded-xl border flex flex-col items-center justify-center text-center transition ${
                   isCompleted
@@ -90,7 +91,7 @@ export default function StudentCycleProgress({ cycle }) {
                     : 'bg-slate-800/40 border-slate-700/60 text-slate-500'
                 }`}
               >
-                <span className="text-xs font-bold font-mono">#{cls.classNo}</span>
+                <span className="text-xs font-bold font-mono">#{classNum}</span>
 
                 <div className="my-1">
                   {isCompleted ? (

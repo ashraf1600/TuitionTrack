@@ -30,7 +30,18 @@ class Exam(models.Model):
         db_index=True,
         verbose_name='Tutor',
     )
-    # Target can be a single Student or an entire TuitionBatch
+    # Tuition FK (Primary tuition association)
+    tuition = models.ForeignKey(
+        'students.Tuition',
+        on_delete=models.CASCADE,
+        related_name='exams',
+        null=True,
+        blank=True,
+        db_index=True,
+        verbose_name='Tuition',
+        help_text='The Tuition this exam is assigned to.',
+    )
+    # Target can be a single Student or an entire TuitionBatch (kept for backwards compatibility)
     student = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
@@ -54,9 +65,10 @@ class Exam(models.Model):
     )
 
     class ExamType(models.TextChoices):
+        MCQ = 'MCQ', 'Multiple Choice'
+        CQ = 'CQ', 'Creative / Written'
+        MIXED = 'MIXED', 'Mixed'
         HYBRID = 'HYBRID', 'Hybrid (MCQ + CQ)'
-        MCQ = 'MCQ', 'MCQ Only'
-        CQ = 'CQ', 'CQ Only'
 
     class AssessmentCategory(models.TextChoices):
         EXAM = 'EXAM', 'Exam'
@@ -254,10 +266,23 @@ class ExamSubmission(models.Model):
         verbose_name='MCQ Answers',
         help_text='Dict of question_id -> selected_answer. e.g., {"q1": "A", "q2": "D"}'
     )
+    uploaded_images = models.JSONField(
+        default=list,
+        blank=True,
+        verbose_name='Uploaded Answer Images',
+        help_text='List of uploaded CQ / written answer sheet photo URLs.'
+    )
     image_urls = models.JSONField(
         default=list,
-        verbose_name='CQ Image Uploads',
+        blank=True,
+        verbose_name='CQ Image Uploads (Legacy)',
         help_text='List of uploaded CQ answer sheet image file paths.'
+    )
+    feedback = models.TextField(
+        blank=True,
+        default='',
+        verbose_name='Feedback',
+        help_text='Feedback provided to the student.'
     )
     status = models.CharField(
         max_length=10,

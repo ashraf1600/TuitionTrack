@@ -135,3 +135,98 @@ class StudentsTests(APITestCase):
         self.assertTrue(tog_resp.data['is_active'])
         student.refresh_from_db()
         self.assertTrue(student.is_active)
+
+
+class TuitionArchitectureTests(APITestCase):
+    def setUp(self):
+        self.tutor = User.objects.create_user(
+            username='main_tutor',
+            password='password123',
+            email='maintutor@example.com',
+            role=User.Role.TUTOR,
+            first_name='Main',
+            last_name='Tutor'
+        )
+        self.student = User.objects.create_user(
+            username='self_student',
+            password='password123',
+            email='student@example.com',
+            role=User.Role.STUDENT,
+            selected_tutor=self.tutor,
+            first_name='Self',
+            last_name='Student'
+        )
+
+    def test_tutor_directory_and_unassigned_prospective_student(self):
+        tutors_url = reverse('tutor_directory')
+        resp = self.client.get(tutors_url)
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        raw_list = resp.data if isinstance(resp.data, list) else resp.data.get('results', [])
+        usernames = [t['username'] for t in raw_list]
+        self.assertIn('main_tutor', usernames)
+
+        # Tutor checks unassigned students
+        self.client.force_authenticate(user=self.tutor)
+        unassigned_url = reverse('student-unassigned')
+        u_resp = self.client.get(unassigned_url)
+        self.assertEqual(u_resp.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(u_resp.data), 1)
+        self.assertEqual(u_resp.data[0]['username'], 'self_student')
+
+    def test_tuition_crud_enrollment_and_attendance_cycle(self):
+        self.client.force_authenticate(user=self.tutor)
+        # 1. Create Tuition
+        tuitions_url = reverse('tuition-list')
+        routine_data = [
+            {"day": "Monday", "start_time": "18:00", "end_time": "19:30"},
+            {"day": "Wednesday", "start_time": "18:00", "end_time": "19:30"}
+        ]
+        t_resp = self.client.post(tuitions_url, {
+            'title': 'HSC Physics 2026',
+            'cycle_length': 12,
+            'tuition_fee': '9000.00',
+            'routine': routine_data,
+        }, format='json')
+        self.assertEqual(t_resp.status_code, status.HTTP_201_CREATED)
+        tuition_id = t_resp.data['id']
+
+        # 2. Enroll student
+        enroll_url = reverse('tuition-enroll', kwargs={'pk': tuition_id})
+        e_resp = self.client.post(enroll_url, {'student_id': str(self.student.id)}, format='json')
+        self.assertEqual(e_resp.status_code, status.HTTP_200_OK)
+
+        # Student is no longer unassigned
+        u_resp = self.client.get(reverse('student-unassigned'))
+        self.assertEqual(len(u_resp.data), 0)
+
+        # Check AttendanceCycle was created
+        from apps.cycles.models import AttendanceCycle
+        cycle = AttendanceCycle.objects.filter(enrollment__tuition_id=tuition_id, enrollment__student=self.student).first()
+        self.assertIsNotNone(cycle)
+        self.assertEqual(cycle.total_classes, 12)
+        self.assertEqual(cycle.completed_classes, 0)
+
+        # 3. Toggle Class #1 with date & topic
+        toggle_url = reverse('attendance-cycle-toggle-class', kwargs={'pk': str(cycle.id)})
+        tog_resp = self.client.patch(toggle_url, {
+            'class_no': 1,
+            'completed': True,
+            'date': '2026-10-06T10:00:00Z',
+            'topic': 'Vectors and Kinematics'
+        }, format='json')
+        self.assertEqual(tog_resp.status_code, status.HTTP_200_OK)
+        cycle.refresh_from_db()
+        self.assertEqual(cycle.completed_classes, 1)
+        self.assertEqual(float(cycle.earned_revenue), 750.00)
+        self.assertEqual(float(cycle.pending_balance), 8250.00)
+
+        # 4. Student views cycle -> ZERO billing or taka
+        self.client.force_authenticate(user=self.student)
+        s_cycle_resp = self.client.get(reverse('attendance-cycle-detail', kwargs={'pk': str(cycle.id)}))
+        self.assertEqual(s_cycle_resp.status_code, status.HTTP_200_OK)
+        self.assertNotIn('tuition_fee', s_cycle_resp.data)
+        self.assertNotIn('per_class_rate', s_cycle_resp.data)
+        self.assertNotIn('earned_revenue', s_cycle_resp.data)
+        self.assertNotIn('pending_balance', s_cycle_resp.data)
+        self.assertEqual(s_cycle_resp.data['completed_classes'], 1)
+

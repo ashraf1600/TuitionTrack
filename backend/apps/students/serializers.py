@@ -248,3 +248,176 @@ class TuitionBatchCreateUpdateSerializer(serializers.ModelSerializer):
             students = User.objects.filter(id__in=student_ids, role=User.Role.STUDENT)
             instance.students.set(students)
         return instance
+
+
+# ── Tuition-Centric Serializers ──────────────────────────────────────────
+
+class TuitionSerializer(serializers.ModelSerializer):
+    """
+    Serializer for Tuition model with routine, enrollments, and wallet calculations.
+    Ensures strict privacy: students never receive tuition_fee or billing numbers.
+    """
+    tutor_name = serializers.SerializerMethodField()
+    enrollments = serializers.SerializerMethodField()
+    enrolled_count = serializers.SerializerMethodField()
+    wallet_summary = serializers.SerializerMethodField()
+
+    class Meta:
+        from .models import Tuition
+        model = Tuition
+        fields = [
+            'id', 'tutor', 'tutor_name', 'title', 'cycle_length', 'tuition_fee',
+            'routine', 'enrollments', 'enrolled_count', 'wallet_summary',
+            'created_at', 'updated_at'
+        ]
+        read_only_fields = ['id', 'tutor', 'tutor_name', 'created_at', 'updated_at']
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        request = self.context.get('request')
+        if request and getattr(request.user, 'role', '') == 'STUDENT':
+            data.pop('tuition_fee', None)
+            data.pop('wallet_summary', None)
+        return data
+
+    def get_tutor_name(self, obj):
+        return obj.tutor.get_full_name() or obj.tutor.username
+
+    def get_enrolled_count(self, obj):
+        return obj.enrollments.count()
+
+    def get_enrollments(self, obj):
+        request = self.context.get('request')
+        is_student = request and getattr(request.user, 'role', '') == 'STUDENT'
+
+        res = []
+        for enr in obj.enrollments.select_related('student', 'student__student_profile').prefetch_related('cycles').all():
+            active_c = enr.cycles.filter(status='ACTIVE').first()
+            cycle_info = None
+            if active_c:
+                cycle_info = {
+                    'id': str(active_c.id),
+                    'cycle_number': active_c.cycle_number,
+                    'completed_classes': active_c.completed_classes,
+                    'total_classes': active_c.total_classes,
+                    'progress_percent': active_c.progress_percent,
+                    'status': active_c.status,
+                    'classes_data': active_c.classes_data,
+                }
+                if not is_student:
+                    cycle_info.update({
+                        'fee': float(active_c.tuition_fee),
+                        'per_class_rate': float(active_c.per_class_rate),
+                        'earned_revenue': float(active_c.earned_revenue),
+                        'pending_balance': float(active_c.pending_balance),
+                    })
+
+            res.append({
+                'enrollment_id': str(enr.id),
+                'student_id': str(enr.student.id),
+                'student_name': enr.student.get_full_name() or enr.student.username,
+                'email': enr.student.email,
+                'phone': enr.student.phone,
+                'grade_level': getattr(getattr(enr.student, 'student_profile', None), 'grade_level', ''),
+                'institution': getattr(getattr(enr.student, 'student_profile', None), 'institution', ''),
+                'joined_at': enr.joined_at,
+                'active_cycle': cycle_info,
+            })
+        return res
+
+    def get_wallet_summary(self, obj):
+        request = self.context.get('request')
+        if request and getattr(request.user, 'role', '') == 'STUDENT':
+            return None
+
+        total_earned = 0.0
+        total_pending = 0.0
+        active_enrollments = 0
+        for enr in obj.enrollments.prefetch_related('cycles').all():
+            active_c = enr.cycles.filter(status='ACTIVE').first()
+            if active_c:
+                active_enrollments += 1
+                total_earned += active_c.earned_revenue
+                total_pending += active_c.pending_balance
+
+        return {
+            'total_students': obj.enrollments.count(),
+            'active_students': active_enrollments,
+            'total_cycle_fee_potential': float(obj.tuition_fee) * obj.enrollments.count(),
+            'earned_revenue': round(total_earned, 2),
+            'pending_balance': round(total_pending, 2),
+            'per_class_rate': round(float(obj.tuition_fee) / obj.cycle_length, 2) if obj.cycle_length else 0.0,
+        }
+
+
+class TuitionCreateUpdateSerializer(serializers.ModelSerializer):
+    student_ids = serializers.ListField(
+        child=serializers.UUIDField(),
+        required=False,
+        default=list,
+        write_only=True
+    )
+
+    class Meta:
+        from .models import Tuition
+        model = Tuition
+        fields = ['id', 'title', 'cycle_length', 'tuition_fee', 'routine', 'student_ids']
+        read_only_fields = ['id']
+
+    def create(self, validated_data):
+        from .models import Tuition, TuitionEnrollment
+        from apps.cycles.models import AttendanceCycle
+        student_ids = validated_data.pop('student_ids', [])
+        tutor = validated_data.pop('tutor', None) or self.context['request'].user
+        tuition = Tuition.objects.create(tutor=tutor, **validated_data)
+
+        for s_id in student_ids:
+            student = User.objects.filter(id=s_id, role=User.Role.STUDENT).first()
+            if student:
+                if not student.tutor:
+                    student.tutor = tutor
+                    student.save(update_fields=['tutor'])
+                enr, created = TuitionEnrollment.objects.get_or_create(tuition=tuition, student=student)
+                if created:
+                    AttendanceCycle.objects.create(
+                        enrollment=enr,
+                        cycle_number=1,
+                        classes_data=AttendanceCycle.build_fresh_classes_data(tuition.cycle_length),
+                        status=AttendanceCycle.Status.ACTIVE
+                    )
+        return tuition
+
+    def update(self, instance, validated_data):
+        from .models import TuitionEnrollment
+        from apps.cycles.models import AttendanceCycle
+        student_ids = validated_data.pop('student_ids', None)
+        for attr, val in validated_data.items():
+            setattr(instance, attr, val)
+        instance.save()
+
+        if student_ids is not None:
+            existing_enrollments = {str(e.student_id): e for e in instance.enrollments.all()}
+            target_ids = set(str(s) for s in student_ids)
+
+            # Delete enrollments no longer in target
+            for s_id, enr in existing_enrollments.items():
+                if s_id not in target_ids:
+                    enr.delete()
+
+            # Add new enrollments
+            for s_id in target_ids:
+                if s_id not in existing_enrollments:
+                    student = User.objects.filter(id=s_id, role=User.Role.STUDENT).first()
+                    if student:
+                        if not student.tutor:
+                            student.tutor = instance.tutor
+                            student.save(update_fields=['tutor'])
+                        enr, created = TuitionEnrollment.objects.get_or_create(tuition=instance, student=student)
+                        if created:
+                            AttendanceCycle.objects.create(
+                                enrollment=enr,
+                                cycle_number=1,
+                                classes_data=AttendanceCycle.build_fresh_classes_data(instance.cycle_length),
+                                status=AttendanceCycle.Status.ACTIVE
+                            )
+        return instance

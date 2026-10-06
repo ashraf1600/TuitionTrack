@@ -195,3 +195,139 @@ class TuitionBatchViewSet(generics.ListCreateAPIView, viewsets.GenericViewSet):
             'batch': TuitionBatchSerializer(batch).data
         })
 
+
+# ── Tuition-Centric ViewSet & Unassigned Students ────────────────────────
+
+class TuitionViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet for Tuition-Centric domain model.
+    Tutors can create, list, update, and delete tuitions.
+    Students can list all tuitions they are enrolled in.
+    """
+    from apps.authentication.permissions import IsTutorOrStudent
+    permission_classes = [IsAuthenticated, IsTutorOrStudent]
+    http_method_names = ['get', 'post', 'patch', 'delete', 'head', 'options']
+
+    def get_queryset(self):
+        from .models import Tuition
+        user = self.request.user
+        if user.role == 'TUTOR':
+            return Tuition.objects.filter(tutor=user).prefetch_related('enrollments__student', 'enrollments__cycles')
+        elif user.role == 'STUDENT':
+            return Tuition.objects.filter(enrollments__student=user).distinct().prefetch_related('enrollments__student', 'enrollments__cycles')
+        return Tuition.objects.none()
+
+    def get_serializer_class(self):
+        from .serializers import TuitionSerializer, TuitionCreateUpdateSerializer
+        if self.action in ['create', 'partial_update', 'update']:
+            return TuitionCreateUpdateSerializer
+        return TuitionSerializer
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context['request'] = self.request
+        return context
+
+    def perform_create(self, serializer):
+        serializer.save(tutor=self.request.user)
+
+    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated, IsTutor])
+    def enroll(self, request, pk=None):
+        """
+        POST /api/v1/tuitions/<id>/enroll/
+        Enrolls a student (e.g. from the unassigned list or existing roster)
+        and initializes active AttendanceCycle #1.
+        """
+        from .models import TuitionEnrollment
+        from .serializers import TuitionSerializer
+        from apps.cycles.models import AttendanceCycle
+
+        tuition = self.get_object()
+        student_id = request.data.get('student_id')
+        student = get_object_or_404(User, id=student_id, role=User.Role.STUDENT)
+
+        # Set tutor relation if missing
+        if not student.tutor:
+            student.tutor = request.user
+            student.save(update_fields=['tutor'])
+
+        enrollment, created = TuitionEnrollment.objects.get_or_create(
+            tuition=tuition,
+            student=student
+        )
+
+        cycle, cycle_created = AttendanceCycle.objects.get_or_create(
+            enrollment=enrollment,
+            status=AttendanceCycle.Status.ACTIVE,
+            defaults={
+                'cycle_number': 1,
+                'classes_data': AttendanceCycle.build_fresh_classes_data(tuition.cycle_length),
+            }
+        )
+
+        return Response({
+            'message': f'Student "{student.get_full_name() or student.username}" enrolled into {tuition.title}.',
+            'tuition': TuitionSerializer(tuition, context={'request': request}).data
+        }, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated, IsTutor])
+    def unenroll(self, request, pk=None):
+        """
+        POST /api/v1/tuitions/<id>/unenroll/
+        Removes student enrollment from this tuition.
+        """
+        from .serializers import TuitionSerializer
+        tuition = self.get_object()
+        student_id = request.data.get('student_id')
+        student = get_object_or_404(User, id=student_id, role=User.Role.STUDENT)
+
+        tuition.enrollments.filter(student=student).delete()
+        return Response({
+            'message': f'Student "{student.get_full_name() or student.username}" removed from {tuition.title}.',
+            'tuition': TuitionSerializer(tuition, context={'request': request}).data
+        }, status=status.HTTP_200_OK)
+
+
+class UnassignedStudentsView(APIView):
+    """
+    GET /api/v1/students/unassigned/
+    Returns prospective students who selected this tutor during self-registration
+    and are not yet enrolled in any of this tutor's tuitions.
+    """
+    permission_classes = [IsAuthenticated, IsTutor]
+
+    def get(self, request):
+        from .models import TuitionEnrollment
+        tutor = request.user
+
+        # Prospective students who selected this tutor
+        prospective = User.objects.filter(
+            role=User.Role.STUDENT,
+            selected_tutor=tutor
+        ).select_related('student_profile')
+
+        # Check which students are not enrolled in any of this tutor's tuitions
+        enrolled_ids = TuitionEnrollment.objects.filter(
+            tuition__tutor=tutor
+        ).values_list('student_id', flat=True)
+
+        unassigned = prospective.exclude(id__in=enrolled_ids).order_by('-created_at')
+
+        results = []
+        for s in unassigned:
+            prof = getattr(s, 'student_profile', None)
+            results.append({
+                'id': str(s.id),
+                'username': s.username,
+                'full_name': s.get_full_name() or s.username,
+                'email': s.email,
+                'phone': s.phone,
+                'grade_level': prof.grade_level if prof else '',
+                'institution': prof.institution if prof else '',
+                'parent_name': prof.parent_name if prof else '',
+                'parent_phone': prof.parent_phone if prof else '',
+                'created_at': s.created_at,
+            })
+
+        return Response(results, status=status.HTTP_200_OK)
+

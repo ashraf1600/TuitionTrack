@@ -29,8 +29,14 @@ export default function StudentPortal() {
     // 1. Cycles
     try {
       setLoadingCycle(true);
-      const cyclesData = await api.getCycles();
-      const list = Array.isArray(cyclesData) ? cyclesData : cyclesData.results || [];
+      let list = [];
+      try {
+        const cyclesData = await api.getAttendanceCycles();
+        list = Array.isArray(cyclesData) ? cyclesData : cyclesData.results || [];
+      } catch (_) {
+        const cyclesData = await api.getCycles();
+        list = Array.isArray(cyclesData) ? cyclesData : cyclesData.results || [];
+      }
       const active = list.find((c) => c.status === 'ACTIVE') || list[0] || null;
       setCycle(active);
     } catch (err) {
@@ -39,11 +45,17 @@ export default function StudentPortal() {
       setLoadingCycle(false);
     }
 
-    // 2. Enrolled Batches
+    // 2. Enrolled Tuitions & Batches
     try {
       setLoadingBatches(true);
-      const batchesData = await api.getBatches();
-      const batchList = Array.isArray(batchesData) ? batchesData : batchesData.results || [];
+      let batchList = [];
+      try {
+        const tuitionsData = await api.getTuitions();
+        batchList = Array.isArray(tuitionsData) ? tuitionsData : tuitionsData.results || [];
+      } catch (_) {
+        const batchesData = await api.getBatches();
+        batchList = Array.isArray(batchesData) ? batchesData : batchesData.results || [];
+      }
       setBatches(batchList);
     } catch (err) {
       console.error('Failed to load batches:', err);
@@ -150,51 +162,60 @@ export default function StudentPortal() {
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {batches.map((batch) => (
-                <div
-                  key={batch.id}
-                  className="p-5 rounded-2xl bg-slate-900/80 border border-slate-800 hover:border-slate-700 transition space-y-3"
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <h4 className="font-bold text-slate-100 text-base">{batch.name}</h4>
-                      {batch.subject && (
-                        <span className="text-xs text-indigo-400 font-semibold block">
-                          {batch.subject}
-                        </span>
+              {batches.map((batch) => {
+                const title = batch.title || batch.name;
+                const routineSlots = batch.routine || batch.weekly_routine || [];
+                return (
+                  <div
+                    key={batch.id}
+                    className="p-5 rounded-2xl bg-slate-900/80 border border-slate-800 hover:border-slate-700 transition space-y-3"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <h4 className="font-bold text-slate-100 text-base">{title}</h4>
+                        {batch.tutor_name && (
+                          <span className="text-xs text-indigo-400 font-semibold block">
+                            Tutor: {batch.tutor_name}
+                          </span>
+                        )}
+                        {batch.subject && (
+                          <span className="text-xs text-slate-400 block">
+                            {batch.subject}
+                          </span>
+                        )}
+                      </div>
+                      <span className="px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 text-[10px] font-mono">
+                        Active
+                      </span>
+                    </div>
+
+                    {batch.description && (
+                      <p className="text-xs text-slate-400 line-clamp-2">{batch.description}</p>
+                    )}
+
+                    <div className="pt-2 border-t border-slate-800">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1.5 flex items-center gap-1">
+                        <Clock className="w-3 h-3 text-indigo-400" />
+                        Weekly Routine:
+                      </span>
+                      {routineSlots.length > 0 ? (
+                        <div className="flex flex-wrap gap-1.5">
+                          {routineSlots.map((slot, i) => (
+                            <span
+                              key={i}
+                              className="px-2.5 py-1 rounded-lg bg-slate-800 border border-slate-700 text-slate-200 text-xs font-mono font-medium"
+                            >
+                              {slot.day} @ {slot.start_time || slot.time} {slot.end_time ? `- ${slot.end_time}` : ''}
+                            </span>
+                          ))}
+                        </div>
+                      ) : (
+                        <span className="text-xs text-slate-500 italic">Schedule not specified</span>
                       )}
                     </div>
-                    <span className="px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 text-[10px] font-mono">
-                      Batch Active
-                    </span>
                   </div>
-
-                  {batch.description && (
-                    <p className="text-xs text-slate-400 line-clamp-2">{batch.description}</p>
-                  )}
-
-                  <div className="pt-2 border-t border-slate-800">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1.5 flex items-center gap-1">
-                      <Clock className="w-3 h-3 text-indigo-400" />
-                      Weekly Routine:
-                    </span>
-                    {batch.weekly_routine && batch.weekly_routine.length > 0 ? (
-                      <div className="flex flex-wrap gap-1.5">
-                        {batch.weekly_routine.map((slot, i) => (
-                          <span
-                            key={i}
-                            className="px-2 py-0.5 rounded-md bg-slate-800 border border-slate-700 text-slate-200 text-xs font-mono font-medium"
-                          >
-                            {slot.day} @ {slot.time}
-                          </span>
-                        ))}
-                      </div>
-                    ) : (
-                      <span className="text-xs text-slate-500 italic">Schedule not specified</span>
-                    )}
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </section>

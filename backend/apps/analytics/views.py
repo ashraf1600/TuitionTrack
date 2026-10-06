@@ -36,11 +36,23 @@ class WalletAnalyticsView(APIView):
             status=Cycle.Status.ARCHIVED
         )
 
-        total_earned = sum(float(c.earned_amount) for c in active_cycles)
-        total_pending = sum(float(c.pending_amount) for c in active_cycles)
-        lifetime_archived = sum(float(c.earned_amount) for c in archived_cycles)
+        from apps.cycles.models import AttendanceCycle
+        t_active_cycles = AttendanceCycle.objects.filter(
+            enrollment__tuition__tutor=tutor,
+            status=AttendanceCycle.Status.ACTIVE
+        ).select_related('enrollment__student', 'enrollment__tuition')
 
-        total_students = active_cycles.values('student').distinct().count()
+        t_archived_cycles = AttendanceCycle.objects.filter(
+            enrollment__tuition__tutor=tutor,
+            status=AttendanceCycle.Status.ARCHIVED
+        ).select_related('enrollment__student', 'enrollment__tuition')
+
+        total_earned = sum(float(c.earned_amount) for c in active_cycles) + sum(float(c.earned_revenue) for c in t_active_cycles)
+        total_pending = sum(float(c.pending_amount) for c in active_cycles) + sum(float(c.pending_balance) for c in t_active_cycles)
+        lifetime_archived = sum(float(c.earned_amount) for c in archived_cycles) + sum(float(c.earned_revenue) for c in t_archived_cycles)
+
+        total_students_set = set(active_cycles.values_list('student_id', flat=True)) | set(t_active_cycles.values_list('enrollment__student_id', flat=True))
+        total_students = len(total_students_set)
 
         chart_data = [
             {'name': 'Earned', 'value': round(total_earned, 2), 'color': '#10B981'},
@@ -63,6 +75,19 @@ class WalletAnalyticsView(APIView):
                 'earned': float(c.earned_amount),
                 'pending': float(c.pending_amount),
                 'progress_percentage': pct,
+            })
+
+        for tc in t_active_cycles:
+            student_breakdowns.append({
+                'student_id': tc.enrollment.student.id,
+                'student_name': f"{tc.enrollment.student.get_full_name() or tc.enrollment.student.username} ({tc.enrollment.tuition.title})",
+                'cycle_id': tc.id,
+                'cycle_number': tc.cycle_number,
+                'completed_classes': tc.completed_classes,
+                'total_classes': tc.total_classes,
+                'earned': float(tc.earned_revenue),
+                'pending': float(tc.pending_balance),
+                'progress_percentage': tc.progress_percent,
             })
 
         payload = {

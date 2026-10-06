@@ -62,8 +62,34 @@ class TutorRegistrationSerializer(serializers.ModelSerializer):
         return user
 
 
+class TutorDirectorySerializer(serializers.ModelSerializer):
+    """Public serializer for prospective students browsing available tutors."""
+    name = serializers.SerializerMethodField()
+    tuitions = serializers.SerializerMethodField()
+
+    class Meta:
+        model = User
+        fields = ['id', 'username', 'name', 'email', 'phone', 'tuitions']
+
+    def get_name(self, obj):
+        return obj.get_full_name() or obj.username
+
+    def get_tuitions(self, obj):
+        if hasattr(obj, 'tuitions'):
+            return [
+                {
+                    'id': str(t.id),
+                    'title': t.title,
+                    'cycle_length': t.cycle_length,
+                    'tuition_fee': float(t.tuition_fee),
+                }
+                for t in obj.tuitions.all()
+            ]
+        return []
+
+
 class StudentSelfRegistrationSerializer(serializers.Serializer):
-    """Handles student self-registration with profile info and optional tutor linking."""
+    """Handles student self-registration with profile info and selected tutor discovery linking."""
     username = serializers.CharField(max_length=150)
     password = serializers.CharField(write_only=True, min_length=6)
     password_confirm = serializers.CharField(write_only=True)
@@ -76,6 +102,10 @@ class StudentSelfRegistrationSerializer(serializers.Serializer):
     institution = serializers.CharField(max_length=150, required=False, allow_blank=True, default='')
     parent_name = serializers.CharField(max_length=100, required=False, allow_blank=True, default='')
     parent_phone = serializers.CharField(max_length=20, required=False, allow_blank=True, default='')
+
+    # Selected Tutor during registration (from public directory)
+    selected_tutor_id = serializers.CharField(required=False, allow_blank=True, default='')
+    selected_tutor_username = serializers.CharField(required=False, allow_blank=True, default='')
     tutor_username = serializers.CharField(required=False, allow_blank=True, default='')
 
     def validate_username(self, value):
@@ -92,10 +122,17 @@ class StudentSelfRegistrationSerializer(serializers.Serializer):
         from apps.students.models import StudentProfile
         from apps.cycles.models import Cycle
 
-        tutor_username = validated_data.pop('tutor_username', '').strip()
-        tutor = None
-        if tutor_username:
-            tutor = User.objects.filter(username=tutor_username, role=User.Role.TUTOR).first()
+        tutor_id = validated_data.pop('selected_tutor_id', '').strip()
+        tutor_user = validated_data.pop('selected_tutor_username', '').strip()
+        fallback_user = validated_data.pop('tutor_username', '').strip()
+
+        target_tutor = None
+        if tutor_id:
+            target_tutor = User.objects.filter(id=tutor_id, role=User.Role.TUTOR).first()
+        if not target_tutor and tutor_user:
+            target_tutor = User.objects.filter(username=tutor_user, role=User.Role.TUTOR).first()
+        if not target_tutor and fallback_user:
+            target_tutor = User.objects.filter(username=fallback_user, role=User.Role.TUTOR).first()
 
         password = validated_data.pop('password')
         grade_level = validated_data.pop('grade_level', '')
@@ -111,7 +148,8 @@ class StudentSelfRegistrationSerializer(serializers.Serializer):
             email=validated_data.get('email', ''),
             phone=validated_data.get('phone', ''),
             role=User.Role.STUDENT,
-            tutor=tutor,
+            tutor=target_tutor,
+            selected_tutor=target_tutor,
         )
 
         profile = StudentProfile.objects.create(
@@ -123,17 +161,6 @@ class StudentSelfRegistrationSerializer(serializers.Serializer):
             tuition_fee=0.00,
             cycle_length=12,
         )
-
-        if tutor:
-            Cycle.objects.create(
-                tutor=tutor,
-                student=user,
-                cycle_number=1,
-                fee_snapshot=profile.tuition_fee,
-                total_classes=profile.cycle_length,
-                classes_data=Cycle.build_fresh_classes_data(profile.cycle_length),
-                status=Cycle.Status.ACTIVE,
-            )
 
         return user
 

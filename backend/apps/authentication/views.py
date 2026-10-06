@@ -12,6 +12,7 @@ from .serializers import (
     TutorRegistrationSerializer,
     StudentSelfRegistrationSerializer,
     UserProfileSerializer,
+    TutorDirectorySerializer,
 )
 
 
@@ -75,3 +76,28 @@ class MeView(APIView):
     def get(self, request):
         serializer = UserProfileSerializer(request.user)
         return Response(serializer.data)
+
+
+class TutorDirectoryView(generics.ListAPIView):
+    """
+    Public directory of tutors for prospective students during registration.
+    Allows searching by tutor name, username, or tuition subjects/titles.
+    """
+    permission_classes = [AllowAny]
+    serializer_class = TutorDirectorySerializer
+
+    def get_queryset(self):
+        from django.db.models import Q
+        from django.contrib.auth import get_user_model
+        User = get_user_model()
+
+        qs = User.objects.filter(role=User.Role.TUTOR, is_active=True).prefetch_related('tuitions')
+        search = self.request.query_params.get('search', '').strip()
+        if search:
+            qs = qs.filter(
+                Q(first_name__icontains=search) |
+                Q(last_name__icontains=search) |
+                Q(username__icontains=search) |
+                Q(tuitions__title__icontains=search)
+            ).distinct()
+        return qs.order_by('first_name', 'last_name')

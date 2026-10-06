@@ -64,6 +64,8 @@ class ExamSubmissionSerializer(serializers.ModelSerializer):
 class ExamListSerializer(serializers.ModelSerializer):
     """Serializer for GET /api/v1/exams/ (list view)."""
     tutor_name = serializers.SerializerMethodField()
+    tuition_id = serializers.UUIDField(source='tuition.id', read_only=True, allow_null=True)
+    tuition_title = serializers.CharField(source='tuition.title', read_only=True, allow_null=True)
     student_name = serializers.SerializerMethodField()
     batch_name = serializers.SerializerMethodField()
     dynamic_status = serializers.SerializerMethodField()
@@ -79,8 +81,9 @@ class ExamListSerializer(serializers.ModelSerializer):
             'category',
             'exam_type',
             'tutor',
-
             'tutor_name',
+            'tuition_id',
+            'tuition_title',
             'student',
             'student_name',
             'batch',
@@ -142,6 +145,8 @@ class ExamListSerializer(serializers.ModelSerializer):
 class ExamDetailSerializer(serializers.ModelSerializer):
     """Serializer for GET /api/v1/exams/<id>/ (detail view)."""
     tutor_name = serializers.SerializerMethodField()
+    tuition_id = serializers.UUIDField(source='tuition.id', read_only=True, allow_null=True)
+    tuition_title = serializers.CharField(source='tuition.title', read_only=True, allow_null=True)
     student_name = serializers.SerializerMethodField()
     batch_name = serializers.SerializerMethodField()
     dynamic_status = serializers.SerializerMethodField()
@@ -163,6 +168,8 @@ class ExamDetailSerializer(serializers.ModelSerializer):
             'solution_media_url',
             'tutor',
             'tutor_name',
+            'tuition_id',
+            'tuition_title',
             'student',
             'student_name',
             'batch',
@@ -190,9 +197,13 @@ class ExamDetailSerializer(serializers.ModelSerializer):
             return obj.student.get_full_name() or obj.student.username
         if obj.batch:
             return f'Batch: {obj.batch.name}'
-        return 'Unassigned'
+        if obj.tuition:
+            return f'Tuition: {obj.tuition.title}'
+        return 'All Enrolled Students'
 
     def get_batch_name(self, obj):
+        if obj.tuition:
+            return obj.tuition.title
         return obj.batch.name if obj.batch else None
 
     def _get_submission(self, obj):
@@ -234,7 +245,6 @@ class ExamDetailSerializer(serializers.ModelSerializer):
             return questions
 
         sub = self._get_submission(obj)
-        # If student hasn't submitted yet, hide correct answer
         if request.user.role == 'STUDENT' and not sub:
             sanitized_q = []
             for q in questions:
@@ -260,10 +270,11 @@ class ExamDetailSerializer(serializers.ModelSerializer):
 class ExamCreateUpdateSerializer(serializers.ModelSerializer):
     """
     Serializer for creating and editing exams by tutors.
-    Supports either student_id (1-on-1) or batch_id (Tuition batch).
+    Supports tuition_id (Tuition-centric), batch_id, or student_id.
     """
-    student_id = serializers.UUIDField(required=False, allow_null=True, write_only=True)
+    tuition_id = serializers.UUIDField(required=False, allow_null=True, write_only=True)
     batch_id = serializers.UUIDField(required=False, allow_null=True, write_only=True)
+    student_id = serializers.UUIDField(required=False, allow_null=True, write_only=True)
 
     class Meta:
         model = Exam
@@ -272,8 +283,9 @@ class ExamCreateUpdateSerializer(serializers.ModelSerializer):
             'title',
             'category',
             'exam_type',
-            'student_id',
+            'tuition_id',
             'batch_id',
+            'student_id',
 
             'content_html',
             'mcq_data',
@@ -307,23 +319,29 @@ class ExamCreateUpdateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({'end_time': 'End time must be strictly after start time.'})
 
         request = self.context.get('request')
-        from apps.students.models import TuitionBatch
+        from apps.students.models import Tuition, TuitionBatch
 
-        student_id = attrs.pop('student_id', None)
+        tuition_id = attrs.pop('tuition_id', None)
         batch_id = attrs.pop('batch_id', None)
+        student_id = attrs.pop('student_id', None)
 
-        if student_id:
+        if tuition_id:
             try:
-                attrs['student'] = User.objects.get(id=student_id, role=User.Role.STUDENT)
-            except User.DoesNotExist:
-                raise serializers.ValidationError({'student_id': 'Selected student does not exist.'})
+                attrs['tuition'] = Tuition.objects.get(id=tuition_id, tutor=request.user)
+            except Tuition.DoesNotExist:
+                raise serializers.ValidationError({'tuition_id': 'Selected tuition does not exist.'})
         elif batch_id:
             try:
                 attrs['batch'] = TuitionBatch.objects.get(id=batch_id, tutor=request.user)
             except TuitionBatch.DoesNotExist:
                 raise serializers.ValidationError({'batch_id': 'Selected tuition batch does not exist.'})
+        elif student_id:
+            try:
+                attrs['student'] = User.objects.get(id=student_id, role=User.Role.STUDENT)
+            except User.DoesNotExist:
+                raise serializers.ValidationError({'student_id': 'Selected student does not exist.'})
         elif not self.instance:
-            raise serializers.ValidationError('You must assign the exam to either a Student or a Tuition Batch.')
+            raise serializers.ValidationError('You must assign the exam to a Tuition, Batch, or Student.')
 
         return attrs
 
@@ -331,6 +349,11 @@ class ExamCreateUpdateSerializer(serializers.ModelSerializer):
 class SubmitExamSerializer(serializers.Serializer):
     """Validates payload for student exam submission."""
     answers_data = serializers.DictField(required=False, default=dict)
+    uploaded_images = serializers.ListField(
+        child=serializers.CharField(),
+        required=False,
+        default=list
+    )
     image_urls = serializers.ListField(
         child=serializers.CharField(),
         required=False,

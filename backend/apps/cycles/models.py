@@ -154,3 +154,97 @@ class Cycle(models.Model):
             {"classNo": i, "completed": False, "date": None}
             for i in range(1, total_classes + 1)
         ]
+
+
+class AttendanceCycle(models.Model):
+    """
+    Per-Tuition Attendance & Dynamic Cycle model.
+    Tracks class completions (1 to cycle_length) per student within a specific Tuition.
+    Includes auto-reset, date stamping, and real-time Tuition Wallet / earnings calculations.
+    """
+
+    class Status(models.TextChoices):
+        ACTIVE = 'ACTIVE', 'Active'
+        ARCHIVED = 'ARCHIVED', 'Archived'
+
+    id = models.UUIDField(
+        primary_key=True, default=uuid.uuid4, editable=False
+    )
+    enrollment = models.ForeignKey(
+        'students.TuitionEnrollment',
+        on_delete=models.CASCADE,
+        related_name='cycles',
+        verbose_name='Tuition Enrollment'
+    )
+    cycle_number = models.PositiveIntegerField(
+        default=1,
+        verbose_name='Cycle Number',
+        help_text='Auto-incremented on each reset. Cycle #1 is the first.'
+    )
+    classes_data = models.JSONField(
+        default=list,
+        verbose_name='Classes Attendance Data',
+        help_text='[{"class_no": 1, "completed": True, "date": "2026-10-06", "topic": "..."}]'
+    )
+    status = models.CharField(
+        max_length=10,
+        choices=Status.choices,
+        default=Status.ACTIVE,
+        db_index=True,
+        verbose_name='Cycle Status'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'Attendance Cycle'
+        verbose_name_plural = 'Attendance Cycles'
+        ordering = ['enrollment', '-cycle_number']
+
+    def __str__(self):
+        return f'{self.enrollment} — Cycle #{self.cycle_number} ({self.status})'
+
+    @property
+    def completed_classes(self):
+        """Count of classes marked as completed."""
+        return sum(1 for c in self.classes_data if c.get('completed', False))
+
+    @property
+    def total_classes(self):
+        return self.enrollment.tuition.cycle_length
+
+    @property
+    def tuition_fee(self):
+        return self.enrollment.tuition.tuition_fee
+
+    @property
+    def per_class_rate(self):
+        if not self.total_classes:
+            return 0.00
+        return round(float(self.tuition_fee) / self.total_classes, 2)
+
+    @property
+    def earned_revenue(self):
+        return round(self.per_class_rate * self.completed_classes, 2)
+
+    @property
+    def pending_balance(self):
+        return round(float(self.tuition_fee) - self.earned_revenue, 2)
+
+    @property
+    def progress_percent(self):
+        if not self.total_classes:
+            return 0
+        return min(100, round((self.completed_classes / self.total_classes) * 100))
+
+    @property
+    def is_complete(self):
+        return self.completed_classes >= self.total_classes
+
+    @classmethod
+    def build_fresh_classes_data(cls, total_classes: int) -> list:
+        return [
+            {"class_no": i, "completed": False, "date": None, "topic": ""}
+            for i in range(1, total_classes + 1)
+        ]
+

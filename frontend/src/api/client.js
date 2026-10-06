@@ -76,20 +76,37 @@ export async function apiRequest(endpoint, options = {}) {
 }
 
 export const api = {
-  // Auth
+  // Auth & Discovery
   login: (credentials) => apiRequest('/auth/token/', { method: 'POST', body: JSON.stringify(credentials) }),
   registerTutor: (data) => apiRequest('/auth/register/', { method: 'POST', body: JSON.stringify(data) }),
   registerStudent: (data) => apiRequest('/auth/register/student/', { method: 'POST', body: JSON.stringify(data) }),
+  getTutors: (search = '') => apiRequest(`/auth/tutors/${search ? `?search=${encodeURIComponent(search)}` : ''}`),
   getMe: () => apiRequest('/auth/me/'),
 
-  // Students
+  // Students & Prospective Roster
   getStudents: () => apiRequest('/students/'),
+  getUnassignedStudents: () => apiRequest('/students/unassigned/'),
   createStudent: (studentData) => apiRequest('/students/', { method: 'POST', body: JSON.stringify(studentData) }),
   getStudentDetail: (id) => apiRequest(`/students/${id}/`),
   updateStudent: (id, data) => apiRequest(`/students/${id}/`, { method: 'PATCH', body: JSON.stringify(data) }),
   toggleStudentActive: (id) => apiRequest(`/students/${id}/toggle_active/`, { method: 'POST' }),
 
-  // Tuition Batches
+  // Tuitions (Tuition-Centric Architecture)
+  getTuitions: () => apiRequest('/tuitions/'),
+  getTuitionDetail: (id) => apiRequest(`/tuitions/${id}/`),
+  createTuition: (data) => apiRequest('/tuitions/', { method: 'POST', body: JSON.stringify(data) }),
+  updateTuition: (id, data) => apiRequest(`/tuitions/${id}/`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deleteTuition: (id) => apiRequest(`/tuitions/${id}/`, { method: 'DELETE' }),
+  enrollInTuition: (tuitionId, studentId) => apiRequest(`/tuitions/${tuitionId}/enroll/`, {
+    method: 'POST',
+    body: JSON.stringify({ student_id: studentId }),
+  }),
+  unenrollFromTuition: (tuitionId, studentId) => apiRequest(`/tuitions/${tuitionId}/unenroll/`, {
+    method: 'POST',
+    body: JSON.stringify({ student_id: studentId }),
+  }),
+
+  // Legacy Tuition Batches (backward compatibility)
   getBatches: () => apiRequest('/batches/'),
   createBatch: (data) => apiRequest('/batches/', { method: 'POST', body: JSON.stringify(data) }),
   getBatchDetail: (id) => apiRequest(`/batches/${id}/`),
@@ -104,24 +121,38 @@ export const api = {
     body: JSON.stringify({ student_id: studentId }),
   }),
 
-  // Cycles
+  // Attendance & Dynamic Cycles (Per-Tuition Engine)
+  getAttendanceCycles: (tuitionId = null, studentId = null) => {
+    const params = new URLSearchParams();
+    if (tuitionId) params.append('tuition_id', tuitionId);
+    if (studentId) params.append('student_id', studentId);
+    const query = params.toString() ? `?${params.toString()}` : '';
+    return apiRequest(`/attendance-cycles/${query}`);
+  },
+  toggleAttendanceClass: (cycleId, classNo, completed, date = null, topic = '') => apiRequest(`/attendance-cycles/${cycleId}/toggle_class/`, {
+    method: 'PATCH',
+    body: JSON.stringify({ class_no: classNo, completed, date, topic }),
+  }),
+  resetAttendanceCycle: (cycleId) => apiRequest(`/attendance-cycles/${cycleId}/reset/`, { method: 'POST' }),
+
+  // Legacy Cycles
   getCycles: (studentId) => apiRequest(`/cycles/${studentId ? `?student_id=${studentId}` : ''}`),
   getCycleDetail: (id) => apiRequest(`/cycles/${id}/`),
   toggleClass: (cycleId, classNo, completed, date = null, topic = '') => apiRequest(`/cycles/${cycleId}/toggle_class/`, {
     method: 'PATCH',
     body: JSON.stringify({ class_no: classNo, completed, date, topic }),
   }),
-
   resetCycle: (cycleId) => apiRequest(`/cycles/${cycleId}/reset/`, { method: 'POST' }),
 
   // Analytics
   getWalletAnalytics: () => apiRequest('/analytics/wallet/'),
 
-  // Exams
-  getExams: (studentId, batchId) => {
+  // Exams & Assignments
+  getExams: (studentId = null, batchId = null, tuitionId = null) => {
     const params = new URLSearchParams();
     if (studentId) params.append('student_id', studentId);
     if (batchId) params.append('batch_id', batchId);
+    if (tuitionId) params.append('tuition_id', tuitionId);
     const query = params.toString() ? `?${params.toString()}` : '';
     return apiRequest(`/exams/${query}`);
   },

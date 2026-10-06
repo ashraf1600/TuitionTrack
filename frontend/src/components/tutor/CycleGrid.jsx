@@ -43,17 +43,15 @@ export default function CycleGrid({
     );
   }
 
-  const {
-    cycle_number,
-    fee_snapshot,
-    total_classes,
-    completed_classes,
-    earned_amount,
-    pending_amount,
-    progress_percentage,
-    is_complete,
-    classes_data = [],
-  } = cycle;
+  const cycle_number = cycle.cycle_number || 1;
+  const fee_snapshot = cycle.tuition_fee !== undefined ? cycle.tuition_fee : (cycle.fee_snapshot || 0);
+  const total_classes = cycle.total_classes || 12;
+  const completed_classes = cycle.completed_classes || 0;
+  const earned_amount = cycle.earned_revenue !== undefined ? cycle.earned_revenue : (cycle.earned_amount || 0);
+  const pending_amount = cycle.pending_balance !== undefined ? cycle.pending_balance : (cycle.pending_amount || 0);
+  const progress_percentage = cycle.progress_percent !== undefined ? cycle.progress_percent : (cycle.progress_percentage || 0);
+  const is_complete = cycle.is_complete || (completed_classes >= total_classes);
+  const classes_data = cycle.classes_data || [];
 
   const handleOpenClassModal = (cls) => {
     setSelectedClass(cls);
@@ -71,10 +69,11 @@ export default function CycleGrid({
     e?.preventDefault();
     if (!selectedClass) return;
 
+    const classNum = selectedClass.class_no ?? selectedClass.classNo;
     setSavingClass(true);
     try {
       const targetDate = isCompletedState && classDate ? new Date(classDate).toISOString() : null;
-      await onToggleClass(cycle.id, selectedClass.classNo, isCompletedState, targetDate, classTopic);
+      await onToggleClass(cycle.id, classNum, isCompletedState, targetDate, classTopic);
       setDateModalOpen(false);
     } finally {
       setSavingClass(false);
@@ -83,10 +82,11 @@ export default function CycleGrid({
 
   const handleQuickMarkToday = async () => {
     if (!selectedClass) return;
+    const classNum = selectedClass.class_no ?? selectedClass.classNo;
     setSavingClass(true);
     try {
       const todayIso = new Date().toISOString();
-      await onToggleClass(cycle.id, selectedClass.classNo, true, todayIso, classTopic);
+      await onToggleClass(cycle.id, classNum, true, todayIso, classTopic);
       setDateModalOpen(false);
     } finally {
       setSavingClass(false);
@@ -95,9 +95,10 @@ export default function CycleGrid({
 
   const handleQuickUnmark = async () => {
     if (!selectedClass) return;
+    const classNum = selectedClass.class_no ?? selectedClass.classNo;
     setSavingClass(true);
     try {
-      await onToggleClass(cycle.id, selectedClass.classNo, false, null, '');
+      await onToggleClass(cycle.id, classNum, false, null, '');
       setDateModalOpen(false);
     } finally {
       setSavingClass(false);
@@ -210,7 +211,8 @@ export default function CycleGrid({
         </div>
 
         <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-3">
-          {classes_data.map((cls) => {
+          {classes_data.map((cls, idx) => {
+            const cNum = cls.class_no ?? cls.classNo ?? (idx + 1);
             const isCompleted = cls.completed;
             const dateObj = cls.date ? new Date(cls.date) : null;
             const formattedDate = dateObj
@@ -222,14 +224,14 @@ export default function CycleGrid({
 
             return (
               <div
-                key={cls.classNo}
-                onClick={() => handleOpenClassModal(cls)}
+                key={cNum}
+                onClick={() => handleOpenClassModal({ ...cls, classNo: cNum, class_no: cNum })}
                 title={
                   isCompleted
-                    ? `Class #${cls.classNo}: Completed on ${dateObj?.toLocaleDateString()}${
+                    ? `Class #${cNum}: Completed on ${dateObj?.toLocaleDateString()}${
                         cls.topic ? ` (${cls.topic})` : ''
                       } — Click to edit date`
-                    : `Class #${cls.classNo}: Click to record date & complete`
+                    : `Class #${cNum}: Click to record date & complete`
                 }
                 className={`relative group p-3 rounded-xl border flex flex-col items-center justify-center cursor-pointer select-none transition-all duration-200 transform hover:scale-[1.03] active:scale-95 ${
                   isCompleted
@@ -238,7 +240,7 @@ export default function CycleGrid({
                 }`}
               >
                 <div className="flex items-center justify-between w-full text-xs font-bold font-mono">
-                  <span>#{cls.classNo}</span>
+                  <span>#{cNum}</span>
                   <CalendarDays className="w-3.5 h-3.5 opacity-40 group-hover:opacity-100 transition" />
                 </div>
 
