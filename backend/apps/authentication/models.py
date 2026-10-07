@@ -6,9 +6,17 @@ Extends AbstractUser to support two roles: TUTOR and STUDENT.
 - Students are created by tutors and scoped strictly to their tutor.
 """
 import uuid
+import secrets
+import string
 from django.contrib.auth.models import AbstractUser
 from django.db import models
 from django.utils.translation import gettext_lazy as _
+
+
+def _generate_tutor_code():
+    """Generate a unique, human-readable 6-character alphanumeric tutor code."""
+    alphabet = string.ascii_uppercase + string.digits
+    return ''.join(secrets.choice(alphabet) for _ in range(6))
 
 
 class CustomUser(AbstractUser):
@@ -66,6 +74,23 @@ class CustomUser(AbstractUser):
         help_text='Set when someone else chose the password (tutor-created account or tutor reset). '
                   'The user is asked for a new one at next sign-in.',
     )
+    # Unique invite code for tutors; students enter this code to send a connection request.
+    tutor_code = models.CharField(
+        max_length=8,
+        unique=True,
+        null=True,
+        blank=True,
+        db_index=True,
+        verbose_name='Tutor Code',
+        help_text='Auto-generated 6-char invite code for tutors. Students use this to connect.',
+    )
+    # Profile picture (stored via MEDIA_ROOT; Pillow required).
+    profile_picture = models.ImageField(
+        upload_to='profile_pictures/',
+        null=True,
+        blank=True,
+        verbose_name='Profile Picture',
+    )
 
     # Timestamps
     created_at = models.DateTimeField(auto_now_add=True)
@@ -79,6 +104,16 @@ class CustomUser(AbstractUser):
     def __str__(self):
         return f'{self.get_full_name() or self.username} ({self.role})'
 
+    def save(self, *args, **kwargs):
+        # Auto-assign a unique tutor_code when a Tutor account is first created.
+        if self.role == self.Role.TUTOR and not self.tutor_code:
+            for _ in range(20):  # retry up to 20 times to avoid collision
+                candidate = _generate_tutor_code()
+                if not CustomUser.objects.filter(tutor_code=candidate).exists():
+                    self.tutor_code = candidate
+                    break
+        super().save(*args, **kwargs)
+
     @property
     def is_tutor(self):
         return self.role == self.Role.TUTOR
@@ -86,3 +121,10 @@ class CustomUser(AbstractUser):
     @property
     def is_student(self):
         return self.role == self.Role.STUDENT
+
+    @property
+    def profile_picture_url(self):
+        """Returns an absolute URL for the profile picture, or None."""
+        if self.profile_picture:
+            return self.profile_picture.url
+        return None

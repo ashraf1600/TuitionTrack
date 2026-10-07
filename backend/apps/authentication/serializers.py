@@ -48,6 +48,13 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         # Accept the username in any capitalisation, or the account's email address.
         attrs[self.username_field] = resolve_login_name(attrs.get(self.username_field))
         data = super().validate(attrs)
+        request = self.context.get('request')
+        pic_url = None
+        if self.user.profile_picture:
+            pic_url = (
+                request.build_absolute_uri(self.user.profile_picture.url)
+                if request else self.user.profile_picture.url
+            )
         # Append extra user data to the response body as well
         data['user'] = {
             'id': str(self.user.id),
@@ -57,6 +64,8 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
             'role': self.user.role,
             'tutor_id': str(self.user.tutor_id) if self.user.tutor_id else None,
             'must_change_password': self.user.must_change_password,
+            'tutor_code': self.user.tutor_code,
+            'profile_picture_url': pic_url,
         }
         return data
 
@@ -256,15 +265,31 @@ class UserProfileSerializer(serializers.ModelSerializer):
     def get_name(self, obj):
         return obj.get_full_name() or obj.username
 
+    tutor_code = serializers.SerializerMethodField()
+    profile_picture_url = serializers.SerializerMethodField()
+
     class Meta:
         model = User
         fields = [
             'id', 'username', 'name', 'email', 'first_name', 'last_name',
-            'role', 'phone', 'tutor_id', 'must_change_password', 'profile', 'created_at'
+            'role', 'phone', 'tutor_id', 'must_change_password',
+            'tutor_code', 'profile_picture_url',
+            'profile', 'created_at'
         ]
         read_only_fields = fields
 
     profile = serializers.SerializerMethodField()
+
+    def get_tutor_code(self, obj):
+        """Only reveal the tutor_code to the tutor themselves."""
+        return obj.tutor_code if obj.role == User.Role.TUTOR else None
+
+    def get_profile_picture_url(self, obj):
+        request = self.context.get('request')
+        if obj.profile_picture:
+            url = obj.profile_picture.url
+            return request.build_absolute_uri(url) if request else url
+        return None
 
     def get_profile(self, obj):
         """A student's own academic details (never fee fields)."""

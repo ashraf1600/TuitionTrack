@@ -225,3 +225,84 @@ class ConnectionRequest(models.Model):
     def __str__(self):
         return f'{self.student.username} -> {self.tutor.username} ({self.status})'
 
+
+class Homework(models.Model):
+    """
+    Homework assigned by a tutor to a student (or a tuition group).
+
+    Business rules:
+      - Only a TUTOR can create / edit / mark homework as evaluated.
+      - A student can optionally submit an online URL.
+      - `is_evaluated` is ONLY set to True by the tutor (physical review OR online check).
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    tutor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='assigned_homework',
+        limit_choices_to={'role': 'TUTOR'},
+        verbose_name='Tutor',
+    )
+    # Either student-level (individual) or tuition-level (whole group).
+    student = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='received_homework',
+        limit_choices_to={'role': 'STUDENT'},
+        verbose_name='Student',
+        help_text='Null when assigned to an entire tuition group.',
+    )
+    tuition = models.ForeignKey(
+        'Tuition',
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='homework_assignments',
+        verbose_name='Tuition Group',
+        help_text='Null when assigned to an individual student.',
+    )
+
+    title = models.CharField(max_length=255, verbose_name='Title')
+    description = models.TextField(blank=True, verbose_name='Description / Instructions')
+    due_date = models.DateTimeField(verbose_name='Due Date & Time', db_index=True)
+
+    # Student-side optional submission.
+    submitted_online_url = models.URLField(
+        max_length=1000,
+        blank=True,
+        default='',
+        verbose_name='Submitted Online URL',
+        help_text='Student may paste a link (Google Doc, GitHub, etc.) as their submission.',
+    )
+    submitted_at = models.DateTimeField(
+        null=True, blank=True, verbose_name='Submitted At'
+    )
+
+    # Tutor-side evaluation flag — only the tutor can flip this.
+    is_evaluated = models.BooleanField(
+        default=False,
+        verbose_name='Evaluated / Marked Done',
+        help_text='Set True by the tutor after physical or online review.',
+    )
+    evaluated_at = models.DateTimeField(null=True, blank=True, verbose_name='Evaluated At')
+    tutor_feedback = models.TextField(blank=True, verbose_name='Tutor Feedback')
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'Homework'
+        verbose_name_plural = 'Homework Assignments'
+        ordering = ['due_date']
+
+    def __str__(self):
+        recipient = (
+            self.student.get_full_name() or self.student.username
+            if self.student
+            else (self.tuition.title if self.tuition else 'Unknown')
+        )
+        return f'[{self.tutor.username}] {self.title} → {recipient}'
+

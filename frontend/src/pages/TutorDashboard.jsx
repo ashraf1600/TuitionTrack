@@ -11,6 +11,8 @@ import AddStudentModal from '../components/tutor/AddStudentModal';
 import ExamAuthoringModal from '../components/tutor/ExamAuthoringModal';
 import ExamManager from '../components/tutor/ExamManager';
 import TuitionBatchesModal from '../components/tutor/TuitionBatchesModal';
+import HomeworkManager from '../components/tutor/HomeworkManager';
+import { useAuth } from '../context/AuthContext';
 import { api } from '../api/client';
 
 // Sat-first canonical week order shared with TuitionWorkspace (Sat -> Fri for BD context).
@@ -50,7 +52,8 @@ import {
 
 export default function TutorDashboard() {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState('batches'); // 'batches' | 'attendance' | 'exams'
+  const { user } = useAuth();
+  const [activeTab, setActiveTab] = useState('batches'); // 'batches' | 'homework' | 'attendance' | 'exams'
 
   // Data states
   const [analytics, setAnalytics] = useState(null);
@@ -311,6 +314,42 @@ export default function TutorDashboard() {
           </div>
         </div>
 
+        {/* Tutor Invite Code Banner */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 rounded-2xl bg-gradient-to-r from-indigo-950/40 via-purple-950/20 to-slate-900 border border-indigo-500/20 shadow-lg shadow-indigo-950/20">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-indigo-500/15 border border-indigo-500/30 flex items-center justify-center text-indigo-400 flex-shrink-0">
+              <Sparkles className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-slate-200 uppercase tracking-wider">Your Student Invite Code</span>
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 font-semibold">6-char code</span>
+              </div>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Share this code with prospective students. They enter it on their portal to connect with you.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <span className="font-mono text-base font-black text-indigo-200 tracking-widest bg-slate-900/90 px-3.5 py-1.5 rounded-xl border border-indigo-500/40 select-all">
+              {user?.tutor_code || '—'}
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                if (user?.tutor_code) {
+                  navigator.clipboard.writeText(user.tutor_code);
+                  notify.success(`Invite code "${user.tutor_code}" copied to clipboard!`);
+                }
+              }}
+              className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-md shadow-indigo-600/25"
+            >
+              Copy Code
+            </button>
+          </div>
+        </div>
+
         {/* Students who asked to join, or have no group yet */}
         <ConnectionRequestsPanel
           students={unassignedStudents}
@@ -386,6 +425,18 @@ export default function TutorDashboard() {
                   {exams.length}
                 </span>
               )}
+            </button>
+
+            <button
+              onClick={() => setActiveTab('homework')}
+              className={`flex items-center gap-2 py-2 px-4 rounded-xl text-xs font-bold transition ${
+                activeTab === 'homework'
+                  ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+              }`}
+            >
+              <BookOpen className="w-4 h-4" />
+              <span>Homework</span>
             </button>
           </div>
 
@@ -773,6 +824,16 @@ export default function TutorDashboard() {
             students={students}
             onReload={loadExams}
           />
+        )}
+
+        {/* Tab Content D: Homework management */}
+        {activeTab === 'homework' && (
+          <div className="glass-panel p-6 rounded-2xl">
+            <HomeworkManager
+              tuitions={tuitions}
+              students={students}
+            />
+          </div>
         )}
       </main>
 

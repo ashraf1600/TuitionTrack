@@ -529,3 +529,275 @@ class UnassignedStudentsView(APIView):
             })
 
         return Response(results, status=status.HTTP_200_OK)
+
+
+# ── Tutor Code Connection View ────────────────────────────────────────────
+
+class TutorCodeConnectView(APIView):
+    """
+    POST /api/v1/connections/by-code/
+    Student sends a connection request using the tutor's 6-char invite code.
+
+    Request body: {tutor_code: "A3B7XZ", message?: "..."}
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        from .models import ConnectionRequest
+        from .serializers import TutorCodeConnectionSerializer, ConnectionRequestSerializer
+
+        if request.user.role != "STUDENT":
+            return Response(
+                {"error": "Only students can use invite codes."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        serializer = TutorCodeConnectionSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        tutor = serializer.validated_data["tutor"]
+        message = serializer.validated_data.get("message", "")
+
+        connection, created = ConnectionRequest.objects.get_or_create(
+            student=request.user,
+            tutor=tutor,
+            defaults={"message": message},
+        )
+        if not created:
+            if connection.status == ConnectionRequest.Status.ACCEPTED:
+                return Response(
+                    {"error": "You are already connected to this tutor."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            if connection.status == ConnectionRequest.Status.PENDING:
+                return Response(
+                    {"error": "Your request to this tutor is already pending."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            # Was REJECTED — allow re-send
+            connection.status = ConnectionRequest.Status.PENDING
+            connection.message = message
+            connection.responded_at = None
+            connection.save(update_fields=["status", "message", "responded_at"])
+
+        return Response(
+            ConnectionRequestSerializer(connection, context={"request": request}).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class ConnectedTutorsView(APIView):
+    """
+    GET /api/v1/my-tutors/
+    Returns tutors whose connection request to the logged-in student was ACCEPTED.
+    Each record includes display_name ("Ashraf Sir"), profile picture, and tuition groups.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        from .models import ConnectionRequest
+        from .serializers import ConnectedTutorSerializer
+
+        if request.user.role != "STUDENT":
+            return Response(
+                {"error": "Only students can access this endpoint."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        accepted_tutor_ids = ConnectionRequest.objects.filter(
+            student=request.user,
+            status=ConnectionRequest.Status.ACCEPTED,
+        ).values_list("tutor_id", flat=True)
+
+        tutors = User.objects.filter(
+            id__in=accepted_tutor_ids, is_active=True
+        ).prefetch_related("tuitions")
+
+        serializer = ConnectedTutorSerializer(
+            tutors, many=True, context={"request": request}
+        )
+        return Response(serializer.data)
+
+
+class TutorDetailForStudentView(APIView):
+    """
+    GET /api/v1/my-tutors/<tutor_id>/
+    Detailed view of one tutor for the student: routine + upcoming classes + homework.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, tutor_id):
+        from .models import ConnectionRequest, Homework
+        from .serializers import ConnectedTutorSerializer, HomeworkSerializer
+
+        if request.user.role != "STUDENT":
+            return Response({"error": "Students only."}, status=status.HTTP_403_FORBIDDEN)
+
+        # Verify the student is actually connected to this tutor.
+        connection = ConnectionRequest.objects.filter(
+            student=request.user,
+            tutor_id=tutor_id,
+            status=ConnectionRequest.Status.ACCEPTED,
+        ).first()
+        if not connection:
+            return Response(
+                {"error": "You are not connected to this tutor."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        tutor = get_object_or_404(User, id=tutor_id, role="TUTOR", is_active=True)
+        tutor_data = ConnectedTutorSerializer(tutor, context={"request": request}).data
+
+        # Homework assigned to this student (by this tutor) or their tuition groups.
+        from apps.students.models import TuitionEnrollment
+        enrolled_tuition_ids = TuitionEnrollment.objects.filter(
+            student=request.user, tuition__tutor=tutor, is_active=True
+        ).values_list("tuition_id", flat=True)
+
+        homework_qs = Homework.objects.filter(
+            tutor=tutor,
+        ).filter(
+            Q(student=request.user) | Q(tuition_id__in=enrolled_tuition_ids)
+        ).select_related("tutor", "student", "tuition").order_by("due_date")
+
+        homework_data = HomeworkSerializer(
+            homework_qs, many=True, context={"request": request}
+        ).data
+
+        return Response({
+            "tutor": tutor_data,
+            "homework": homework_data,
+        })
+
+
+# ── Homework ViewSet ──────────────────────────────────────────────────────
+
+class HomeworkViewSet(viewsets.GenericViewSet):
+    """
+    Homework management.
+
+    GET    /api/v1/homework/                    - List (student sees own, tutor sees all theirs)
+    POST   /api/v1/homework/                    - Tutor creates homework
+    GET    /api/v1/homework/<id>/               - Detail
+    PATCH  /api/v1/homework/<id>/               - Tutor edits homework
+    DELETE /api/v1/homework/<id>/               - Tutor deletes homework
+    POST   /api/v1/homework/<id>/mark_done/     - Tutor marks as evaluated
+    POST   /api/v1/homework/<id>/submit/        - Student submits online link
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        from .models import Homework
+        user = self.request.user
+        qs = Homework.objects.select_related("tutor", "student", "tuition")
+        if user.role == "TUTOR":
+            return qs.filter(tutor=user)
+        if user.role == "STUDENT":
+            from .models import TuitionEnrollment
+            enrolled_tuition_ids = TuitionEnrollment.objects.filter(
+                student=user, is_active=True
+            ).values_list("tuition_id", flat=True)
+            return qs.filter(
+                Q(student=user) | Q(tuition_id__in=enrolled_tuition_ids)
+            )
+        return Homework.objects.none()
+
+    def list(self, request):
+        from .serializers import HomeworkSerializer
+        qs = self.get_queryset().order_by("due_date")
+
+        # Optional query filters
+        tutor_id = request.query_params.get("tutor_id")
+        evaluated = request.query_params.get("evaluated")
+        if tutor_id:
+            qs = qs.filter(tutor_id=tutor_id)
+        if evaluated is not None:
+            qs = qs.filter(is_evaluated=(evaluated.lower() == "true"))
+
+        return Response(HomeworkSerializer(qs, many=True, context={"request": request}).data)
+
+    def retrieve(self, request, pk=None):
+        from .serializers import HomeworkSerializer
+        hw = get_object_or_404(self.get_queryset(), pk=pk)
+        return Response(HomeworkSerializer(hw, context={"request": request}).data)
+
+    def create(self, request):
+        from .serializers import HomeworkCreateUpdateSerializer, HomeworkSerializer
+        from .models import Homework
+        if request.user.role != "TUTOR":
+            return Response({"error": "Only tutors can create homework."}, status=status.HTTP_403_FORBIDDEN)
+
+        serializer = HomeworkCreateUpdateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        # Ensure the student / tuition belongs to this tutor.
+        student = serializer.validated_data.get("student")
+        tuition = serializer.validated_data.get("tuition")
+        if student and student.tutor != request.user:
+            return Response({"student": "This student does not belong to you."}, status=status.HTTP_400_BAD_REQUEST)
+        if tuition and tuition.tutor != request.user:
+            return Response({"tuition": "This tuition does not belong to you."}, status=status.HTTP_400_BAD_REQUEST)
+
+        hw = serializer.save(tutor=request.user)
+        return Response(HomeworkSerializer(hw, context={"request": request}).data, status=status.HTTP_201_CREATED)
+
+    def partial_update(self, request, pk=None):
+        from .serializers import HomeworkCreateUpdateSerializer, HomeworkSerializer
+        if request.user.role != "TUTOR":
+            return Response({"error": "Only tutors can edit homework."}, status=status.HTTP_403_FORBIDDEN)
+        hw = get_object_or_404(self.get_queryset(), pk=pk)
+        serializer = HomeworkCreateUpdateSerializer(hw, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        hw = serializer.save()
+        return Response(HomeworkSerializer(hw, context={"request": request}).data)
+
+    def destroy(self, request, pk=None):
+        if request.user.role != "TUTOR":
+            return Response({"error": "Only tutors can delete homework."}, status=status.HTTP_403_FORBIDDEN)
+        from .models import Homework
+        hw = get_object_or_404(Homework, pk=pk, tutor=request.user)
+        hw.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+    @action(detail=True, methods=["post"], permission_classes=[IsAuthenticated, IsTutor])
+    def mark_done(self, request, pk=None):
+        """
+        POST /api/v1/homework/<id>/mark_done/
+        Tutor marks homework as evaluated. Optionally adds feedback.
+        """
+        from .serializers import HomeworkMarkDoneSerializer, HomeworkSerializer
+        hw = get_object_or_404(self.get_queryset(), pk=pk)
+        serializer = HomeworkMarkDoneSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        hw.is_evaluated = True
+        hw.evaluated_at = timezone.now()
+        if serializer.validated_data.get("feedback"):
+            hw.tutor_feedback = serializer.validated_data["feedback"]
+        hw.save(update_fields=["is_evaluated", "evaluated_at", "tutor_feedback"])
+
+        return Response({
+            "message": "Homework marked as done.",
+            "homework": HomeworkSerializer(hw, context={"request": request}).data,
+        })
+
+    @action(detail=True, methods=["post"])
+    def submit(self, request, pk=None):
+        """
+        POST /api/v1/homework/<id>/submit/
+        Student optionally submits an online URL as their homework submission.
+        """
+        from .serializers import StudentHomeworkSubmitSerializer, HomeworkSerializer
+        if request.user.role != "STUDENT":
+            return Response({"error": "Only students can submit homework."}, status=status.HTTP_403_FORBIDDEN)
+        hw = get_object_or_404(self.get_queryset(), pk=pk)
+        serializer = StudentHomeworkSubmitSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        hw.submitted_online_url = serializer.validated_data.get("submitted_online_url", "")
+        hw.submitted_at = timezone.now()
+        hw.save(update_fields=["submitted_online_url", "submitted_at"])
+
+        return Response({
+            "message": "Homework submission recorded.",
+            "homework": HomeworkSerializer(hw, context={"request": request}).data,
+        })

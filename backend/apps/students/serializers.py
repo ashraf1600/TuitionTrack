@@ -466,6 +466,7 @@ class ConnectionRequestSerializer(serializers.ModelSerializer):
     student_name = serializers.SerializerMethodField()
     student_username = serializers.CharField(source='student.username', read_only=True)
     tutor_name = serializers.SerializerMethodField()
+    tutor_display_name = serializers.SerializerMethodField()
     tutor_username = serializers.CharField(source='tutor.username', read_only=True)
     student = serializers.SerializerMethodField()
 
@@ -475,7 +476,7 @@ class ConnectionRequestSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'status', 'message', 'created_at', 'responded_at',
             'student_id', 'student_name', 'student_username', 'student',
-            'tutor_id', 'tutor_name', 'tutor_username',
+            'tutor_id', 'tutor_name', 'tutor_display_name', 'tutor_username',
         ]
         read_only_fields = fields
 
@@ -484,6 +485,10 @@ class ConnectionRequestSerializer(serializers.ModelSerializer):
 
     def get_tutor_name(self, obj):
         return obj.tutor.get_full_name() or obj.tutor.username
+
+    def get_tutor_display_name(self, obj):
+        first = obj.tutor.first_name or obj.tutor.username
+        return f"{first} Sir"
 
     def get_student(self, obj):
         """Contact details so the tutor can decide — never shown to other students."""
@@ -519,3 +524,151 @@ class ConnectionRequestCreateSerializer(serializers.Serializer):
             raise serializers.ValidationError({'tutor_id': 'Tutor not found.'})
         attrs['tutor'] = tutor
         return attrs
+
+
+# -- Tutor Code Connection ------------------------------------------------
+
+class TutorCodeConnectionSerializer(serializers.Serializer):
+    tutor_code = serializers.CharField(max_length=8, min_length=4)
+    message = serializers.CharField(required=False, allow_blank=True, max_length=500, default='')
+
+    def validate_tutor_code(self, value):
+        value = value.strip().upper()
+        if not User.objects.filter(tutor_code=value, role=User.Role.TUTOR, is_active=True).exists():
+            raise serializers.ValidationError('No active tutor found with that code.')
+        return value
+
+    def validate(self, attrs):
+        code = attrs['tutor_code']
+        attrs['tutor'] = User.objects.filter(tutor_code=code, role=User.Role.TUTOR, is_active=True).first()
+        return attrs
+
+
+class ConnectedTutorSerializer(serializers.Serializer):
+    """
+    Tutor card on the student dashboard.
+    display_name => 'Ashraf Sir' (first_name + ' Sir').
+    """
+    id = serializers.SerializerMethodField()
+    display_name = serializers.SerializerMethodField()
+    username = serializers.SerializerMethodField()
+    profile_picture_url = serializers.SerializerMethodField()
+    tuitions = serializers.SerializerMethodField()
+    subjects = serializers.SerializerMethodField()
+
+    def get_id(self, obj):
+        return str(obj.id)
+
+    def get_display_name(self, obj):
+        first = obj.first_name or obj.username
+        return f"{first} Sir"
+
+    def get_username(self, obj):
+        return obj.username
+
+    def get_profile_picture_url(self, obj):
+        request = self.context.get("request")
+        if obj.profile_picture:
+            url = obj.profile_picture.url
+            if request:
+                return request.build_absolute_uri(url)
+            return url
+        return None
+
+    def get_tuitions(self, obj):
+        return [
+            {
+                "id": str(t.id),
+                "title": t.title,
+                "subject": t.subject,
+                "routine": t.routine,
+                "cycle_length": t.cycle_length,
+            }
+            for t in obj.tuitions.all()
+        ]
+
+    def get_subjects(self, obj):
+        subjects = [t.subject for t in obj.tuitions.all() if t.subject]
+        return list(dict.fromkeys(subjects))
+
+
+class HomeworkSerializer(serializers.ModelSerializer):
+    """Read serializer for students and tutors (homework list/detail)."""
+    tutor_name = serializers.SerializerMethodField()
+    tutor_display_name = serializers.SerializerMethodField()
+    tutor_profile_picture = serializers.SerializerMethodField()
+    student_name = serializers.SerializerMethodField()
+    tuition_title = serializers.SerializerMethodField()
+    is_submitted = serializers.SerializerMethodField()
+
+    class Meta:
+        from .models import Homework
+        model = Homework
+        fields = [
+            "id", "title", "description", "due_date",
+            "tutor_name", "tutor_display_name", "tutor_profile_picture",
+            "student_name", "tuition_title",
+            "submitted_online_url", "submitted_at", "is_submitted",
+            "is_evaluated", "evaluated_at", "tutor_feedback",
+            "created_at", "updated_at",
+        ]
+        read_only_fields = fields
+
+    def get_tutor_name(self, obj):
+        return obj.tutor.get_full_name() or obj.tutor.username
+
+    def get_tutor_display_name(self, obj):
+        first = obj.tutor.first_name or obj.tutor.username
+        return f"{first} Sir"
+
+    def get_tutor_profile_picture(self, obj):
+        request = self.context.get("request")
+        if obj.tutor.profile_picture:
+            url = obj.tutor.profile_picture.url
+            return request.build_absolute_uri(url) if request else url
+        return None
+
+    def get_student_name(self, obj):
+        if obj.student:
+            return obj.student.get_full_name() or obj.student.username
+        return None
+
+    def get_tuition_title(self, obj):
+        return obj.tuition.title if obj.tuition else None
+
+    def get_is_submitted(self, obj):
+        return bool(obj.submitted_online_url or obj.submitted_at)
+
+
+class HomeworkCreateUpdateSerializer(serializers.ModelSerializer):
+    """Tutor creates/edits homework. is_evaluated is NOT writable here."""
+
+    class Meta:
+        from .models import Homework
+        model = Homework
+        fields = [
+            "id", "title", "description", "due_date",
+            "student", "tuition", "tutor_feedback",
+        ]
+        read_only_fields = ["id"]
+
+    def validate(self, attrs):
+        if not attrs.get("student") and not attrs.get("tuition"):
+            raise serializers.ValidationError(
+                "Provide either a student or a tuition group for this homework."
+            )
+        if attrs.get("student") and attrs.get("tuition"):
+            raise serializers.ValidationError(
+                "Assign homework to either a student OR a tuition group, not both."
+            )
+        return attrs
+
+
+class HomeworkMarkDoneSerializer(serializers.Serializer):
+    """POST /api/v1/homework/<id>/mark_done/ — tutor only."""
+    feedback = serializers.CharField(required=False, allow_blank=True, default="")
+
+
+class StudentHomeworkSubmitSerializer(serializers.Serializer):
+    """Student optionally submits an online link."""
+    submitted_online_url = serializers.URLField(required=False, allow_blank=True, default="")

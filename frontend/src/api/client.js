@@ -325,4 +325,45 @@ export const api = {
   // Media
   uploadMedia: (formData) => apiRequest('/media/upload/', { method: 'POST', body: formData }),
   fetchServerOffset: () => fetchServerOffset(),
+
+  // ── Tutor Code Connection (Student → Tutor invite-code flow) ──────────
+  // Student enters a 6-char code to send a connection request to a tutor.
+  connectByCode: (tutorCode, message = '') =>
+    apiRequest('/connections/by-code/', {
+      method: 'POST',
+      body: JSON.stringify({ tutor_code: tutorCode.trim().toUpperCase(), message }),
+    }),
+
+  // ── Student Dashboard: Connected Tutors ───────────────────────────────
+  // Returns tutors with accepted connection requests; each has display_name ("Ashraf Sir").
+  getMyTutors: () => apiRequest('/my-tutors/'),
+  // Detailed view of one tutor: routine + homework.
+  getTutorDetail: (tutorId) => apiRequest(`/my-tutors/${tutorId}/`),
+
+  // ── Homework ──────────────────────────────────────────────────────────
+  getHomework: (params = {}) => {
+    const query = new URLSearchParams();
+    if (params.tutorId) query.append('tutor_id', params.tutorId);
+    if (params.evaluated !== undefined) query.append('evaluated', params.evaluated);
+    const qs = query.toString() ? `?${query.toString()}` : '';
+    return apiRequest(`/homework/${qs}`);
+  },
+  getHomeworkDetail: (id) => apiRequest(`/homework/${id}/`),
+  createHomework: (data) =>
+    apiRequest('/homework/', { method: 'POST', body: JSON.stringify(data) }),
+  updateHomework: (id, data) =>
+    apiRequest(`/homework/${id}/`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deleteHomework: (id) => apiRequest(`/homework/${id}/`, { method: 'DELETE' }),
+  // Tutor marks homework as evaluated/done. Optional {feedback: "..."} body.
+  markHomeworkDone: (id, feedback = '') =>
+    apiRequest(`/homework/${id}/mark_done/`, {
+      method: 'POST',
+      body: JSON.stringify({ feedback }),
+    }),
+  // Student submits an optional online URL as their submission.
+  submitHomework: (id, url = '') =>
+    apiRequest(`/homework/${id}/submit/`, {
+      method: 'POST',
+      body: JSON.stringify({ submitted_online_url: url }),
+    }),
 };
