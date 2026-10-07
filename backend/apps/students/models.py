@@ -277,6 +277,13 @@ class Homework(models.Model):
         verbose_name='Submitted Online URL',
         help_text='Student may paste a link (Google Doc, GitHub, etc.) as their submission.',
     )
+    submission_file = models.FileField(
+        upload_to='homework/%Y/%m/',
+        null=True,
+        blank=True,
+        verbose_name='Submission File',
+        help_text='Optional file upload as an alternative to a URL.',
+    )
     submitted_at = models.DateTimeField(
         null=True, blank=True, verbose_name='Submitted At'
     )
@@ -305,4 +312,63 @@ class Homework(models.Model):
             else (self.tuition.title if self.tuition else 'Unknown')
         )
         return f'[{self.tutor.username}] {self.title} → {recipient}'
+
+
+class WeeklyRoutine(models.Model):
+    """Recurring weekly slot: Tutor -> Student or whole Tuition group."""
+    class Day(models.TextChoices):
+        SATURDAY = 'SATURDAY', 'Saturday'
+        SUNDAY = 'SUNDAY', 'Sunday'
+        MONDAY = 'MONDAY', 'Monday'
+        TUESDAY = 'TUESDAY', 'Tuesday'
+        WEDNESDAY = 'WEDNESDAY', 'Wednesday'
+        THURSDAY = 'THURSDAY', 'Thursday'
+        FRIDAY = 'FRIDAY', 'Friday'
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tutor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
+        related_name='tutor_weekly_routines', limit_choices_to={'role': 'TUTOR'}, db_index=True)
+    student = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
+        null=True, blank=True, related_name='student_weekly_routines',
+        limit_choices_to={'role': 'STUDENT'})
+    tuition = models.ForeignKey('students.Tuition', on_delete=models.CASCADE,
+        null=True, blank=True, related_name='detailed_routines')
+    day_of_week = models.CharField(max_length=10, choices=Day.choices, db_index=True)
+    start_time = models.TimeField()
+    end_time = models.TimeField()
+    subject = models.CharField(max_length=150, blank=True)
+
+    class Meta:
+        ordering = ['day_of_week', 'start_time']
+        constraints = [
+            models.CheckConstraint(condition=models.Q(student__isnull=False) | models.Q(tuition__isnull=False),
+                name='routine_requires_student_or_tuition'),
+            models.CheckConstraint(condition=models.Q(end_time__gt=models.F('start_time')),
+                name='routine_end_after_start'),
+        ]
+
+    def __str__(self):
+        target = self.student.username if self.student else (self.tuition.title if self.tuition else '?')
+        return f'{self.tutor.username}: {self.day_of_week} {self.start_time}-{self.end_time} -> {target}'
+
+
+class ClassSchedule(models.Model):
+    """Concrete dated class for the UpcomingClasses list."""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tutor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
+        related_name='tutor_class_schedules', limit_choices_to={'role': 'TUTOR'}, db_index=True)
+    tuition = models.ForeignKey('students.Tuition', on_delete=models.CASCADE,
+        null=True, blank=True, related_name='scheduled_classes')
+    student = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
+        null=True, blank=True, related_name='student_class_schedules',
+        limit_choices_to={'role': 'STUDENT'})
+    scheduled_at = models.DateTimeField(db_index=True)
+    topic = models.CharField(max_length=255, blank=True)
+    is_cancelled = models.BooleanField(default=False)
+
+    class Meta:
+        ordering = ['scheduled_at']
+
+    def __str__(self):
+        return f'{self.tutor.username} @ {self.scheduled_at:%Y-%m-%d %H:%M}'
 

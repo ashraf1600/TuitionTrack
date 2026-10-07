@@ -594,6 +594,7 @@ class ConnectedTutorSerializer(serializers.Serializer):
 
 class HomeworkSerializer(serializers.ModelSerializer):
     """Read serializer for students and tutors (homework list/detail)."""
+    due_date = serializers.DateTimeField(format="%Y-%m-%dT%H:%M:%SZ")
     tutor_name = serializers.SerializerMethodField()
     tutor_display_name = serializers.SerializerMethodField()
     tutor_profile_picture = serializers.SerializerMethodField()
@@ -637,7 +638,7 @@ class HomeworkSerializer(serializers.ModelSerializer):
         return obj.tuition.title if obj.tuition else None
 
     def get_is_submitted(self, obj):
-        return bool(obj.submitted_online_url or obj.submitted_at)
+        return bool(obj.submitted_online_url or getattr(obj, "submission_file", None) or obj.submitted_at)
 
 
 class HomeworkCreateUpdateSerializer(serializers.ModelSerializer):
@@ -670,5 +671,56 @@ class HomeworkMarkDoneSerializer(serializers.Serializer):
 
 
 class StudentHomeworkSubmitSerializer(serializers.Serializer):
-    """Student optionally submits an online link."""
+    """Student optionally submits an online link and/or file. No is_evaluated here."""
     submitted_online_url = serializers.URLField(required=False, allow_blank=True, default="")
+    submission_file = serializers.FileField(required=False, allow_null=True)
+
+
+class TutorHomeworkEvaluateSerializer(serializers.Serializer):
+    """Tutor-only: the ONLY path that writes is_evaluated."""
+    is_evaluated = serializers.BooleanField()
+    tutor_feedback = serializers.CharField(required=False, allow_blank=True, default="")
+
+
+class ConnectedTutorListSerializer(serializers.Serializer):
+    """Student tutor list: display_name='Ashraf Sir' + profile_picture. No tuition titles."""
+    id = serializers.UUIDField(read_only=True)
+    display_name = serializers.SerializerMethodField()
+    username = serializers.CharField(read_only=True)
+    profile_picture = serializers.SerializerMethodField()
+
+    def get_display_name(self, obj):
+        first = (obj.first_name or "").strip() or obj.username
+        return f"{first} Sir"
+
+    def get_profile_picture(self, obj):
+        if not obj.profile_picture:
+            return None
+        url = obj.profile_picture.url
+        request = self.context.get("request")
+        return request.build_absolute_uri(url) if request else url
+
+
+class WeeklyRoutineSerializer(serializers.ModelSerializer):
+    class Meta:
+        from .models import WeeklyRoutine
+        model = WeeklyRoutine
+        fields = ["id", "day_of_week", "start_time", "end_time", "subject", "student", "tuition"]
+        read_only_fields = ["id"]
+
+    def validate(self, attrs):
+        if not attrs.get("student") and not attrs.get("tuition"):
+            raise serializers.ValidationError("Provide a student or a tuition group.")
+        if attrs.get("student") and attrs.get("tuition"):
+            raise serializers.ValidationError("Provide either student OR tuition, not both.")
+        return attrs
+
+
+class ClassScheduleSerializer(serializers.ModelSerializer):
+    scheduled_at = serializers.DateTimeField(format="%Y-%m-%dT%H:%M:%SZ")
+
+    class Meta:
+        from .models import ClassSchedule
+        model = ClassSchedule
+        fields = ["id", "scheduled_at", "topic", "is_cancelled", "student", "tuition"]
+        read_only_fields = ["id"]

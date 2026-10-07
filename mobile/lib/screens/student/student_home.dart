@@ -11,8 +11,10 @@ import '../../widgets/ui.dart';
 import '../common/cycle_progress.dart';
 import '../common/leaderboard_screen.dart';
 import '../common/notifications.dart';
+import 'connect_by_code.dart';
 import 'exam_result_screen.dart';
 import 'exam_take_screen.dart';
+import 'tutors_screen.dart';
 
 class _StudentData {
   _StudentData(this.tuitions, this.connections, this.exams);
@@ -76,6 +78,7 @@ class _GroupsTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final pending = data.connections.where((c) => c.str('status') == 'PENDING').toList();
+    final accepted = data.connections.where((c) => c.str('status') == 'ACCEPTED').toList();
     return PageBody(
       children: [
         const SectionTitle('My tuition groups', icon: Icons.groups_outlined, subtitle: 'Class progress is shared by everyone in the group.'),
@@ -89,6 +92,41 @@ class _GroupsTab extends StatelessWidget {
           )
         else
           for (final tuition in data.tuitions) ...[_GroupCard(tuition: tuition), gap12],
+        gap8,
+        // TutorTrack tutors dashboard entry (connected list + detail tabs + homework).
+        AppCard(
+          child: Row(
+            children: [
+              const CircleAvatar(child: Icon(Icons.handshake_outlined)),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      accepted.isEmpty ? 'My tutors${pending.isNotEmpty ? ' (${pending.length} pending)' : ''}' : 'My tutors (${accepted.length} connected)',
+                      style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+                    ),
+                    const Text('Routine, classes & homework with countdowns.',
+                        style: TextStyle(color: AppColors.muted, fontSize: 13)),
+                  ],
+                ),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const TutorsScreen())),
+                child: const Text('Open'),
+              ),
+            ],
+          ),
+        ),
+        gap12,
+        // Invite-code connect (unassigned state) + pending banner.
+        if (pending.isNotEmpty)
+          for (final c in pending) ...[
+            PendingConnectionView(tutorName: c.str('tutor_display_name').isNotEmpty ? c.str('tutor_display_name') : c.str('tutor_name')),
+            gap8,
+          ],
+        ConnectByCodeCard(onSent: reload),
         gap8,
         _TutorConnect(connections: data.connections, tuitions: data.tuitions, reload: reload),
       ],

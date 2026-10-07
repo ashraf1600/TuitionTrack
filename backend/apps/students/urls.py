@@ -15,6 +15,8 @@ from .views import (
     ConnectedTutorsView,
     TutorDetailForStudentView,
     HomeworkViewSet,
+    WeeklyRoutineViewSet,
+    ClassScheduleViewSet,
 )
 
 router = DefaultRouter()
@@ -22,6 +24,8 @@ router.register(r'batches', TuitionBatchViewSet, basename='tuition-batch')
 router.register(r'tuitions', TuitionViewSet, basename='tuition')
 router.register(r'connections', ConnectionRequestViewSet, basename='connection')
 router.register(r'homework', HomeworkViewSet, basename='homework')
+router.register(r'routines', WeeklyRoutineViewSet, basename='routine')
+router.register(r'schedules', ClassScheduleViewSet, basename='schedule')
 
 urlpatterns = [
     # Students (tutor-managed)

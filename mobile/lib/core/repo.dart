@@ -56,6 +56,51 @@ class Repo {
       _map(await api.post('/connections/$id/accept/', {if (tuitionId != null) 'tuition_id': tuitionId}));
   Future<Json> rejectConnection(String id) async => _map(await api.post('/connections/$id/reject/'));
 
+  // ── TutorTrack: invite-code + tutor dashboard ──────────────────────────────
+  /// POST /connections/by-code/ {tutor_code, message} -> {status, tutor_display_name, ...}
+  Future<Json> connectByCode(String code, {String message = ''}) async =>
+      _map(await api.post('/connections/by-code/', {'tutor_code': code.trim().toUpperCase(), 'message': message}));
+
+  /// GET /my-tutors/ -> [{id, display_name, username, profile_picture(_url), tuitions, subjects}]
+  Future<List<Json>> myTutors() => api.list('/my-tutors/');
+
+  /// GET /my-tutors/<id>/ -> {tutor, weekly_routine, upcoming_classes, homework}
+  Future<Json> tutorDetail(String tutorId) async => _map(await api.get('/my-tutors/$tutorId/'));
+
+  // ── Homework ───────────────────────────────────────────────────────────────
+  Future<List<Json>> homework({String? tutorId, bool? evaluated}) => api.list('/homework/', query: {
+        if (tutorId != null) 'tutor_id': tutorId,
+        if (evaluated != null) 'evaluated': '$evaluated',
+      });
+  Future<Json> homeworkDetail(String id) async => _map(await api.get('/homework/$id/'));
+  /// Student upload: URL only — never sends is_evaluated.
+  Future<Json> submitHomework(String id, String url) async {
+    final data = _map(await api.post('/homework/$id/submit/', {'submitted_online_url': url}));
+    return data.containsKey('homework') ? _map(data['homework']) : data;
+  }
+
+  /// Tutor close: the ONLY writer of is_evaluated (tries evaluate/, falls back to mark_done/).
+  Future<Json> evaluateHomework(String id, {bool evaluated = true, String feedback = ''}) async {
+    try {
+      final data = _map(await api.post('/homework/$id/evaluate/', {
+        'is_evaluated': evaluated,
+        'tutor_feedback': feedback,
+      }));
+      return data.containsKey('homework') ? _map(data['homework']) : data;
+    } on ApiException catch (e) {
+      if (e.status == 404) {
+        final data = _map(await api.post('/homework/$id/mark_done/', {'feedback': feedback}));
+        return data.containsKey('homework') ? _map(data['homework']) : data;
+      }
+      rethrow;
+    }
+  }
+
+  // ── Routines & dated classes ───────────────────────────────────────────────
+  Future<List<Json>> routines() => api.list('/routines/');
+  Future<List<Json>> schedules({bool upcoming = false}) =>
+      api.list('/schedules/', query: {'upcoming': '$upcoming'});
+
   // ── Exams ──────────────────────────────────────────────────────────────────
   Future<List<Json>> exams({String? tuitionId}) => api.list('/exams/', query: {'tuition_id': tuitionId});
   Future<Json> exam(String id) async => _map(await api.get('/exams/$id/'));

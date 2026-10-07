@@ -621,12 +621,12 @@ class ConnectedTutorsView(APIView):
 class TutorDetailForStudentView(APIView):
     """
     GET /api/v1/my-tutors/<tutor_id>/
-    Detailed view of one tutor for the student: routine + upcoming classes + homework.
+    Detailed view of one tutor: display_name + WeeklyRoutine + UpcomingClasses + homework.
     """
     permission_classes = [IsAuthenticated]
 
     def get(self, request, tutor_id):
-        from .models import ConnectionRequest, Homework
+        from .models import ConnectionRequest, Homework, WeeklyRoutine, ClassSchedule
         from .serializers import ConnectedTutorSerializer, HomeworkSerializer
 
         if request.user.role != "STUDENT":
@@ -647,12 +647,19 @@ class TutorDetailForStudentView(APIView):
         tutor = get_object_or_404(User, id=tutor_id, role="TUTOR", is_active=True)
         tutor_data = ConnectedTutorSerializer(tutor, context={"request": request}).data
 
-        # Homework assigned to this student (by this tutor) or their tuition groups.
+        # Tuitions this student shares with this tutor (routine scope).
         from apps.students.models import TuitionEnrollment
-        enrolled_tuition_ids = TuitionEnrollment.objects.filter(
+        enrolled_tuition_ids = list(TuitionEnrollment.objects.filter(
             student=request.user, tuition__tutor=tutor, is_active=True
-        ).values_list("tuition_id", flat=True)
+        ).values_list("tuition_id", flat=True))
 
+        scope = Q(student=request.user) | Q(tuition_id__in=enrolled_tuition_ids)
+        routines = WeeklyRoutine.objects.filter(tutor=tutor).filter(scope).order_by("day_of_week", "start_time")
+        upcoming = ClassSchedule.objects.filter(
+            tutor=tutor, scheduled_at__gte=timezone.now(), is_cancelled=False
+        ).filter(scope).order_by("scheduled_at")[:20]
+
+        # Homework assigned to this student (by this tutor) or their tuition groups.
         homework_qs = Homework.objects.filter(
             tutor=tutor,
         ).filter(
@@ -665,6 +672,14 @@ class TutorDetailForStudentView(APIView):
 
         return Response({
             "tutor": tutor_data,
+            "weekly_routine": [
+                {"day_of_week": r.day_of_week, "start_time": str(r.start_time),
+                 "end_time": str(r.end_time), "subject": r.subject} for r in routines
+            ],
+            "upcoming_classes": [
+                {"scheduled_at": c.scheduled_at.strftime("%Y-%m-%dT%H:%M:%SZ"), "topic": c.topic}
+                for c in upcoming
+            ],
             "homework": homework_data,
         })
 
@@ -783,8 +798,9 @@ class HomeworkViewSet(viewsets.GenericViewSet):
     @action(detail=True, methods=["post"])
     def submit(self, request, pk=None):
         """
-        POST /api/v1/homework/<id>/submit/
-        Student optionally submits an online URL as their homework submission.
+        POST /api/v1/homework/<id>/submit/ — STUDENT ONLY.
+        May upload submission_file and/or submitted_online_url.
+        Can NEVER touch is_evaluated (field not even in serializer).
         """
         from .serializers import StudentHomeworkSubmitSerializer, HomeworkSerializer
         if request.user.role != "STUDENT":
@@ -793,11 +809,88 @@ class HomeworkViewSet(viewsets.GenericViewSet):
         serializer = StudentHomeworkSubmitSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        hw.submitted_online_url = serializer.validated_data.get("submitted_online_url", "")
+        hw.submitted_online_url = serializer.validated_data.get("submitted_online_url", hw.submitted_online_url)
+        if serializer.validated_data.get("submission_file"):
+            hw.submission_file = serializer.validated_data["submission_file"]
         hw.submitted_at = timezone.now()
-        hw.save(update_fields=["submitted_online_url", "submitted_at"])
+        hw.save(update_fields=["submitted_online_url", "submission_file", "submitted_at"])
 
         return Response({
             "message": "Homework submission recorded.",
             "homework": HomeworkSerializer(hw, context={"request": request}).data,
         })
+
+    @action(detail=True, methods=["post", "patch"], permission_classes=[IsAuthenticated, IsTutor],
+            url_path="evaluate")
+    def evaluate(self, request, pk=None):
+        """POST/PATCH /api/v1/homework/<id>/evaluate/ — TUTOR ONLY writes is_evaluated."""
+        from .serializers import TutorHomeworkEvaluateSerializer, HomeworkSerializer
+        hw = get_object_or_404(self.get_queryset(), pk=pk)
+        serializer = TutorHomeworkEvaluateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        hw.is_evaluated = serializer.validated_data["is_evaluated"]
+        hw.evaluated_at = timezone.now() if hw.is_evaluated else None
+        if serializer.validated_data.get("tutor_feedback"):
+            hw.tutor_feedback = serializer.validated_data["tutor_feedback"]
+        hw.save(update_fields=["is_evaluated", "evaluated_at", "tutor_feedback"])
+        return Response({
+            "message": "Homework evaluation updated.",
+            "homework": HomeworkSerializer(hw, context={"request": request}).data,
+        })
+
+
+class WeeklyRoutineViewSet(viewsets.ModelViewSet):
+    """Tutor manages slots; student reads own (scoped)."""
+    permission_classes = [IsAuthenticated]
+    http_method_names = ["get", "post", "patch", "delete", "head", "options"]
+
+    def get_queryset(self):
+        from .models import WeeklyRoutine
+        user = self.request.user
+        qs = WeeklyRoutine.objects.select_related("tutor", "student", "tuition")
+        if user.role == "TUTOR":
+            return qs.filter(tutor=user).order_by("day_of_week", "start_time")
+        if user.role == "STUDENT":
+            return qs.filter(Q(student=user) | Q(tuition__enrollments__student=user)).order_by("day_of_week", "start_time")
+        return WeeklyRoutine.objects.none()
+
+    def get_serializer_class(self):
+        from .serializers import WeeklyRoutineSerializer
+        return WeeklyRoutineSerializer
+
+    def perform_create(self, serializer):
+        if self.request.user.role != "TUTOR":
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied("Only tutors can create routines.")
+        serializer.save(tutor=self.request.user)
+
+
+class ClassScheduleViewSet(viewsets.ModelViewSet):
+    """Tutor manages dated classes; student reads upcoming own."""
+    permission_classes = [IsAuthenticated]
+    http_method_names = ["get", "post", "patch", "delete", "head", "options"]
+
+    def get_queryset(self):
+        from .models import ClassSchedule
+        user = self.request.user
+        qs = ClassSchedule.objects.select_related("tutor", "student", "tuition")
+        if user.role == "TUTOR":
+            qs = qs.filter(tutor=user)
+        elif user.role == "STUDENT":
+            qs = qs.filter(Q(student=user) | Q(tuition__enrollments__student=user))
+        else:
+            return ClassSchedule.objects.none()
+        upcoming = self.request.query_params.get("upcoming")
+        if upcoming and upcoming.lower() == "true":
+            qs = qs.filter(scheduled_at__gte=timezone.now(), is_cancelled=False)
+        return qs.order_by("scheduled_at")
+
+    def get_serializer_class(self):
+        from .serializers import ClassScheduleSerializer
+        return ClassScheduleSerializer
+
+    def perform_create(self, serializer):
+        if self.request.user.role != "TUTOR":
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied("Only tutors can schedule classes.")
+        serializer.save(tutor=self.request.user)
