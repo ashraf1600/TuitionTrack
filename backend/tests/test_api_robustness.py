@@ -20,7 +20,10 @@ from rest_framework.test import APITestCase
 
 from apps.cycles.models import AttendanceCycle, Cycle
 from apps.exams.models import Exam, ExamSubmission
-from apps.students.models import ConnectionRequest, StudentProfile, Tuition
+from apps.students.models import (
+    ConnectionRequest, StudentProfile, Tuition,
+    Homework, WeeklyRoutine, ClassSchedule,
+)
 from apps.students.services import enroll_student
 
 User = get_user_model()
@@ -99,6 +102,17 @@ class ApiRobustnessSweep(APITestCase):
             exam=self.exam, student=self.student, submitted_at=now, answers_data={'q1': 0}, status='SUBMITTED',
         )
         self.connection = ConnectionRequest.objects.create(student=self.outsider, tutor=self.tutor)
+        self.homework = Homework.objects.create(
+            tutor=self.tutor, tuition=self.tuition, student=self.student,
+            title='Sweep homework', due_date=now + timedelta(days=2),
+        )
+        self.routine = WeeklyRoutine.objects.create(
+            tutor=self.tutor, tuition=self.tuition, day_of_week=WeeklyRoutine.Day.SUNDAY,
+            start_time='10:00:00', end_time='11:00:00', subject='Math',
+        )
+        self.schedule = ClassSchedule.objects.create(
+            tutor=self.tutor, tuition=self.tuition, scheduled_at=now + timedelta(days=1), topic='Algebra',
+        )
         self.callers = {
             'signed out': None, 'tutor': self.tutor, 'other tutor': self.other_tutor,
             'student': self.student, 'outsider': self.outsider,
@@ -124,6 +138,14 @@ class ApiRobustnessSweep(APITestCase):
             real = [self.submission.id]
         elif 'connections/' in route:
             real = [self.connection.id]
+        elif 'homework/' in route:
+            real = [self.homework.id]
+        elif 'routines/' in route:
+            real = [self.routine.id]
+        elif 'schedules/' in route:
+            real = [self.schedule.id]
+        elif 'my-tutors/' in route:
+            real = [self.tutor.id]
         else:
             self.fail(f'No fixture for route {route}')
         ids = [str(value) for value in real] + ['00000000-0000-0000-0000-000000000000']

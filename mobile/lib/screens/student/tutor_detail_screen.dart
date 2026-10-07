@@ -125,7 +125,9 @@ class _TutorDetailScreenState extends State<TutorDetailScreen> {
                       itemBuilder: (_, i) => HomeworkCard(
                         hw: d.homework[i],
                         isTutor: isTutor,
-                        onChanged: () => _key.currentState?.reload(),
+                        onChanged: () async {
+                          await _key.currentState?.reload();
+                        },
                       ),
                     ),
             ],
