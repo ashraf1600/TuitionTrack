@@ -8,6 +8,7 @@ import HomeworkCard from './HomeworkCard';
 
 const TABS = [
   { key: 'routine', label: 'Weekly Routine', icon: Clock },
+  { key: 'classes', label: 'My Classes', icon: Calendar },
   { key: 'homework', label: 'Homework', icon: BookOpen },
 ];
 
@@ -244,6 +245,50 @@ export default function TutorDetailView({ tutorId, onBack }) {
                   </div>
                 );
               })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Tab: Classes */}
+      {activeTab === 'classes' && (
+        <div className="space-y-4">
+          {(data.tuitions || []).length === 0 ? (
+            <EmptyState icon={Calendar} title="No classes found" desc="You are not enrolled in any tuition batches for this tutor yet." />
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {data.tuitions.map((t) => (
+                <div key={t.id} className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5 space-y-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <h4 className="text-base font-bold text-slate-100">{t.title}</h4>
+                      {t.subject && (
+                        <span className="inline-block mt-1 px-2.5 py-0.5 rounded-full bg-indigo-500/15 border border-indigo-500/25 text-indigo-300 text-xs font-semibold">
+                          {t.subject}
+                        </span>
+                      )}
+                    </div>
+                    {t.cycle_length && (
+                      <span className="px-2.5 py-1 rounded-xl bg-slate-800 border border-slate-700 text-xs font-medium text-slate-300">
+                        {t.cycle_length} classes / cycle
+                      </span>
+                    )}
+                  </div>
+
+                  {t.routine?.length > 0 && (
+                    <div className="pt-2 border-t border-slate-800/80">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block mb-1.5">Weekly Schedule:</span>
+                      <div className="flex flex-wrap gap-1.5">
+                        {t.routine.map((slot, idx) => (
+                          <span key={idx} className="px-2 py-0.5 rounded-lg bg-slate-800 text-slate-300 text-xs font-medium">
+                            {slot.day?.slice(0, 3)} {slot.start_time || slot.time}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
             </div>
           )}
         </div>

@@ -1,20 +1,26 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { notify } from '../utils/toast';
 import Navbar from '../components/common/Navbar';
+import Modal from '../components/common/Modal';
 import StudentCycleProgress from '../components/student/StudentCycleProgress';
-import TutorConnectPanel from '../components/student/TutorConnectPanel';
+import TutorCodeConnect from '../components/student/TutorCodeConnect';
+import TutorDetailView from '../components/student/TutorDetailView';
 import ExamCard from '../components/student/ExamCard';
 import ExamTakerModal from '../components/student/ExamTakerModal';
 import ExamResultModal from '../components/student/ExamResultModal';
 import LeaderboardModal from '../components/common/LeaderboardModal';
 import { api } from '../api/client';
 import { useAuth } from '../context/AuthContext';
-import { FileText, RefreshCw, Layers, Clock, Users, GraduationCap, AlertCircle } from 'lucide-react';
+import {
+  FileText, RefreshCw, Layers, Clock, Users, GraduationCap, AlertCircle,
+  Plus, ChevronRight, UserCheck, BookOpen, Sparkles
+} from 'lucide-react';
 
 const asList = (data) => (Array.isArray(data) ? data : data?.results || []);
 
 export default function StudentPortal() {
   const { user } = useAuth();
+  const [tutors, setTutors] = useState([]);
   const [tuitions, setTuitions] = useState([]);
   const [connections, setConnections] = useState([]);
   const [exams, setExams] = useState([]);
@@ -22,7 +28,13 @@ export default function StudentPortal() {
   const [loadingExams, setLoadingExams] = useState(true);
   const [error, setError] = useState('');
 
-  // Modals
+  // Selected tutor for the detailed view
+  const [selectedTutorId, setSelectedTutorId] = useState(null);
+
+  // Modal to connect with another tutor code
+  const [codeConnectModalOpen, setCodeConnectModalOpen] = useState(false);
+
+  // Exam Modals
   const [takerModalOpen, setTakerModalOpen] = useState(false);
   const [resultModalOpen, setResultModalOpen] = useState(false);
   const [leaderboardModalOpen, setLeaderboardModalOpen] = useState(false);
@@ -31,14 +43,18 @@ export default function StudentPortal() {
 
   const loadData = useCallback(async () => {
     setError('');
-    // Tuition groups (each carries the group's shared class progress) + tutor requests
     try {
       setLoading(true);
-      const [tuitionData, connectionData] = await Promise.all([api.getTuitions(), api.getConnections()]);
+      const [tuitionData, connectionData, tutorsData] = await Promise.all([
+        api.getTuitions(),
+        api.getConnections(),
+        api.getMyTutors(),
+      ]);
       setTuitions(asList(tuitionData));
       setConnections(asList(connectionData));
+      setTutors(asList(tutorsData));
     } catch (err) {
-      setError(err.message || 'Could not load your tuitions.');
+      setError(err.message || 'Could not load your portal data.');
     } finally {
       setLoading(false);
     }
@@ -83,8 +99,6 @@ export default function StudentPortal() {
     }
   };
 
-  // After handing in: show the evaluated paper at once if the tutor releases results
-  // immediately, otherwise say when to expect them.
   const handleExamSubmitted = (response, exam) => {
     loadData();
     const status = response?.result_status;
@@ -92,7 +106,14 @@ export default function StudentPortal() {
       notify.success('Submitted. Here is your result.');
       handleViewResults(exam.id);
     } else if (status?.mode === 'SCHEDULED' && status.publish_at) {
-      notify.success(`Submitted. Results will be published on ${new Date(status.publish_at).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}.`);
+      notify.success(
+        `Submitted. Results will be published on ${new Date(status.publish_at).toLocaleString(undefined, {
+          day: 'numeric',
+          month: 'short',
+          hour: 'numeric',
+          minute: '2-digit',
+        })}.`
+      );
     } else {
       notify.success('Submitted. Your tutor will publish the results.');
     }
@@ -103,7 +124,23 @@ export default function StudentPortal() {
     setLeaderboardModalOpen(true);
   };
 
-  const pendingRequests = connections.filter((c) => c.status === 'PENDING').length;
+  // If a tutor is clicked, show their full Detailed Dashboard
+  if (selectedTutorId) {
+    return (
+      <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
+        <Navbar />
+        <main className="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
+          <TutorDetailView
+            tutorId={selectedTutorId}
+            onBack={() => {
+              setSelectedTutorId(null);
+              loadData();
+            }}
+          />
+        </main>
+      </div>
+    );
+  }
 
   // To do = can be turned in now; Upcoming = not open yet; Done = turned in or over.
   const nowMs = Date.now();
@@ -126,19 +163,27 @@ export default function StudentPortal() {
       <Navbar />
 
       <main className="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
-        {/* Welcome */}
+        {/* Welcome Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-6 rounded-2xl bg-gradient-to-r from-slate-900 via-indigo-950/40 to-slate-900 border border-slate-800">
           <div>
             <h1 className="text-2xl font-extrabold text-slate-100">
               Welcome back, {user?.name || user?.username}
             </h1>
             <p className="text-sm text-slate-400 mt-1">
-              Your tuition groups, class progress and exams in one place.
+              Your connected tutors, weekly routines, homework, and exams in one place.
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <Pill icon={Layers} label={`${tuitions.length} tuition${tuitions.length === 1 ? '' : 's'}`} />
+            <Pill icon={UserCheck} label={`${tutors.length} tutor${tutors.length === 1 ? '' : 's'}`} />
             {openExams > 0 && <Pill icon={FileText} label={`${openExams} to do now`} tone="emerald" />}
+            <button
+              type="button"
+              onClick={() => setCodeConnectModalOpen(true)}
+              className="px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-md shadow-indigo-600/25 transition"
+            >
+              <Plus className="w-4 h-4" />
+              Connect Tutor
+            </button>
             <button
               type="button"
               onClick={loadData}
@@ -157,63 +202,139 @@ export default function StudentPortal() {
           </div>
         )}
 
-        {/* My tuition groups */}
-        <section className="space-y-4">
-          <SectionTitle
-            icon={Layers}
-            title="My tuition groups"
-            subtitle="Class progress is shared with everyone in your group — your tutor ticks each class once it is held."
-          />
+        {/* Phase 1 & 2: Connected Tutors OR Unassigned State */}
+        {loading ? (
+          <div className="space-y-4">
+            <div className="h-6 w-48 bg-slate-800/60 rounded-lg animate-pulse" />
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {[1, 2].map((i) => (
+                <div key={i} className="h-48 rounded-2xl bg-slate-800/40 animate-pulse" />
+              ))}
+            </div>
+          </div>
+        ) : tutors.length === 0 ? (
+          /* Unassigned State: Display Tutor Code Connect Hero Directly */
+          <section className="space-y-4">
+            <TutorCodeConnect connections={connections} onChanged={loadData} />
+          </section>
+        ) : (
+          /* Connected State: Show Connected Tutors with 'Ashraf Sir' formatting */
+          <section className="space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <SectionTitle
+                icon={UserCheck}
+                title="Connected Tutors"
+                subtitle="Click on any tutor to access your weekly routine, classes, and homework with live timers."
+              />
+              <button
+                type="button"
+                onClick={() => setCodeConnectModalOpen(true)}
+                className="text-xs font-bold text-indigo-400 hover:text-indigo-300 transition flex items-center gap-1 self-start sm:self-auto"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                Connect another tutor
+              </button>
+            </div>
 
-          {loading ? (
-            <div className="space-y-4">
-              {[1, 2].map((i) => <div key={i} className="h-56 rounded-2xl bg-slate-800/40 animate-pulse" />)}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+              {tutors.map((tutor) => (
+                <div
+                  key={tutor.id}
+                  onClick={() => setSelectedTutorId(tutor.id)}
+                  className="group relative overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/70 hover:bg-slate-900/90 hover:border-indigo-500/40 p-5 sm:p-6 cursor-pointer transition-all duration-200 shadow-lg hover:shadow-indigo-500/10 flex flex-col justify-between gap-4"
+                >
+                  <div className="flex items-start gap-4">
+                    {/* Tutor Avatar */}
+                    {tutor.profile_picture_url ? (
+                      <img
+                        src={tutor.profile_picture_url}
+                        alt={tutor.display_name}
+                        className="w-14 h-14 rounded-2xl object-cover border border-indigo-500/30 flex-shrink-0"
+                      />
+                    ) : (
+                      <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-500 flex items-center justify-center text-white text-xl font-black flex-shrink-0 shadow-md shadow-indigo-500/20">
+                        {(tutor.display_name || 'T')[0]}
+                      </div>
+                    )}
+
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <h3 className="text-lg font-bold text-slate-100 group-hover:text-indigo-300 transition truncate">
+                          {tutor.display_name}
+                        </h3>
+                        <ChevronRight className="w-5 h-5 text-slate-500 group-hover:text-indigo-400 group-hover:translate-x-0.5 transition-all flex-shrink-0" />
+                      </div>
+                      <p className="text-xs text-slate-400 font-mono mt-0.5">@{tutor.username}</p>
+
+                      {/* Subjects */}
+                      {tutor.subjects?.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5 mt-2.5">
+                          {tutor.subjects.map((sub) => (
+                            <span
+                              key={sub}
+                              className="px-2 py-0.5 rounded-full bg-indigo-500/15 border border-indigo-500/25 text-indigo-300 text-[10px] font-semibold"
+                            >
+                              {sub}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Footer info: Tuitions & Routine info */}
+                  <div className="pt-3 border-t border-slate-800/80 flex items-center justify-between text-xs text-slate-400">
+                    <span className="flex items-center gap-1.5">
+                      <Layers className="w-3.5 h-3.5 text-slate-500" />
+                      {tutor.tuitions?.length || 0} tuition group{tutor.tuitions?.length === 1 ? '' : 's'}
+                    </span>
+                    <span className="text-indigo-400 font-bold group-hover:underline">
+                      View Schedule & Homework →
+                    </span>
+                  </div>
+                </div>
+              ))}
             </div>
-          ) : tuitions.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-slate-700 bg-slate-900/40 p-8 text-center">
-              <GraduationCap className="w-10 h-10 mx-auto text-slate-600 mb-3" />
-              <p className="text-sm font-semibold text-slate-200">You are not in a tuition group yet</p>
-              <p className="text-xs text-slate-400 mt-1 max-w-md mx-auto">
-                {pendingRequests > 0
-                  ? 'Your request is with the tutor. As soon as they accept and place you in a group, it will show up here.'
-                  : 'Find your tutor below and send a request. They will place you in a group.'}
-              </p>
-            </div>
-          ) : (
+          </section>
+        )}
+
+        {/* My tuition groups (Shared cycle progress) */}
+        {tuitions.length > 0 && (
+          <section className="space-y-4">
+            <SectionTitle
+              icon={Layers}
+              title="Tuition Groups & Attendance"
+              subtitle="Class progress is shared with everyone in your group — your tutor ticks each class once it is held."
+            />
             <div className="space-y-5">
               {tuitions.map((tuition) => (
                 <TuitionGroupCard key={tuition.id} tuition={tuition} />
               ))}
             </div>
-          )}
-        </section>
-
-        {/* Tutors & requests */}
-        {!loading && (
-          <TutorConnectPanel
-            connections={connections}
-            onChanged={loadData}
-            defaultOpen={tuitions.length === 0 && connections.length === 0}
-          />
+          </section>
         )}
 
-        {/* Exams */}
+        {/* Exams & Assignments */}
         <section className="space-y-4">
           <SectionTitle
             icon={FileText}
-            title="Exams & assignments"
+            title="Exams & Assignments"
             subtitle="Set by your tutor for the whole group. Your answers and marks are your own."
           />
 
           {loadingExams ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {[1, 2, 3].map((i) => <div key={i} className="h-44 rounded-2xl bg-slate-800/40 animate-pulse" />)}
+              {[1, 2, 3].map((i) => (
+                <div key={i} className="h-44 rounded-2xl bg-slate-800/40 animate-pulse" />
+              ))}
             </div>
           ) : exams.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-slate-700 bg-slate-900/40 p-8 text-center">
               <FileText className="w-10 h-10 mx-auto text-slate-600 mb-3" />
               <p className="text-sm font-semibold text-slate-200">No exams right now</p>
-              <p className="text-xs text-slate-400 mt-1">When your tutor schedules one for your group, it will appear here.</p>
+              <p className="text-xs text-slate-400 mt-1">
+                When your tutor schedules one for your group, it will appear here.
+              </p>
             </div>
           ) : (
             <div className="space-y-6">
@@ -242,6 +363,25 @@ export default function StudentPortal() {
         </section>
       </main>
 
+      {/* Connect with Tutor Code Modal */}
+      {codeConnectModalOpen && (
+        <Modal
+          isOpen={codeConnectModalOpen}
+          onClose={() => setCodeConnectModalOpen(false)}
+          title="Connect to Tutor"
+          maxWidth="max-w-xl"
+        >
+          <TutorCodeConnect
+            connections={connections}
+            onChanged={() => {
+              loadData();
+              setCodeConnectModalOpen(false);
+            }}
+          />
+        </Modal>
+      )}
+
+      {/* Exam Modals */}
       {activeExam && (
         <ExamTakerModal
           isOpen={takerModalOpen}
@@ -284,9 +424,10 @@ function SectionTitle({ icon: Icon, title, subtitle }) {
 }
 
 function Pill({ icon: Icon, label, tone }) {
-  const cls = tone === 'emerald'
-    ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
-    : 'bg-slate-800 text-slate-300 border-slate-700';
+  const cls =
+    tone === 'emerald'
+      ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+      : 'bg-slate-800 text-slate-300 border-slate-700';
   return (
     <span className={`hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-semibold ${cls}`}>
       <Icon className="w-3.5 h-3.5" />
@@ -295,7 +436,6 @@ function Pill({ icon: Icon, label, tone }) {
   );
 }
 
-/** One tuition group: who teaches it, when it meets, and the group's shared class progress. */
 function TuitionGroupCard({ tuition }) {
   const routine = tuition.routine || tuition.weekly_routine || [];
   const count = tuition.enrolled_count || 0;
@@ -305,7 +445,9 @@ function TuitionGroupCard({ tuition }) {
         <div className="min-w-0">
           <h3 className="text-xl font-bold text-slate-100 truncate">{tuition.title}</h3>
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-400 mt-1">
-            <span>Tutor: <strong className="text-indigo-300">{tuition.tutor_name}</strong></span>
+            <span>
+              Tutor: <strong className="text-indigo-300">{tuition.tutor_name}</strong>
+            </span>
             {tuition.subject && <span>· {tuition.subject}</span>}
             <span className="flex items-center gap-1">
               · <Users className="w-3.5 h-3.5" /> {count} student{count === 1 ? '' : 's'} in this group
@@ -321,8 +463,12 @@ function TuitionGroupCard({ tuition }) {
           {routine.length ? (
             <div className="flex flex-wrap md:justify-end gap-1.5">
               {routine.map((slot, i) => (
-                <span key={i} className="px-2.5 py-1 rounded-lg bg-slate-800 border border-slate-700 text-slate-200 text-xs font-medium">
-                  {slot.day?.slice(0, 3)} {slot.start_time || slot.time}{slot.end_time ? `–${slot.end_time}` : ''}
+                <span
+                  key={i}
+                  className="px-2.5 py-1 rounded-lg bg-slate-800 border border-slate-700 text-slate-200 text-xs font-medium"
+                >
+                  {slot.day?.slice(0, 3)} {slot.start_time || slot.time}
+                  {slot.end_time ? `–${slot.end_time}` : ''}
                 </span>
               ))}
             </div>
