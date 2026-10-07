@@ -14,23 +14,77 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / '.env')
 
 # ─── Security ─────────────────────────────────────────────────────────────────
+# DEBUG = os.getenv('DEBUG', 'False').lower() in ('true', '1', 't')
+# SECRET_KEY = os.getenv('SECRET_KEY')
+# if not SECRET_KEY:
+#     if DEBUG:
+#         import secrets
+#         SECRET_KEY = os.getenv('SECRET_KEY', 'dev-secret-key-' + secrets.token_hex(16))
+#     else:
+#         from django.core.exceptions import ImproperlyConfigured
+#         raise ImproperlyConfigured("The SECRET_KEY environment variable must be set in production.")
+# ALLOWED_HOSTS = [h.strip() for h in os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1,testserver').split(',') if h.strip()]
+# # Render tells the service its own public hostname.
+# if os.getenv('RENDER_EXTERNAL_HOSTNAME'):
+#     ALLOWED_HOSTS.append(os.environ['RENDER_EXTERNAL_HOSTNAME'])
+# if DEBUG and not os.getenv('ALLOWED_HOSTS'):
+#     # Development only: lets a phone or emulator on the same network reach this computer
+#     # (http://<this-PC's-IP>:8000, or http://10.0.2.2:8000 from an Android emulator).
+#     ALLOWED_HOSTS = ['*']
+
+# ─── Security ─────────────────────────────────────────────────────────────────
+
 DEBUG = os.getenv('DEBUG', 'False').lower() in ('true', '1', 't')
+
 SECRET_KEY = os.getenv('SECRET_KEY')
+
 if not SECRET_KEY:
     if DEBUG:
         import secrets
-        SECRET_KEY = os.getenv('SECRET_KEY', 'dev-secret-key-' + secrets.token_hex(16))
+        SECRET_KEY = 'dev-secret-key-' + secrets.token_hex(16)
     else:
         from django.core.exceptions import ImproperlyConfigured
-        raise ImproperlyConfigured("The SECRET_KEY environment variable must be set in production.")
-ALLOWED_HOSTS = [h.strip() for h in os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1,testserver').split(',') if h.strip()]
-# Render tells the service its own public hostname.
+        raise ImproperlyConfigured(
+            "The SECRET_KEY environment variable must be set in production."
+        )
+
+
+# ─── Allowed Hosts ─────────────────────────────────────────────────────────────
+#
+# Production:
+#   Set ALLOWED_HOSTS in environment variables.
+#
+# Example:
+#   ALLOWED_HOSTS=your-domain.com,www.your-domain.com
+#
+# Development:
+#   The local network IP is allowed so that a phone/emulator can connect.
+#
+
+allowed_hosts_env = os.getenv('ALLOWED_HOSTS', '').strip()
+
+if allowed_hosts_env:
+    ALLOWED_HOSTS = [
+        host.strip()
+        for host in allowed_hosts_env.split(',')
+        if host.strip()
+    ]
+else:
+    ALLOWED_HOSTS = [
+        'localhost',
+        '127.0.0.1',
+        'testserver',
+    ]
+
+    # Development only:
+    # Allows a phone on the same Wi-Fi network to access Django.
+    if DEBUG:
+        ALLOWED_HOSTS.append('192.168.101.17')
+
+
+# Render provides its own public hostname.
 if os.getenv('RENDER_EXTERNAL_HOSTNAME'):
     ALLOWED_HOSTS.append(os.environ['RENDER_EXTERNAL_HOSTNAME'])
-if DEBUG and not os.getenv('ALLOWED_HOSTS'):
-    # Development only: lets a phone or emulator on the same network reach this computer
-    # (http://<this-PC's-IP>:8000, or http://10.0.2.2:8000 from an Android emulator).
-    ALLOWED_HOSTS = ['*']
 
 # ─── Application Definition ───────────────────────────────────────────────────
 DJANGO_APPS = [
