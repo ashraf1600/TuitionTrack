@@ -2,6 +2,7 @@
 TuitionTrack Backend — Django Settings
 """
 import os
+import sys
 from pathlib import Path
 from datetime import timedelta
 from dotenv import load_dotenv
@@ -22,7 +23,14 @@ if not SECRET_KEY:
     else:
         from django.core.exceptions import ImproperlyConfigured
         raise ImproperlyConfigured("The SECRET_KEY environment variable must be set in production.")
-ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1,testserver').split(',')
+ALLOWED_HOSTS = [h.strip() for h in os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1,testserver').split(',') if h.strip()]
+# Render tells the service its own public hostname.
+if os.getenv('RENDER_EXTERNAL_HOSTNAME'):
+    ALLOWED_HOSTS.append(os.environ['RENDER_EXTERNAL_HOSTNAME'])
+if DEBUG and not os.getenv('ALLOWED_HOSTS'):
+    # Development only: lets a phone or emulator on the same network reach this computer
+    # (http://<this-PC's-IP>:8000, or http://10.0.2.2:8000 from an Android emulator).
+    ALLOWED_HOSTS = ['*']
 
 # ─── Application Definition ───────────────────────────────────────────────────
 DJANGO_APPS = [
@@ -37,6 +45,8 @@ DJANGO_APPS = [
 THIRD_PARTY_APPS = [
     'rest_framework',
     'rest_framework_simplejwt',
+    # Lets a refresh token be revoked: sign-out, password change, deactivation.
+    'rest_framework_simplejwt.token_blacklist',
     'corsheaders',
 ]
 
@@ -54,6 +64,8 @@ INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
+    # Serves the admin's CSS/JS in production without a separate web server.
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -83,25 +95,31 @@ TEMPLATES = [
 WSGI_APPLICATION = 'config.wsgi.application'
 
 # ─── Database ─────────────────────────────────────────────────────────────────
-# Using SQLite for development. Swap for PostgreSQL in production.
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
-        'OPTIONS': {
-            'timeout': 20,
-        },
+# Online: PostgreSQL, from DATABASE_URL (e.g. the Supabase "Session pooler" connection string).
+# On your own PC, with no DATABASE_URL: the SQLite file next to manage.py.
+DATABASE_URL = os.getenv('DATABASE_URL', '').strip()
+if DATABASE_URL:
+    import dj_database_url
+    DATABASES = {
+        'default': dj_database_url.parse(
+            DATABASE_URL,
+            conn_max_age=int(os.getenv('DB_CONN_MAX_AGE', 60)),
+            conn_health_checks=True,
+            ssl_require=os.getenv('DB_SSL', 'True').lower() in ('true', '1', 't'),
+        )
     }
-    # ── PostgreSQL (Production) ──────────────────────────────────────────────
-    # 'default': {
-    #     'ENGINE': 'django.db.backends.postgresql',
-    #     'NAME': os.getenv('DB_NAME', 'tuitiontrack_db'),
-    #     'USER': os.getenv('DB_USER', 'postgres'),
-    #     'PASSWORD': os.getenv('DB_PASSWORD', ''),
-    #     'HOST': os.getenv('DB_HOST', 'localhost'),
-    #     'PORT': os.getenv('DB_PORT', '5432'),
-    # }
-}
+    # Connection poolers (Supabase, PgBouncer) cannot keep server-side cursors between queries.
+    DATABASES['default']['DISABLE_SERVER_SIDE_CURSORS'] = True
+else:
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': BASE_DIR / 'db.sqlite3',
+            'OPTIONS': {
+                'timeout': 20,
+            },
+        }
+    }
 
 # ─── Custom User Model ────────────────────────────────────────────────────────
 AUTH_USER_MODEL = 'authentication.CustomUser'
@@ -132,6 +150,36 @@ MEDIA_URL = os.getenv('MEDIA_URL', '/media/')
 MEDIA_ROOT = BASE_DIR / 'media'
 MAX_UPLOAD_SIZE_MB = int(os.getenv('MAX_UPLOAD_SIZE_MB', 10))
 
+STORAGES = {
+    # Uploaded question pictures and answer sheets. On your own PC: the media/ folder.
+    'default': {'BACKEND': 'django.core.files.storage.FileSystemStorage'},
+    'staticfiles': {
+        'BACKEND': 'django.contrib.staticfiles.storage.StaticFilesStorage' if DEBUG
+        else 'whitenoise.storage.CompressedStaticFilesStorage',
+    },
+}
+# Online: an S3-compatible bucket (Supabase Storage, Cloudflare R2, AWS S3). A hosted server's
+# own disk is wiped on every deploy, so uploads must live somewhere else.
+if os.getenv('S3_BUCKET'):
+    STORAGES['default'] = {
+        'BACKEND': 'storages.backends.s3.S3Storage',
+        'OPTIONS': {
+            'bucket_name': os.environ['S3_BUCKET'],
+            'endpoint_url': os.getenv('S3_ENDPOINT_URL') or None,
+            'access_key': os.getenv('S3_ACCESS_KEY_ID'),
+            'secret_key': os.getenv('S3_SECRET_ACCESS_KEY'),
+            'region_name': os.getenv('S3_REGION') or None,
+            'addressing_style': 'path',
+            'signature_version': 's3v4',
+            'default_acl': None,
+            'file_overwrite': False,
+            # Files are opened by their plain public address (the bucket must be public),
+            # e.g. <project>.supabase.co/storage/v1/object/public/<bucket>
+            'querystring_auth': False,
+            'custom_domain': os.getenv('S3_PUBLIC_DOMAIN') or None,
+        },
+    }
+
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # ─── CORS ─────────────────────────────────────────────────────────────────────
@@ -139,7 +187,14 @@ CORS_ALLOWED_ORIGINS = [
     'http://localhost:5173',  # React Vite dev server
     'http://localhost:3000',
 ]
+CORS_ALLOWED_ORIGINS += [o.strip() for o in os.getenv('CORS_ALLOWED_ORIGINS', '').split(',') if o.strip()]
+CSRF_TRUSTED_ORIGINS = [o.strip() for o in os.getenv('CSRF_TRUSTED_ORIGINS', '').split(',') if o.strip()]
+if os.getenv('RENDER_EXTERNAL_HOSTNAME'):
+    CSRF_TRUSTED_ORIGINS.append(f"https://{os.environ['RENDER_EXTERNAL_HOSTNAME']}")
 CORS_ALLOW_CREDENTIALS = True
+if DEBUG:
+    # Development only: the mobile app run in a browser (`flutter run -d chrome`) uses a random local port.
+    CORS_ALLOWED_ORIGIN_REGEXES = [r'^http://(localhost|127\.0\.0\.1)(:\d+)?$']
 
 # ─── Django REST Framework ────────────────────────────────────────────────────
 REST_FRAMEWORK = {
@@ -149,12 +204,21 @@ REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': (
         'rest_framework.permissions.IsAuthenticated',
     ),
+    # One contract for every client (see config/api.py): JSON-object bodies in,
+    # and every error out with `message` + `code`.
     'DEFAULT_RENDERER_CLASSES': (
-        'rest_framework.renderers.JSONRenderer',
+        'config.api.ApiJSONRenderer',
     ),
+    'DEFAULT_PARSER_CLASSES': (
+        'config.api.ObjectJSONParser',
+        'rest_framework.parsers.FormParser',
+        'rest_framework.parsers.MultiPartParser',
+    ),
+    'EXCEPTION_HANDLER': 'config.api.api_exception_handler',
     'DEFAULT_PAGINATION_CLASS': 'apps.authentication.pagination.StandardPagination',
     'PAGE_SIZE': 20,
-    'DATETIME_FORMAT': '%Y-%m-%dT%H:%M:%S%z',
+    # Datetimes are always ISO 8601 in UTC, e.g. 2026-10-06T19:14:07.399411Z (DRF's default),
+    # the same form hand-built responses produce, so strict mobile parsers see one format.
     'DEFAULT_THROTTLE_CLASSES': (
         'rest_framework.throttling.AnonRateThrottle',
         'rest_framework.throttling.UserRateThrottle',
@@ -162,8 +226,13 @@ REST_FRAMEWORK = {
     'DEFAULT_THROTTLE_RATES': {
         'anon': '60/min',
         'user': '600/min',
+        # Sign-in, sign-up and password reset: slow enough to blunt password guessing.
+        'auth': os.getenv('AUTH_THROTTLE_RATE', '20/min'),
     },
 }
+if 'test' in sys.argv:
+    # The test suite signs in far more often than a person can; throttling has its own test.
+    REST_FRAMEWORK['DEFAULT_THROTTLE_RATES'] = {'anon': '100000/min', 'user': '100000/min', 'auth': '100000/min'}
 
 # ─── Simple JWT ───────────────────────────────────────────────────────────────
 SIMPLE_JWT = {
@@ -194,3 +263,26 @@ EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS', 'True') == 'True'
 EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', '')
 EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '')
 DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'TuitionTrack <noreply@tuitiontrack.app>')
+
+# ─── Production (DEBUG off) ───────────────────────────────────────────────────
+if not DEBUG:
+    # The host terminates https and forwards plain http to the app, saying so in this header.
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+    SECURE_SSL_REDIRECT = os.getenv('SECURE_SSL_REDIRECT', 'True').lower() in ('true', '1', 't')
+    # The host's health check calls this over plain http from inside its network.
+    SECURE_REDIRECT_EXEMPT = [r'^api/v1/meta/$']
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SECURE_HSTS_SECONDS = int(os.getenv('SECURE_HSTS_SECONDS', 60 * 60 * 24 * 30))
+    SECURE_CONTENT_TYPE_NOSNIFF = True
+
+# Errors go to the console, which is what a hosting platform collects as its logs.
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'handlers': {'console': {'class': 'logging.StreamHandler'}},
+    'root': {'handlers': ['console'], 'level': 'WARNING'},
+    'loggers': {
+        'django.request': {'handlers': ['console'], 'level': 'ERROR', 'propagate': False},
+    },
+}

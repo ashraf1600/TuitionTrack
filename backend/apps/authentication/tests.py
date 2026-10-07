@@ -21,8 +21,8 @@ class AuthenticationTests(APITestCase):
             'first_name': 'New',
             'last_name': 'Tutor',
             'phone': '+8801711111111',
-            'password': 'password123',
-            'password_confirm': 'password123',
+            'password': 'Tutor-Passphrase-42',
+            'password_confirm': 'Tutor-Passphrase-42',
         }
         response = self.client.post(self.register_url, data, format='json')
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)

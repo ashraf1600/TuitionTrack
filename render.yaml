@@ -1,0 +1,52 @@
+# Render blueprint for the TuitionTrack API (Django).
+# In Render: New + → Blueprint → pick this repository. It reads this file, then asks
+# for the values marked "sync: false" (they are secrets and are never stored in git).
+services:
+  - type: web
+    name: tuitiontrack-api
+    runtime: python
+    plan: free            # sleeps after ~15 idle minutes; "starter" stays awake
+    region: singapore     # nearest Render region to Bangladesh; keep the database in Singapore too
+    rootDir: backend
+    buildCommand: bash build.sh
+    startCommand: gunicorn config.wsgi:application --bind 0.0.0.0:$PORT --workers 2 --timeout 60
+    healthCheckPath: /api/v1/meta/
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.11
+      - key: DEBUG
+        value: "False"
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DISPLAY_TIME_ZONE
+        value: Asia/Dhaka
+      - key: REFRESH_TOKEN_LIFETIME_DAYS
+        value: "30"
+
+      # ── Database: Supabase → Connect → "Session pooler" connection string ──
+      - key: DATABASE_URL
+        sync: false
+
+      # ── Uploaded files: Supabase Storage (S3-compatible), public bucket ──
+      - key: S3_BUCKET
+        value: tuitiontrack-media
+      - key: S3_REGION
+        value: ap-southeast-1
+      - key: S3_ENDPOINT_URL        # https://<project-ref>.storage.supabase.co/storage/v1/s3
+        sync: false
+      - key: S3_PUBLIC_DOMAIN       # <project-ref>.supabase.co/storage/v1/object/public/tuitiontrack-media
+        sync: false
+      - key: S3_ACCESS_KEY_ID       # Supabase → Storage → Settings → S3 access keys
+        sync: false
+      - key: S3_SECRET_ACCESS_KEY
+        sync: false
+
+      # ── The website, once it is hosted (used for password-reset links and CORS) ──
+      - key: FRONTEND_URL
+        sync: false
+      - key: CORS_ALLOWED_ORIGINS
+        sync: false
+
+      # ── Email (password resets, exam notices). Without these, emails are only logged. ──
+      - key: EMAIL_BACKEND
+        value: django.core.mail.backends.console.EmailBackend

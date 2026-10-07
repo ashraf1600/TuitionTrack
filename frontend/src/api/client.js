@@ -2,7 +2,10 @@
  * API Client with JWT Bearer Token Injection and Auto-Refresh
  */
 
-const BASE_URL = '/api/v1';
+// Where the API lives. Empty in development (the Vite proxy forwards /api to Django);
+// set VITE_API_URL=https://your-api-host when the website and the API are hosted separately.
+const API_ORIGIN = (import.meta.env.VITE_API_URL || '').replace(/\/+$/, '');
+const BASE_URL = `${API_ORIGIN}/api/v1`;
 
 export async function apiRequest(endpoint, options = {}) {
   const url = `${BASE_URL}${endpoint}`;
@@ -108,7 +111,7 @@ export async function apiRequest(endpoint, options = {}) {
         // DRF returns an absolute URL built from the backend's host; keep only the
         // path so the request stays same-origin (through the dev proxy) and avoids CORS.
         const parsedNext = new URL(nextUrl, window.location.origin);
-        const fetchUrl = `${parsedNext.pathname}${parsedNext.search}`;
+        const fetchUrl = `${API_ORIGIN}${parsedNext.pathname}${parsedNext.search}`;
         const nextResp = await fetch(fetchUrl, { ...config, headers });
         if (!nextResp.ok) break;
         const nextData = await nextResp.json();
@@ -152,10 +155,30 @@ export const api = {
   getTutors: (search = '') => apiRequest(`/auth/tutors/${search ? `?search=${encodeURIComponent(search)}` : ''}`),
   getMe: () => apiRequest('/auth/me/'),
   updateMe: (data) => apiRequest('/auth/me/', { method: 'PATCH', body: JSON.stringify(data) }),
-  changePassword: (currentPassword, newPassword) => apiRequest('/auth/change-password/', {
-    method: 'POST',
-    body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
-  }),
+  // Changing the password signs every other device out; the server hands this one a new session.
+  changePassword: async (currentPassword, newPassword) => {
+    const data = await apiRequest('/auth/change-password/', {
+      method: 'POST',
+      body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+    });
+    if (data?.access) localStorage.setItem('access_token', data.access);
+    if (data?.refresh) localStorage.setItem('refresh_token', data.refresh);
+    return data;
+  },
+  // Revokes this device's session on the server. Never throws: signing out must always work locally.
+  logout: async () => {
+    const refresh = localStorage.getItem('refresh_token');
+    if (!refresh) return;
+    try {
+      await fetch(`${BASE_URL}/auth/logout/`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refresh }),
+      });
+    } catch {
+      // offline: the token simply expires on its own
+    }
+  },
   requestPasswordReset: (identifier) => apiRequest('/auth/password-reset/', {
     method: 'POST',
     body: JSON.stringify({ identifier }),

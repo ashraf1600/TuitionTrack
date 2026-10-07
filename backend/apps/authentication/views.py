@@ -4,8 +4,11 @@ Authentication Views
 from rest_framework import generics, status
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenObtainPairView
+
+from .sessions import issue_tokens, revoke_all_sessions, revoke_refresh_token
 
 from .serializers import (
     ChangePasswordSerializer,
@@ -24,12 +27,43 @@ class CustomTokenObtainPairView(TokenObtainPairView):
     """JWT Login endpoint — returns access, refresh tokens + user profile."""
     serializer_class = CustomTokenObtainPairSerializer
     permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'auth'
+
+
+class LogoutView(APIView):
+    """
+    POST /api/v1/auth/logout/   {refresh}
+    Signs this device out: the refresh token can no longer be used. Holding
+    the token is the proof of identity, so it works even after the access
+    token has expired, and signing out twice is not an error.
+    """
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
+    def post(self, request):
+        token = request.data.get('refresh')
+        if not token or not isinstance(token, str):
+            return Response({'refresh': ['This field is required.']}, status=status.HTTP_400_BAD_REQUEST)
+        revoke_refresh_token(token)
+        return Response({'message': 'Signed out.'})
+
+
+class LogoutAllView(APIView):
+    """POST /api/v1/auth/logout-all/ — signs the user out on every device."""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        revoke_all_sessions(request.user)
+        return Response({'message': 'Signed out on all devices.'})
 
 
 class TutorRegisterView(generics.CreateAPIView):
     """Tutor self-registration endpoint."""
     serializer_class = TutorRegistrationSerializer
     permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'auth'
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
@@ -53,6 +87,8 @@ class StudentRegisterView(generics.CreateAPIView):
     """Student self-registration endpoint."""
     serializer_class = StudentSelfRegistrationSerializer
     permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'auth'
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
@@ -100,7 +136,9 @@ class ChangePasswordView(APIView):
         user.set_password(serializer.validated_data['new_password'])
         user.must_change_password = False
         user.save(update_fields=['password', 'must_change_password', 'updated_at'])
-        return Response({'message': 'Your password has been changed.'})
+        # Every other device is signed out; this one gets a new session to carry on with.
+        revoke_all_sessions(user)
+        return Response({'message': 'Your password has been changed.', **issue_tokens(user)})
 
 
 class PasswordResetRequestView(APIView):
@@ -110,6 +148,8 @@ class PasswordResetRequestView(APIView):
     account exists, so it cannot be used to discover usernames.
     """
     permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'auth'
 
     def post(self, request):
         from django.conf import settings
@@ -155,6 +195,8 @@ class PasswordResetRequestView(APIView):
 class PasswordResetConfirmView(APIView):
     """POST /api/v1/auth/password-reset/confirm/   {uid, token, new_password}"""
     permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'auth'
 
     def post(self, request):
         serializer = PasswordResetConfirmSerializer(data=request.data)
@@ -163,6 +205,7 @@ class PasswordResetConfirmView(APIView):
         user.set_password(serializer.validated_data['new_password'])
         user.must_change_password = False
         user.save(update_fields=['password', 'must_change_password', 'updated_at'])
+        revoke_all_sessions(user)
         return Response({'message': 'Your password has been reset. You can sign in now.'})
 
 

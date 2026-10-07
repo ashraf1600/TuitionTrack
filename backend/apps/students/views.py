@@ -101,9 +101,11 @@ class StudentDetailView(generics.RetrieveUpdateDestroyAPIView):
         Soft delete — deactivates the student account instead of hard deleting.
         This preserves all historical cycle and exam data.
         """
+        from apps.authentication.sessions import revoke_all_sessions
         student = self.get_object()
         student.is_active = False
         student.save(update_fields=['is_active'])
+        revoke_all_sessions(student)
 
         # The shared cycle belongs to the tuition group, so it carries on without them.
         from apps.students.models import TuitionEnrollment
@@ -132,6 +134,9 @@ class StudentResetPasswordView(APIView):
         student.set_password(temporary)
         student.must_change_password = True
         student.save(update_fields=['password', 'must_change_password', 'updated_at'])
+        # Whoever was signed in with the old password is signed out.
+        from apps.authentication.sessions import revoke_all_sessions
+        revoke_all_sessions(student)
         return Response({
             'message': f'New temporary password set for {student.get_full_name() or student.username}.',
             'username': student.username,
@@ -155,6 +160,9 @@ class StudentToggleActiveView(APIView):
         )
         student.is_active = not student.is_active
         student.save(update_fields=['is_active'])
+        if not student.is_active:
+            from apps.authentication.sessions import revoke_all_sessions
+            revoke_all_sessions(student)
 
         from apps.students.models import TuitionEnrollment
         TuitionEnrollment.objects.filter(

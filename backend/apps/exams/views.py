@@ -803,11 +803,14 @@ class MediaUploadView(APIView):
         save_path = f'uploads/{timezone.now().strftime("%Y/%m")}/{unique_name}'
 
         saved_path = default_storage.save(save_path, ContentFile(uploaded_file.read()))
-        file_url = f'{settings.MEDIA_URL}{saved_path}'
+        # "/media/…" with local storage; a full https address when files live in cloud storage.
+        file_url = default_storage.url(saved_path)
 
         return Response(
             {
                 'url': file_url,
+                # For clients that are not served from this origin (the mobile app).
+                'absolute_url': request.build_absolute_uri(file_url),
                 'filename': uploaded_file.name,
                 'size': uploaded_file.size,
                 'message': 'File uploaded successfully.',

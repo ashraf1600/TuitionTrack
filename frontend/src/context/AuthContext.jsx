@@ -53,6 +53,7 @@ export function AuthProvider({ children }) {
   };
 
   const logout = () => {
+    api.logout(); // tell the server too, so the session cannot be reused (reads the token before it is cleared)
     localStorage.removeItem('access_token');
     localStorage.removeItem('refresh_token');
     localStorage.removeItem('user_data');

@@ -80,3 +80,13 @@ coverage.xml
 *.orig
 *.tmp
 .cache/
+
+# ─── Local database backups (contain accounts and password hashes) ───
+*.sqlite3.bak*
+backend/db.sqlite3.bak*
+# ─── Cloud deploy: never commit a data export ───
+backend/data_export*.json
+
+# The Flutter app source lives in mobile/lib (the Python "lib/" rule above must not hide it)
+!mobile/lib/
+!mobile/lib/**

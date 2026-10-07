@@ -26,8 +26,8 @@ from apps.students.services import enroll_student
 User = get_user_model()
 
 PUBLIC_ROUTES = (
-    'auth/token/', 'auth/token/refresh/', 'auth/register/', 'auth/register/student/', 'auth/tutors/',
-    'auth/password-reset/', 'auth/password-reset/confirm/', 'meta/',
+    'auth/token/', 'auth/token/refresh/', 'auth/logout/', 'auth/register/', 'auth/register/student/',
+    'auth/tutors/', 'auth/password-reset/', 'auth/password-reset/confirm/', 'meta/',
 )
 
 # Every body key the API reads anywhere, so each malformed value reaches real code.

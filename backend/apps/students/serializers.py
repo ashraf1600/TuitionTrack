@@ -96,6 +96,8 @@ class StudentDetailSerializer(serializers.ModelSerializer):
                     setattr(profile, attr, value)
                 profile.full_clean(exclude=['user'])
                 profile.save()
+                # The response is built from the user's cached profile; point it at the saved one.
+                instance.student_profile = profile
 
         return instance
 
@@ -130,6 +132,9 @@ class StudentCreateSerializer(serializers.Serializer):
         request = self.context.get('request')
         tutor = request.user if request else None
         existing = User.objects.filter(username=value).first()
+        if not existing and User.objects.filter(username__iexact=value).exists():
+            # Sign-in ignores capitalisation, so "Rafi" and "rafi" cannot be two accounts.
+            raise serializers.ValidationError('A user with this username already exists.')
         if existing:
             from .services import can_manage
             # Re-using a username updates that account (and its password), so it is
@@ -142,6 +147,16 @@ class StudentCreateSerializer(serializers.Serializer):
         if value < 1:
             raise serializers.ValidationError('Cycle length must be at least 1 class.')
         return value
+
+    def validate(self, attrs):
+        from apps.authentication.serializers import validate_unique_email
+        # The email may already belong to the very account being re-used, never to another one.
+        same_account = User.objects.filter(username=attrs.get('username')).first()
+        try:
+            attrs['email'] = validate_unique_email(attrs.get('email', ''), exclude_user=same_account)
+        except serializers.ValidationError as exc:
+            raise serializers.ValidationError({'email': exc.detail})
+        return attrs
 
     @transaction.atomic
     def create(self, validated_data):

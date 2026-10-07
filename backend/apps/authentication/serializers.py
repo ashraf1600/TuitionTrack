@@ -8,6 +8,26 @@ from django.contrib.auth import get_user_model
 User = get_user_model()
 
 
+def validate_new_username(value):
+    """Usernames are unique whatever the capitalisation, because sign-in ignores case."""
+    if User.objects.filter(username__iexact=value).exists():
+        raise serializers.ValidationError('A user with this username already exists.')
+    return value
+
+
+def validate_unique_email(value, exclude_user=None):
+    """An email address identifies one account (it is how a password reset finds it). Blank is allowed."""
+    value = (value or '').strip()
+    if not value:
+        return ''
+    taken = User.objects.filter(email__iexact=value)
+    if exclude_user is not None:
+        taken = taken.exclude(pk=exclude_user.pk)
+    if taken.exists():
+        raise serializers.ValidationError('An account with this email address already exists.')
+    return value
+
+
 class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
     """
     Extends the default JWT token payload with role, user ID, name, and
@@ -24,6 +44,9 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         return token
 
     def validate(self, attrs):
+        from .sessions import resolve_login_name
+        # Accept the username in any capitalisation, or the account's email address.
+        attrs[self.username_field] = resolve_login_name(attrs.get(self.username_field))
         data = super().validate(attrs)
         # Append extra user data to the response body as well
         data['user'] = {
@@ -50,9 +73,20 @@ class TutorRegistrationSerializer(serializers.ModelSerializer):
             'phone', 'password', 'password_confirm'
         ]
 
+    def validate_username(self, value):
+        return validate_new_username(value)
+
+    def validate_email(self, value):
+        return validate_unique_email(value)
+
     def validate(self, attrs):
         if attrs['password'] != attrs.pop('password_confirm'):
             raise serializers.ValidationError({'password_confirm': 'Passwords do not match.'})
+        candidate = User(**{k: v for k, v in attrs.items() if k != 'password'})
+        try:
+            _validated_new_password(attrs['password'], candidate)
+        except serializers.ValidationError as exc:
+            raise serializers.ValidationError({'password': exc.detail})
         return attrs
 
     def create(self, validated_data):
@@ -127,9 +161,10 @@ class StudentSelfRegistrationSerializer(serializers.Serializer):
     tutor_username = serializers.CharField(required=False, allow_blank=True, default='')
 
     def validate_username(self, value):
-        if User.objects.filter(username=value).exists():
-            raise serializers.ValidationError('A user with this username already exists.')
-        return value
+        return validate_new_username(value)
+
+    def validate_email(self, value):
+        return validate_unique_email(value)
 
     def validate_selected_tutor_id(self, value):
         if not value or not str(value).strip():
@@ -144,6 +179,11 @@ class StudentSelfRegistrationSerializer(serializers.Serializer):
     def validate(self, attrs):
         if attrs['password'] != attrs.pop('password_confirm'):
             raise serializers.ValidationError({'password_confirm': 'Passwords do not match.'})
+        candidate = User(username=attrs['username'], first_name=attrs['first_name'], email=attrs.get('email', ''))
+        try:
+            _validated_new_password(attrs['password'], candidate)
+        except serializers.ValidationError as exc:
+            raise serializers.ValidationError({'password': exc.detail})
         return attrs
 
     def create(self, validated_data):
@@ -255,6 +295,9 @@ class ProfileUpdateSerializer(serializers.Serializer):
 
     USER_FIELDS = ('first_name', 'last_name', 'email', 'phone')
     PROFILE_FIELDS = ('grade_level', 'institution', 'address', 'parent_name', 'parent_phone')
+
+    def validate_email(self, value):
+        return validate_unique_email(value, exclude_user=self.instance)
 
     def update(self, instance, validated_data):
         from apps.students.models import StudentProfile
