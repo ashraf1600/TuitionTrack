@@ -20,7 +20,6 @@ export default function SharedCycleBoard({
   onCycleChange,
   onAddStudent = null,
   compact = false,
-  light = true,
 }) {
   const [busyClass, setBusyClass] = useState(null);
   const [error, setError] = useState('');
@@ -118,39 +117,39 @@ export default function SharedCycleBoard({
   };
 
   return (
-    <div className={`rounded-2xl border ${light ? 'border-slate-200/90 bg-white shadow-sm' : 'border-slate-800 bg-slate-900/70 shadow-lg'} overflow-hidden`}>
+    <div className="rounded-2xl border border-slate-800 bg-slate-900/70 shadow-lg overflow-hidden">
       {/* Header */}
-      <div className={`p-5 sm:p-6 flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b ${light ? 'border-slate-100' : 'border-slate-800'}`}>
+      <div className="p-5 sm:p-6 flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-slate-800">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2 mb-1.5">
-            <span className={`text-[11px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full ${light ? 'bg-indigo-50 text-indigo-700 border border-indigo-200' : 'bg-indigo-500/15 text-indigo-300 border border-indigo-500/30'}`}>
+            <span className="text-[11px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-indigo-500/15 text-indigo-300 border border-indigo-500/30">
               Cycle #{cycle.cycle_number}
             </span>
-            <span className={`text-[11px] font-semibold px-2.5 py-0.5 rounded-full flex items-center gap-1.5 ${light ? 'bg-slate-100 text-slate-700 border border-slate-200' : 'bg-slate-800 text-slate-300 border border-slate-700'}`}>
-              <Users className="w-3 h-3 text-indigo-500" />
+            <span className="text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700 flex items-center gap-1.5">
+              <Users className="w-3 h-3 text-indigo-400" />
               Shared by {studentCount} student{studentCount === 1 ? '' : 's'}
             </span>
           </div>
-          <h3 className={`text-lg font-bold truncate ${light ? 'text-slate-900' : 'text-slate-100'}`}>
+          <h3 className="text-lg font-bold text-slate-100 truncate">
             {tuitionTitle ? `${tuitionTitle} — class tracker` : 'Class tracker'}
           </h3>
-          <p className={`text-xs mt-0.5 ${light ? 'text-slate-500' : 'text-slate-400'}`}>
+          <p className="text-xs text-slate-400 mt-0.5">
             Tick a class once and it is recorded, with today's date, for everyone in this group.
           </p>
         </div>
 
         <div className="flex items-center gap-4 flex-shrink-0">
           <div className="text-right">
-            <div className={`text-2xl font-extrabold leading-none ${light ? 'text-slate-900' : 'text-slate-100'}`}>
-              {completed}<span className="text-sm font-semibold text-slate-400"> / {total}</span>
+            <div className="text-2xl font-extrabold text-slate-100 leading-none">
+              {completed}<span className="text-sm font-semibold text-slate-500"> / {total}</span>
             </div>
-            <div className={`text-[11px] mt-1 ${light ? 'text-slate-500' : 'text-slate-400'}`}>classes done · {percent}%</div>
+            <div className="text-[11px] text-slate-400 mt-1">classes done · {percent}%</div>
           </div>
           {isComplete && (
             <button
               type="button"
               onClick={() => setConfirmNext(true)}
-              className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-2 shadow-sm transition"
+              className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-2 shadow-lg shadow-emerald-600/25 transition"
             >
               <RotateCcw className="w-4 h-4" />
               Start cycle #{cycle.cycle_number + 1}
@@ -160,20 +159,20 @@ export default function SharedCycleBoard({
       </div>
 
       {/* Progress bar */}
-      <div className={`h-2 ${light ? 'bg-slate-100' : 'bg-slate-800'}`}>
+      <div className="h-1.5 bg-slate-800">
         <div
-          className="h-full bg-gradient-to-r from-indigo-500 to-emerald-500 transition-all duration-500"
+          className="h-full bg-gradient-to-r from-indigo-500 to-emerald-400 transition-all duration-500"
           style={{ width: `${percent}%` }}
         />
       </div>
 
       {/* Wallet strip — tutor only */}
       {!compact && (
-        <div className={`grid grid-cols-2 lg:grid-cols-4 divide-x divide-y lg:divide-y-0 ${light ? 'divide-slate-100 border-b border-slate-100 bg-slate-50/70' : 'divide-slate-800 border-b border-slate-800 bg-slate-950/40'}`}>
-          <Stat light={light} label="Cycle fee (group)" value={formatTaka(cycle.total_fee ?? cycle.tuition_fee)} />
-          <Stat light={light} label="Per class" value={formatTaka(cycle.per_class_rate)} hint="fee ÷ classes" />
-          <Stat light={light} label="Earned so far" value={formatTaka(cycle.earned_revenue)} tone="emerald" hint={`${completed} × per class`} />
-          <Stat light={light} label="Still to earn" value={formatTaka(cycle.pending_balance)} tone="indigo" />
+        <div className="grid grid-cols-2 lg:grid-cols-4 divide-x divide-y lg:divide-y-0 divide-slate-800 border-b border-slate-800 bg-slate-950/40">
+          <Stat label="Cycle fee (group)" value={formatTaka(cycle.total_fee ?? cycle.tuition_fee)} />
+          <Stat label="Per class" value={formatTaka(cycle.per_class_rate)} hint="fee ÷ classes" />
+          <Stat label="Earned so far" value={formatTaka(cycle.earned_revenue)} tone="emerald" hint={`${completed} × per class`} />
+          <Stat label="Still to earn" value={formatTaka(cycle.pending_balance)} tone="indigo" />
         </div>
       )}
 
@@ -228,54 +227,30 @@ export default function SharedCycleBoard({
                 }
                 className={`group relative rounded-xl border p-3 text-left transition focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 ${
                   cls.completed
-                    ? light
-                      ? 'bg-emerald-50/90 border-emerald-300 hover:border-emerald-400 shadow-xs'
-                      : 'bg-emerald-500/10 border-emerald-500/40 hover:border-emerald-400'
+                    ? 'bg-emerald-500/10 border-emerald-500/40 hover:border-emerald-400'
                     : isNext
-                    ? light
-                      ? 'bg-indigo-50/80 border-indigo-300 ring-2 ring-indigo-500/20 hover:bg-indigo-100/60'
-                      : 'bg-indigo-500/10 border-indigo-500/50 hover:bg-indigo-500/20'
-                    : light
-                    ? 'bg-slate-50 border-slate-200/90 hover:border-slate-300 hover:bg-slate-100/70'
+                    ? 'bg-indigo-500/10 border-indigo-500/50 hover:bg-indigo-500/20'
                     : 'bg-slate-800/40 border-slate-700/70 hover:border-slate-500 hover:bg-slate-800'
                 }`}
               >
                 <div className="flex items-center justify-between">
-                  <span
-                    className={`text-[11px] font-bold ${
-                      cls.completed
-                        ? light ? 'text-emerald-800' : 'text-emerald-300'
-                        : isNext
-                        ? light ? 'text-indigo-700 font-bold' : 'text-indigo-300'
-                        : light ? 'text-slate-500' : 'text-slate-400'
-                    }`}
-                  >
+                  <span className={`text-[11px] font-bold ${cls.completed ? 'text-emerald-300' : 'text-slate-400'}`}>
                     Class {classNo}
                   </span>
                   <span
                     className={`w-5 h-5 rounded-md flex items-center justify-center border transition ${
                       cls.completed
-                        ? 'bg-emerald-600 border-emerald-500 text-white'
-                        : light
-                        ? 'border-slate-300 text-transparent group-hover:border-indigo-400'
+                        ? 'bg-emerald-500 border-emerald-400 text-white'
                         : 'border-slate-600 text-transparent group-hover:border-indigo-400'
                     }`}
                   >
-                    {isBusy ? <Loader2 className="w-3 h-3 animate-spin text-slate-400" /> : <Check className="w-3.5 h-3.5 stroke-[3]" />}
+                    {isBusy ? <Loader2 className="w-3 h-3 animate-spin text-slate-300" /> : <Check className="w-3.5 h-3.5 stroke-[3]" />}
                   </span>
                 </div>
-                <div
-                  className={`mt-2 text-xs font-semibold ${
-                    cls.completed
-                      ? light ? 'text-slate-900' : 'text-slate-100'
-                      : isNext
-                      ? light ? 'text-indigo-700' : 'text-indigo-300'
-                      : light ? 'text-slate-400' : 'text-slate-500'
-                  }`}
-                >
+                <div className={`mt-2 text-xs font-semibold ${cls.completed ? 'text-slate-100' : isNext ? 'text-indigo-300' : 'text-slate-500'}`}>
                   {cls.completed ? formatShortDate(cls.date) || 'Done' : isNext ? 'Up next' : 'Not yet'}
                 </div>
-                <div className={`text-[10px] truncate h-3.5 mt-0.5 ${light ? 'text-slate-500' : 'text-slate-400'}`}>
+                <div className="text-[10px] text-slate-400 truncate h-3.5 mt-0.5">
                   {cls.completed ? cls.topic || '' : ''}
                 </div>
               </button>
@@ -379,17 +354,13 @@ export default function SharedCycleBoard({
   );
 }
 
-function Stat({ label, value, hint, tone, light = true }) {
-  const color = tone === 'emerald'
-    ? light ? 'text-emerald-700' : 'text-emerald-400'
-    : tone === 'indigo'
-    ? light ? 'text-indigo-700' : 'text-indigo-300'
-    : light ? 'text-slate-900' : 'text-slate-100';
+function Stat({ label, value, hint, tone }) {
+  const color = tone === 'emerald' ? 'text-emerald-400' : tone === 'indigo' ? 'text-indigo-300' : 'text-slate-100';
   return (
     <div className="px-5 py-3.5">
-      <div className={`text-[10px] font-bold uppercase tracking-wider ${light ? 'text-slate-500' : 'text-slate-500'}`}>{label}</div>
+      <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">{label}</div>
       <div className={`text-lg font-extrabold font-mono mt-0.5 ${color}`}>{value}</div>
-      {hint && <div className={`text-[10px] ${light ? 'text-slate-400' : 'text-slate-500'}`}>{hint}</div>}
+      {hint && <div className="text-[10px] text-slate-500">{hint}</div>}
     </div>
   );
 }
