@@ -96,9 +96,11 @@ class _ExamTakeScreenState extends State<ExamTakeScreen> {
 
   void _tick() {
     final now = context.read<Session>().api.serverNow;
-    final deadline = exam.date('attempt_deadline') ?? exam.date('end_time') ?? now;
+    // dateUtc forces naive ISO strings (no trailing Z / offset) to be read as
+    // UTC; subtracting a 5-minute grace window must match the server exactly.
+    final deadline = exam.dateUtc('attempt_deadline') ?? exam.dateUtc('end_time') ?? now;
     final graceEnd = deadline.add(Duration(minutes: exam.integer('grace_period_minutes', 5)));
-    final lateEnd = exam.date('late_submission_until');
+    final lateEnd = exam.dateUtc('late_submission_until');
 
     _Phase phase;
     Duration left;

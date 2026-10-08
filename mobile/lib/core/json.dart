@@ -37,6 +37,37 @@ extension JsonRead on Map<String, dynamic> {
     return DateTime.tryParse(value)?.toLocal();
   }
 
+  /// A server timestamp coerced to UTC before being shown in local time.
+  ///
+  /// The Django API may emit either "2025-04-12T10:00:00Z" or a naive
+  /// "2025-04-12T10:00:00" (no offset). [date] would treat the latter as local
+  /// time, which silently shifts the grace window by hours. [dateUtc] forces a
+  /// UTC interpretation for naive ISO and only then converts to local.
+  DateTime? dateUtc(String key) {
+    final value = this[key];
+    if (value is! String || value.isEmpty) return null;
+    final hasOffset = value.endsWith('Z') || RegExp(r'[+-]\d{2}:?\d{2}$').hasMatch(value);
+    if (hasOffset) {
+      // "2025-04-12T12:00:00Z" or "...+06:00" — DateTime.parse gives us the
+      // correct instant; expose it in local time.
+      return DateTime.tryParse(value)?.toLocal();
+    }
+    // Naive ISO: build a UTC DateTime from the parsed components so the
+    // resulting instant is unambiguous. DateTime.tryParse would otherwise
+    // treat "12:00:00" as 12:00 *local*, and a +06:00 device would silently
+    // shift the grace window by six hours.
+    final m = RegExp(r'^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?$').firstMatch(value);
+    if (m == null) return DateTime.tryParse(value)?.toLocal();
+    return DateTime.utc(
+      int.parse(m.group(1)!),
+      int.parse(m.group(2)!),
+      int.parse(m.group(3)!),
+      int.parse(m.group(4)!),
+      int.parse(m.group(5)!),
+      int.parse(m.group(6) ?? '0'),
+    ).toLocal();
+  }
+
   Json? obj(String key) {
     final value = this[key];
     return value is Map ? Map<String, dynamic>.from(value) : null;

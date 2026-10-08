@@ -55,6 +55,19 @@ class ScheduledClass {
   }
 }
 
+/// Strips formatting, uppercases, and validates a tutor invite code.
+///
+/// Returns the normalised code (4–8 uppercase alphanumerics) or `null` when the
+/// input cannot possibly be a usable code. Both the [Repo.connectByCode] call
+/// and the student "Connect with invite code" screen go through this single
+/// helper so a 6-letter code, a code surrounded by spaces, or a mixed-case code
+/// all behave the same.
+String? normalizeInviteCode(String raw) {
+  final cleaned = raw.trim().toUpperCase().replaceAll(RegExp(r'[^A-Z0-9]'), '');
+  if (cleaned.length < 4 || cleaned.length > 8) return null;
+  return cleaned;
+}
+
 class HomeworkItem {
   HomeworkItem({
     required this.id,

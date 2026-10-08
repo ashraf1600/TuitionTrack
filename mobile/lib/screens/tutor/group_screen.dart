@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../core/api.dart';
 import '../../core/format.dart';
 import '../../core/json.dart';
 import '../../core/repo.dart';
@@ -179,6 +180,14 @@ class _ClassesTab extends StatelessWidget {
                 icon: const Icon(Icons.check),
                 label: Text(wasDone ? 'Save changes' : 'Mark as done'),
               ),
+              // Set homework for this class — applies to the whole tuition group.
+              // The class itself stays independent: marking it done later does not
+              // uncreate homework that was already sent to students.
+              OutlinedButton.icon(
+                icon: const Icon(Icons.assignment_outlined, size: 18),
+                label: const Text('Set homework for this class'),
+                onPressed: () => Navigator.pop(context, 'homework'),
+              ),
               if (wasDone)
                 TextButton(
                   onPressed: () => Navigator.pop(context, 'undo'),
@@ -191,6 +200,10 @@ class _ClassesTab extends StatelessWidget {
       ),
     );
     if (action == null || !context.mounted) return;
+    if (action == 'homework') {
+      await _setHomeworkFromClass(context, tuition, classNo, topic.text.trim(), date);
+      return;
+    }
     final done = action == 'done';
     final ok = await attempt(
       context,
@@ -198,6 +211,112 @@ class _ClassesTab extends StatelessWidget {
       success: done ? 'Class $classNo recorded for the whole group.' : 'Class $classNo unmarked.',
     );
     if (ok) await reload();
+  }
+
+  /// Open a homework composer pre-filled with the class topic + date so the tutor
+  /// can drop in the homework details and send it to the entire tuition group.
+  Future<void> _setHomeworkFromClass(
+    BuildContext context,
+    Json tuition,
+    int classNo,
+    String topicText,
+    DateTime heldOn,
+  ) async {
+    final repo = context.read<Repo>();
+    final titleCtrl = TextEditingController(
+      text: topicText.isNotEmpty ? 'Practice on $topicText' : 'Class $classNo follow-up',
+    );
+    final descriptionCtrl = TextEditingController();
+    final initialDue = DateTime.now().add(const Duration(days: 3));
+    var dueDate = DateTime(initialDue.year, initialDue.month, initialDue.day, 23, 59);
+
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setStateDialog) {
+          // Refresh the Send button whenever the title changes.
+          void onTitleChanged() => setStateDialog(() {});
+          return AlertDialog(
+            title: Text('Homework — class $classNo'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (topicText.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: Text(
+                        'Topic: $topicText',
+                        style: const TextStyle(color: AppColors.muted, fontSize: 13),
+                      ),
+                    ),
+                  TextField(
+                    controller: titleCtrl,
+                    textCapitalization: TextCapitalization.sentences,
+                    onChanged: (_) => onTitleChanged(),
+                    decoration: const InputDecoration(labelText: 'Title', hintText: 'e.g. Solve exercises 4.1–4.3'),
+                  ),
+                  gap12,
+                  TextField(
+                    controller: descriptionCtrl,
+                    minLines: 2,
+                    maxLines: 5,
+                    textCapitalization: TextCapitalization.sentences,
+                    decoration: const InputDecoration(
+                      labelText: 'Details (optional)',
+                      hintText: 'Pages, problems, instructions…',
+                    ),
+                  ),
+                  gap12,
+                  OutlinedButton.icon(
+                    icon: const Icon(Icons.event_outlined, size: 18),
+                    label: Text('Due ${fmtDate(dueDate)}'),
+                    onPressed: () async {
+                      final picked = await showDatePicker(
+                        context: dialogContext,
+                        initialDate: dueDate,
+                        firstDate: DateTime.now(),
+                        lastDate: DateTime.now().add(const Duration(days: 365)),
+                      );
+                      if (picked != null) {
+                        setStateDialog(() {
+                          dueDate = DateTime(picked.year, picked.month, picked.day, 23, 59);
+                        });
+                      }
+                    },
+                  ),
+                  gap8,
+                  Text(
+                    'Sent to every student in ${tuition.str('title')}.',
+                    style: const TextStyle(color: AppColors.muted, fontSize: 12),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Cancel')),
+              FilledButton(
+                onPressed: titleCtrl.text.trim().isEmpty ? null : () => Navigator.pop(dialogContext, true),
+                child: const Text('Send'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+    if (saved != true || !context.mounted) return;
+    await attempt(
+      context,
+      () => repo.createHomework(
+        title: titleCtrl.text.trim(),
+        description: descriptionCtrl.text.trim(),
+        dueDate: dueDate,
+        tuitionId: tuition.str('id'),
+      ),
+      success: 'Homework sent to ${tuition.str('title')}.',
+    );
+    // The class-attendance sheet is already closed; no reload needed here.
   }
 
   Future<void> _startNext(BuildContext context, Json cycle) async {
@@ -210,7 +329,24 @@ class _ClassesTab extends StatelessWidget {
       confirmLabel: 'Start next cycle',
     );
     if (!ok || !context.mounted) return;
-    if (await attempt(context, () => repo.resetCycle(cycle.str('id')), success: 'New cycle started.')) await reload();
+    try {
+      await repo.resetCycle(cycle.str('id'));
+      if (context.mounted) showToast(context, 'New cycle started.');
+      await reload();
+    } on ApiException catch (error) {
+      if (!context.mounted) return;
+      // The most common failure mode is the backend refusing because the
+      // current cycle still has un-recorded classes. Translate that into a
+      // pointer for the tutor; otherwise fall back to the standard toast.
+      final hint = (error.status == 400 || error.status == 403) &&
+              (error.message.toLowerCase().contains('completion') ||
+                  error.message.toLowerCase().contains('cycle'));
+      showToast(
+        context,
+        hint ? 'Finish the classes of this cycle before starting the next one.' : error.message,
+        error: true,
+      );
+    }
   }
 
   @override

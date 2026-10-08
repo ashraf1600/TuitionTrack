@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import '../../core/connect.dart';
 import '../../core/repo.dart';
 import '../../widgets/ui.dart';
 
@@ -36,9 +37,9 @@ class _ConnectByCodeCardState extends State<ConnectByCodeCard> {
 
   Future<void> _send() async {
     HapticFeedback.lightImpact();
-    final code = _code.text.trim().toUpperCase();
-    if (code.length != 6) {
-      showToast(context, 'Enter the 6-character code from your tutor.', error: true);
+    final code = normalizeInviteCode(_code.text);
+    if (code == null) {
+      showToast(context, 'Enter the 4–8 character code from your tutor.', error: true);
       return;
     }
     setState(() => _busy = true);
@@ -65,7 +66,7 @@ class _ConnectByCodeCardState extends State<ConnectByCodeCard> {
         children: [
           const Text('Connect with invite code', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
           const SizedBox(height: 4),
-          const Text('Ask your tutor for their 6-character code.', style: TextStyle(color: Colors.grey, fontSize: 13)),
+          const Text('Ask your tutor for their invite code.', style: TextStyle(color: Colors.grey, fontSize: 13)),
           gap12,
           AnimatedContainer(
             duration: const Duration(milliseconds: 220),

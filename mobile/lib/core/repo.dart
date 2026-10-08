@@ -1,4 +1,5 @@
 import 'api.dart';
+import 'connect.dart';
 
 Json _map(dynamic data) => data is Map ? Map<String, dynamic>.from(data) : <String, dynamic>{};
 
@@ -14,8 +15,17 @@ class Repo {
       _map(await api.post('/auth/password-reset/', {'identifier': identifier}))['message'] as String? ?? '';
   Future<List<Json>> tutors([String search = '']) => api.list('/auth/tutors/', query: {'search': search});
   Future<List<Json>> notifications() async {
-    final data = _map(await api.get('/notifications/'));
-    return (data['notifications'] as List? ?? const []).whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+    final raw = await api.get('/notifications/');
+    List<dynamic>? list;
+    if (raw is List) {
+      list = raw;
+    } else if (raw is Map) {
+      final map = Map<String, dynamic>.from(raw);
+      // The endpoint may return any of these shapes depending on whether the
+      // session is paginated or the result set is empty.
+      list = (map['notifications'] ?? map['results'] ?? map['items']) as List?;
+    }
+    return (list ?? const []).whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
   }
 
   // ── Students (tutor) ───────────────────────────────────────────────────────
@@ -57,15 +67,31 @@ class Repo {
   Future<Json> rejectConnection(String id) async => _map(await api.post('/connections/$id/reject/'));
 
   // ── TutorTrack: invite-code + tutor dashboard ──────────────────────────────
-  /// POST /connections/by-code/ {tutor_code, message} -> {status, tutor_display_name, ...}
-  Future<Json> connectByCode(String code, {String message = ''}) async =>
-      _map(await api.post('/connections/by-code/', {'tutor_code': code.trim().toUpperCase(), 'message': message}));
-
   /// GET /my-tutors/ -> [{id, display_name, username, profile_picture(_url), tuitions, subjects}]
   Future<List<Json>> myTutors() => api.list('/my-tutors/');
 
   /// GET /my-tutors/<id>/ -> {tutor, weekly_routine, upcoming_classes, homework}
   Future<Json> tutorDetail(String tutorId) async => _map(await api.get('/my-tutors/$tutorId/'));
+
+  /// POST /connections/by-code/ {tutor_code, message} -> {status, tutor_display_name, ...}
+  ///
+  /// Normalises the invite code (trim, uppercase, strip separators) before
+  /// sending. Throws an [ApiException] with `code: 'bad_code'` when the input
+  /// is not a usable code, so callers can show a precise message without
+  /// hitting the network.
+  Future<Json> connectByCode(String code, {String message = ''}) async {
+    final normalized = normalizeInviteCode(code);
+    if (normalized == null) {
+      throw ApiException(
+        'Enter the 4–8 character invite code from your tutor.',
+        code: 'bad_code',
+      );
+    }
+    return _map(await api.post('/connections/by-code/', {
+      'tutor_code': normalized,
+      'message': message,
+    }));
+  }
 
   // ── Homework ───────────────────────────────────────────────────────────────
   Future<List<Json>> homework({String? tutorId, bool? evaluated}) => api.list('/homework/', query: {
@@ -73,6 +99,25 @@ class Repo {
         if (evaluated != null) 'evaluated': '$evaluated',
       });
   Future<Json> homeworkDetail(String id) async => _map(await api.get('/homework/$id/'));
+  /// Tutor creates homework tied to one tuition or one student.
+  /// `dueDate` is sent as a UTC ISO string; pass a local DateTime.
+  /// Description is optional — leaving it empty omits the field.
+  Future<Json> createHomework({
+    required String title,
+    String description = '',
+    required DateTime dueDate,
+    String? tuitionId,
+    String? studentId,
+  }) async {
+    assert(tuitionId != null || studentId != null, 'homework needs a tuition or a student');
+    return _map(await api.post('/homework/', {
+      'title': title,
+      if (description.isNotEmpty) 'description': description,
+      'due_date': dueDate.toUtc().toIso8601String(),
+      if (tuitionId != null) 'tuition': tuitionId,
+      if (studentId != null) 'student': studentId,
+    }));
+  }
   /// Student upload: URL only — never sends is_evaluated.
   Future<Json> submitHomework(String id, String url) async {
     final data = _map(await api.post('/homework/$id/submit/', {'submitted_online_url': url}));
@@ -122,12 +167,27 @@ class Repo {
 
   // Student side
   Future<Json> startExam(String id) async => _map(await api.post('/exams/$id/start/'));
-  Future<Json> submitExam(String id, {required Json answers, required String text, required List<String> images}) async =>
-      _map(await api.post('/exams/$id/submit/', {
-        'answers_data': answers.map((key, value) => MapEntry(key, '$value')),
-        'text_answer': text,
-        'image_urls': images,
-        'uploaded_images': images,
-      }));
+  Future<Json> submitExam(String id, {required Json answers, required String text, required List<String> images}) async {
+    // The backend serializer accepts ints natively and a single-letter string
+    // for "A"–"E" answers, but rejects other shapes; we therefore type-coerce
+    // each answer before posting. Falls back to a Stringified value when the
+    // input is not a recognisable answer so the payload is always well-formed.
+    final typed = <String, Object>{};
+    answers.forEach((key, value) {
+      if (value is int) {
+        typed[key] = value;
+      } else if (value is String && RegExp(r'^[A-E]$').hasMatch(value.toUpperCase())) {
+        typed[key] = value.toUpperCase();
+      } else {
+        typed[key] = value?.toString() ?? '';
+      }
+    });
+    return _map(await api.post('/exams/$id/submit/', {
+      'answers_data': typed,
+      'text_answer': text,
+      'image_urls': images,
+      'uploaded_images': images,
+    }));
+  }
   Future<Json> result(String id) async => _map(await api.get('/exams/$id/result/'));
 }

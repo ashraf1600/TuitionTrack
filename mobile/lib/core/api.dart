@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:developer' as developer;
 import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
@@ -61,6 +62,11 @@ class ApiClient {
   String? _access;
   String? _refresh;
   Future<bool>? _refreshing;
+
+  /// Counts how many responses came back without a usable time header. When
+  /// the app has been running for a while and this stays at zero we are confident
+  /// that exam timers follow the server clock; when it climbs the UI can warn.
+  int responsesWithoutClockHeader = 0;
 
   /// Called when the session can no longer be renewed (signed out elsewhere, expired).
   void Function()? onSessionExpired;
@@ -162,8 +168,9 @@ class ApiClient {
   }
 
   dynamic _decode(http.Response response) {
-    final header = response.headers['date'];
-    if (header != null) _syncClock(header);
+    final header = _bestClockHeader(response);
+    _syncClock(header);
+    if (header == null) responsesWithoutClockHeader++;
     final text = utf8.decode(response.bodyBytes, allowMalformed: true);
     dynamic data;
     if (text.isNotEmpty && (response.headers['content-type'] ?? '').contains('json')) {
@@ -197,17 +204,28 @@ class ApiClient {
     );
   }
 
-  void _syncClock(String header) {
+  void _syncClock(String? header) {
+    final raw = header;
+    if (raw == null || raw.isEmpty) return;
     try {
-      final server = parseHttpDate(header);
+      final server = parseHttpDate(raw);
       final offset = server.difference(DateTime.now().toUtc());
       // The Date header has one-second precision; ignore jitter smaller than that.
       if (offset.abs() > const Duration(seconds: 2) || serverOffset.abs() > const Duration(seconds: 2)) {
         serverOffset = offset;
       }
-    } catch (_) {
+    } catch (e) {
       // not a date we can read; keep the previous offset
+      developer.log('Clock sync header was rejected: $raw ($e)', name: 'TuitionTrack');
     }
+  }
+
+  /// Picks the best timestamp off an HTTP response, falling back from `date`
+  /// (which Django doesn't always emit) to `last-modified` and finally to the
+  /// response's own request time as a last resort.
+  String? _bestClockHeader(http.Response response) {
+    final headers = response.headers;
+    return headers['date'] ?? headers['last-modified'] ?? headers['x-server-time'];
   }
 
   Future<dynamic> _request(String method, String path, {Object? body, Map<String, dynamic>? query}) async {
@@ -267,7 +285,10 @@ class ApiClient {
     final data = _decode(response);
     final url = data is Map ? data['url'] : null;
     if (url is! String || !(url.startsWith('/media/') || url.startsWith('http://') || url.startsWith('https://'))) {
-      throw ApiException('The upload did not return a usable file.');
+      throw ApiException(
+        'The upload did not return a media path; please try again.',
+        code: 'upload_invalid_url',
+      );
     }
     return url;
   }
