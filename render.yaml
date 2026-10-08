@@ -77,8 +77,9 @@ services:
       #   sync: false
 
   # ── Frontend Web App (React + Vite Single Page Application) ──
-  - type: static
+  - type: web
     name: tuitiontrack-web
+    runtime: static
     rootDir: frontend
     buildCommand: npm install && npm run build
     staticPublishPath: ./dist
