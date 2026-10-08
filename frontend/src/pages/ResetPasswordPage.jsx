@@ -42,7 +42,7 @@ export default function ResetPasswordPage() {
     <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center px-4 py-10">
       <div className="w-full max-w-md">
         <Link to="/login" className="flex items-center gap-2.5 mb-8 group">
-          <span className="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 to-violet-500 flex items-center justify-center text-white shadow-md shadow-indigo-600/25 group-hover:scale-105 transition-transform">
+          <span className="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 to-indigo-500 flex items-center justify-center text-white shadow-md shadow-indigo-600/25 group-hover:scale-105 transition-transform">
             <GraduationCap className="w-5 h-5" />
           </span>
           <span className="text-xl font-bold tracking-tight">Tuition<span className="text-indigo-400">Track</span></span>

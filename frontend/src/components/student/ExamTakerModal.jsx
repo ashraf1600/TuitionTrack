@@ -269,7 +269,7 @@ export default function ExamTakerModal({
             isGracePeriod || isLateWindow
               ? 'bg-amber-950/40 border-amber-500/40 text-amber-300'
               : isAssignment
-              ? 'bg-purple-950/40 border-purple-500/40 text-purple-300'
+              ? 'bg-indigo-950/40 border-indigo-500/40 text-indigo-300'
               : 'bg-indigo-950/40 border-indigo-500/40 text-indigo-300'
           }`}
         >
@@ -278,8 +278,6 @@ export default function ExamTakerModal({
               className={`w-5 h-5 ${
                 isGracePeriod
                   ? 'animate-bounce text-amber-400'
-                  : isAssignment
-                  ? 'text-purple-400'
                   : 'text-indigo-400'
               }`}
             />

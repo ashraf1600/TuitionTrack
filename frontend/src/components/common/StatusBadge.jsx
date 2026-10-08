@@ -1,76 +1,45 @@
 import React from 'react';
 
+// Canonical pills from index.css — solid light tones readable on
+// light pages AND inside dark modals. success=emerald, warning=amber,
+// danger=rose, info=sky, brand=indigo. No purple one-offs.
+const DOT = {
+  success: 'bg-emerald-500',
+  warning: 'bg-amber-500',
+  danger: 'bg-rose-500',
+  info: 'bg-sky-500',
+  brand: 'bg-indigo-500',
+  neutral: 'bg-slate-400',
+};
+
 export default function StatusBadge({ status, className = '' }) {
   const normStatus = (status || '').toLowerCase();
 
+  const pill = (tone, dot, label) => (
+    <span className={`pill pill-${tone} ${className}`}>
+      {dot && <span className={`w-1.5 h-1.5 rounded-full ${DOT[tone]}`} />}
+      {label}
+    </span>
+  );
+
   switch (normStatus) {
     case 'running':
-      return (
-        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-950/80 text-emerald-300 border border-emerald-500/30 animate-pulse ${className}`}>
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
-          Running
-        </span>
-      );
-
+      return pill('success', true, 'Running');
     case 'draft':
-      return (
-        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-800 text-slate-400 border border-dashed border-slate-600 ${className}`}>
-          Draft
-        </span>
-      );
-
+      return pill('neutral', false, 'Draft');
     case 'late':
-      return (
-        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-950/80 text-amber-300 border border-amber-500/30 ${className}`}>
-          <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
-          Late work open
-        </span>
-      );
-
+      return pill('warning', true, 'Late work open');
     case 'closed':
-      return (
-        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-800 text-slate-300 border border-slate-700 ${className}`}>
-          Closed
-        </span>
-      );
-
+      return pill('neutral', false, 'Closed');
     case 'scheduled':
-      return (
-        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-800 text-slate-300 border border-slate-700 ${className}`}>
-          <span className="w-1.5 h-1.5 rounded-full bg-slate-400" />
-          Scheduled
-        </span>
-      );
-
+      return pill('neutral', true, 'Scheduled');
     case 'submitted':
-      return (
-        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-indigo-950/80 text-indigo-300 border border-indigo-500/30 ${className}`}>
-          <span className="w-1.5 h-1.5 rounded-full bg-indigo-400" />
-          Submitted
-        </span>
-      );
-
+      return pill('brand', true, 'Submitted');
     case 'delayed':
-      return (
-        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-950/80 text-amber-300 border border-amber-500/30 ${className}`}>
-          <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
-          Delayed
-        </span>
-      );
-
+      return pill('warning', true, 'Delayed');
     case 'missed':
-      return (
-        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-rose-950/80 text-rose-300 border border-rose-500/30 ${className}`}>
-          <span className="w-1.5 h-1.5 rounded-full bg-rose-400" />
-          Missed
-        </span>
-      );
-
+      return pill('danger', true, 'Missed');
     default:
-      return (
-        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-800 text-slate-400 border border-slate-700 ${className}`}>
-          {status || 'Unknown'}
-        </span>
-      );
+      return pill('neutral', false, status || 'Unknown');
   }
 }

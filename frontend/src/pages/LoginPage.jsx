@@ -155,10 +155,10 @@ export default function LoginPage() {
       {/* Brand panel (desktop) */}
       <aside className="hidden lg:flex flex-col justify-between p-12 bg-gradient-to-br from-indigo-950/60 via-slate-950 to-slate-950 border-r border-slate-800/80 relative overflow-hidden">
         <div className="absolute -top-32 -left-32 w-[520px] h-[520px] bg-indigo-600/15 rounded-full blur-[140px] pointer-events-none" />
-        <div className="absolute top-1/2 -right-24 w-80 h-80 bg-violet-600/10 rounded-full blur-[100px] pointer-events-none" />
+        <div className="absolute top-1/2 -right-24 w-80 h-80 bg-indigo-600/10 rounded-full blur-[100px] pointer-events-none" />
 
         <div className="relative flex items-center gap-3">
-          <span className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-indigo-600 to-violet-500 flex items-center justify-center text-white shadow-lg shadow-indigo-600/30">
+          <span className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-indigo-600 to-indigo-500 flex items-center justify-center text-white shadow-lg shadow-indigo-600/30">
             <GraduationCap className="w-6 h-6" />
           </span>
           <span className="text-2xl font-extrabold tracking-tight">Tuition<span className="text-indigo-400">Track</span></span>
@@ -203,7 +203,7 @@ export default function LoginPage() {
       <main className="flex flex-col justify-center px-4 py-10 sm:px-10 bg-slate-950 relative">
         <div className="w-full max-w-md mx-auto">
           <div className="lg:hidden flex items-center gap-2.5 mb-8">
-            <span className="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 to-violet-500 flex items-center justify-center text-white shadow-md shadow-indigo-600/25">
+            <span className="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 to-indigo-500 flex items-center justify-center text-white shadow-md shadow-indigo-600/25">
               <GraduationCap className="w-5 h-5" />
             </span>
             <span className="text-xl font-extrabold tracking-tight">Tuition<span className="text-indigo-400">Track</span></span>

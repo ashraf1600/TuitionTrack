@@ -51,7 +51,7 @@ export default function ExamCard({ exam, onTakeExam, onViewResults, onViewLeader
       <div>
         <div className="flex items-start justify-between gap-2 mb-2">
           <div className="flex items-center gap-1.5 flex-wrap text-[11px] font-semibold">
-            <span className={`px-2 py-0.5 rounded-full border ${isAssignment ? 'bg-purple-500/15 text-purple-300 border-purple-500/30' : 'bg-indigo-500/15 text-indigo-300 border-indigo-500/30'}`}>
+            <span className="px-2 py-0.5 rounded-full border bg-indigo-50 text-indigo-700 border-indigo-200">
               {isAssignment ? 'Assignment' : 'Exam'}
             </span>
             {exam.duration_minutes && !isAssignment && (

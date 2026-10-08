@@ -156,7 +156,7 @@ export default function ExamManager({ exams = [], loading = false, students = []
             onClick={() => openNew('ASSIGNMENT')}
             className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-100 font-semibold text-xs flex items-center gap-1.5 transition"
           >
-            <Plus className="w-4 h-4 text-purple-400" /> Assignment
+            <Plus className="w-4 h-4 text-indigo-300" /> Assignment
           </button>
           <button
             type="button"
@@ -197,7 +197,7 @@ export default function ExamManager({ exams = [], loading = false, students = []
                   <div className="flex flex-wrap items-center gap-2">
                     <h4 className="text-sm font-bold text-slate-100 truncate">{exam.title}</h4>
                     <StatusBadge status={exam.dynamic_status} />
-                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${isAssignment ? 'bg-purple-500/15 text-purple-300 border-purple-500/30' : 'bg-indigo-500/15 text-indigo-300 border-indigo-500/30'}`}>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold border bg-indigo-50 text-indigo-700 border-indigo-200">
                       {isAssignment ? 'Assignment' : 'Exam'}
                     </span>
                   </div>

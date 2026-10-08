@@ -61,7 +61,7 @@ export default function TutorCodeConnect({ connections = [], onChanged }) {
       {/* Hero invite-code card */}
       <div className="relative overflow-hidden rounded-2xl border border-indigo-500/20 bg-gradient-to-br from-slate-900 via-indigo-950/30 to-slate-900 p-6 sm:p-8">
         <div className="pointer-events-none absolute -top-10 -right-10 w-48 h-48 bg-indigo-600/10 rounded-full blur-3xl" />
-        <div className="pointer-events-none absolute -bottom-8 -left-8 w-36 h-36 bg-violet-600/10 rounded-full blur-3xl" />
+        <div className="pointer-events-none absolute -bottom-8 -left-8 w-36 h-36 bg-indigo-600/10 rounded-full blur-3xl" />
 
         <div className="relative">
           <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-indigo-500/15 border border-indigo-500/30 text-indigo-300 text-[10px] font-bold tracking-wider uppercase">
@@ -165,7 +165,7 @@ export default function TutorCodeConnect({ connections = [], onChanged }) {
               return (
                 <li key={c.id} className="flex items-center justify-between gap-3 px-4 py-3 rounded-xl bg-slate-800/40 border border-slate-700/60">
                   <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-9 h-9 rounded-full bg-gradient-to-br from-indigo-500 to-violet-500 flex items-center justify-center text-white text-xs font-bold flex-shrink-0 uppercase">
+                    <div className="w-9 h-9 rounded-full bg-gradient-to-br from-indigo-500 to-indigo-600 flex items-center justify-center text-white text-xs font-bold flex-shrink-0 uppercase">
                       {(c.tutor_name || 'T')[0]}
                     </div>
                     <div className="min-w-0">

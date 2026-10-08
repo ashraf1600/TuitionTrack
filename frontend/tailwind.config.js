@@ -31,6 +31,9 @@ export default {
           800: '#3730a3',
           900: '#312e81',
         },
+        // ── Canonical semantic palette (use these, not one-off hues) ──
+        // success → emerald | warning → amber | danger → rose | info → sky
+        // brand   → indigo  | assignments follow brand (indigo), NOT purple
       },
     },
   },

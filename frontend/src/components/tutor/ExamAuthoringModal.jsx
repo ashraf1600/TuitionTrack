@@ -505,7 +505,7 @@ export default function ExamAuthoringModal({
             onClick={() => setCategory('ASSIGNMENT')}
             className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 ${
               category === 'ASSIGNMENT'
-                ? 'bg-purple-600 text-white shadow-md shadow-purple-600/30'
+                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
                 : 'text-slate-400 hover:text-slate-200'
             }`}
           >

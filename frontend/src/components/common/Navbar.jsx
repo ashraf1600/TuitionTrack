@@ -21,7 +21,7 @@ export default function Navbar() {
               className="flex items-center gap-2.5 rounded-xl group focus-visible:ring-2 focus-visible:ring-indigo-500"
               aria-label="TuitionTrack home"
             >
-              <span className="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-600 to-violet-500 flex items-center justify-center text-white shadow-md shadow-indigo-600/25 group-hover:scale-105 transition-transform duration-200">
+              <span className="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-600 to-indigo-500 flex items-center justify-center text-white shadow-md shadow-indigo-600/25 group-hover:scale-105 transition-transform duration-200">
                 <GraduationCap className="w-5 h-5" />
               </span>
               <div className="flex flex-col">

@@ -673,7 +673,7 @@ export default function TuitionWorkspace() {
                     setAuthorCategory('ASSIGNMENT');
                     setAuthorExamModalOpen(true);
                   }}
-                  className="px-3.5 py-2 rounded-xl bg-purple-50 text-purple-700 hover:bg-purple-100 border border-purple-200 font-bold text-xs transition"
+                  className="px-3.5 py-2 rounded-xl bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 font-bold text-xs transition"
                 >
                   + Add Assignment
                 </button>

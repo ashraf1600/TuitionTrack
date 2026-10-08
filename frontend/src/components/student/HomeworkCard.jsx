@@ -216,7 +216,7 @@ export default function HomeworkCard({ homework, isTutor = false, onUpdated }) {
                 </span>
               )}
               {isSubmitted && !isDone && (
-                <span className="px-2 py-0.5 rounded-full bg-blue-500/15 border border-blue-500/30 text-blue-300 text-[10px] font-bold">
+                <span className="px-2 py-0.5 rounded-full bg-sky-50 border border-sky-200 text-sky-700 text-[10px] font-bold">
                   Submitted
                 </span>
               )}
@@ -343,7 +343,7 @@ export default function HomeworkCard({ homework, isTutor = false, onUpdated }) {
                       href={homework.submitted_online_url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="flex items-center gap-1 text-[11px] text-blue-400 hover:text-blue-300 underline underline-offset-2 transition"
+                      className="flex items-center gap-1 text-[11px] text-sky-600 hover:text-sky-500 underline underline-offset-2 transition"
                     >
                       <ExternalLink className="w-3 h-3" /> View submission
                     </a>
