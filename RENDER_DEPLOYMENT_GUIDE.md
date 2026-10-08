@@ -104,7 +104,7 @@ If you prefer to configure each component individually in the Render dashboard:
 3. Configure the settings:
    - **Name**: `tuitiontrack-web`
    - **Root Directory**: `frontend`
-   - **Build Command**: `npm install && npm run build`
+   - **Build Command**: `rm -f package-lock.json && npm install --include=optional && npm run build`
    - **Publish Directory**: `dist`
 4. Under **Redirects/Rewrites**:
    - **Type**: `Rewrite`
@@ -114,7 +114,7 @@ If you prefer to configure each component individually in the Render dashboard:
 5. Under **Environment Variables**, add:
    | Key | Value |
    |---|---|
-   | `NODE_VERSION` | `20.18.0` |
+   | `NODE_VERSION` | `22.14.0` |
    | `VITE_API_URL` | `https://tuitiontrack-api.onrender.com` *(or your actual backend service URL)* |
 6. Click **Create Static Site**.
 

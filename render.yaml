@@ -81,7 +81,7 @@ services:
     name: tuitiontrack-web
     runtime: static
     rootDir: frontend
-    buildCommand: npm install && npm run build
+    buildCommand: rm -f package-lock.json && npm install --include=optional && npm run build
     staticPublishPath: ./dist
     routes:
       # Rewrites all requests to /index.html so React Router client-side routes work on reload
@@ -90,7 +90,7 @@ services:
         destination: /index.html
     envVars:
       - key: NODE_VERSION
-        value: 20.18.0
+        value: 22.14.0
       # Point to your deployed backend API URL, e.g. https://tuitiontrack-api.onrender.com
       - key: VITE_API_URL
         value: https://tuitiontrack-api.onrender.com
