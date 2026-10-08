@@ -211,7 +211,7 @@ def toggle_shared_class(cycle_id, validated_data):
     for attempt in range(5):
         try:
             with transaction.atomic():
-                cycle = AttendanceCycle.objects.select_for_update().select_related('tuition').get(id=cycle_id)
+                cycle = AttendanceCycle.objects.select_for_update().get(id=cycle_id)
                 if cycle.status != AttendanceCycle.Status.ACTIVE:
                     return cycle, 'Cannot change attendance on an archived cycle.'
                 try:
@@ -342,7 +342,7 @@ class AttendanceCycleViewSet(viewsets.ReadOnlyModelViewSet):
         from .serializers import AttendanceCycleSerializer
 
         with transaction.atomic():
-            cycle = AttendanceCycle.objects.select_for_update().select_related('tuition').get(id=self.get_object().id)
+            cycle = AttendanceCycle.objects.select_for_update().get(id=self.get_object().id)
             if cycle.status != AttendanceCycle.Status.ACTIVE:
                 return Response(
                     {'error': 'Cannot reset an already archived cycle.'},
