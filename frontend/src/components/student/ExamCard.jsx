@@ -19,7 +19,7 @@ function relative(ms) {
  * One exam or assignment as a student sees it. What the card offers follows
  * what the server says is possible (`can_submit`, `has_submission`).
  */
-export default function ExamCard({ exam, onTakeExam, onViewResults, onViewLeaderboard }) {
+export default function ExamCard({ exam, onTakeExam, onViewResults, onViewLeaderboard, light = true }) {
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 30000);
@@ -39,11 +39,15 @@ export default function ExamCard({ exam, onTakeExam, onViewResults, onViewLeader
   const result = exam.my_result;
   const noun = isAssignment ? 'assignment' : 'exam';
 
-  let tone = 'border-slate-800';
-  if (open) tone = isLate ? 'border-amber-500/40' : 'border-emerald-500/40';
+  let tone = light ? 'border-slate-200/90 bg-white shadow-sm' : 'border-slate-800 bg-slate-900/70';
+  if (open) {
+    tone = isLate
+      ? light ? 'border-amber-400 bg-amber-50/20 shadow-sm' : 'border-amber-500/40 bg-slate-900/70'
+      : light ? 'border-emerald-400 bg-emerald-50/20 shadow-sm ring-2 ring-emerald-500/10' : 'border-emerald-500/40 bg-slate-900/70';
+  }
 
   return (
-    <article className={`rounded-2xl border bg-slate-900/70 p-5 flex flex-col justify-between gap-4 ${tone}`}>
+    <article className={`rounded-2xl border p-5 flex flex-col justify-between gap-4 transition-all ${tone}`}>
       <div>
         <div className="flex items-start justify-between gap-2 mb-2">
           <div className="flex items-center gap-1.5 flex-wrap text-[11px] font-semibold">
@@ -62,30 +66,30 @@ export default function ExamCard({ exam, onTakeExam, onViewResults, onViewLeader
           </span>
         </div>
 
-        <h4 className="text-base font-bold text-slate-100 line-clamp-2">{exam.title}</h4>
+        <h4 className={`text-base font-bold line-clamp-2 ${light ? 'text-slate-900' : 'text-slate-100'}`}>{exam.title}</h4>
         {exam.batch_name && (
-          <div className="flex items-center gap-1 text-xs text-slate-400 mt-0.5">
+          <div className="flex items-center gap-1 text-xs text-slate-500 mt-0.5">
             <Layers className="w-3.5 h-3.5" /> {exam.batch_name}
           </div>
         )}
 
-        <div className="mt-3 space-y-1 text-xs text-slate-400">
+        <div className={`mt-3 space-y-1 text-xs ${light ? 'text-slate-600' : 'text-slate-400'}`}>
           {upcoming && (
-            <p className="flex items-center gap-2 text-indigo-300 font-medium">
+            <p className="flex items-center gap-2 text-indigo-600 font-medium">
               <CalendarClock className="w-4 h-4" /> Opens {relative(start - now)} · {fmtDateTime(exam.start_time)}
             </p>
           )}
           {!upcoming && (
             <p className="flex items-center gap-2">
-              <Clock className="w-4 h-4 text-slate-500" />
+              <Clock className="w-4 h-4 text-slate-400" />
               {isAssignment ? 'Due' : 'Ends'} {fmtDateTime(exam.end_time)}
             </p>
           )}
           {open && !isLate && (
-            <p className="text-emerald-300 font-medium pl-6">Closes {relative(end - now)}</p>
+            <p className="text-emerald-600 font-medium pl-6">Closes {relative(end - now)}</p>
           )}
           {isLate && (
-            <p className="flex items-center gap-2 text-amber-300 font-medium">
+            <p className="flex items-center gap-2 text-amber-600 font-medium">
               <AlertTriangle className="w-4 h-4" />
               Deadline passed — {lateEnd > now ? `late work accepted ${relative(lateEnd - now).replace('in ', 'for ')}` : 'hand in now'}
             </p>
@@ -96,18 +100,18 @@ export default function ExamCard({ exam, onTakeExam, onViewResults, onViewLeader
         </div>
       </div>
 
-      <div className="pt-4 border-t border-slate-800">
+      <div className={`pt-4 border-t ${light ? 'border-slate-100' : 'border-slate-800'}`}>
         {done ? (
           <div className="space-y-2">
             <div className="flex items-center justify-between text-xs">
-              <span className="flex items-center gap-1.5 text-slate-300">
-                <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+              <span className={`flex items-center gap-1.5 ${light ? 'text-slate-700' : 'text-slate-300'}`}>
+                <CheckCircle2 className="w-4 h-4 text-emerald-500" />
                 Turned in{result?.status === 'DELAYED' ? ' (late)' : ''}
               </span>
               {exam.results_released && result?.obtained_marks !== null && result?.obtained_marks !== undefined ? (
-                <span className="font-bold text-emerald-400">
+                <span className="font-bold text-emerald-600">
                   {Number(result.obtained_marks)} / {Number(exam.total_marks)}
-                  {!result.is_graded && <span className="font-normal text-slate-400"> so far</span>}
+                  {!result.is_graded && <span className="font-normal text-slate-500"> so far</span>}
                 </span>
               ) : (
                 <span className="flex items-center gap-1 text-slate-400">
@@ -122,7 +126,11 @@ export default function ExamCard({ exam, onTakeExam, onViewResults, onViewLeader
               <button
                 type="button"
                 onClick={() => onViewResults(exam.id)}
-                className="flex-1 py-2 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-100 font-semibold text-xs border border-slate-700 transition"
+                className={`flex-1 py-2 px-3 rounded-xl font-semibold text-xs border transition ${
+                  light
+                    ? 'bg-slate-100 hover:bg-slate-200 text-slate-800 border-slate-200'
+                    : 'bg-slate-800 hover:bg-slate-700 text-slate-100 border-slate-700'
+                }`}
               >
                 {exam.results_released ? 'View my result' : 'View my submission'}
               </button>
@@ -130,7 +138,11 @@ export default function ExamCard({ exam, onTakeExam, onViewResults, onViewLeader
                 <button
                   type="button"
                   onClick={() => onViewLeaderboard(exam)}
-                  className="p-2 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 transition"
+                  className={`p-2 rounded-xl transition ${
+                    light
+                      ? 'bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200'
+                      : 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                  }`}
                   title="Leaderboard"
                   aria-label="Leaderboard"
                 >
