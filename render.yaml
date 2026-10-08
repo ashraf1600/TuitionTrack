@@ -1,12 +1,16 @@
-# Render blueprint for the TuitionTrack API (Django).
-# In Render: New + → Blueprint → pick this repository. It reads this file, then asks
-# for the values marked "sync: false" (they are secrets and are never stored in git).
+# Render blueprint for TuitionTrack:
+# 1. tuitiontrack-api: Django REST API backend (Python Web Service)
+# 2. tuitiontrack-web: React + Vite Single Page Application (Static Site)
+#
+# In Render Dashboard: New + → Blueprint → select this repository.
+
 services:
+  # ── Backend Web Service (Django REST Framework) ──
   - type: web
     name: tuitiontrack-api
     runtime: python
-    plan: free            # sleeps after ~15 idle minutes; "starter" stays awake
-    region: singapore     # nearest Render region to Bangladesh; keep the database in Singapore too
+    plan: free            # Sleeps after ~15 mins idle; "starter" stays awake
+    region: singapore     # Choose Singapore, Oregon, Ohio, or Frankfurt
     rootDir: backend
     buildCommand: bash build.sh
     startCommand: gunicorn config.wsgi:application --bind 0.0.0.0:$PORT --workers 2 --timeout 60
@@ -23,33 +27,44 @@ services:
       - key: REFRESH_TOKEN_LIFETIME_DAYS
         value: "30"
 
-      # ── Database: Supabase → Connect → "Session pooler" connection string ──
+      # ── Database Connection ──
+      # Supabase (recommended: Connect → Session pooler), Neon, or Render PostgreSQL:
+      # e.g., postgresql://postgres.<ref>:<password>@aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres
       - key: DATABASE_URL
         sync: false
 
-      # ── Uploaded files: Supabase Storage (S3-compatible), public bucket ──
-      - key: S3_BUCKET
-        value: tuitiontrack-media
-      - key: S3_REGION
-        value: ap-southeast-1
-      - key: S3_ENDPOINT_URL        # https://<project-ref>.storage.supabase.co/storage/v1/s3
-        sync: false
-      - key: S3_PUBLIC_DOMAIN       # <project-ref>.supabase.co/storage/v1/object/public/tuitiontrack-media
-        sync: false
-      - key: S3_ACCESS_KEY_ID       # Supabase → Storage → Settings → S3 access keys
-        sync: false
-      - key: S3_SECRET_ACCESS_KEY
-        sync: false
-
-      # ── The website, once it is hosted (used for password-reset links and CORS) ──
+      # ── Frontend & CORS ──
+      # Settings automatically permit all *.onrender.com domains for CORS & CSRF.
+      # Set FRONTEND_URL to your deployed web app address (used for password reset links in emails):
       - key: FRONTEND_URL
-        sync: false
-      - key: CORS_ALLOWED_ORIGINS
-        sync: false
+        value: https://tuitiontrack-web.onrender.com
 
-      # ── Email (password resets, exam notices). Without these, emails are only logged. ──
+      # ── Email: Default logs to console. Real SMTP credentials can be added later in Dashboard ──
       - key: EMAIL_BACKEND
         value: django.core.mail.backends.console.EmailBackend
+
+      # ── Optional: Auto-create Django admin superuser on first deploy ──
+      # - key: DJANGO_SUPERUSER_USERNAME
+      #   value: admin
+      # - key: DJANGO_SUPERUSER_EMAIL
+      #   value: admin@example.com
+      # - key: DJANGO_SUPERUSER_PASSWORD
+      #   sync: false
+
+      # ── Optional: Supabase Storage (S3-compatible) for permanent file uploads ──
+      # If using Supabase Storage, uncomment and supply your credentials:
+      # - key: S3_BUCKET
+      #   value: tuitiontrack-media
+      # - key: S3_REGION
+      #   value: ap-southeast-1
+      # - key: S3_ENDPOINT_URL        # https://<ref>.storage.supabase.co/storage/v1/s3
+      #   sync: false
+      # - key: S3_PUBLIC_DOMAIN       # <ref>.supabase.co/storage/v1/object/public/tuitiontrack-media
+      #   sync: false
+      # - key: S3_ACCESS_KEY_ID       # Supabase → Storage → Settings → S3 access keys
+      #   sync: false
+      # - key: S3_SECRET_ACCESS_KEY
+      #   sync: false
 
   # ── Frontend Web App (React + Vite Single Page Application) ──
   - type: web
@@ -66,6 +81,8 @@ services:
         source: /*
         destination: /index.html
     envVars:
+      - key: NODE_VERSION
+        value: 20.18.0
       # Point to your deployed backend API URL, e.g. https://tuitiontrack-api.onrender.com
       - key: VITE_API_URL
-        sync: false
+        value: https://tuitiontrack-api.onrender.com

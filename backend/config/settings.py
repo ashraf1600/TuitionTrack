@@ -85,6 +85,9 @@ else:
 # Render provides its own public hostname.
 if os.getenv('RENDER_EXTERNAL_HOSTNAME'):
     ALLOWED_HOSTS.append(os.environ['RENDER_EXTERNAL_HOSTNAME'])
+if os.getenv('RENDER') or os.getenv('RENDER_EXTERNAL_HOSTNAME'):
+    if '.onrender.com' not in ALLOWED_HOSTS:
+        ALLOWED_HOSTS.append('.onrender.com')
 
 # ─── Application Definition ───────────────────────────────────────────────────
 DJANGO_APPS = [
@@ -214,7 +217,7 @@ STORAGES = {
 }
 # Online: an S3-compatible bucket (Supabase Storage, Cloudflare R2, AWS S3). A hosted server's
 # own disk is wiped on every deploy, so uploads must live somewhere else.
-if os.getenv('S3_BUCKET'):
+if os.getenv('S3_BUCKET') and os.getenv('S3_ACCESS_KEY_ID') and os.getenv('S3_SECRET_ACCESS_KEY'):
     STORAGES['default'] = {
         'BACKEND': 'storages.backends.s3.S3Storage',
         'OPTIONS': {
@@ -255,6 +258,10 @@ if os.getenv('RENDER_EXTERNAL_HOSTNAME'):
     render_origin = f"https://{os.environ['RENDER_EXTERNAL_HOSTNAME']}"
     if render_origin not in CSRF_TRUSTED_ORIGINS:
         CSRF_TRUSTED_ORIGINS.append(render_origin)
+
+if os.getenv('RENDER') or os.getenv('RENDER_EXTERNAL_HOSTNAME'):
+    if 'https://*.onrender.com' not in CSRF_TRUSTED_ORIGINS:
+        CSRF_TRUSTED_ORIGINS.append('https://*.onrender.com')
 
 # Allow *.onrender.com subdomains so Render static frontend and API connect seamlessly
 CORS_ALLOWED_ORIGIN_REGEXES = [
