@@ -296,30 +296,30 @@ export default function TuitionWorkspace() {
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
       <Navbar />
 
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+      <main className="flex-1 max-w-7xl w-full mx-auto px-3.5 sm:px-6 lg:px-8 py-5 sm:py-6 space-y-5 sm:space-y-6">
         {/* Breadcrumb & Navigation */}
-        <div className="flex items-center justify-between gap-4">
-          <div className="flex items-center gap-2 text-xs text-slate-400">
+        <div className="flex items-center justify-between gap-2 sm:gap-4">
+          <div className="flex items-center gap-1.5 sm:gap-2 text-xs text-slate-400 min-w-0">
             <Link
               to="/tutor"
-              className="hover:text-indigo-400 flex items-center gap-1.5 transition"
+              className="hover:text-indigo-400 flex items-center gap-1 transition flex-shrink-0"
             >
               <ArrowLeft className="w-3.5 h-3.5" />
-              <span>Tutor Dashboard</span>
+              <span className="hidden xs:inline">Tutor Dashboard</span>
             </Link>
-            <ChevronRight className="w-3.5 h-3.5 text-slate-600" />
-            <span className="text-slate-200 font-semibold truncate max-w-[200px] sm:max-w-md">
+            <ChevronRight className="w-3.5 h-3.5 text-slate-600 flex-shrink-0" />
+            <span className="text-slate-200 font-semibold truncate max-w-[130px] xs:max-w-[220px] sm:max-w-md">
               {tuition.title}
             </span>
-            <span className="px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 text-[10px] font-mono">
+            <span className="hidden xs:inline-block px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 text-[10px] font-mono flex-shrink-0">
               Workspace
             </span>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-shrink-0">
             <button
               onClick={() => setEditTuitionModalOpen(true)}
-              className="px-3 py-1.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 text-xs font-semibold flex items-center gap-1.5 transition shadow-sm"
+              className="px-2.5 sm:px-3 py-1.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 text-xs font-semibold flex items-center gap-1.5 transition shadow-sm"
               title="Edit Tuition Settings & Routine"
             >
               <Edit2 className="w-3.5 h-3.5 text-slate-400" />
@@ -336,11 +336,11 @@ export default function TuitionWorkspace() {
         </div>
 
         {/* Tuition Workspace Header & Financial Summary Banner */}
-        <div className="p-6 rounded-3xl bg-gradient-to-br from-slate-900 via-indigo-950/30 to-slate-900 border border-slate-800 shadow-xl space-y-6">
+        <div className="p-4 sm:p-6 rounded-2xl sm:rounded-3xl bg-gradient-to-br from-slate-900 via-indigo-950/30 to-slate-900 border border-slate-800 shadow-xl space-y-5 sm:space-y-6">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div>
               <div className="flex flex-wrap items-center gap-2.5 mb-1.5">
-                <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-100 tracking-tight">
+                <h1 className="text-xl sm:text-3xl font-extrabold text-slate-100 tracking-tight">
                   {tuition.title}
                 </h1>
                 {tuition.subject && (
@@ -349,20 +349,20 @@ export default function TuitionWorkspace() {
                   </span>
                 )}
               </div>
-              <p className="text-xs text-slate-400 flex flex-wrap items-center gap-3">
-                <span>Cycle Length: <strong className="text-indigo-300">{tuition.cycle_length} Classes</strong></span>
+              <p className="text-xs text-slate-400 flex flex-wrap items-center gap-x-3 gap-y-1">
+                <span>Cycle: <strong className="text-indigo-300">{tuition.cycle_length} Classes</strong></span>
                 <span>•</span>
-                <span>Cycle fee (whole group): <strong className="text-emerald-400 font-mono">৳{Number(tuition.total_fee ?? tuition.tuition_fee).toLocaleString()}</strong></span>
+                <span>Cycle fee: <strong className="text-emerald-400 font-mono">৳{Number(tuition.total_fee ?? tuition.tuition_fee).toLocaleString()}</strong></span>
                 <span>•</span>
                 <span>Per class: <strong className="text-emerald-300 font-mono">৳{Number(wallet.per_class_rate || 0).toLocaleString()}</strong></span>
               </p>
             </div>
 
             {/* Quick Action Triggers */}
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="grid grid-cols-2 sm:flex items-center gap-2 w-full md:w-auto">
               <button
                 onClick={() => setAddStudentModalOpen(true)}
-                className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs flex items-center gap-1.5 shadow-lg shadow-indigo-600/30 transition"
+                className="px-3 sm:px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs flex items-center justify-center gap-1.5 shadow-lg shadow-indigo-600/30 transition"
               >
                 <UserPlus className="w-4 h-4" />
                 <span>Add Student</span>
@@ -372,7 +372,7 @@ export default function TuitionWorkspace() {
                   setAuthorCategory('EXAM');
                   setAuthorExamModalOpen(true);
                 }}
-                className="px-3.5 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-semibold text-xs flex items-center gap-1.5 shadow-lg shadow-purple-600/30 transition"
+                className="px-3 sm:px-3.5 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-semibold text-xs flex items-center justify-center gap-1.5 shadow-lg shadow-purple-600/30 transition"
               >
                 <Plus className="w-4 h-4" />
                 <span>Schedule Exam</span>
@@ -381,50 +381,50 @@ export default function TuitionWorkspace() {
           </div>
 
           {/* Tuition Wallet for this group */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 pt-4 border-t border-slate-800/80">
-            <div className="p-4 rounded-2xl bg-slate-900/80 border border-slate-800">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block mb-1">Students</span>
-              <div className="text-xl sm:text-2xl font-black text-slate-100 flex items-center gap-2">
-                <Users className="w-5 h-5 text-indigo-400" />
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4 pt-4 border-t border-slate-800/80">
+            <div className="p-3.5 sm:p-4 rounded-2xl bg-slate-900/80 border border-slate-800">
+              <span className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-slate-400 block mb-1">Students</span>
+              <div className="text-lg sm:text-2xl font-black text-slate-100 flex items-center gap-1.5">
+                <Users className="w-4 h-4 sm:w-5 sm:h-5 text-indigo-400" />
                 <span>{enrolledStudents.length}</span>
               </div>
-              <span className="text-[11px] text-slate-500 mt-1 block">share one class tracker</span>
+              <span className="text-[10px] text-slate-500 mt-1 block">share tracker</span>
             </div>
 
-            <div className="p-4 rounded-2xl bg-slate-900/80 border border-slate-800">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block mb-1">This cycle</span>
-              <div className="text-xl sm:text-2xl font-black text-slate-100">
+            <div className="p-3.5 sm:p-4 rounded-2xl bg-slate-900/80 border border-slate-800">
+              <span className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-slate-400 block mb-1">This cycle</span>
+              <div className="text-lg sm:text-2xl font-black text-slate-100">
                 {wallet.completed_classes ?? 0}
-                <span className="text-sm font-semibold text-slate-500"> / {wallet.total_classes ?? tuition.cycle_length} classes</span>
+                <span className="text-xs sm:text-sm font-semibold text-slate-500"> / {wallet.total_classes ?? tuition.cycle_length}</span>
               </div>
-              <span className="text-[11px] text-slate-500 mt-1 block">Cycle #{activeCycle?.cycle_number ?? 1}</span>
+              <span className="text-[10px] text-slate-500 mt-1 block">Cycle #{activeCycle?.cycle_number ?? 1}</span>
             </div>
 
-            <div className="p-4 rounded-2xl border border-emerald-500/20 bg-emerald-500/5">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-400 block mb-1">Earned this cycle</span>
-              <div className="text-xl sm:text-2xl font-black text-emerald-400 font-mono">
+            <div className="p-3.5 sm:p-4 rounded-2xl border border-emerald-500/20 bg-emerald-500/5">
+              <span className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-emerald-400 block mb-1">Earned</span>
+              <div className="text-lg sm:text-2xl font-black text-emerald-400 font-mono">
                 ৳{Number(wallet.earned_revenue || 0).toLocaleString()}
               </div>
-              <span className="text-[11px] text-emerald-300/70 mt-1 block">
-                ৳{Number(wallet.pending_balance || 0).toLocaleString()} still to earn
+              <span className="text-[10px] text-emerald-300/70 mt-1 block">
+                ৳{Number(wallet.pending_balance || 0).toLocaleString()} pending
               </span>
             </div>
 
-            <div className="p-4 rounded-2xl border border-amber-500/20 bg-amber-500/5">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-amber-300 block mb-1">Lifetime earned</span>
-              <div className="text-xl sm:text-2xl font-black text-amber-300 font-mono">
+            <div className="p-3.5 sm:p-4 rounded-2xl border border-amber-500/20 bg-amber-500/5">
+              <span className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-amber-300 block mb-1">Lifetime</span>
+              <div className="text-lg sm:text-2xl font-black text-amber-300 font-mono">
                 ৳{Number(wallet.lifetime_earnings || 0).toLocaleString()}
               </div>
-              <span className="text-[11px] text-amber-200/70 mt-1 block">
-                {pastCycles.length} finished cycle{pastCycles.length === 1 ? '' : 's'}
+              <span className="text-[10px] text-amber-200/70 mt-1 block">
+                {pastCycles.length} finished
               </span>
             </div>
           </div>
         </div>
 
         {/* 4-Tab Navigation */}
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800/80 pb-3">
-          <div className="p-1 rounded-2xl bg-slate-900/90 border border-slate-800/80 inline-flex flex-wrap gap-1 backdrop-blur-md">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800/80 pb-3">
+          <div className="p-1 rounded-2xl bg-slate-900/90 border border-slate-800/80 flex overflow-x-auto no-scrollbar scroll-smooth gap-1 w-full sm:w-auto backdrop-blur-md">
             {[
               { id: 'attendance', icon: Calendar, label: 'Class tracker', count: enrolledStudents.length },
               { id: 'exams', icon: FileText, label: 'Exams & Assessments', count: exams.length },
@@ -437,7 +437,7 @@ export default function TuitionWorkspace() {
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
-                  className={`flex items-center gap-2 py-2 px-3.5 rounded-xl text-xs font-semibold transition-all duration-200 ${
+                  className={`flex items-center gap-2 py-2 px-3 sm:px-3.5 rounded-xl text-xs font-semibold transition-all duration-200 flex-shrink-0 whitespace-nowrap ${
                     active
                       ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
                       : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
@@ -474,30 +474,32 @@ export default function TuitionWorkspace() {
 
             {pastCycles.length > 0 && (
               <div className="rounded-2xl border border-slate-800 bg-slate-900/70 overflow-hidden">
-                <div className="px-5 py-3.5 border-b border-slate-800">
+                <div className="px-4 sm:px-5 py-3.5 border-b border-slate-800">
                   <h3 className="text-sm font-bold text-slate-100">Finished cycles</h3>
                   <p className="text-[11px] text-slate-400">Earnings here are final — later changes to the fee do not alter them.</p>
                 </div>
-                <table className="w-full text-left text-xs">
-                  <thead className="text-[10px] uppercase tracking-wider text-slate-500 border-b border-slate-800">
-                    <tr>
-                      <th className="py-2.5 px-5">Cycle</th>
-                      <th className="py-2.5 px-5">Classes</th>
-                      <th className="py-2.5 px-5">Cycle fee</th>
-                      <th className="py-2.5 px-5 text-right">Earned</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-800/70">
-                    {pastCycles.map((c) => (
-                      <tr key={c.id}>
-                        <td className="py-2.5 px-5 font-semibold text-slate-200">Cycle #{c.cycle_number}</td>
-                        <td className="py-2.5 px-5 text-slate-300">{c.completed_classes} / {c.total_classes}</td>
-                        <td className="py-2.5 px-5 text-slate-300 font-mono">৳{Number(c.total_fee || 0).toLocaleString()}</td>
-                        <td className="py-2.5 px-5 text-right text-emerald-400 font-bold font-mono">৳{Number(c.earned_revenue || 0).toLocaleString()}</td>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs min-w-[420px]">
+                    <thead className="text-[10px] uppercase tracking-wider text-slate-500 border-b border-slate-800">
+                      <tr>
+                        <th className="py-2.5 px-4 sm:px-5">Cycle</th>
+                        <th className="py-2.5 px-4 sm:px-5">Classes</th>
+                        <th className="py-2.5 px-4 sm:px-5">Cycle fee</th>
+                        <th className="py-2.5 px-4 sm:px-5 text-right">Earned</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800/70">
+                      {pastCycles.map((c) => (
+                        <tr key={c.id}>
+                          <td className="py-2.5 px-4 sm:px-5 font-semibold text-slate-200">Cycle #{c.cycle_number}</td>
+                          <td className="py-2.5 px-4 sm:px-5 text-slate-300">{c.completed_classes} / {c.total_classes}</td>
+                          <td className="py-2.5 px-4 sm:px-5 text-slate-300 font-mono">৳{Number(c.total_fee || 0).toLocaleString()}</td>
+                          <td className="py-2.5 px-4 sm:px-5 text-right text-emerald-400 font-bold font-mono">৳{Number(c.earned_revenue || 0).toLocaleString()}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             )}
           </div>

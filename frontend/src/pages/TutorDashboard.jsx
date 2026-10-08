@@ -287,15 +287,15 @@ export default function TutorDashboard() {
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
       <Navbar />
 
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
+      <main className="flex-1 max-w-7xl w-full mx-auto px-3.5 sm:px-6 lg:px-8 py-5 sm:py-8 space-y-6 sm:space-y-8">
         {/* Page header & quick actions */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-6 rounded-2xl bg-gradient-to-r from-slate-900 via-indigo-950/30 to-slate-900 border border-slate-800 shadow-xl">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-4 sm:p-6 rounded-2xl bg-gradient-to-r from-slate-900 via-indigo-950/30 to-slate-900 border border-slate-800 shadow-xl">
           <div>
             <div className="inline-flex items-center gap-2 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-indigo-500/10 text-indigo-300 border border-indigo-500/25 mb-2">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
               <span>Tutor Management Console</span>
             </div>
-            <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
+            <h1 className="text-xl sm:text-3xl font-extrabold text-white tracking-tight">
               Welcome back, {user?.name || user?.username || 'Tutor'}
             </h1>
             <p className="text-xs sm:text-sm text-slate-400 mt-1">
@@ -306,28 +306,29 @@ export default function TutorDashboard() {
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 w-full md:w-auto">
             <button
               onClick={refreshAll}
               disabled={refreshing}
               title="Refresh dashboard data"
-              className="p-2.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 transition"
+              className="p-2.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 transition flex items-center justify-center col-span-2 sm:col-span-1"
             >
               <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin text-indigo-400' : ''}`} />
+              <span className="sm:hidden text-xs font-semibold ml-2">Refresh Data</span>
             </button>
             <button
               onClick={() => {
                 setSelectedBatchToEdit(null);
                 setBatchModalOpen(true);
               }}
-              className="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-lg shadow-indigo-600/25 transition active:scale-[0.98]"
+              className="px-3 sm:px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-lg shadow-indigo-600/25 transition active:scale-[0.98]"
             >
               <Plus className="w-4 h-4" />
-              <span>New tuition group</span>
+              <span>New group</span>
             </button>
             <button
               onClick={() => setAddStudentModalOpen(true)}
-              className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-100 border border-slate-700 font-semibold text-xs flex items-center gap-1.5 transition active:scale-[0.98]"
+              className="px-3 sm:px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-100 border border-slate-700 font-semibold text-xs flex items-center justify-center gap-1.5 transition active:scale-[0.98]"
             >
               <UserPlus className="w-4 h-4 text-indigo-400" />
               <span>Add student</span>
@@ -340,7 +341,7 @@ export default function TutorDashboard() {
               }}
               disabled={tuitions.length === 0}
               title={tuitions.length === 0 ? 'Create a tuition group first' : 'Schedule an exam for a group'}
-              className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-100 border border-slate-700 font-semibold text-xs flex items-center gap-1.5 transition disabled:opacity-50 active:scale-[0.98]"
+              className="px-3 sm:px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-100 border border-slate-700 font-semibold text-xs flex items-center justify-center gap-1.5 transition disabled:opacity-50 active:scale-[0.98] col-span-2 sm:col-span-1"
             >
               <FileText className="w-4 h-4 text-indigo-400" />
               <span>Schedule exam</span>
@@ -349,24 +350,24 @@ export default function TutorDashboard() {
         </div>
 
         {/* Tutor Invite Code Banner */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 rounded-2xl bg-gradient-to-r from-indigo-950/50 via-slate-900 to-slate-900 border border-indigo-500/25 shadow-lg shadow-indigo-950/20">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-indigo-950/50 via-slate-900 to-slate-900 border border-indigo-500/25 shadow-lg shadow-indigo-950/20">
           <div className="flex items-center gap-3.5">
-            <div className="w-11 h-11 rounded-xl bg-indigo-500/15 border border-indigo-500/30 flex items-center justify-center text-indigo-400 flex-shrink-0 shadow-sm">
+            <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-indigo-500/15 border border-indigo-500/30 flex items-center justify-center text-indigo-400 flex-shrink-0 shadow-sm">
               <Sparkles className="w-5 h-5" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-bold text-slate-200 uppercase tracking-wider">Your Student Invite Code</span>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs font-bold text-slate-200 uppercase tracking-wider">Student Invite Code</span>
                 <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 font-semibold">Share with students</span>
               </div>
               <p className="text-xs text-slate-400 mt-0.5">
-                Share this code with prospective students. They enter it on their student portal to send a connection request.
+                Students enter this code on their portal to request connection.
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2 flex-shrink-0">
-            <span className="font-mono text-base font-black text-indigo-200 tracking-widest bg-slate-900/90 px-4 py-2 rounded-xl border border-indigo-500/40 select-all shadow-inner">
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            <span className="font-mono text-sm sm:text-base font-black text-indigo-200 tracking-widest bg-slate-900/90 px-3.5 sm:px-4 py-2 rounded-xl border border-indigo-500/40 select-all shadow-inner flex-1 sm:flex-none text-center">
               {user?.tutor_code || '—'}
             </span>
             <button
@@ -377,10 +378,10 @@ export default function TutorDashboard() {
                   notify.success(`Invite code "${user.tutor_code}" copied to clipboard!`);
                 }
               }}
-              className="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-md shadow-indigo-600/25 active:scale-[0.98]"
+              className="px-3.5 sm:px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-md shadow-indigo-600/25 active:scale-[0.98] flex-shrink-0"
             >
               <Check className="w-4 h-4" />
-              <span>Copy Code</span>
+              <span>Copy</span>
             </button>
           </div>
         </div>
@@ -414,8 +415,8 @@ export default function TutorDashboard() {
         />
 
         {/* Section 2: Tab Navigation */}
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800/80 pb-3">
-          <div className="p-1 rounded-2xl bg-slate-900/90 border border-slate-800/80 inline-flex flex-wrap gap-1 backdrop-blur-md">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800/80 pb-3">
+          <div className="p-1 rounded-2xl bg-slate-900/90 border border-slate-800/80 flex overflow-x-auto no-scrollbar scroll-smooth gap-1 w-full sm:w-auto backdrop-blur-md">
             {[
               { id: 'batches', icon: Layers, label: 'Tuition groups', count: tuitions.length },
               { id: 'attendance', icon: Calendar, label: 'Class tracker' },
@@ -428,7 +429,7 @@ export default function TutorDashboard() {
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
-                  className={`flex items-center gap-2 py-2 px-4 rounded-xl text-xs font-semibold transition-all duration-200 ${
+                  className={`flex items-center gap-2 py-2 px-3.5 sm:px-4 rounded-xl text-xs font-semibold transition-all duration-200 flex-shrink-0 whitespace-nowrap ${
                     active
                       ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
                       : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'

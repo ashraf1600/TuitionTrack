@@ -487,11 +487,11 @@ export default function ExamAuthoringModal({
         )}
 
         {/* Assessment Category Selector: EXAM vs ASSIGNMENT */}
-        <div className="flex items-center gap-2 p-1.5 rounded-xl bg-slate-900 border border-slate-800 w-fit">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 p-1.5 rounded-xl bg-slate-900 border border-slate-800 w-full sm:w-fit">
           <button
             type="button"
             onClick={() => setCategory('EXAM')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 ${
               category === 'EXAM'
                 ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
                 : 'text-slate-400 hover:text-slate-200'
@@ -503,7 +503,7 @@ export default function ExamAuthoringModal({
           <button
             type="button"
             onClick={() => setCategory('ASSIGNMENT')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 ${
               category === 'ASSIGNMENT'
                 ? 'bg-purple-600 text-white shadow-md shadow-purple-600/30'
                 : 'text-slate-400 hover:text-slate-200'
@@ -515,8 +515,8 @@ export default function ExamAuthoringModal({
         </div>
 
         {/* Tab Navigation */}
-        <div className="flex items-center justify-between border-b border-slate-800 pb-2">
-          <div className="flex items-center gap-2">
+        <div className="flex items-center justify-between border-b border-slate-800 pb-2 overflow-x-auto no-scrollbar">
+          <div className="flex items-center gap-2 flex-shrink-0 whitespace-nowrap">
             <button
               type="button"
               onClick={() => setActiveTab('questions')}

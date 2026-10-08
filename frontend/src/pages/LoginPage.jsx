@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 
 const inputCls =
-  'w-full px-3.5 py-2.5 rounded-xl bg-slate-900/90 border border-slate-700/80 text-slate-100 text-sm placeholder:text-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 hover:border-slate-600 transition-all duration-200';
+  'w-full px-3.5 py-2.5 rounded-xl bg-slate-900/90 border border-slate-700/80 text-slate-100 text-base sm:text-sm placeholder:text-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 hover:border-slate-600 transition-all duration-200';
 
 const HIGHLIGHTS = [
   { icon: CalendarCheck, title: 'One class tracker per group', text: 'Tick a class once — every student in the group sees it instantly, with the date and topic.' },

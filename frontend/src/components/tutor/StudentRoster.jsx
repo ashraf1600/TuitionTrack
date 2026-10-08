@@ -15,7 +15,7 @@ export default function StudentRoster({
 
   return (
     <>
-      <div className="glass-panel p-6 rounded-2xl">
+      <div className="glass-panel p-4 sm:p-6 rounded-2xl">
         <div className="flex items-center justify-between mb-4">
           <div>
             <h3 className="text-lg font-bold text-slate-100 flex items-center gap-2">

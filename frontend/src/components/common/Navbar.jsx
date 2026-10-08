@@ -33,14 +33,15 @@ export default function Navbar() {
 
             {user && (
               <span
-                className={`hidden md:inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold border ${
+                className={`inline-flex items-center gap-1.5 px-2 sm:px-2.5 py-0.5 rounded-full text-[10px] sm:text-[11px] font-semibold border ${
                   isTutor
                     ? 'bg-indigo-500/10 text-indigo-300 border-indigo-500/25'
                     : 'bg-emerald-500/10 text-emerald-300 border-emerald-500/25'
                 }`}
               >
                 <span className={`w-1.5 h-1.5 rounded-full ${isTutor ? 'bg-indigo-400 animate-pulse' : 'bg-emerald-400 animate-pulse'}`} />
-                {isTutor ? 'Tutor Workspace' : 'Student Portal'}
+                <span className="hidden sm:inline">{isTutor ? 'Tutor Workspace' : 'Student Portal'}</span>
+                <span className="sm:hidden">{isTutor ? 'Tutor' : 'Student'}</span>
               </span>
             )}
           </div>

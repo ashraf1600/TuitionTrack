@@ -70,6 +70,34 @@
   background: #475569;
 }
 
+/* Mobile Touch & Scroll Utilities */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.touch-scroll {
+  -webkit-overflow-scrolling: touch;
+  scroll-behavior: smooth;
+}
+
+/* Prevent unwanted iOS zoom on input focus while keeping desktop crisp */
+@media screen and (max-width: 640px) {
+  input[type="text"],
+  input[type="email"],
+  input[type="password"],
+  input[type="number"],
+  input[type="tel"],
+  input[type="date"],
+  input[type="datetime-local"],
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}
+
 /* Glassmorphism & Modern SaaS Surfaces */
 .glass-panel {
   background: rgba(15, 23, 42, 0.75);

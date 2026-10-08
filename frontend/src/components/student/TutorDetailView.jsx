@@ -123,36 +123,36 @@ export default function TutorDetailView({ tutorId, onBack }) {
       </button>
 
       {/* Tutor profile card */}
-      <div className="relative overflow-hidden rounded-2xl border border-indigo-500/20 bg-gradient-to-br from-slate-900 via-indigo-950/20 to-slate-900 p-6 sm:p-8">
+      <div className="relative overflow-hidden rounded-2xl border border-indigo-500/20 bg-gradient-to-br from-slate-900 via-indigo-950/20 to-slate-900 p-4 sm:p-8">
         <div className="pointer-events-none absolute -top-12 -right-12 w-56 h-56 bg-indigo-600/8 rounded-full blur-3xl" />
-        <div className="relative flex items-start gap-5">
+        <div className="relative flex items-start gap-3.5 sm:gap-5">
           {/* Avatar */}
           <div className="flex-shrink-0">
             {data.profile_picture_url ? (
               <img
                 src={getMediaUrl(data.profile_picture_url)}
                 alt={data.display_name}
-                className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl object-cover border-2 border-indigo-500/30 shadow-lg"
+                className="w-14 h-14 sm:w-20 sm:h-20 rounded-2xl object-cover border-2 border-indigo-500/30 shadow-lg"
               />
             ) : (
-              <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-500 flex items-center justify-center text-white text-2xl sm:text-3xl font-black shadow-lg shadow-indigo-500/20">
+              <div className="w-14 h-14 sm:w-20 sm:h-20 rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-500 flex items-center justify-center text-white text-xl sm:text-3xl font-black shadow-lg shadow-indigo-500/20">
                 {(data.display_name || 'T')[0]}
               </div>
             )}
           </div>
 
           {/* Info */}
-          <div className="min-w-0">
-            <h2 className="text-2xl sm:text-3xl font-black text-slate-100">
+          <div className="min-w-0 flex-1">
+            <h2 className="text-xl sm:text-3xl font-black text-slate-100 truncate">
               {data.display_name}
             </h2>
-            <div className="text-sm text-slate-400 font-mono mt-0.5">@{data.username}</div>
+            <div className="text-xs sm:text-sm text-slate-400 font-mono mt-0.5">@{data.username}</div>
 
             {/* Subjects */}
             {data.subjects?.length > 0 && (
-              <div className="flex flex-wrap gap-1.5 mt-3">
+              <div className="flex flex-wrap gap-1.5 mt-2.5 sm:mt-3">
                 {data.subjects.map((s) => (
-                  <span key={s} className="px-2.5 py-0.5 rounded-full bg-indigo-500/15 border border-indigo-500/25 text-indigo-300 text-[11px] font-semibold">
+                  <span key={s} className="px-2 sm:px-2.5 py-0.5 rounded-full bg-indigo-500/15 border border-indigo-500/25 text-indigo-300 text-[10px] sm:text-[11px] font-semibold">
                     {s}
                   </span>
                 ))}
@@ -161,7 +161,7 @@ export default function TutorDetailView({ tutorId, onBack }) {
 
             {/* Tuition groups */}
             {data.tuitions?.length > 0 && (
-              <div className="mt-2 text-[11px] text-slate-500">
+              <div className="mt-1.5 sm:mt-2 text-[10px] sm:text-[11px] text-slate-500">
                 {data.tuitions.length} tuition group{data.tuitions.length > 1 ? 's' : ''} ·{' '}
                 {data.tuitions.map((t) => t.title).join(', ')}
               </div>
@@ -190,14 +190,14 @@ export default function TutorDetailView({ tutorId, onBack }) {
               key={key}
               type="button"
               onClick={() => setActiveTab(key)}
-              className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg text-sm font-semibold transition-all duration-200 ${
+              className={`flex-1 flex items-center justify-center gap-1.5 sm:gap-2 py-2 sm:py-2.5 px-2 sm:px-3 rounded-lg text-xs sm:text-sm font-semibold transition-all duration-200 ${
                 isActive
                   ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20'
                   : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
               }`}
             >
               <Icon className="w-4 h-4 flex-shrink-0" />
-              <span className="hidden sm:inline">{label}</span>
+              <span>{label}</span>
               {badge > 0 && (
                 <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-black ${isActive ? 'bg-white/20 text-white' : 'bg-rose-500/20 text-rose-300'}`}>
                   {badge}
