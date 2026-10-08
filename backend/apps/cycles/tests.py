@@ -138,3 +138,66 @@ class CyclesTests(APITestCase):
         # Attempting to reset the archived cycle again should fail
         resp_again = self.client.post(reset_url)
         self.assertEqual(resp_again.status_code, status.HTTP_400_BAD_REQUEST)
+
+
+class SharedAttendanceCyclesTests(APITestCase):
+    def setUp(self):
+        from apps.students.models import Tuition, TuitionEnrollment
+        from apps.cycles.models import AttendanceCycle
+
+        self.tutor = User.objects.create_user(
+            username='tutor_att',
+            password='password123',
+            email='tutor_att@example.com',
+            role=User.Role.TUTOR,
+            first_name='Tutor',
+            last_name='Att'
+        )
+        self.student = User.objects.create_user(
+            username='student_att',
+            password='password123',
+            email='student_att@example.com',
+            role=User.Role.STUDENT,
+            first_name='Student',
+            last_name='Att'
+        )
+        self.tuition = Tuition.objects.create(
+            tutor=self.tutor,
+            title='Class 10 Advanced Math',
+            subject='Math',
+            cycle_length=12,
+            total_fee=7000.00
+        )
+        TuitionEnrollment.objects.create(
+            tuition=self.tuition,
+            student=self.student,
+            is_active=True
+        )
+        self.cycle = AttendanceCycle.start_for(self.tuition)
+
+    def test_toggle_class_attendance_and_revert(self):
+        self.client.force_authenticate(user=self.tutor)
+        url = reverse('attendance-cycle-toggle-class', kwargs={'pk': str(self.cycle.id)})
+
+        # Check Class 1
+        resp = self.client.patch(url, {
+            'class_no': 1,
+            'completed': True,
+            'date': '2026-10-09T12:00:00Z',
+            'topic': 'Quadratic Equations'
+        }, format='json')
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertEqual(resp.data['cycle']['completed_classes'], 1)
+        self.cycle.refresh_from_db()
+        self.assertEqual(self.cycle.completed_classes, 1)
+
+        # Uncheck Class 1
+        resp2 = self.client.patch(url, {
+            'class_no': 1,
+            'completed': False
+        }, format='json')
+        self.assertEqual(resp2.status_code, status.HTTP_200_OK)
+        self.assertEqual(resp2.data['cycle']['completed_classes'], 0)
+        self.cycle.refresh_from_db()
+        self.assertEqual(self.cycle.completed_classes, 0)
+

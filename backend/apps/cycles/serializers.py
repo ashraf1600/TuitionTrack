@@ -91,6 +91,12 @@ class ToggleClassSerializer(serializers.Serializer):
     date = serializers.DateTimeField(required=False, allow_null=True)
     topic = serializers.CharField(required=False, allow_blank=True, max_length=255)
 
+    def to_internal_value(self, data):
+        if isinstance(data, dict) and data.get('date') == '':
+            data = data.copy()
+            data['date'] = None
+        return super().to_internal_value(data)
+
     def validate(self, attrs):
         class_num = attrs.get('class_no') or attrs.get('classNo')
         if class_num is None:
@@ -133,7 +139,10 @@ class StudentCycleSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
     def get_tuition_title(self, obj):
-        return obj.tuition.title if obj.tuition_id else ''
+        try:
+            return obj.tuition.title if (obj.tuition_id and obj.tuition) else ''
+        except Exception:
+            return ''
 
 
 class AttendanceCycleSerializer(StudentCycleSerializer):
@@ -163,7 +172,10 @@ class AttendanceCycleSerializer(StudentCycleSerializer):
         read_only_fields = fields
 
     def get_student_count(self, obj):
-        return obj.tuition.enrolled_students_count if obj.tuition_id else 0
+        try:
+            return obj.tuition.enrolled_students_count if (obj.tuition_id and obj.tuition) else 0
+        except Exception:
+            return 0
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
