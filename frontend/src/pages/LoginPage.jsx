@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { api } from '../api/client';
 import {
   GraduationCap, Lock, User, Mail, Phone, ArrowRight, AlertCircle, Search, Eye, EyeOff,
-  CalendarCheck, Wallet, FileText, Check, Loader2, BookOpen, Presentation,
+  CalendarCheck, Wallet, FileText, Check, Loader2, BookOpen, Presentation, Sparkles,
 } from 'lucide-react';
 
 const inputCls =
