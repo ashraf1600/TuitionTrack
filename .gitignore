@@ -90,3 +90,24 @@ backend/data_export*.json
 # The Flutter app source lives in mobile/lib (the Python "lib/" rule above must not hide it)
 !mobile/lib/
 !mobile/lib/**
+
+# ─── Flutter / Dart ──────────────────────────────────────────
+mobile/.dart_tool/
+mobile/.flutter-plugins-dependencies
+mobile/.flutter-plugins
+mobile/.packages
+mobile/.pub-cache/
+mobile/.pub/
+mobile/build/
+mobile/.idea/
+mobile/android/.gradle/
+mobile/android/local.properties
+mobile/android/key.properties
+mobile/android/app/release/
+*.iml
+
+# Built APK stays in Releases, not in source control
+TuitionTrack.apk
+*.apk
+*.apk.sha1
+*.apk.sha256

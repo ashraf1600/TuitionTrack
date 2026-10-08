@@ -1,69 +1,44 @@
-# TuitionTrack SaaS
+# TuitionTrack
 
-A **multi-tenant SaaS platform** engineered for independent tutors — combining dynamic class cycle tracking, gamified wallet analytics, and a smart time-bound exam engine with rich-text mathematical formula support.
+Multi-tenant tuition management — Django REST backend + Flutter (Android, iOS, web) app.
 
----
+## Download the Android APK
 
-## Tech Stack
+Grab the latest release from the [Releases page](../../releases). The APK file is attached to every tagged release.
 
-| Layer | Technology |
-|---|---|
-| Backend | Python 3.11, Django 5.x, Django REST Framework |
-| Auth | JWT (`djangorestframework-simplejwt`) |
-| Database | PostgreSQL |
-| HTML Sanitization | `nh3` / `bleach` |
-| Frontend | React.js (Vite) + Tailwind CSS |
-| Rich Text Editor | TipTap + KaTeX (Math equations) |
-| Charts | Recharts |
-| Email | Django core mail (SMTP) |
-
----
-
-## Core Features
-
-- 🏫 **Multi-Tenant Architecture** — Strict per-tutor data isolation at the ORM and API levels
-- 📋 **Dynamic Cycle Tracking** — Configurable class grids (8/12/16 classes), togglable checkboxes, cycle archiving
-- 💰 **Gamified Wallet Analytics** — Real-time earned vs. pending revenue donut chart
-- 📝 **Smart Exam Engine** — Schedule exams, rich-text + LaTeX question editing, time-bound submissions with grace period
-- 🔐 **Security-First** — UUID PKs, stored XSS prevention (backend nh3 + frontend DOMPurify), role-based access control
-
----
-
-## Project Structure
-
+Direct link pattern:
 ```
-TuitionTrack/
-├── backend/                  # Django DRF project
-│   ├── authentication/       # Custom user model, JWT auth
-│   ├── students/             # StudentProfile management
-│   ├── cycles/               # Dynamic cycle engine
-│   ├── analytics/            # Wallet analytics endpoints
-│   └── exams/                # Exam module, sanitization, grading
-├── frontend/                 # React Vite application
-│   └── src/
-│       ├── components/
-│       ├── pages/
-│       └── hooks/
-└── docs/                     # Specification documents
-    ├── 01_Project_Overview_and_Stack.md
-    ├── 02_Product_Requirements_Document.md
-    ├── 03_Database_Schema.md
-    ├── 04_API_Architecture.md
-    ├── 05_UI_UX_Guidelines.md
-    └── 06_Execution_Prompts.md
+https://github.com/<owner>/<repo>/releases/download/<tag>/app-release.apk
 ```
 
----
+## Building from source
 
-## Development Phases
+Prereqs: Flutter 3.27+ with Dart 3.13+, Android SDK, JDK 17.
 
-- **Phase 1** ✅ — Django project setup, custom user model, all database models
-- **Phase 2** 🔄 — JWT auth, role permissions, student provisioning API
-- **Phase 3** ⬜ — Cycle engine & wallet analytics
-- **Phase 4** ⬜ — Exam engine, HTML sanitization, email alerts
-- **Phase 5** ⬜ — React frontend (Vite, Tailwind, TipTap + KaTeX, Recharts)
+```bash
+cd mobile
+flutter pub get
+flutter analyze
+flutter build apk --release
+# Output: build/app/outputs/flutter-apk/app-release.apk
+```
 
----
+The Django backend is in `backend/`. It expects a `.env` (see `backend/.env.example`) and runs migrations on first boot.
 
-## License
-MIT
+## Repository layout
+
+```
+backend/        Django REST API (auth, students, tuitions, cycles, exams, homework)
+mobile/         Flutter app (Android / iOS / web)
+.github/        CI workflows
+docs/           Phase 1-5 design specs
+```
+
+## Tagging a new release
+
+```bash
+git tag v1.2.0
+git push origin v1.2.0
+```
+
+Pushing a `v*` tag kicks off `.github/workflows/build-apk.yml`, which builds and uploads the APK to the GitHub Release automatically.
