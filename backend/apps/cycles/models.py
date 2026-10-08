@@ -333,9 +333,17 @@ class AttendanceCycle(models.Model):
         class_no = int(class_no)
         if class_no < 1 or class_no > self.total_classes:
             raise ValueError(f'Class number {class_no} exceeds cycle length of {self.total_classes}.')
-        date_iso = (date or timezone.now()).isoformat() if completed else None
+        if completed:
+            if hasattr(date, 'isoformat'):
+                date_iso = date.isoformat()
+            elif isinstance(date, str) and date:
+                date_iso = date
+            else:
+                date_iso = timezone.now().isoformat()
+        else:
+            date_iso = None
 
-        classes_data = list(self.classes_data)
+        classes_data = list(self.classes_data or [])
         entry = next((c for c in classes_data if self._class_no(c) == class_no), None)
         if entry is None:
             entry = {'class_no': class_no, 'topic': ''}
