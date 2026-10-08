@@ -9,7 +9,7 @@ import ExamCard from '../components/student/ExamCard';
 import ExamTakerModal from '../components/student/ExamTakerModal';
 import ExamResultModal from '../components/student/ExamResultModal';
 import LeaderboardModal from '../components/common/LeaderboardModal';
-import { api } from '../api/client';
+import { api, getMediaUrl } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import {
   FileText, RefreshCw, Layers, Clock, Users, GraduationCap, AlertCircle,
@@ -164,33 +164,37 @@ export default function StudentPortal() {
 
       <main className="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
         {/* Welcome Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-6 rounded-2xl bg-gradient-to-r from-slate-900 via-indigo-950/40 to-slate-900 border border-slate-800">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-6 rounded-2xl bg-gradient-to-r from-slate-900 via-indigo-950/30 to-slate-900 border border-slate-800 shadow-xl">
           <div>
-            <h1 className="text-2xl font-extrabold text-slate-100">
+            <div className="inline-flex items-center gap-2 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-500/10 text-emerald-300 border border-emerald-500/25 mb-2">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              <span>Student Learning Portal</span>
+            </div>
+            <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
               Welcome back, {user?.name || user?.username}
             </h1>
-            <p className="text-sm text-slate-400 mt-1">
+            <p className="text-xs sm:text-sm text-slate-400 mt-1">
               Your connected tutors, weekly routines, homework, and exams in one place.
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Pill icon={UserCheck} label={`${tutors.length} tutor${tutors.length === 1 ? '' : 's'}`} />
             {openExams > 0 && <Pill icon={FileText} label={`${openExams} to do now`} tone="emerald" />}
             <button
               type="button"
               onClick={() => setCodeConnectModalOpen(true)}
-              className="px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-md shadow-indigo-600/25 transition"
+              className="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-md shadow-indigo-600/25 transition active:scale-[0.98]"
             >
               <Plus className="w-4 h-4" />
-              Connect Tutor
+              <span>Connect Tutor</span>
             </button>
             <button
               type="button"
               onClick={loadData}
-              className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 border border-slate-700 transition"
-              title="Refresh"
+              className="p-2.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-400 hover:text-slate-200 border border-slate-700 transition"
+              title="Refresh portal"
             >
-              <RefreshCw className="w-4 h-4" />
+              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin text-indigo-400' : ''}`} />
             </button>
           </div>
         </div>
@@ -247,7 +251,7 @@ export default function StudentPortal() {
                     {/* Tutor Avatar */}
                     {tutor.profile_picture_url ? (
                       <img
-                        src={tutor.profile_picture_url}
+                        src={getMediaUrl(tutor.profile_picture_url)}
                         alt={tutor.display_name}
                         className="w-14 h-14 rounded-2xl object-cover border border-indigo-500/30 flex-shrink-0"
                       />

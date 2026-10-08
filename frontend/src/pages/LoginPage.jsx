@@ -8,20 +8,20 @@ import {
 } from 'lucide-react';
 
 const inputCls =
-  'w-full px-3.5 py-2.5 rounded-xl bg-slate-800/80 border border-slate-700 text-slate-100 text-sm placeholder:text-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/25 transition';
+  'w-full px-3.5 py-2.5 rounded-xl bg-slate-900/90 border border-slate-700/80 text-slate-100 text-sm placeholder:text-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 hover:border-slate-600 transition-all duration-200';
 
 const HIGHLIGHTS = [
-  { icon: CalendarCheck, title: 'One class tracker per group', text: 'Tick a class once — every student in the group sees it, with the date.' },
-  { icon: Wallet, title: 'Earnings that add up themselves', text: 'Each completed class moves your tuition wallet. Students never see fees.' },
-  { icon: FileText, title: 'Exams for the whole group', text: 'Set MCQ or written exams with a deadline; grade and rank in one place.' },
+  { icon: CalendarCheck, title: 'One class tracker per group', text: 'Tick a class once — every student in the group sees it instantly, with the date and topic.' },
+  { icon: Wallet, title: 'Earnings that add up themselves', text: 'Each completed class moves your tuition wallet. Full privacy: students never see fees.' },
+  { icon: FileText, title: 'Integrated MCQ & Written Exams', text: 'Author rich exams with math formulas, set timers and deadlines, grade and rank in one place.' },
 ];
 
 function Field({ label, htmlFor, optional, hint, children }) {
   return (
     <div>
-      <label htmlFor={htmlFor} className="flex items-baseline justify-between text-sm font-medium text-slate-200 mb-1.5">
+      <label htmlFor={htmlFor} className="flex items-baseline justify-between text-xs font-semibold uppercase tracking-wider text-slate-300 mb-1.5">
         <span>{label}</span>
-        {optional && <span className="text-xs font-normal text-slate-500">Optional</span>}
+        {optional && <span className="text-[11px] font-normal lowercase tracking-normal text-slate-500">Optional</span>}
       </label>
       {children}
       {hint && <p className="mt-1 text-xs text-slate-400">{hint}</p>}
@@ -153,56 +153,71 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 grid lg:grid-cols-2">
       {/* Brand panel (desktop) */}
-      <aside className="hidden lg:flex flex-col justify-between p-12 bg-gradient-to-br from-indigo-950 via-slate-950 to-slate-950 border-r border-slate-800 relative overflow-hidden">
-        <div className="absolute -top-32 -left-32 w-[480px] h-[480px] bg-indigo-600/20 rounded-full blur-[120px] pointer-events-none" />
+      <aside className="hidden lg:flex flex-col justify-between p-12 bg-gradient-to-br from-indigo-950/60 via-slate-950 to-slate-950 border-r border-slate-800/80 relative overflow-hidden">
+        <div className="absolute -top-32 -left-32 w-[520px] h-[520px] bg-indigo-600/15 rounded-full blur-[140px] pointer-events-none" />
+        <div className="absolute top-1/2 -right-24 w-80 h-80 bg-violet-600/10 rounded-full blur-[100px] pointer-events-none" />
+
         <div className="relative flex items-center gap-3">
-          <span className="w-11 h-11 rounded-xl bg-indigo-600 flex items-center justify-center text-white">
+          <span className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-indigo-600 to-violet-500 flex items-center justify-center text-white shadow-lg shadow-indigo-600/30">
             <GraduationCap className="w-6 h-6" />
           </span>
-          <span className="text-2xl font-bold tracking-tight">Tuition<span className="text-indigo-400">Track</span></span>
+          <span className="text-2xl font-extrabold tracking-tight">Tuition<span className="text-indigo-400">Track</span></span>
         </div>
 
-        <div className="relative space-y-8 max-w-md">
-          <h2 className="text-4xl font-extrabold leading-tight tracking-tight">
-            Run your tuition groups without the notebook.
-          </h2>
-          <ul className="space-y-5">
+        <div className="relative space-y-8 max-w-lg">
+          <div>
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 mb-4">
+              <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
+              <span>Smart Tuition Management & Exam Platform</span>
+            </div>
+            <h2 className="text-4xl font-extrabold leading-[1.18] tracking-tight text-white">
+              Run your tuition groups <span className="text-gradient-brand">without the paper notebook</span>.
+            </h2>
+          </div>
+
+          <ul className="space-y-4">
             {HIGHLIGHTS.map(({ icon: Icon, title, text }) => (
-              <li key={title} className="flex gap-4">
-                <span className="w-10 h-10 rounded-xl bg-indigo-500/15 border border-indigo-500/25 text-indigo-300 flex items-center justify-center flex-shrink-0">
+              <li key={title} className="flex gap-4 p-4 rounded-2xl bg-slate-900/60 border border-slate-800/80 backdrop-blur-md hover:border-slate-700 transition">
+                <span className="w-10 h-10 rounded-xl bg-indigo-500/15 border border-indigo-500/25 text-indigo-300 flex items-center justify-center flex-shrink-0 shadow-sm">
                   <Icon className="w-5 h-5" />
                 </span>
                 <div>
-                  <div className="font-semibold text-slate-100">{title}</div>
-                  <p className="text-sm text-slate-400 leading-relaxed">{text}</p>
+                  <div className="text-sm font-semibold text-slate-100">{title}</div>
+                  <p className="text-xs text-slate-400 leading-relaxed mt-0.5">{text}</p>
                 </div>
               </li>
             ))}
           </ul>
+
+          <div className="flex flex-wrap items-center gap-2 pt-2 text-[11px] text-slate-400">
+            <span className="px-2.5 py-1 rounded-lg bg-slate-900 border border-slate-800">✓ Multi-Tenant Security</span>
+            <span className="px-2.5 py-1 rounded-lg bg-slate-900 border border-slate-800">✓ Real-Time Routine Tracking</span>
+            <span className="px-2.5 py-1 rounded-lg bg-slate-900 border border-slate-800">✓ KaTeX LaTeX Math Equations</span>
+          </div>
         </div>
 
-        <p className="relative text-xs text-slate-500">For private tutors and their students.</p>
+        <p className="relative text-xs text-slate-500">Built for private tutors, coaching centers, and students.</p>
       </aside>
 
       {/* Form panel */}
-      <main className="flex flex-col justify-center px-4 py-10 sm:px-8">
+      <main className="flex flex-col justify-center px-4 py-10 sm:px-10 bg-slate-950 relative">
         <div className="w-full max-w-md mx-auto">
           <div className="lg:hidden flex items-center gap-2.5 mb-8">
-            <span className="w-10 h-10 rounded-xl bg-indigo-600 flex items-center justify-center text-white">
+            <span className="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 to-violet-500 flex items-center justify-center text-white shadow-md shadow-indigo-600/25">
               <GraduationCap className="w-5 h-5" />
             </span>
-            <span className="text-xl font-bold tracking-tight">Tuition<span className="text-indigo-400">Track</span></span>
+            <span className="text-xl font-extrabold tracking-tight">Tuition<span className="text-indigo-400">Track</span></span>
           </div>
 
-          <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">{heading}</h1>
+          <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white">{heading}</h1>
           <p className="mt-1.5 text-sm text-slate-400">{subheading}</p>
 
           {/* Role choice when creating an account */}
           {isRegister && (
             <div className="mt-6 grid grid-cols-2 gap-3" role="radiogroup" aria-label="Account type">
               {[
-                { key: 'register-tutor', icon: Presentation, title: "I'm a tutor", text: 'I teach students' },
-                { key: 'register-student', icon: BookOpen, title: "I'm a student", text: 'I learn from a tutor' },
+                { key: 'register-tutor', icon: Presentation, title: "I'm a tutor", text: 'I teach groups & track fees' },
+                { key: 'register-student', icon: BookOpen, title: "I'm a student", text: 'I attend classes & take exams' },
               ].map(({ key, icon: Icon, title, text }) => {
                 const active = mode === key;
                 return (
@@ -212,10 +227,10 @@ export default function LoginPage() {
                     role="radio"
                     aria-checked={active}
                     onClick={() => switchMode(key)}
-                    className={`text-left p-3.5 rounded-xl border transition ${
+                    className={`text-left p-3.5 rounded-2xl border transition-all duration-200 ${
                       active
-                        ? 'bg-indigo-500/10 border-indigo-500 ring-2 ring-indigo-500/25'
-                        : 'bg-slate-900 border-slate-700 hover:border-slate-500'
+                        ? 'bg-indigo-500/10 border-indigo-500 ring-2 ring-indigo-500/25 shadow-lg shadow-indigo-500/10'
+                        : 'bg-slate-900/80 border-slate-800 hover:border-slate-700 hover:bg-slate-900'
                     }`}
                   >
                     <Icon className={`w-5 h-5 mb-1.5 ${active ? 'text-indigo-300' : 'text-slate-400'}`} />
@@ -229,7 +244,7 @@ export default function LoginPage() {
 
           {error && (
             <div role="alert" className="mt-6 p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-200 text-sm flex items-start gap-2.5">
-              <AlertCircle className="w-5 h-5 flex-shrink-0 text-rose-400" />
+              <AlertCircle className="w-5 h-5 flex-shrink-0 text-rose-400 mt-0.5" />
               <span>{error}</span>
             </div>
           )}

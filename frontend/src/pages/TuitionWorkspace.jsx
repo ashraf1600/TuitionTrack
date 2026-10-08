@@ -423,66 +423,42 @@ export default function TuitionWorkspace() {
         </div>
 
         {/* 4-Tab Navigation */}
-        <div className="flex flex-wrap items-center gap-2 border-b border-slate-800 pb-3">
-          <button
-            onClick={() => setActiveTab('attendance')}
-            className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition ${
-              activeTab === 'attendance'
-                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
-                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
-            }`}
-          >
-            <Calendar className="w-4 h-4" />
-            <span>Class tracker</span>
-            <span className="px-1.5 py-0.2 rounded-full bg-slate-900/60 text-[10px] text-slate-300">
-              {enrolledStudents.length}
-            </span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('exams')}
-            className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition ${
-              activeTab === 'exams'
-                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
-                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
-            }`}
-          >
-            <FileText className="w-4 h-4" />
-            <span>Exams & Assessments</span>
-            <span className="px-1.5 py-0.2 rounded-full bg-slate-900/60 text-[10px] text-slate-300">
-              {exams.length}
-            </span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('routine')}
-            className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition ${
-              activeTab === 'routine'
-                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
-                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
-            }`}
-          >
-            <Clock className="w-4 h-4" />
-            <span>Weekly Routine</span>
-            <span className="px-1.5 py-0.2 rounded-full bg-slate-900/60 text-[10px] text-slate-300">
-              {routineSlots.length} slots
-            </span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('roster')}
-            className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition ${
-              activeTab === 'roster'
-                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
-                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
-            }`}
-          >
-            <Users className="w-4 h-4" />
-            <span>Enrolled Students Roster</span>
-            <span className="px-1.5 py-0.2 rounded-full bg-slate-900/60 text-[10px] text-slate-300">
-              {enrolledStudents.length}
-            </span>
-          </button>
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800/80 pb-3">
+          <div className="p-1 rounded-2xl bg-slate-900/90 border border-slate-800/80 inline-flex flex-wrap gap-1 backdrop-blur-md">
+            {[
+              { id: 'attendance', icon: Calendar, label: 'Class tracker', count: enrolledStudents.length },
+              { id: 'exams', icon: FileText, label: 'Exams & Assessments', count: exams.length },
+              { id: 'routine', icon: Clock, label: 'Weekly Routine', badge: `${routineSlots.length} slots` },
+              { id: 'roster', icon: Users, label: 'Students Roster', count: enrolledStudents.length },
+            ].map((tab) => {
+              const Icon = tab.icon;
+              const active = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`flex items-center gap-2 py-2 px-3.5 rounded-xl text-xs font-semibold transition-all duration-200 ${
+                    active
+                      ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
+                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+                  }`}
+                >
+                  <Icon className="w-3.5 h-3.5" />
+                  <span>{tab.label}</span>
+                  {tab.count !== undefined && (
+                    <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${active ? 'bg-indigo-500/40 text-white' : 'bg-slate-800 text-slate-400'}`}>
+                      {tab.count}
+                    </span>
+                  )}
+                  {tab.badge && (
+                    <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${active ? 'bg-indigo-500/40 text-white' : 'bg-slate-800 text-slate-400'}`}>
+                      {tab.badge}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         {/* Tab 1: Shared class tracker — one cycle for the whole group */}

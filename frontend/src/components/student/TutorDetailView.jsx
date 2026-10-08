@@ -3,7 +3,7 @@ import {
   ArrowLeft, GraduationCap, Calendar, BookOpen, Clock,
   Loader2, RefreshCw, AlertCircle, User,
 } from 'lucide-react';
-import { api } from '../../api/client';
+import { api, getMediaUrl } from '../../api/client';
 import HomeworkCard from './HomeworkCard';
 
 const TABS = [
@@ -130,7 +130,7 @@ export default function TutorDetailView({ tutorId, onBack }) {
           <div className="flex-shrink-0">
             {data.profile_picture_url ? (
               <img
-                src={data.profile_picture_url}
+                src={getMediaUrl(data.profile_picture_url)}
                 alt={data.display_name}
                 className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl object-cover border-2 border-indigo-500/30 shadow-lg"
               />

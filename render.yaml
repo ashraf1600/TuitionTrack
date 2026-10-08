@@ -50,3 +50,22 @@ services:
       # ── Email (password resets, exam notices). Without these, emails are only logged. ──
       - key: EMAIL_BACKEND
         value: django.core.mail.backends.console.EmailBackend
+
+  # ── Frontend Web App (React + Vite Single Page Application) ──
+  - type: web
+    name: tuitiontrack-web
+    runtime: static
+    plan: free
+    region: singapore
+    rootDir: frontend
+    buildCommand: npm install && npm run build
+    staticPublishPath: ./dist
+    routes:
+      # Rewrites all requests to /index.html so React Router client-side routes work on reload
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      # Point to your deployed backend API URL, e.g. https://tuitiontrack-api.onrender.com
+      - key: VITE_API_URL
+        sync: false

@@ -4,8 +4,23 @@
 
 // Where the API lives. Empty in development (the Vite proxy forwards /api to Django);
 // set VITE_API_URL=https://your-api-host when the website and the API are hosted separately.
-const API_ORIGIN = (import.meta.env.VITE_API_URL || '').replace(/\/+$/, '');
-const BASE_URL = `${API_ORIGIN}/api/v1`;
+const customOrigin = (typeof window !== 'undefined' ? localStorage.getItem('tuitiontrack_api_url') : '') || '';
+export const API_ORIGIN = (customOrigin || import.meta.env.VITE_API_URL || '').replace(/\/+$/, '');
+export const BASE_URL = `${API_ORIGIN}/api/v1`;
+
+let _refreshPromise = null;
+
+/**
+ * Resolves media/image paths against API_ORIGIN when hosted on separate domains.
+ */
+export function getMediaUrl(url) {
+  if (!url) return '';
+  if (/^https?:\/\//i.test(url)) return url;
+  if (url.startsWith('/')) {
+    return `${API_ORIGIN}${url}`;
+  }
+  return url;
+}
 
 export async function apiRequest(endpoint, options = {}) {
   const url = `${BASE_URL}${endpoint}`;
@@ -129,8 +144,6 @@ export async function apiRequest(endpoint, options = {}) {
 
   return data;
 }
-
-let _refreshPromise = null;
 
 export async function fetchServerOffset() {
   try {

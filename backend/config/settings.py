@@ -243,12 +243,28 @@ CORS_ALLOWED_ORIGINS = [
 ]
 CORS_ALLOWED_ORIGINS += [o.strip() for o in os.getenv('CORS_ALLOWED_ORIGINS', '').split(',') if o.strip()]
 CSRF_TRUSTED_ORIGINS = [o.strip() for o in os.getenv('CSRF_TRUSTED_ORIGINS', '').split(',') if o.strip()]
+
+frontend_env = os.getenv('FRONTEND_URL', '').strip().rstrip('/')
+if frontend_env:
+    if frontend_env not in CORS_ALLOWED_ORIGINS:
+        CORS_ALLOWED_ORIGINS.append(frontend_env)
+    if frontend_env not in CSRF_TRUSTED_ORIGINS:
+        CSRF_TRUSTED_ORIGINS.append(frontend_env)
+
 if os.getenv('RENDER_EXTERNAL_HOSTNAME'):
-    CSRF_TRUSTED_ORIGINS.append(f"https://{os.environ['RENDER_EXTERNAL_HOSTNAME']}")
-CORS_ALLOW_CREDENTIALS = True
+    render_origin = f"https://{os.environ['RENDER_EXTERNAL_HOSTNAME']}"
+    if render_origin not in CSRF_TRUSTED_ORIGINS:
+        CSRF_TRUSTED_ORIGINS.append(render_origin)
+
+# Allow *.onrender.com subdomains so Render static frontend and API connect seamlessly
+CORS_ALLOWED_ORIGIN_REGEXES = [
+    r'^https:\/\/.*\.onrender\.com$',
+]
 if DEBUG:
     # Development only: the mobile app run in a browser (`flutter run -d chrome`) uses a random local port.
-    CORS_ALLOWED_ORIGIN_REGEXES = [r'^http://(localhost|127\.0\.0\.1)(:\d+)?$']
+    CORS_ALLOWED_ORIGIN_REGEXES.append(r'^http://(localhost|127\.0\.0\.1)(:\d+)?$')
+
+CORS_ALLOW_CREDENTIALS = True
 
 # ─── Django REST Framework ────────────────────────────────────────────────────
 REST_FRAMEWORK = {

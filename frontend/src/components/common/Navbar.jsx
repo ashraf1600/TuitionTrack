@@ -13,53 +13,80 @@ export default function Navbar() {
 
   return (
     <>
-    <header className="sticky top-0 z-40 w-full border-b border-slate-800 bg-slate-950/85 backdrop-blur-md">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
-        <Link to={user ? home : '/login'} className="flex items-center gap-2.5 rounded-lg" aria-label="TuitionTrack home">
-          <span className="w-9 h-9 rounded-xl bg-indigo-600 flex items-center justify-center text-white">
-            <GraduationCap className="w-5 h-5" />
-          </span>
-          <span className="text-lg font-bold tracking-tight text-slate-100">
-            Tuition<span className="text-indigo-400">Track</span>
-          </span>
-        </Link>
-
-        {user && (
-          <div className="flex items-center gap-2 sm:gap-3">
-            <NotificationBell />
-            <button
-              type="button"
-              onClick={() => setAccountOpen(true)}
-              title="My account"
-              className="flex items-center gap-2.5 rounded-xl px-1.5 py-1 hover:bg-slate-800 transition text-left"
+      <header className="sticky top-0 z-40 w-full border-b border-slate-800/80 bg-slate-950/80 backdrop-blur-xl">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <Link
+              to={user ? home : '/login'}
+              className="flex items-center gap-2.5 rounded-xl group focus-visible:ring-2 focus-visible:ring-indigo-500"
+              aria-label="TuitionTrack home"
             >
+              <span className="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-600 to-violet-500 flex items-center justify-center text-white shadow-md shadow-indigo-600/25 group-hover:scale-105 transition-transform duration-200">
+                <GraduationCap className="w-5 h-5" />
+              </span>
+              <div className="flex flex-col">
+                <span className="text-lg font-extrabold tracking-tight text-white flex items-center gap-1">
+                  Tuition<span className="text-indigo-400">Track</span>
+                </span>
+              </div>
+            </Link>
+
+            {user && (
               <span
-                className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold ${
-                  isTutor ? 'bg-indigo-500/20 text-indigo-300' : 'bg-emerald-500/20 text-emerald-300'
+                className={`hidden md:inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold border ${
+                  isTutor
+                    ? 'bg-indigo-500/10 text-indigo-300 border-indigo-500/25'
+                    : 'bg-emerald-500/10 text-emerald-300 border-emerald-500/25'
                 }`}
-                aria-hidden="true"
               >
-                {displayName.charAt(0).toUpperCase()}
+                <span className={`w-1.5 h-1.5 rounded-full ${isTutor ? 'bg-indigo-400 animate-pulse' : 'bg-emerald-400 animate-pulse'}`} />
+                {isTutor ? 'Tutor Workspace' : 'Student Portal'}
               </span>
-              <span className="hidden sm:flex flex-col leading-tight">
-                <span className="text-sm font-semibold text-slate-100 max-w-[180px] truncate">{displayName}</span>
-                <span className="text-xs text-slate-400">{isTutor ? 'Tutor' : 'Student'} · My account</span>
-              </span>
-            </button>
-
-            <button
-              type="button"
-              onClick={logout}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium text-slate-300 hover:text-white hover:bg-slate-800 border border-slate-800 transition"
-            >
-              <LogOut className="w-4 h-4" />
-              <span className="hidden sm:inline">Sign out</span>
-            </button>
+            )}
           </div>
-        )}
-      </div>
-    </header>
-    {user && <AccountModal isOpen={accountOpen} onClose={() => setAccountOpen(false)} />}
+
+          {user && (
+            <div className="flex items-center gap-2 sm:gap-3">
+              <NotificationBell />
+
+              <button
+                type="button"
+                onClick={() => setAccountOpen(true)}
+                title="My account settings"
+                className="flex items-center gap-2.5 rounded-xl px-2 py-1.5 hover:bg-slate-800/80 border border-transparent hover:border-slate-700/60 transition-all text-left group"
+              >
+                <span
+                  className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold border transition ${
+                    isTutor
+                      ? 'bg-indigo-500/15 text-indigo-300 border-indigo-500/30 group-hover:border-indigo-400'
+                      : 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30 group-hover:border-emerald-400'
+                  }`}
+                  aria-hidden="true"
+                >
+                  {displayName.charAt(0).toUpperCase()}
+                </span>
+                <span className="hidden sm:flex flex-col leading-tight">
+                  <span className="text-xs font-semibold text-slate-100 max-w-[150px] truncate group-hover:text-white transition">
+                    {displayName}
+                  </span>
+                  <span className="text-[10px] text-slate-400">{isTutor ? 'Tutor' : 'Student'} · Account</span>
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={logout}
+                title="Sign out of TuitionTrack"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium text-slate-400 hover:text-rose-300 hover:bg-rose-500/10 border border-slate-800 hover:border-rose-500/30 transition-all"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Sign out</span>
+              </button>
+            </div>
+          )}
+        </div>
+      </header>
+      {user && <AccountModal isOpen={accountOpen} onClose={() => setAccountOpen(false)} />}
     </>
   );
 }

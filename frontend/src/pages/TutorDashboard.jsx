@@ -78,6 +78,7 @@ export default function TutorDashboard() {
   const [batchModalOpen, setBatchModalOpen] = useState(false);
   const [selectedBatchToEdit, setSelectedBatchToEdit] = useState(null);
   const [initialBatchForExam, setInitialBatchForExam] = useState('');
+  const [refreshing, setRefreshing] = useState(false);
 
   // 1. Load Analytics
   const loadAnalytics = async () => {
@@ -89,6 +90,24 @@ export default function TutorDashboard() {
       console.error('Failed to load wallet analytics:', err);
     } finally {
       setLoadingAnalytics(false);
+    }
+  };
+
+  const refreshAll = async () => {
+    setRefreshing(true);
+    try {
+      await Promise.all([
+        loadAnalytics(),
+        loadStudents(),
+        loadUnassignedStudents(),
+        loadTuitions(),
+        loadExams(),
+      ]);
+      notify.success('Dashboard data refreshed.');
+    } catch {
+      // errors handled inside individual functions
+    } finally {
+      setRefreshing(false);
     }
   };
 
@@ -270,33 +289,48 @@ export default function TutorDashboard() {
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
         {/* Page header & quick actions */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-6 rounded-2xl bg-gradient-to-r from-slate-900 via-indigo-950/30 to-slate-900 border border-slate-800 shadow-xl">
           <div>
-            <h1 className="text-2xl font-extrabold text-slate-100">Tutor dashboard</h1>
-            <p className="text-sm text-slate-400 mt-0.5">
-              {tuitions.length} tuition group{tuitions.length === 1 ? '' : 's'} · {students.length} student{students.length === 1 ? '' : 's'}
+            <div className="inline-flex items-center gap-2 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-indigo-500/10 text-indigo-300 border border-indigo-500/25 mb-2">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              <span>Tutor Management Console</span>
+            </div>
+            <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
+              Welcome back, {user?.name || user?.username || 'Tutor'}
+            </h1>
+            <p className="text-xs sm:text-sm text-slate-400 mt-1">
+              {tuitions.length} tuition group{tuitions.length === 1 ? '' : 's'} · {students.length} student{students.length === 1 ? '' : 's'} enrolled
               {unassignedStudents.length > 0 && (
-                <span className="text-amber-300"> · {unassignedStudents.length} waiting for a group</span>
+                <span className="text-amber-300 font-semibold"> · {unassignedStudents.length} waiting for a group</span>
               )}
             </p>
           </div>
+
           <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={refreshAll}
+              disabled={refreshing}
+              title="Refresh dashboard data"
+              className="p-2.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 transition"
+            >
+              <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin text-indigo-400' : ''}`} />
+            </button>
             <button
               onClick={() => {
                 setSelectedBatchToEdit(null);
                 setBatchModalOpen(true);
               }}
-              className="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-lg shadow-indigo-600/25 transition"
+              className="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-lg shadow-indigo-600/25 transition active:scale-[0.98]"
             >
               <Plus className="w-4 h-4" />
-              New tuition group
+              <span>New tuition group</span>
             </button>
             <button
               onClick={() => setAddStudentModalOpen(true)}
-              className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-100 border border-slate-700 font-semibold text-xs flex items-center gap-1.5 transition"
+              className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-100 border border-slate-700 font-semibold text-xs flex items-center gap-1.5 transition active:scale-[0.98]"
             >
               <UserPlus className="w-4 h-4 text-indigo-400" />
-              Add student
+              <span>Add student</span>
             </button>
             <button
               onClick={() => {
@@ -306,33 +340,33 @@ export default function TutorDashboard() {
               }}
               disabled={tuitions.length === 0}
               title={tuitions.length === 0 ? 'Create a tuition group first' : 'Schedule an exam for a group'}
-              className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-100 border border-slate-700 font-semibold text-xs flex items-center gap-1.5 transition disabled:opacity-50"
+              className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-100 border border-slate-700 font-semibold text-xs flex items-center gap-1.5 transition disabled:opacity-50 active:scale-[0.98]"
             >
               <FileText className="w-4 h-4 text-indigo-400" />
-              Schedule exam
+              <span>Schedule exam</span>
             </button>
           </div>
         </div>
 
         {/* Tutor Invite Code Banner */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 rounded-2xl bg-gradient-to-r from-indigo-950/40 via-purple-950/20 to-slate-900 border border-indigo-500/20 shadow-lg shadow-indigo-950/20">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-indigo-500/15 border border-indigo-500/30 flex items-center justify-center text-indigo-400 flex-shrink-0">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 rounded-2xl bg-gradient-to-r from-indigo-950/50 via-slate-900 to-slate-900 border border-indigo-500/25 shadow-lg shadow-indigo-950/20">
+          <div className="flex items-center gap-3.5">
+            <div className="w-11 h-11 rounded-xl bg-indigo-500/15 border border-indigo-500/30 flex items-center justify-center text-indigo-400 flex-shrink-0 shadow-sm">
               <Sparkles className="w-5 h-5" />
             </div>
             <div>
               <div className="flex items-center gap-2">
                 <span className="text-xs font-bold text-slate-200 uppercase tracking-wider">Your Student Invite Code</span>
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 font-semibold">6-char code</span>
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 font-semibold">Share with students</span>
               </div>
               <p className="text-xs text-slate-400 mt-0.5">
-                Share this code with prospective students. They enter it on their portal to connect with you.
+                Share this code with prospective students. They enter it on their student portal to send a connection request.
               </p>
             </div>
           </div>
 
           <div className="flex items-center gap-2 flex-shrink-0">
-            <span className="font-mono text-base font-black text-indigo-200 tracking-widest bg-slate-900/90 px-3.5 py-1.5 rounded-xl border border-indigo-500/40 select-all">
+            <span className="font-mono text-base font-black text-indigo-200 tracking-widest bg-slate-900/90 px-4 py-2 rounded-xl border border-indigo-500/40 select-all shadow-inner">
               {user?.tutor_code || '—'}
             </span>
             <button
@@ -343,9 +377,10 @@ export default function TutorDashboard() {
                   notify.success(`Invite code "${user.tutor_code}" copied to clipboard!`);
                 }
               }}
-              className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-md shadow-indigo-600/25"
+              className="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-md shadow-indigo-600/25 active:scale-[0.98]"
             >
-              Copy Code
+              <Check className="w-4 h-4" />
+              <span>Copy Code</span>
             </button>
           </div>
         </div>
@@ -379,65 +414,36 @@ export default function TutorDashboard() {
         />
 
         {/* Section 2: Tab Navigation */}
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-2">
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setActiveTab('batches')}
-              className={`flex items-center gap-2 py-2 px-4 rounded-xl text-xs font-bold transition ${
-                activeTab === 'batches'
-                  ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
-              }`}
-            >
-              <Layers className="w-4 h-4" />
-              <span>Tuition groups</span>
-              {tuitions.length > 0 && (
-                <span className="px-1.5 py-0.2 rounded-full bg-slate-800 text-[10px] text-slate-300">
-                  {tuitions.length}
-                </span>
-              )}
-            </button>
-
-            <button
-              onClick={() => setActiveTab('attendance')}
-              className={`flex items-center gap-2 py-2 px-4 rounded-xl text-xs font-bold transition ${
-                activeTab === 'attendance'
-                  ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
-              }`}
-            >
-              <Calendar className="w-4 h-4" />
-              <span>Class tracker</span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('exams')}
-              className={`flex items-center gap-2 py-2 px-4 rounded-xl text-xs font-bold transition ${
-                activeTab === 'exams'
-                  ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
-              }`}
-            >
-              <FileText className="w-4 h-4" />
-              <span>Exams</span>
-              {exams.length > 0 && (
-                <span className="px-1.5 py-0.2 rounded-full bg-slate-800 text-[10px] text-slate-300">
-                  {exams.length}
-                </span>
-              )}
-            </button>
-
-            <button
-              onClick={() => setActiveTab('homework')}
-              className={`flex items-center gap-2 py-2 px-4 rounded-xl text-xs font-bold transition ${
-                activeTab === 'homework'
-                  ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
-              }`}
-            >
-              <BookOpen className="w-4 h-4" />
-              <span>Homework</span>
-            </button>
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800/80 pb-3">
+          <div className="p-1 rounded-2xl bg-slate-900/90 border border-slate-800/80 inline-flex flex-wrap gap-1 backdrop-blur-md">
+            {[
+              { id: 'batches', icon: Layers, label: 'Tuition groups', count: tuitions.length },
+              { id: 'attendance', icon: Calendar, label: 'Class tracker' },
+              { id: 'exams', icon: FileText, label: 'Exams', count: exams.length },
+              { id: 'homework', icon: BookOpen, label: 'Homework' },
+            ].map((tab) => {
+              const Icon = tab.icon;
+              const active = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`flex items-center gap-2 py-2 px-4 rounded-xl text-xs font-semibold transition-all duration-200 ${
+                    active
+                      ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
+                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+                  }`}
+                >
+                  <Icon className="w-3.5 h-3.5" />
+                  <span>{tab.label}</span>
+                  {tab.count !== undefined && tab.count > 0 && (
+                    <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${active ? 'bg-indigo-500/40 text-white' : 'bg-slate-800 text-slate-400'}`}>
+                      {tab.count}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
           </div>
 
           <div className="flex items-center gap-2">
@@ -447,14 +453,12 @@ export default function TutorDashboard() {
                   setSelectedBatchToEdit(null);
                   setBatchModalOpen(true);
                 }}
-                className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs flex items-center gap-1.5 shadow-md shadow-indigo-600/20 transition"
+                className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs flex items-center gap-1.5 shadow-md shadow-indigo-600/20 transition active:scale-[0.98]"
               >
                 <Plus className="w-4 h-4" />
                 <span>New tuition group</span>
               </button>
             )}
-
-
           </div>
         </div>
 

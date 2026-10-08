@@ -14,7 +14,7 @@ import {
   Trash2,
   X,
 } from 'lucide-react';
-import { api } from '../../api/client';
+import { api, getMediaUrl } from '../../api/client';
 import { notify } from '../../utils/toast';
 import { parseQuestions } from '../../utils/mcqParser';
 import { pasteWithLatex } from '../../utils/clipboard';
@@ -171,7 +171,7 @@ function QuestionCard({ q, index, onChange, onRemove, onDuplicate }) {
 
           {q.image_url && SAFE_IMAGE.test(q.image_url) && (
             <div className="relative inline-block">
-              <img src={q.image_url} alt={`Question ${index + 1}`} className="max-h-48 rounded-lg border border-slate-700 bg-white" />
+              <img src={getMediaUrl(q.image_url)} alt={`Question ${index + 1}`} className="max-h-48 rounded-lg border border-slate-700 bg-white" />
               <button
                 type="button"
                 onClick={() => set({ image_url: '' })}
