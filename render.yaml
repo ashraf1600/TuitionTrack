@@ -1,8 +1,17 @@
 # Render blueprint for TuitionTrack:
-# 1. tuitiontrack-api: Django REST API backend (Python Web Service)
-# 2. tuitiontrack-web: React + Vite Single Page Application (Static Site)
+# 1. tuitiontrack-db:  PostgreSQL Database (Managed by Render)
+# 2. tuitiontrack-api: Django REST API backend (Python Web Service)
+# 3. tuitiontrack-web: React + Vite Single Page Application (Static Site)
 #
 # In Render Dashboard: New + → Blueprint → select this repository.
+
+databases:
+  # ── PostgreSQL Database (Render Managed) ──
+  - name: tuitiontrack-db
+    databaseName: tuitiontrack
+    user: tuitiontrack
+    plan: free            # Free for 30 days. To keep it permanently, change plan to "starter" ($7/month)
+    region: singapore     # Must match the web service region for internal private networking
 
 services:
   # ── Backend Web Service (Django REST Framework) ──
@@ -10,7 +19,7 @@ services:
     name: tuitiontrack-api
     runtime: python
     plan: free            # Sleeps after ~15 mins idle; "starter" stays awake
-    region: singapore     # Choose Singapore, Oregon, Ohio, or Frankfurt
+    region: singapore     # Same region as tuitiontrack-db
     rootDir: backend
     buildCommand: bash build.sh
     startCommand: gunicorn config.wsgi:application --bind 0.0.0.0:$PORT --workers 2 --timeout 60
@@ -27,11 +36,12 @@ services:
       - key: REFRESH_TOKEN_LIFETIME_DAYS
         value: "30"
 
-      # ── Database Connection ──
-      # Supabase (recommended: Connect → Session pooler), Neon, or Render PostgreSQL:
-      # e.g., postgresql://postgres.<ref>:<password>@aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres
+      # ── Database Connection (Render Managed PostgreSQL) ──
+      # Automatically connects to tuitiontrack-db over Render's low-latency internal network:
       - key: DATABASE_URL
-        sync: false
+        fromDatabase:
+          name: tuitiontrack-db
+          property: connectionString
 
       # ── Frontend & CORS ──
       # Settings automatically permit all *.onrender.com domains for CORS & CSRF.
