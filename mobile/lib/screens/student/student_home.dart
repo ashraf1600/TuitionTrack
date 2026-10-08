@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/api.dart';
+import '../../core/connect.dart' show HomeworkItem;
 import '../../core/format.dart';
 import '../../core/json.dart';
 import '../../core/repo.dart';
@@ -11,16 +12,18 @@ import '../../widgets/ui.dart';
 import '../common/cycle_progress.dart';
 import '../common/leaderboard_screen.dart';
 import '../common/notifications.dart';
+import 'homework_card.dart';
 import 'connect_by_code.dart';
 import 'exam_result_screen.dart';
 import 'exam_take_screen.dart';
 import 'tutors_screen.dart';
 
 class _StudentData {
-  _StudentData(this.tuitions, this.connections, this.exams);
+  _StudentData(this.tuitions, this.connections, this.exams, this.homework);
   final List<Json> tuitions;
   final List<Json> connections;
   final List<Json> exams;
+  final List<HomeworkItem> homework;
 }
 
 /// The student's app: their groups and class progress, their tutors, and their exams.
@@ -37,21 +40,49 @@ class _StudentHomeState extends State<StudentHome> {
 
   Future<_StudentData> _load() async {
     final repo = context.read<Repo>();
-    final results = await Future.wait([repo.tuitions(), repo.connections(), repo.exams()]);
-    return _StudentData(results[0], results[1], results[2]);
+    final results = await Future.wait([
+      repo.tuitions(),
+      repo.connections(),
+      repo.exams(),
+      repo.homework(),
+    ]);
+    final homework = results[3]
+        .map(HomeworkItem.fromJson)
+        .toList()
+      ..sort((a, b) => a.dueDate.compareTo(b.dueDate));
+    return _StudentData(results[0], results[1], results[2], homework);
+  }
+
+  String _title() {
+    switch (_tab) {
+      case 1:
+        return 'Exams & assignments';
+      case 2:
+        return 'Homework';
+      case 0:
+      default:
+        return 'Hello, ${context.read<Session>().displayName}';
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final session = context.watch<Session>();
     return Scaffold(
-      appBar: AppBar(title: Text(_tab == 0 ? 'Hello, ${session.displayName}' : 'Exams & assignments'), actions: homeActions(context)),
+      appBar: AppBar(title: Text(_title()), actions: homeActions(context)),
       body: Loader<_StudentData>(
         key: _loader,
         load: _load,
-        builder: (context, data, reload) => _tab == 0
-            ? _GroupsTab(data: data, reload: reload)
-            : _ExamsTab(exams: data.exams, reload: reload),
+        builder: (context, data, reload) {
+          Widget body;
+          if (_tab == 0) {
+            body = _GroupsTab(data: data, reload: reload);
+          } else if (_tab == 1) {
+            body = _ExamsTab(exams: data.exams, reload: reload);
+          } else {
+            body = _HomeworkTab(items: data.homework, reload: reload);
+          }
+          return body;
+        },
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _tab,
@@ -62,6 +93,7 @@ class _StudentHomeState extends State<StudentHome> {
         destinations: const [
           NavigationDestination(icon: Icon(Icons.groups_outlined), selectedIcon: Icon(Icons.groups), label: 'My classes'),
           NavigationDestination(icon: Icon(Icons.assignment_outlined), selectedIcon: Icon(Icons.assignment), label: 'Exams'),
+          NavigationDestination(icon: Icon(Icons.menu_book_outlined), selectedIcon: Icon(Icons.menu_book), label: 'Homework'),
         ],
       ),
     );
@@ -628,6 +660,37 @@ class _ExamCard extends StatelessWidget {
             ),
         ],
       ),
+    );
+  }
+}
+
+// ── Homework ─────────────────────────────────────────────────────────────────
+
+/// Student homework dashboard: pending + done, ordered by due date.
+class _HomeworkTab extends StatelessWidget {
+  const _HomeworkTab({required this.items, required this.reload});
+  final List<HomeworkItem> items;
+  final Future<void> Function() reload;
+
+  @override
+  Widget build(BuildContext context) {
+    if (items.isEmpty) {
+      return const PageBody(children: [
+        EmptyState(
+          icon: Icons.menu_book_outlined,
+          title: 'No homework yet',
+          message: 'When your tutor sets homework from class, it appears here with a due date.',
+        ),
+      ]);
+    }
+    return PageBody(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+      children: [
+        for (final hw in items) ...[
+          HomeworkCard(hw: hw, isTutor: false, onChanged: reload),
+          gap12,
+        ],
+      ],
     );
   }
 }
