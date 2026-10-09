@@ -78,8 +78,17 @@ else:
 
     # Development only:
     # Allows a phone on the same Wi-Fi network to access Django.
+    # Uses this machine's actual LAN address (not a stale hardcoded one).
     if DEBUG:
-        ALLOWED_HOSTS.append('192.168.101.17')
+        try:
+            import socket
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+                s.connect(('8.8.8.8', 80))
+                _lan_ip = s.getsockname()[0]
+            if _lan_ip and _lan_ip not in ALLOWED_HOSTS:
+                ALLOWED_HOSTS.append(_lan_ip)
+        except OSError:
+            pass
 
 
 # Render provides its own public hostname.
