@@ -18,7 +18,7 @@ class LeaderboardScreen extends StatelessWidget {
     final repo = context.read<Repo>();
     final myId = context.read<Session>().user?.str('id');
     return Scaffold(
-      appBar: AppBar(title: const Text('Leaderboard')),
+      appBar: AppBar(title: Text('Leaderboard')),
       body: Loader<Json>(
         load: () => repo.leaderboard(examId),
         builder: (context, data, reload) {
@@ -28,7 +28,7 @@ class LeaderboardScreen extends StatelessWidget {
               Text(data.str('exam_title', title), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
               Text(
                 [if (data.str('tuition_title').isNotEmpty) data.str('tuition_title'), 'Out of ${trimNumber(data.number('total_marks'))}'].join(' · '),
-                style: const TextStyle(color: AppColors.muted),
+                style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
               ),
               gap16,
               if (rows.isEmpty)
@@ -67,8 +67,8 @@ class _Row extends StatelessWidget {
       color: mine ? AppColors.primary.withValues(alpha: 0.12) : null,
       child: ListTile(
         leading: CircleAvatar(
-          backgroundColor: (medal ?? AppColors.card).withValues(alpha: medal == null ? 1 : 0.2),
-          child: Text('$rank', style: TextStyle(fontWeight: FontWeight.w800, color: medal ?? AppColors.muted)),
+          backgroundColor: (medal ?? Theme.of(context).colorScheme.surfaceContainerHighest).withValues(alpha: medal == null ? 1 : 0.2),
+          child: Text('$rank', style: TextStyle(fontWeight: FontWeight.w800, color: medal ?? Theme.of(context).colorScheme.onSurfaceVariant)),
         ),
         title: Text(
           '${row.str('student_name')}${mine ? ' (you)' : ''}',
@@ -82,11 +82,11 @@ class _Row extends StatelessWidget {
                   if (!row.flag('is_graded')) 'not fully marked',
                   if (row.str('status') == 'DELAYED') 'late',
                 ].join(' · '),
-          style: TextStyle(color: missed ? AppColors.danger : AppColors.muted),
+          style: TextStyle(color: missed ? AppColors.danger : Theme.of(context).colorScheme.onSurfaceVariant),
         ),
         trailing: Text(
           trimNumber(row.number('obtained_marks')),
-          style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: missed ? AppColors.faint : AppColors.success),
+          style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: missed ? Theme.of(context).colorScheme.outlineVariant : AppColors.success),
         ),
       ),
     );

@@ -33,8 +33,8 @@ class CycleProgress extends StatelessWidget {
         Row(
           children: [
             Text('Cycle #${cycle.integer('cycle_number')}', style: const TextStyle(fontWeight: FontWeight.w700)),
-            const Spacer(),
-            Text('$completed of $total classes', style: const TextStyle(color: AppColors.muted, fontSize: 13)),
+            Spacer(),
+            Text('$completed of $total classes', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13)),
           ],
         ),
         const SizedBox(height: 8),
@@ -61,20 +61,20 @@ class CycleProgress extends StatelessWidget {
                   height: 30,
                   alignment: Alignment.center,
                   decoration: BoxDecoration(
-                    color: c.flag('completed') ? AppColors.success.withValues(alpha: 0.2) : AppColors.card,
-                    border: Border.all(color: c.flag('completed') ? AppColors.success : AppColors.border),
+                    color: c.flag('completed') ? AppColors.success.withValues(alpha: 0.2) : Theme.of(context).colorScheme.surfaceContainerHighest,
+                    border: Border.all(color: c.flag('completed') ? AppColors.success : Theme.of(context).colorScheme.outline),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: c.flag('completed')
                       ? const Icon(Icons.check, size: 16, color: AppColors.success)
-                      : Text('${classNoOf(c)}', style: const TextStyle(fontSize: 12, color: AppColors.muted)),
+                      : Text('${classNoOf(c)}', style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant)),
                 ),
               ),
           ],
         ),
         if (log.isNotEmpty) ...[
           const SizedBox(height: 12),
-          const Text('Recent classes', style: TextStyle(color: AppColors.muted, fontSize: 12, fontWeight: FontWeight.w600)),
+          Text('Recent classes', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 12, fontWeight: FontWeight.w600)),
           for (final c in log)
             Padding(
               padding: const EdgeInsets.only(top: 4),

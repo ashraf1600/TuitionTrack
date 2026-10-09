@@ -46,27 +46,27 @@ class _ForcePasswordScreenState extends State<ForcePasswordScreen> {
     final session = context.watch<Session>();
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Choose your password'),
-        actions: [TextButton(onPressed: session.logout, child: const Text('Sign out'))],
+        title: Text('Choose your password'),
+        actions: [TextButton(onPressed: session.logout, child: Text('Sign out'))],
       ),
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
             padding: const EdgeInsets.all(20),
             child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 460),
+              constraints: BoxConstraints(maxWidth: 460),
               child: Form(
                 key: _form,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    const Icon(Icons.key_rounded, size: 44, color: AppColors.warning),
+                    Icon(Icons.key_rounded, size: 44, color: AppColors.warning),
                     gap12,
                     Text(
                       'Hello ${session.displayName}. Your account has a temporary password. '
                       'Choose your own before you continue — only you will know it.',
                       textAlign: TextAlign.center,
-                      style: const TextStyle(color: AppColors.muted),
+                      style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
                     ),
                     gap24,
                     if (_error != null) ...[Banner2(_error!, color: AppColors.danger, icon: Icons.error_outline), gap12],

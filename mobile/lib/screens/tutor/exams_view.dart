@@ -75,14 +75,14 @@ class _ExamCard extends StatelessWidget {
   String get _id => exam.str('id');
 
   (String, Color) get _status => switch (exam.str('dynamic_status')) {
-        'Draft' => ('Draft', AppColors.muted),
+        'Draft' => ('Draft', AppColors.faint),
         'Scheduled' => ('Scheduled', AppColors.primarySoft),
         'Running' => ('Open now', AppColors.success),
         'Late' => ('Late work open', AppColors.warning),
         'Submitted' => ('Submitted', AppColors.success),
         'Delayed' => ('Submitted late', AppColors.warning),
         'Missed' => ('Not submitted', AppColors.danger),
-        _ => ('Closed', AppColors.muted),
+        _ => ('Closed', AppColors.faint),
       };
 
   /// What the results button says and does next, following the exam's publication rule.
@@ -143,7 +143,7 @@ class _ExamCard extends StatelessWidget {
             ListTile(leading: const Icon(Icons.copy_outlined), title: const Text('For the same students'), onTap: () => Navigator.pop(context, '')),
             for (final t in tuitions.where((t) => t.str('id') != exam.str('tuition_id')))
               ListTile(
-                leading: const Icon(Icons.groups_outlined),
+                leading: Icon(Icons.groups_outlined),
                 title: Text('For ${t.str('title')}'),
                 onTap: () => Navigator.pop(context, t.str('id')),
               ),
@@ -207,12 +207,12 @@ class _ExamCard extends StatelessWidget {
               '${trimNumber(exam.number('total_marks'))} marks',
               if (exam.integer('mcq_count') > 0) '${exam.integer('mcq_count')} MCQ',
             ].join(' · '),
-            style: const TextStyle(color: AppColors.muted, fontSize: 13),
+            style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
           ),
-          const SizedBox(height: 4),
+          SizedBox(height: 4),
           Text(
             '${fmtDateTime(exam.date('start_time'))}  →  ${fmtDateTime(exam.date('end_time'))}',
-            style: const TextStyle(color: AppColors.muted, fontSize: 13),
+            style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
           ),
           if (published)
             Padding(

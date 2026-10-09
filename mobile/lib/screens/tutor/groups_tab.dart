@@ -21,7 +21,7 @@ class GroupsTab extends StatelessWidget {
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 96),
         children: [
           if (tuitions.isEmpty)
-            const EmptyState(
+            EmptyState(
               icon: Icons.groups_outlined,
               title: 'No tuition groups yet',
               message: 'A group is a batch of students who share classes, a fee and a cycle. Tap “New group” to create your first one.',
@@ -45,7 +45,7 @@ class GroupsTab extends StatelessWidget {
                       Row(
                         children: [
                           Expanded(child: Text(tuition.str('title'), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700))),
-                          const Icon(Icons.chevron_right, color: AppColors.muted),
+                          Icon(Icons.chevron_right, color: Theme.of(context).colorScheme.onSurfaceVariant),
                         ],
                       ),
                       Text(
@@ -54,7 +54,7 @@ class GroupsTab extends StatelessWidget {
                           '${tuition.integer('enrolled_count')} student${tuition.integer('enrolled_count') == 1 ? '' : 's'}',
                           'Cycle #${cycle?.integer('cycle_number') ?? 1} · $completed/$total classes',
                         ].join(' · '),
-                        style: const TextStyle(color: AppColors.muted, fontSize: 13),
+                        style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
                       ),
                       gap8,
                       ClipRRect(
@@ -65,7 +65,7 @@ class GroupsTab extends StatelessWidget {
                       Row(
                         children: [
                           Text(taka(wallet.number('earned_revenue')), style: const TextStyle(fontWeight: FontWeight.w800, color: AppColors.success)),
-                          Text(' earned of ${taka(tuition.number('total_fee'))}', style: const TextStyle(color: AppColors.muted, fontSize: 13)),
+                          Text(' earned of ${taka(tuition.number('total_fee'))}', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13)),
                         ],
                       ),
                       if (routine.isNotEmpty) ...[

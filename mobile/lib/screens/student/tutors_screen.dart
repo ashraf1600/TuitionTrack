@@ -6,7 +6,6 @@ import 'package:provider/provider.dart';
 
 import '../../core/connect.dart';
 import '../../core/repo.dart';
-import '../../widgets/theme.dart';
 import '../../widgets/ui.dart';
 import 'tutor_detail_screen.dart';
 
@@ -90,7 +89,7 @@ class _TutorCard extends StatelessWidget {
           child: url.isEmpty ? const Icon(Icons.person, size: 30) : null,
         ),
         title: Text(tutor.displayName, style: GoogleFonts.inter(fontWeight: FontWeight.w700, fontSize: 17)),
-        subtitle: Text('@${tutor.username}', style: GoogleFonts.inter(color: AppColors.muted, fontSize: 13)),
+        subtitle: Text('@${tutor.username}', style: GoogleFonts.inter(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13)),
         trailing: const Icon(Icons.chevron_right_rounded),
         onTap: () {
           HapticFeedback.lightImpact();

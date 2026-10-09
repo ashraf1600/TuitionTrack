@@ -63,7 +63,7 @@ class _NotificationBellState extends State<NotificationBell> with WidgetsBinding
     final unseen = _items.where((n) => !seen.contains(n.str('id'))).length;
     return IconButton(
       tooltip: unseen == 0 ? 'Notifications' : '$unseen new notifications',
-      icon: Badge(isLabelVisible: unseen > 0, label: Text('$unseen'), child: const Icon(Icons.notifications_outlined)),
+      icon: Badge(isLabelVisible: unseen > 0, label: Text('$unseen'), child: Icon(Icons.notifications_outlined)),
       onPressed: () async {
         await Navigator.push(context, MaterialPageRoute<void>(builder: (_) => NotificationsScreen(items: _items)));
         if (mounted) {
@@ -104,22 +104,22 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         'soon' => (Icons.schedule_outlined, AppColors.primarySoft),
         'result' => (Icons.emoji_events_outlined, AppColors.warning),
         'connection' => (Icons.handshake_outlined, AppColors.primarySoft),
-        _ => (Icons.notifications_outlined, AppColors.muted),
+        _ => (Icons.notifications_outlined, AppColors.faint),
       };
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Notifications')),
+      appBar: AppBar(title: Text('Notifications')),
       body: widget.items.isEmpty
-          ? const Padding(
+          ? Padding(
               padding: EdgeInsets.all(16),
               child: EmptyState(icon: Icons.notifications_none, title: 'Nothing new', message: 'You are all caught up.'),
             )
           : ListView.separated(
               padding: const EdgeInsets.symmetric(vertical: 8),
               itemCount: widget.items.length,
-              separatorBuilder: (_, _) => const Divider(indent: 68),
+              separatorBuilder: (_, _) => Divider(indent: 68),
               itemBuilder: (context, index) {
                 final item = widget.items[index];
                 final (icon, color) = _look(item.str('kind'));
@@ -135,7 +135,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                 return ListTile(
                   leading: CircleAvatar(backgroundColor: color.withValues(alpha: 0.15), child: Icon(icon, color: color)),
                   title: Text(item.str('title'), style: TextStyle(fontWeight: isNew ? FontWeight.w700 : FontWeight.w500)),
-                  subtitle: detail.isEmpty ? null : Text(detail, style: const TextStyle(color: AppColors.muted)),
+                  subtitle: detail.isEmpty ? null : Text(detail, style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant)),
                   trailing: isNew ? const Icon(Icons.circle, size: 10, color: AppColors.primary) : null,
                 );
               },

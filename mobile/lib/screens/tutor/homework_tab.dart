@@ -203,11 +203,11 @@ class _TutorHomeworkRow extends StatelessWidget {
                 const SizedBox(width: 4),
                 Expanded(
                   child: Text(target,
-                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.primarySoft),
+                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.primarySoft),
                       overflow: TextOverflow.ellipsis),
                 ),
                 if (hw.isSharedGroupTask)
-                  const Text('shared', style: TextStyle(fontSize: 11, color: AppColors.muted)),
+                  Text('shared', style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurfaceVariant)),
               ],
             ),
           ),

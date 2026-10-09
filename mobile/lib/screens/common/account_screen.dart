@@ -64,7 +64,7 @@ class _AccountScreenState extends State<AccountScreen> {
     final changed = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
-      builder: (context) => const _ChangePasswordSheet(),
+      builder: (context) => _ChangePasswordSheet(),
     );
     if (changed == true && mounted) showToast(context, 'Password changed. Other devices have been signed out.');
   }
@@ -104,7 +104,7 @@ class _AccountScreenState extends State<AccountScreen> {
     final session = context.watch<Session>();
     final user = session.user ?? {};
     return Scaffold(
-      appBar: AppBar(title: const Text('My account')),
+      appBar: AppBar(title: Text('My account')),
       body: Form(
         key: _form,
         child: PageBody(
@@ -117,23 +117,23 @@ class _AccountScreenState extends State<AccountScreen> {
                     backgroundColor: AppColors.primary.withValues(alpha: 0.25),
                     child: Text(
                       session.displayName.isEmpty ? '?' : session.displayName[0].toUpperCase(),
-                      style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: AppColors.primarySoft),
+                      style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: AppColors.primarySoft),
                     ),
                   ),
-                  const SizedBox(width: 14),
+                  SizedBox(width: 14),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(session.displayName, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
-                        Text('@${user.str('username')} · ${session.isTutor ? 'Tutor' : 'Student'}', style: const TextStyle(color: AppColors.muted)),
+                        Text('@${user.str('username')} · ${session.isTutor ? 'Tutor' : 'Student'}', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant)),
                       ],
                     ),
                   ),
                 ],
               ),
             ),
-            const SectionTitle('My details'),
+            SectionTitle('My details'),
             _field('first_name', 'First name', validator: (v) => (v == null || v.trim().isEmpty) ? 'Required' : null),
             _field('last_name', 'Last name'),
             _field('email', 'Email', type: TextInputType.emailAddress, validator: (value) {
@@ -150,7 +150,7 @@ class _AccountScreenState extends State<AccountScreen> {
               _field('parent_phone', 'Guardian phone', type: TextInputType.phone),
             ],
             BusyButton(onPressed: _save, label: 'Save details', icon: Icons.check),
-            const SectionTitle('Security'),
+            SectionTitle('Security'),
             AppCard(
               padding: EdgeInsets.zero,
               child: Column(
@@ -172,14 +172,14 @@ class _AccountScreenState extends State<AccountScreen> {
                   const Divider(),
                   ListTile(
                     leading: const Icon(Icons.logout, color: AppColors.danger),
-                    title: const Text('Sign out', style: TextStyle(color: AppColors.danger)),
+                    title: Text('Sign out', style: TextStyle(color: AppColors.danger)),
                     onTap: () => session.logout(),
                   ),
                 ],
               ),
             ),
             gap16,
-            Text('Server: ${session.api.baseUrl}', textAlign: TextAlign.center, style: const TextStyle(color: AppColors.faint, fontSize: 12)),
+            Text('Server: ${session.api.baseUrl}', textAlign: TextAlign.center, style: TextStyle(color: Theme.of(context).colorScheme.outlineVariant, fontSize: 12)),
           ],
         ),
       ),

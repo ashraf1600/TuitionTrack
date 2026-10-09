@@ -242,7 +242,7 @@ class _ExamTakeScreenState extends State<ExamTakeScreen> {
                 child: Row(
                   children: [
                     Icon(Icons.timer_outlined, color: timerColor),
-                    const SizedBox(width: 10),
+                    SizedBox(width: 10),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -265,7 +265,7 @@ class _ExamTakeScreenState extends State<ExamTakeScreen> {
                       children: [
                         Text('${trimNumber(exam.number('total_marks'))} marks', style: const TextStyle(fontWeight: FontWeight.w700)),
                         if (_questions.isNotEmpty)
-                          Text('${_answers.length} of ${_questions.length} answered', style: const TextStyle(color: AppColors.muted, fontSize: 12)),
+                          Text('${_answers.length} of ${_questions.length} answered', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 12)),
                       ],
                     ),
                   ],
@@ -401,10 +401,10 @@ class _ExamTakeScreenState extends State<ExamTakeScreen> {
                 inMutuallyExclusiveGroup: true,
                 checked: chosen == i,
                 child: Material(
-                  color: chosen == i ? AppColors.primary.withValues(alpha: 0.2) : AppColors.card.withValues(alpha: 0.5),
+                  color: chosen == i ? AppColors.primary.withValues(alpha: 0.2) : Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
-                    side: BorderSide(color: chosen == i ? AppColors.primary : AppColors.border),
+                    side: BorderSide(color: chosen == i ? AppColors.primary : Theme.of(context).colorScheme.outline),
                   ),
                   clipBehavior: Clip.antiAlias,
                   child: InkWell(
@@ -418,7 +418,7 @@ class _ExamTakeScreenState extends State<ExamTakeScreen> {
                         children: [
                           CircleAvatar(
                             radius: 12,
-                            backgroundColor: chosen == i ? AppColors.primary : AppColors.border,
+                            backgroundColor: chosen == i ? AppColors.primary : Theme.of(context).colorScheme.outline,
                             child: Text(
                               i < _letters.length ? _letters[i] : '${i + 1}',
                               style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Colors.white),

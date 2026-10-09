@@ -39,14 +39,14 @@ class HomeTab extends StatelessWidget {
           SectionTitle(
             'Earnings by group',
             icon: Icons.account_balance_wallet_outlined,
-            trailing: TextButton(onPressed: () => onOpenTab(1), child: const Text('All groups')),
+            trailing: TextButton(onPressed: () => onOpenTab(1), child: Text('All groups')),
           ),
           if (data.wallet.maps('tuition_breakdowns').isEmpty)
             EmptyState(
               icon: Icons.groups_outlined,
               title: 'No tuition groups yet',
               message: 'Create a group, add students, and mark classes as you teach. Your earnings build up here.',
-              action: FilledButton(onPressed: () => onOpenTab(1), child: const Text('Go to groups')),
+              action: FilledButton(onPressed: () => onOpenTab(1), child: Text('Go to groups')),
             )
           else
             for (final row in data.wallet.maps('tuition_breakdowns')) ...[
@@ -60,16 +60,16 @@ class HomeTab extends StatelessWidget {
                   children: [
                     Row(
                       children: [
-                        Expanded(child: Text(row.str('tuition_title'), style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15))),
-                        Text(taka(row.number('earned')), style: const TextStyle(fontWeight: FontWeight.w800, color: AppColors.success)),
-                        Text(' of ${taka(row.number('total_fee'))}', style: const TextStyle(color: AppColors.muted, fontSize: 12)),
+                        Expanded(child: Text(row.str('tuition_title'), style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15))),
+                        Text(taka(row.number('earned')), style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.success)),
+                        Text(' of ${taka(row.number('total_fee'))}', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 12)),
                       ],
                     ),
-                    const SizedBox(height: 2),
+                    SizedBox(height: 2),
                     Text(
                       'Cycle #${row.integer('cycle_number')} · ${row.integer('completed_classes')}/${row.integer('total_classes')} classes · '
                       '${row.integer('student_count')} student${row.integer('student_count') == 1 ? '' : 's'} · ${taka(row.number('per_class_rate'))} per class',
-                      style: const TextStyle(color: AppColors.muted, fontSize: 12),
+                      style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 12),
                     ),
                     gap8,
                     ClipRRect(
@@ -86,7 +86,7 @@ class HomeTab extends StatelessWidget {
               gap8,
             ],
           if (data.wallet.maps('student_breakdowns').isNotEmpty) ...[
-            const SectionTitle('One-to-one students', subtitle: 'Older individual cycles, not part of a group.'),
+            SectionTitle('One-to-one students', subtitle: 'Older individual cycles, not part of a group.'),
             for (final row in data.wallet.maps('student_breakdowns')) ...[
               AppCard(
                 padding: const EdgeInsets.all(12),
@@ -97,11 +97,11 @@ class HomeTab extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(row.str('student_name'), style: const TextStyle(fontWeight: FontWeight.w600)),
-                          Text('${row.integer('completed_classes')}/${row.integer('total_classes')} classes', style: const TextStyle(color: AppColors.muted, fontSize: 12)),
+                          Text('${row.integer('completed_classes')}/${row.integer('total_classes')} classes', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 12)),
                         ],
                       ),
                     ),
-                    Text(taka(row.number('earned')), style: const TextStyle(fontWeight: FontWeight.w800, color: AppColors.success)),
+                    Text(taka(row.number('earned')), style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.success)),
                   ],
                 ),
               ),
@@ -141,7 +141,7 @@ class _WalletCard extends StatelessWidget {
             ],
           ),
           gap12,
-          const Text('Earned in current cycles', style: TextStyle(color: AppColors.muted, fontSize: 12)),
+          Text('Earned in current cycles', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 12)),
           Text(taka(earned), style: const TextStyle(fontSize: 32, fontWeight: FontWeight.w800, color: AppColors.success)),
           gap8,
           ClipRRect(
@@ -150,7 +150,7 @@ class _WalletCard extends StatelessWidget {
               value: total <= 0 ? 0 : earned / total,
               minHeight: 8,
               color: AppColors.success,
-              backgroundColor: AppColors.card,
+              backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
               semanticsLabel: 'Share of current cycles already earned',
             ),
           ),
@@ -259,9 +259,9 @@ class _TodayClassesState extends State<_TodayClasses> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const SectionTitle("Today's classes", icon: Icons.event_available_outlined),
+        SectionTitle("Today's classes", icon: Icons.event_available_outlined),
         if (today.isEmpty)
-          const Text('No classes in your routine today.', style: TextStyle(color: AppColors.muted))
+          Text('No classes in your routine today.', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant))
         else
           for (final row in today) ...[
             AppCard(
@@ -272,20 +272,20 @@ class _TodayClassesState extends State<_TodayClasses> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(row.tuition.str('title'), style: const TextStyle(fontWeight: FontWeight.w700)),
+                        Text(row.tuition.str('title'), style: TextStyle(fontWeight: FontWeight.w700)),
                         Text(
                           row.recorded
                               ? 'Recorded for today'
                               : row.nextClassNo == null
                                   ? 'This cycle is complete'
                                   : '${to12h(row.time)} · class ${row.nextClassNo} of the cycle',
-                          style: TextStyle(color: row.recorded ? AppColors.success : AppColors.muted, fontSize: 13),
+                          style: TextStyle(color: row.recorded ? AppColors.success : Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
                         ),
                       ],
                     ),
                   ),
                   if (row.recorded)
-                    const Icon(Icons.check_circle, color: AppColors.success)
+                    Icon(Icons.check_circle, color: AppColors.success)
                   else if (row.nextClassNo != null)
                     BusyButton(onPressed: () => record(row), label: 'Mark done', icon: Icons.check),
                 ],
@@ -295,7 +295,7 @@ class _TodayClassesState extends State<_TodayClasses> {
           ],
         if (missed.isNotEmpty) ...[
           gap8,
-          const Text('Not recorded in the last week', style: TextStyle(color: AppColors.warning, fontWeight: FontWeight.w700)),
+          Text('Not recorded in the last week', style: TextStyle(color: AppColors.warning, fontWeight: FontWeight.w700)),
           gap8,
           for (final row in missed) ...[
             AppCard(
@@ -308,14 +308,14 @@ class _TodayClassesState extends State<_TodayClasses> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(row.tuition.str('title'), style: const TextStyle(fontWeight: FontWeight.w600)),
-                        Text('${fmtDate(row.day)} · was it held?', style: const TextStyle(color: AppColors.muted, fontSize: 13)),
+                        Text('${fmtDate(row.day)} · was it held?', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13)),
                       ],
                     ),
                   ),
                   TextButton(onPressed: () => record(row), child: const Text('Yes, record')),
                   IconButton(
                     tooltip: 'No class that day',
-                    icon: const Icon(Icons.close, size: 20),
+                    icon: Icon(Icons.close, size: 20),
                     onPressed: () async {
                       await settings.setList(_dismissKey, [...dismissed, row.key].take(200).toList());
                       if (mounted) setState(() {});
@@ -349,10 +349,10 @@ class _Requests extends StatelessWidget {
           child: ListView(
             shrinkWrap: true,
             children: [
-              ListTile(title: Text('Add ${request.str('student_name')} to which group?', style: const TextStyle(fontWeight: FontWeight.w700))),
+              ListTile(title: Text('Add ${request.str('student_name')} to which group?', style: TextStyle(fontWeight: FontWeight.w700))),
               for (final t in tuitions)
                 ListTile(
-                  leading: const Icon(Icons.groups_outlined),
+                  leading: Icon(Icons.groups_outlined),
                   title: Text(t.str('title')),
                   subtitle: Text('${t.integer('enrolled_count')} student${t.integer('enrolled_count') == 1 ? '' : 's'}'),
                   onTap: () => Navigator.pop(context, t.str('id')),
@@ -383,7 +383,7 @@ class _Requests extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(request.str('student_name'), style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
+                Text(request.str('student_name'), style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
                 Builder(builder: (context) {
                   final s = request.obj('student') ?? {};
                   final details = [
@@ -392,7 +392,7 @@ class _Requests extends StatelessWidget {
                     if (s.str('institution').isNotEmpty) s.str('institution'),
                     if (s.str('phone').isNotEmpty) s.str('phone'),
                   ].join(' · ');
-                  return Text(details, style: const TextStyle(color: AppColors.muted, fontSize: 13));
+                  return Text(details, style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13));
                 }),
                 if (request.str('message').isNotEmpty) ...[
                   gap8,

@@ -33,7 +33,7 @@ class SubmissionsScreen extends StatelessWidget {
         'late' => ('Late — to mark', AppColors.warning, Icons.rate_review_outlined),
         'in_progress' => ('Working on it', AppColors.primarySoft, Icons.edit_note),
         'missing' => ('Did not submit', AppColors.danger, Icons.cancel_outlined),
-        _ => ('Not started', AppColors.muted, Icons.hourglass_empty),
+        _ => ('Not started', AppColors.faint, Icons.hourglass_empty),
       };
 
   @override
@@ -58,7 +58,7 @@ class SubmissionsScreen extends StatelessWidget {
                   children: [
                     Stat(label: 'Submitted', value: '${data.roster.integer('count')} of ${data.roster.integer('assigned_count')}'),
                     Stat(label: 'Marked', value: '${data.roster.integer('graded_count')}', color: AppColors.success),
-                    Stat(label: 'To mark', value: '$toMark', color: toMark > 0 ? AppColors.warning : AppColors.text),
+                    Stat(label: 'To mark', value: '$toMark', color: toMark > 0 ? AppColors.warning : Theme.of(context).colorScheme.onSurface),
                   ],
                 ),
               ),
@@ -71,7 +71,7 @@ class SubmissionsScreen extends StatelessWidget {
                         'SCHEDULED' => 'Students see marks when results are published automatically.',
                         _ => 'Results are hidden from students until you publish them.',
                       },
-                style: const TextStyle(color: AppColors.muted, fontSize: 13),
+                style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
               ),
               gap16,
               if (roster.isEmpty)
@@ -255,7 +255,7 @@ class _GradeScreenState extends State<GradeScreen> {
             runSpacing: 6,
             children: [
               Pill('Submitted ${fmtDateTime(submission.date('submitted_at'))}'),
-              if (submission.str('status') == 'DELAYED') const Pill('Late', color: AppColors.warning),
+              if (submission.str('status') == 'DELAYED') Pill('Late', color: AppColors.warning),
               if (submission.date('started_at') != null && submission.date('submitted_at') != null)
                 Pill('Took ${submission.date('submitted_at')!.difference(submission.date('started_at')!).inMinutes} min', icon: Icons.timer_outlined),
             ],
@@ -267,7 +267,9 @@ class _GradeScreenState extends State<GradeScreen> {
                 final (q, chosen, correct) = review[i];
                 final options = q.strings('options');
                 final right = chosen != null && chosen == correct;
-                final color = chosen == null ? AppColors.faint : (right ? AppColors.success : AppColors.danger);
+                final color = chosen == null
+                    ? Theme.of(context).colorScheme.outlineVariant
+                    : tone(context, right ? AppColors.success : AppColors.danger);
                 String option(int? index) => index == null || index < 0 || index >= options.length ? '' : '${_letters[index]}. ${options[index]}';
                 return AppCard(
                   padding: const EdgeInsets.all(12),
@@ -282,12 +284,14 @@ class _GradeScreenState extends State<GradeScreen> {
                           children: [
                             MathText('${i + 1}. ${q.str('question')}', style: const TextStyle(fontWeight: FontWeight.w600)),
                             if (q.str('image_url').isNotEmpty) ...[gap8, ServerImage(q.str('image_url'), height: 140)],
-                            const SizedBox(height: 4),
+                            SizedBox(height: 4),
                             if (chosen == null)
-                              const Text('Left blank', style: TextStyle(color: AppColors.faint, fontSize: 13))
+                              Text('Left blank',
+                                  style: TextStyle(
+                                      color: Theme.of(context).colorScheme.outlineVariant, fontSize: 13))
                             else
                               MathText('Answered: ${option(chosen)}', style: TextStyle(color: color, fontSize: 13)),
-                            if (!right && correct != null) MathText('Correct: ${option(correct)}', style: const TextStyle(color: AppColors.success, fontSize: 13)),
+                            if (!right && correct != null) MathText('Correct: ${option(correct)}', style: TextStyle(color: AppColors.success, fontSize: 13)),
                           ],
                         ),
                       ),
@@ -299,13 +303,13 @@ class _GradeScreenState extends State<GradeScreen> {
             ],
           ],
           if (_hasWritten) ...[
-            const SectionTitle('Written part'),
+            SectionTitle('Written part'),
             if (hasPaper)
               AppCard(
                 padding: EdgeInsets.zero,
                 child: ExpansionTile(
-                  shape: const Border(),
-                  title: const Text('Show the question paper'),
+                  shape: Border(),
+                  title: Text('Show the question paper'),
                   childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                   expandedCrossAxisAlignment: CrossAxisAlignment.start,
                   children: [HtmlMath(paper, baseUrl: api.baseUrl)],
@@ -313,16 +317,16 @@ class _GradeScreenState extends State<GradeScreen> {
               ),
             gap8,
             if (submission.str('text_answer').isEmpty && images.isEmpty)
-              const Banner2('This student did not hand in a written answer.', color: AppColors.warning)
+              Banner2('This student did not hand in a written answer.', color: AppColors.warning)
             else ...[
               if (submission.str('text_answer').isNotEmpty) ...[
-                const Text('Typed answer', style: TextStyle(color: AppColors.muted, fontSize: 12, fontWeight: FontWeight.w600)),
+                Text('Typed answer', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 12, fontWeight: FontWeight.w600)),
                 gap8,
                 AppCard(child: SelectableText(submission.str('text_answer'), style: const TextStyle(height: 1.4))),
                 gap12,
               ],
               if (images.isNotEmpty) ...[
-                Text('Answer sheets (${images.length}) — tap to enlarge', style: const TextStyle(color: AppColors.muted, fontSize: 12, fontWeight: FontWeight.w600)),
+                Text('Answer sheets (${images.length}) — tap to enlarge', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 12, fontWeight: FontWeight.w600)),
                 gap8,
                 for (var i = 0; i < images.length; i++) ...[ServerImage(images[i], height: 420, label: 'Page ${i + 1}'), gap8],
               ],

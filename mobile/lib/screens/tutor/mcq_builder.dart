@@ -110,7 +110,7 @@ class McqBuilder extends StatelessWidget {
         ),
         gap12,
         if (questions.isEmpty)
-          const EmptyState(
+          EmptyState(
             icon: Icons.quiz_outlined,
             title: 'No questions yet',
             message: 'Paste a whole set from ChatGPT, type one, or start from a photo of a question.',
@@ -179,14 +179,14 @@ class _QuestionCard extends StatelessWidget {
                   child: Text('${index + 1}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: AppColors.primarySoft)),
                 ),
               ),
-              const SizedBox(width: 10),
+              SizedBox(width: 10),
               Expanded(
                 child: Padding(
                   padding: const EdgeInsets.only(top: 6),
                   child: question.str('question').isEmpty
                       ? Text(
                           question.str('image_url').isEmpty ? 'No question text yet' : 'Picture question',
-                          style: const TextStyle(color: AppColors.muted, fontStyle: FontStyle.italic),
+                          style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontStyle: FontStyle.italic),
                         )
                       : MathText(question.str('question'), style: const TextStyle(fontWeight: FontWeight.w600, height: 1.4)),
                 ),
@@ -224,7 +224,7 @@ class _QuestionCard extends StatelessWidget {
                   color: correct == i ? AppColors.success.withValues(alpha: 0.14) : Colors.transparent,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(10),
-                    side: BorderSide(color: correct == i ? AppColors.success.withValues(alpha: 0.6) : AppColors.border),
+                    side: BorderSide(color: correct == i ? AppColors.success.withValues(alpha: 0.6) : Theme.of(context).colorScheme.outline),
                   ),
                   clipBehavior: Clip.antiAlias,
                   child: InkWell(
@@ -236,7 +236,7 @@ class _QuestionCard extends StatelessWidget {
                           Icon(
                             correct == i ? Icons.check_circle : Icons.radio_button_unchecked,
                             size: 18,
-                            color: correct == i ? AppColors.success : AppColors.faint,
+                            color: correct == i ? AppColors.success : Theme.of(context).colorScheme.outlineVariant,
                           ),
                           const SizedBox(width: 8),
                           Text(_letters[i], style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13)),
@@ -244,7 +244,7 @@ class _QuestionCard extends StatelessWidget {
                           Expanded(
                             child: options[i].trim().isEmpty
                                 ? const Text('Empty option — tap to edit', style: TextStyle(color: AppColors.warning, fontStyle: FontStyle.italic, fontSize: 13))
-                                : MathText(options[i], style: const TextStyle(fontSize: 14)),
+                                : MathText(options[i], style: TextStyle(fontSize: 14)),
                           ),
                         ],
                       ),
@@ -256,7 +256,7 @@ class _QuestionCard extends StatelessWidget {
           if (question.str('explanation').isNotEmpty)
             Padding(
               padding: const EdgeInsets.only(top: 2, right: 8),
-              child: MathText('Explanation: ${question.str('explanation')}', style: const TextStyle(color: AppColors.muted, fontSize: 13)),
+              child: MathText('Explanation: ${question.str('explanation')}', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13)),
             ),
           if (problems.isNotEmpty)
             Padding(
@@ -325,11 +325,11 @@ class _PasteScreenState extends State<_PasteScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const Text(
+              Text(
                 'Paste any number of questions from ChatGPT, a website or a document. Numbered questions with options A–D (or ক–ঘ) '
                 'are recognised, on separate lines or on one line. Maths is kept exactly as written. '
                 'In ChatGPT, use its Copy button so the formulas come across as LaTeX.',
-                style: TextStyle(color: AppColors.muted, fontSize: 13),
+                style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
               ),
               gap12,
               OutlinedButton.icon(onPressed: _fromClipboard, icon: const Icon(Icons.content_paste_go), label: const Text('Paste from clipboard')),
@@ -356,7 +356,7 @@ class _PasteScreenState extends State<_PasteScreen> {
                           ? 'No questions recognised yet. Number each question (1. 2. 3.) and label the options A, B, C, D.'
                           : 'Found $count question${count == 1 ? '' : 's'}'
                               '${_parsed.issues.isEmpty ? ' · all have an answer' : ' · ${_parsed.issues.length} will need a quick check'}',
-                  style: TextStyle(color: count == 0 && _text.text.trim().isNotEmpty ? AppColors.warning : AppColors.muted, fontSize: 13),
+                  style: TextStyle(color: count == 0 && _text.text.trim().isNotEmpty ? AppColors.warning : Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
                 ),
               ),
               gap12,
@@ -449,7 +449,7 @@ class _QuestionEditorScreenState extends State<QuestionEditorScreen> {
             maxLines: null,
             minLines: 2,
             textCapitalization: TextCapitalization.sentences,
-            decoration: const InputDecoration(
+            decoration: InputDecoration(
               labelText: 'Question',
               helperText: r'Maths works as $x^2$ or \(x_1\).',
               alignLabelWithHint: true,
@@ -462,8 +462,8 @@ class _QuestionEditorScreenState extends State<QuestionEditorScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('Students will see', style: TextStyle(color: AppColors.faint, fontSize: 11, fontWeight: FontWeight.w600)),
-                  const SizedBox(height: 4),
+                  Text('Students will see', style: TextStyle(color: Theme.of(context).colorScheme.outlineVariant, fontSize: 11, fontWeight: FontWeight.w600)),
+                  SizedBox(height: 4),
                   MathText(_question.text),
                 ],
               ),
@@ -474,8 +474,8 @@ class _QuestionEditorScreenState extends State<QuestionEditorScreen> {
             ServerImage(_image, label: 'Question picture'),
             TextButton.icon(
               onPressed: () => setState(() => _image = ''),
-              icon: const Icon(Icons.delete_outline),
-              label: const Text('Remove picture'),
+              icon: Icon(Icons.delete_outline),
+              label: Text('Remove picture'),
               style: TextButton.styleFrom(foregroundColor: AppColors.danger),
             ),
           ] else
@@ -493,11 +493,11 @@ class _QuestionEditorScreenState extends State<QuestionEditorScreen> {
                       }
                     },
               icon: _uploading
-                  ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                  : const Icon(Icons.add_photo_alternate_outlined),
+                  ? SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                  : Icon(Icons.add_photo_alternate_outlined),
               label: Text(_uploading ? 'Uploading…' : 'Add a picture (diagram, graph, photo)'),
             ),
-          const SectionTitle('Options', subtitle: 'Select the circle next to the correct answer.'),
+          SectionTitle('Options', subtitle: 'Select the circle next to the correct answer.'),
           RadioGroup<int>(
             groupValue: _correct,
             onChanged: (value) => setState(() => _correct = value),
@@ -523,7 +523,7 @@ class _QuestionEditorScreenState extends State<QuestionEditorScreen> {
                                 decoration: InputDecoration(labelText: 'Option ${_letters[i]}'),
                               ),
                               if (_hasMath(_options[i].text))
-                                Padding(padding: const EdgeInsets.only(top: 4, left: 4), child: MathText(_options[i].text, style: const TextStyle(color: AppColors.muted))),
+                                Padding(padding: const EdgeInsets.only(top: 4, left: 4), child: MathText(_options[i].text, style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant))),
                             ],
                           ),
                         ),
@@ -616,14 +616,14 @@ class _BankScreenState extends State<_BankScreen> {
     final used = widget.inExam.map(_key).toSet();
     final items = _items;
     return Scaffold(
-      appBar: AppBar(title: const Text('My past questions')),
+      appBar: AppBar(title: Text('My past questions')),
       body: SafeArea(
         child: Column(
           children: [
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
               child: TextField(
-                decoration: const InputDecoration(labelText: 'Search by words in the question or options', prefixIcon: Icon(Icons.search)),
+                decoration: InputDecoration(labelText: 'Search by words in the question or options', prefixIcon: Icon(Icons.search)),
                 onChanged: (value) {
                   _search = value.trim();
                   _load();
@@ -632,7 +632,7 @@ class _BankScreenState extends State<_BankScreen> {
             ),
             Expanded(
               child: items == null
-                  ? const Center(child: CircularProgressIndicator())
+                  ? Center(child: CircularProgressIndicator())
                   : items.isEmpty
                       ? Center(
                           child: Padding(
@@ -640,13 +640,13 @@ class _BankScreenState extends State<_BankScreen> {
                             child: Text(
                               _search.isEmpty ? 'Questions you write in any exam will appear here for reuse.' : 'No past questions match that search.',
                               textAlign: TextAlign.center,
-                              style: const TextStyle(color: AppColors.muted),
+                              style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
                             ),
                           ),
                         )
                       : ListView.separated(
                           itemCount: items.length,
-                          separatorBuilder: (_, _) => const Divider(),
+                          separatorBuilder: (_, _) => Divider(),
                           itemBuilder: (context, index) {
                             final q = items[index];
                             final key = _key(q);
@@ -662,7 +662,7 @@ class _BankScreenState extends State<_BankScreen> {
                                     : '${q.strings('options').join(' · ')}\nFrom: ${q.str('source_exam')} · ${trimNumber(q.number('points', 1))} mark(s)',
                                 maxLines: 3,
                                 overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(color: AppColors.muted, fontSize: 12),
+                                style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 12),
                               ),
                             );
                           },

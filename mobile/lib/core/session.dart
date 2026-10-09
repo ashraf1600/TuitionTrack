@@ -1,4 +1,4 @@
-import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -78,12 +78,15 @@ class Session extends ChangeNotifier {
   }
 
   static const serverKey = 'server_url';
+  static const _themeKey = 'theme_mode'; // 'dark' | 'light'
 
   final ApiClient api;
   final Settings settings;
 
   Json? user;
   bool ready = false;
+  ThemeMode themeMode = ThemeMode.dark;
+  bool get isLight => themeMode == ThemeMode.light;
 
   /// Shown once on the sign-in screen after the session ended by itself.
   String? notice;
@@ -98,6 +101,7 @@ class Session extends ChangeNotifier {
   Future<void> restore() async {
     final saved = settings.getString(serverKey);
     if (saved != null && saved.isNotEmpty) api.baseUrl = saved;
+    if (settings.getString(_themeKey) == 'light') themeMode = ThemeMode.light;
     await api.loadTokens();
     if (api.hasSession) {
       try {
@@ -118,6 +122,13 @@ class Session extends ChangeNotifier {
   Future<void> setServer(String url) async {
     api.baseUrl = url;
     await settings.setString(serverKey, api.baseUrl);
+    notifyListeners();
+  }
+
+  /// Switches the whole app between dark and light. Remembered on this device.
+  Future<void> setThemeMode(ThemeMode mode) async {
+    themeMode = mode;
+    await settings.setString(_themeKey, mode == ThemeMode.light ? 'light' : 'dark');
     notifyListeners();
   }
 

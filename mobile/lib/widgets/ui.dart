@@ -140,15 +140,16 @@ class ErrorView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(32),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.cloud_off_outlined, size: 44, color: AppColors.muted),
+            Icon(Icons.cloud_off_outlined, size: 44, color: scheme.outlineVariant),
             const SizedBox(height: 12),
-            Text(message, textAlign: TextAlign.center, style: const TextStyle(color: AppColors.text)),
+            Text(message, textAlign: TextAlign.center, style: TextStyle(color: scheme.onSurface)),
             const SizedBox(height: 16),
             FilledButton.icon(onPressed: onRetry, icon: const Icon(Icons.refresh), label: const Text('Try again')),
           ],
@@ -167,21 +168,22 @@ class EmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        border: Border.all(color: AppColors.border),
+        border: Border.all(color: scheme.outline),
         borderRadius: BorderRadius.circular(16),
       ),
       child: Column(
         children: [
-          Icon(icon, size: 36, color: AppColors.faint),
+          Icon(icon, size: 36, color: scheme.outlineVariant),
           const SizedBox(height: 10),
           Text(title, textAlign: TextAlign.center, style: const TextStyle(fontWeight: FontWeight.w700)),
           if (message != null) ...[
             const SizedBox(height: 4),
-            Text(message!, textAlign: TextAlign.center, style: const TextStyle(color: AppColors.muted, fontSize: 13)),
+            Text(message!, textAlign: TextAlign.center, style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 13)),
           ],
           if (action != null) ...[const SizedBox(height: 14), action!],
         ],
@@ -199,18 +201,19 @@ class SectionTitle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return Padding(
       padding: const EdgeInsets.only(top: 8, bottom: 10),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          if (icon != null) ...[Icon(icon, size: 20, color: AppColors.primarySoft), const SizedBox(width: 8)],
+          if (icon != null) ...[Icon(icon, size: 20, color: tone(context, AppColors.primarySoft)), const SizedBox(width: 8)],
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(title, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
-                if (subtitle != null) Text(subtitle!, style: const TextStyle(color: AppColors.muted, fontSize: 13)),
+                if (subtitle != null) Text(subtitle!, style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 13)),
               ],
             ),
           ),
@@ -230,6 +233,7 @@ class Pill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final ink = tone(context, color);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
       decoration: BoxDecoration(
@@ -240,8 +244,8 @@ class Pill extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (icon != null) ...[Icon(icon, size: 13, color: color), const SizedBox(width: 4)],
-          Text(label, style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w600)),
+          if (icon != null) ...[Icon(icon, size: 13, color: ink), const SizedBox(width: 4)],
+          Text(label, style: TextStyle(color: ink, fontSize: 12, fontWeight: FontWeight.w600)),
         ],
       ),
     );
@@ -258,6 +262,7 @@ class Banner2 extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final ink = tone(context, color);
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(12),
@@ -269,9 +274,9 @@ class Banner2 extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, size: 18, color: color),
+          Icon(icon, size: 18, color: ink),
           const SizedBox(width: 10),
-          Expanded(child: Text(message, style: TextStyle(color: color, fontSize: 13, height: 1.35))),
+          Expanded(child: Text(message, style: TextStyle(color: ink, fontSize: 13, height: 1.35))),
           if (action != null) action!,
         ],
       ),
@@ -288,12 +293,13 @@ class AppCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     final shape = RoundedRectangleBorder(
       borderRadius: BorderRadius.circular(16),
-      side: BorderSide(color: borderColor ?? AppColors.card),
+      side: BorderSide(color: borderColor ?? scheme.outline),
     );
     return Material(
-      color: AppColors.surface,
+      color: scheme.surface,
       shape: shape,
       clipBehavior: Clip.antiAlias,
       child: InkWell(onTap: onTap, child: Padding(padding: padding, child: child)),
@@ -359,10 +365,11 @@ class Stat extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: const TextStyle(color: AppColors.muted, fontSize: 12)),
+        Text(label, style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 12)),
         const SizedBox(height: 2),
         Text(value, style: TextStyle(color: color, fontSize: 18, fontWeight: FontWeight.w800)),
       ],

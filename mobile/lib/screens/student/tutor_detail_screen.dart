@@ -37,11 +37,11 @@ class _TutorDetailScreenState extends State<TutorDetailScreen> {
         .whereType<Map>()
         .map((e) => RoutineSlot.fromJson(Map<String, dynamic>.from(e)))
         .toList();
-    final classes = ((d['upcoming_classes'] as List?) ?? const [])
+    final classes = ((d['upcoming_classes'] as List?) ?? [])
         .whereType<Map>()
         .map((e) => ScheduledClass.fromJson(Map<String, dynamic>.from(e)))
         .toList();
-    final homework = ((d['homework'] as List?) ?? const [])
+    final homework = ((d['homework'] as List?) ?? [])
         .whereType<Map>()
         .map((e) => HomeworkItem.fromJson(Map<String, dynamic>.from(e)))
         .toList();
@@ -56,7 +56,7 @@ class _TutorDetailScreenState extends State<TutorDetailScreen> {
       child: Scaffold(
         appBar: AppBar(
           title: Text(widget.title),
-          bottom: const TabBar(tabs: [Tab(text: 'Routine'), Tab(text: 'Classes'), Tab(text: 'Homework')]),
+          bottom: TabBar(tabs: [Tab(text: 'Routine'), Tab(text: 'Classes'), Tab(text: 'Homework')]),
         ),
         body: Loader<_Detail>(
           key: _key,
@@ -66,11 +66,11 @@ class _TutorDetailScreenState extends State<TutorDetailScreen> {
             children: [
               // Routine tab
               d.routines.isEmpty
-                  ? const Center(child: Text('No routine set yet.'))
+                  ? Center(child: Text('No routine set yet.'))
                   : ListView.separated(
                       padding: const EdgeInsets.all(16),
                       itemCount: d.routines.length,
-                      separatorBuilder: (_, _) => const SizedBox(height: 10),
+                      separatorBuilder: (_, _) => SizedBox(height: 10),
                       itemBuilder: (_, i) {
                         final r = d.routines[i];
                         return AppCard(
@@ -82,14 +82,14 @@ class _TutorDetailScreenState extends State<TutorDetailScreen> {
                                     color: AppColors.primary.withValues(alpha: 0.15),
                                     borderRadius: BorderRadius.circular(12)),
                                 child: Text(r.day.length > 3 ? r.day.substring(0, 3).toUpperCase() : r.day.toUpperCase(),
-                                    style: const TextStyle(fontWeight: FontWeight.w800, color: AppColors.primarySoft)),
+                                    style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.primarySoft)),
                               ),
-                              const SizedBox(width: 12),
+                              SizedBox(width: 12),
                               Expanded(
                                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                                   Text(r.subject.isEmpty ? 'Class' : r.subject,
                                       style: const TextStyle(fontWeight: FontWeight.w700)),
-                                  Text('${r.start} – ${r.end}', style: const TextStyle(color: AppColors.muted)),
+                                  Text('${r.start} – ${r.end}', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant)),
                                 ]),
                               ),
                             ],

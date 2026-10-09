@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../../core/session.dart';
 import '../common/notifications.dart';
+import '../../widgets/app_drawer.dart';
 import 'exam_editor_screen.dart';
 import 'exams_view.dart';
 import 'group_form_screen.dart';
@@ -53,6 +54,7 @@ class _TutorHomeState extends State<TutorHome> {
         title: Text(_tab == 0 ? 'Hello, ${session.displayName}' : _titles[_tab]),
         actions: homeActions(context),
       ),
+      drawer: const AppDrawer(),
       body: body,
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _create,

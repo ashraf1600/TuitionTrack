@@ -112,7 +112,7 @@ class _GroupScreenState extends State<GroupScreen> {
                           if (changed == true && mounted) setState(() => _examsVersion++);
                         },
                         icon: const Icon(Icons.add),
-                        label: const Text('New exam'),
+                        label: Text('New exam'),
                       ),
               );
             }),
@@ -151,7 +151,7 @@ class _ClassesTab extends StatelessWidget {
               Text('Class $classNo', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
               Text(
                 wasDone ? 'Recorded. You can correct the date or topic, or undo it.' : 'Marking it done counts it for every student in the group and adds it to your wallet.',
-                style: const TextStyle(color: AppColors.muted, fontSize: 13),
+                style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
               ),
               gap16,
               OutlinedButton.icon(
@@ -184,15 +184,15 @@ class _ClassesTab extends StatelessWidget {
               // The class itself stays independent: marking it done later does not
               // uncreate homework that was already sent to students.
               OutlinedButton.icon(
-                icon: const Icon(Icons.assignment_outlined, size: 18),
-                label: const Text('Set homework for this class'),
+                icon: Icon(Icons.assignment_outlined, size: 18),
+                label: Text('Set homework for this class'),
                 onPressed: () => Navigator.pop(context, 'homework'),
               ),
               if (wasDone)
                 TextButton(
                   onPressed: () => Navigator.pop(context, 'undo'),
                   style: TextButton.styleFrom(foregroundColor: AppColors.danger),
-                  child: const Text('Undo — this class was not held'),
+                  child: Text('Undo — this class was not held'),
                 ),
             ],
           ),
@@ -235,7 +235,7 @@ class _ClassesTab extends StatelessWidget {
       text: topicText.isNotEmpty ? 'Class $classNo — $topicText' : 'Class $classNo homework',
     );
     final descriptionCtrl = TextEditingController();
-    final initialDue = DateTime.now().add(const Duration(days: 1));
+    final initialDue = DateTime.now().add(Duration(days: 1));
     var dueDate = DateTime(initialDue.year, initialDue.month, initialDue.day, 18, 0);
     var perStudent = roster.isNotEmpty;
     final sourceLabel =
@@ -260,7 +260,7 @@ class _ClassesTab extends StatelessWidget {
                       padding: const EdgeInsets.only(bottom: 8),
                       child: Text(
                         'Topic: $topicText',
-                        style: const TextStyle(color: AppColors.muted, fontSize: 13),
+                        style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
                       ),
                     ),
                   TextField(
@@ -314,8 +314,8 @@ class _ClassesTab extends StatelessWidget {
                       contentPadding: EdgeInsets.zero,
                       title: Text('One copy per student (${roster.length})',
                           style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-                      subtitle: const Text('Each submission is marked done individually. Off = one shared task.',
-                          style: TextStyle(fontSize: 12, color: AppColors.muted)),
+                      subtitle: Text('Each submission is marked done individually. Off = one shared task.',
+                          style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant)),
                       value: perStudent,
                       onChanged: (v) => setStateDialog(() => perStudent = v),
                     ),
@@ -325,7 +325,7 @@ class _ClassesTab extends StatelessWidget {
                     perStudent && roster.isNotEmpty
                         ? 'Sent to ${roster.length} students separately.'
                         : 'Sent to every student in ${tuition.str('title')}.',
-                    style: const TextStyle(color: AppColors.muted, fontSize: 12),
+                    style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 12),
                   ),
                 ],
               ),
@@ -434,7 +434,7 @@ class _ClassesTab extends StatelessWidget {
           ),
         ),
         if (cycle == null)
-          const Padding(padding: EdgeInsets.only(top: 16), child: Text('This group has no cycle yet.', style: TextStyle(color: AppColors.muted)))
+          Padding(padding: EdgeInsets.only(top: 16), child: Text('This group has no cycle yet.', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant)))
         else ...[
           SectionTitle(
             'Cycle #${cycle.integer('cycle_number')}',
@@ -455,20 +455,20 @@ class _ClassesTab extends StatelessWidget {
             child: Column(
               children: [
                 for (final entry in orderedClasses(cycle)) ...[
-                  if (classNoOf(entry) > 1) const Divider(),
+                  if (classNoOf(entry) > 1) Divider(),
                   ListTile(
                     leading: CircleAvatar(
-                      backgroundColor: entry.flag('completed') ? AppColors.success.withValues(alpha: 0.2) : AppColors.card,
+                      backgroundColor: entry.flag('completed') ? AppColors.success.withValues(alpha: 0.2) : Theme.of(context).colorScheme.surfaceContainerHighest,
                       child: entry.flag('completed')
-                          ? const Icon(Icons.check, color: AppColors.success)
-                          : Text('${classNoOf(entry)}', style: const TextStyle(color: AppColors.muted, fontWeight: FontWeight.w700)),
+                          ? Icon(Icons.check, color: AppColors.success)
+                          : Text('${classNoOf(entry)}', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontWeight: FontWeight.w700)),
                     ),
                     title: Text('Class ${classNoOf(entry)}', style: const TextStyle(fontWeight: FontWeight.w600)),
                     subtitle: Text(
                       entry.flag('completed')
                           ? [fmtDate(entry.date('date')), if (entry.str('topic').isNotEmpty) entry.str('topic')].join(' · ')
                           : 'Not done yet',
-                      style: TextStyle(color: entry.flag('completed') ? AppColors.text : AppColors.faint),
+                      style: TextStyle(color: entry.flag('completed') ? Theme.of(context).colorScheme.onSurface : Theme.of(context).colorScheme.outlineVariant),
                     ),
                     trailing: Icon(entry.flag('completed') ? Icons.edit_outlined : Icons.radio_button_unchecked, size: 20),
                     onTap: () => _openClass(context, entry),
@@ -479,19 +479,19 @@ class _ClassesTab extends StatelessWidget {
           ),
         ],
         if (history.isNotEmpty) ...[
-          const SectionTitle('Past cycles'),
+          SectionTitle('Past cycles'),
           AppCard(
             padding: EdgeInsets.zero,
             child: Column(
               children: [
                 for (var i = 0; i < history.length; i++) ...[
-                  if (i > 0) const Divider(),
+                  if (i > 0) Divider(),
                   ExpansionTile(
-                    shape: const Border(),
+                    shape: Border(),
                     title: Text('Cycle #${history[i].integer('cycle_number')}', style: const TextStyle(fontWeight: FontWeight.w600)),
                     subtitle: Text(
                       '${history[i].integer('completed_classes')}/${history[i].integer('total_classes')} classes · earned ${taka(history[i].number('earned_revenue'))}',
-                      style: const TextStyle(color: AppColors.muted, fontSize: 13),
+                      style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
                     ),
                     childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
                     expandedCrossAxisAlignment: CrossAxisAlignment.start,
@@ -501,7 +501,7 @@ class _ClassesTab extends StatelessWidget {
                           padding: const EdgeInsets.only(bottom: 4),
                           child: Text(
                             'Class ${classNoOf(entry)} · ${fmtDate(entry.date('date'))}${entry.str('topic').isNotEmpty ? ' · ${entry.str('topic')}' : ''}',
-                            style: const TextStyle(fontSize: 13),
+                            style: TextStyle(fontSize: 13),
                           ),
                         ),
                     ],
@@ -539,10 +539,10 @@ class _StudentsTab extends StatelessWidget {
     return PageBody(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 96),
       children: [
-        FilledButton.icon(onPressed: () => _add(context), icon: const Icon(Icons.person_add_alt_1), label: const Text('Add students to this group')),
+        FilledButton.icon(onPressed: () => _add(context), icon: Icon(Icons.person_add_alt_1), label: Text('Add students to this group')),
         gap16,
         if (students.isEmpty)
-          const EmptyState(
+          EmptyState(
             icon: Icons.person_outline,
             title: 'No students in this group yet',
             message: 'Add students you created, or ones who asked to join you.',
@@ -553,7 +553,7 @@ class _StudentsTab extends StatelessWidget {
             child: Column(
               children: [
                 for (var i = 0; i < students.length; i++) ...[
-                  if (i > 0) const Divider(),
+                  if (i > 0) Divider(),
                   ListTile(
                     leading: CircleAvatar(child: Text(students[i].str('student_name', '?').characters.first.toUpperCase())),
                     title: Text(students[i].str('student_name')),
@@ -563,11 +563,11 @@ class _StudentsTab extends StatelessWidget {
                         if (students[i].str('grade_level').isNotEmpty) students[i].str('grade_level'),
                         if (students[i].str('phone').isNotEmpty) students[i].str('phone'),
                       ].join(' · '),
-                      style: const TextStyle(color: AppColors.muted, fontSize: 13),
+                      style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
                     ),
                     trailing: IconButton(
                       tooltip: 'Remove ${students[i].str('student_name')} from the group',
-                      icon: const Icon(Icons.person_remove_outlined),
+                      icon: Icon(Icons.person_remove_outlined),
                       onPressed: () async {
                         final student = students[i];
                         final ok = await confirm(
@@ -638,11 +638,11 @@ class _AddStudentsSheetState extends State<_AddStudentsSheet> {
               child: _candidates == null
                   ? const Center(child: CircularProgressIndicator())
                   : _candidates!.isEmpty
-                      ? const Center(
+                      ? Center(
                           child: Text(
                             'All your active students are already in this group.\nCreate a student from the Students tab first.',
                             textAlign: TextAlign.center,
-                            style: TextStyle(color: AppColors.muted),
+                            style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
                           ),
                         )
                       : ListView(

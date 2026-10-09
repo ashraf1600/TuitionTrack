@@ -98,10 +98,10 @@ class _LoginScreenState extends State<LoginScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
+            Text(
               'Enter your username or email. If the account has an email address, a reset link is sent to it. '
               'Students without an email can ask their tutor for a new temporary password.',
-              style: TextStyle(color: AppColors.muted, fontSize: 13),
+              style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
             ),
             gap12,
             TextField(controller: controller, autofocus: true, decoration: const InputDecoration(labelText: 'Username or email')),
@@ -131,10 +131,10 @@ class _LoginScreenState extends State<LoginScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
+            Text(
               'The address of your TuitionTrack server, for example https://tuitiontrack.example.com or '
               'http://192.168.0.10:8000 on your own network.',
-              style: TextStyle(color: AppColors.muted, fontSize: 13),
+              style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
             ),
             gap12,
             TextField(
@@ -197,7 +197,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           _Mode.student => 'Create your student account',
                         },
                         textAlign: TextAlign.center,
-                        style: const TextStyle(color: AppColors.muted),
+                        style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
                       ),
                       gap24,
                       SegmentedButton<_Mode>(
@@ -325,9 +325,9 @@ class _LoginScreenState extends State<LoginScreen> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               const Text('Your tutor (optional)', style: TextStyle(fontWeight: FontWeight.w700)),
-                              const Text(
+                              Text(
                                 'Pick your tutor now to send them a request, or do it later from the app.',
-                                style: TextStyle(color: AppColors.muted, fontSize: 13),
+                                style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
                               ),
                               gap8,
                               if (_tutor == null)
@@ -369,7 +369,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         onPressed: _changeServer,
                         icon: const Icon(Icons.dns_outlined, size: 16),
                         label: Text('Server: ${session.api.baseUrl}', overflow: TextOverflow.ellipsis),
-                        style: TextButton.styleFrom(foregroundColor: AppColors.faint, textStyle: const TextStyle(fontSize: 12)),
+                        style: TextButton.styleFrom(foregroundColor: Theme.of(context).colorScheme.onSurfaceVariant, textStyle: const TextStyle(fontSize: 12)),
                       ),
                     ],
                   ),
@@ -449,7 +449,7 @@ class _TutorPickerState extends State<_TutorPicker> {
                   : _tutors == null
                       ? const Center(child: CircularProgressIndicator())
                       : _tutors!.isEmpty
-                          ? const Center(child: Text('No tutors match that search.', style: TextStyle(color: AppColors.muted)))
+                          ? Center(child: Text('No tutors match that search.', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant)))
                           : ListView.separated(
                               itemCount: _tutors!.length,
                               separatorBuilder: (_, _) => const Divider(),

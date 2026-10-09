@@ -27,17 +27,17 @@ Future<void> showCredentials(BuildContext context, {required String name, requir
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
+          Text(
             'Give these to the student now. The password is shown only this once; they will be asked to choose their own when they first sign in.',
-            style: TextStyle(color: AppColors.muted, fontSize: 13),
+            style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
           ),
           gap12,
           for (final entry in {'Username': username, 'Temporary password': password}.entries)
             ListTile(
               contentPadding: EdgeInsets.zero,
               dense: true,
-              title: Text(entry.key, style: const TextStyle(color: AppColors.muted, fontSize: 12)),
-              subtitle: SelectableText(entry.value, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: AppColors.text)),
+              title: Text(entry.key, style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 12)),
+              subtitle: SelectableText(entry.value, style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: Theme.of(context).colorScheme.onSurface)),
               trailing: IconButton(
                 tooltip: 'Copy ${entry.key.toLowerCase()}',
                 icon: const Icon(Icons.copy, size: 20),
@@ -108,7 +108,7 @@ class _StudentsTabState extends State<StudentsTab> {
           children: [
             if (data.students.length > 5) ...[
               TextField(
-                decoration: const InputDecoration(labelText: 'Search students', prefixIcon: Icon(Icons.search)),
+                decoration: InputDecoration(labelText: 'Search students', prefixIcon: Icon(Icons.search)),
                 onChanged: (value) => setState(() => _search = value.trim()),
               ),
               gap12,
@@ -120,7 +120,7 @@ class _StudentsTabState extends State<StudentsTab> {
                 message: 'Tap “Add student” to create an account for a student, or wait for students to send you a request.',
               )
             else if (students.isEmpty)
-              const Text('No students match that search.', style: TextStyle(color: AppColors.muted))
+              Text('No students match that search.', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant))
             else
               for (final student in students) ...[
                 _StudentCard(
@@ -172,13 +172,13 @@ class _StudentCard extends StatelessWidget {
               shrinkWrap: true,
               children: [
                 ListTile(title: Text('Add $name to which group?', style: const TextStyle(fontWeight: FontWeight.w700))),
-                if (tuitions.isEmpty) const ListTile(title: Text('Create a tuition group first.', style: TextStyle(color: AppColors.muted))),
+                if (tuitions.isEmpty) ListTile(title: Text('Create a tuition group first.', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant))),
                 for (final t in tuitions)
                   ListTile(
-                    leading: const Icon(Icons.groups_outlined),
+                    leading: Icon(Icons.groups_outlined),
                     title: Text(t.str('title')),
                     enabled: !groups.contains(t.str('title')),
-                    subtitle: groups.contains(t.str('title')) ? const Text('Already in this group') : null,
+                    subtitle: groups.contains(t.str('title')) ? Text('Already in this group') : null,
                     onTap: () => Navigator.pop(context, t.str('id')),
                   ),
               ],
@@ -230,19 +230,19 @@ class _StudentCard extends StatelessWidget {
             padding: const EdgeInsets.only(top: 4),
             child: CircleAvatar(child: Text(student.str('full_name', '?').characters.first.toUpperCase())),
           ),
-          const SizedBox(width: 12),
+          SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(student.str('full_name'), style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15, color: active ? AppColors.text : AppColors.faint)),
+                Text(student.str('full_name'), style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15, color: active ? Theme.of(context).colorScheme.onSurface : Theme.of(context).colorScheme.outlineVariant)),
                 Text(
                   [
                     '@${student.str('username')}',
                     if (profile.str('grade_level').isNotEmpty) profile.str('grade_level'),
                     if (student.str('phone').isNotEmpty) student.str('phone'),
                   ].join(' · '),
-                  style: const TextStyle(color: AppColors.muted, fontSize: 13),
+                  style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
                 ),
                 const SizedBox(height: 6),
                 Wrap(

@@ -266,16 +266,16 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> with SingleTickerPr
     final text = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Paste written questions'),
+        title: Text('Paste written questions'),
         content: SizedBox(
           width: 520,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Text(
+              Text(
                 'Numbered questions are kept apart and maths stays as written. If every question ends with its marks — [10] or (5 marks) — '
                 'the marking scheme is filled in too.',
-                style: TextStyle(color: AppColors.muted, fontSize: 13),
+                style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
               ),
               gap12,
               TextField(
@@ -283,8 +283,8 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> with SingleTickerPr
                 maxLines: 8,
                 autofocus: true,
                 autocorrect: false,
-                style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
-                decoration: const InputDecoration(hintText: '1. A particle moves with velocity \\(v(t) = 3t^2 - 4t\\). Find its acceleration at t = 2 s. [5]'),
+                style: TextStyle(fontFamily: 'monospace', fontSize: 13),
+                decoration: InputDecoration(hintText: '1. A particle moves with velocity \\(v(t) = 3t^2 - 4t\\). Find its acceleration at t = 2 s. [5]'),
               ),
             ],
           ),
@@ -322,7 +322,7 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> with SingleTickerPr
           decoration: const InputDecoration(labelText: 'Title', hintText: 'e.g. Chapter 3 quiz — Polynomials'),
         ),
         gap16,
-        const Text('What is it?', style: TextStyle(fontWeight: FontWeight.w700)),
+        Text('What is it?', style: TextStyle(fontWeight: FontWeight.w700)),
         gap8,
         SegmentedButton<String>(
           segments: const [
@@ -335,10 +335,10 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> with SingleTickerPr
         gap8,
         Text(
           _category == 'EXAM' ? 'Sat between a start and an end time, with an optional time limit per student.' : 'Homework with a deadline. No stopwatch.',
-          style: const TextStyle(color: AppColors.muted, fontSize: 13),
+          style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
         ),
         gap16,
-        const Text('Question types', style: TextStyle(fontWeight: FontWeight.w700)),
+        Text('Question types', style: TextStyle(fontWeight: FontWeight.w700)),
         gap8,
         SegmentedButton<String>(
           segments: const [
@@ -357,7 +357,7 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> with SingleTickerPr
             'CQ' => 'Written (creative) questions only — you mark them.',
             _ => 'Multiple choice (marked automatically) plus written questions (you mark them).',
           },
-          style: const TextStyle(color: AppColors.muted, fontSize: 13),
+          style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
         ),
         gap16,
         const Text('Who is it for?', style: TextStyle(fontWeight: FontWeight.w700)),
@@ -477,7 +477,7 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> with SingleTickerPr
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('Students will see', style: TextStyle(color: AppColors.faint, fontSize: 11, fontWeight: FontWeight.w600)),
+                    Text('Students will see', style: TextStyle(color: Theme.of(context).colorScheme.outlineVariant, fontSize: 11, fontWeight: FontWeight.w600)),
                     const SizedBox(height: 6),
                     HtmlMath(preview, baseUrl: api.baseUrl),
                   ],
@@ -507,19 +507,19 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> with SingleTickerPr
                       decoration: InputDecoration(labelText: 'Question ${i + 1}', hintText: 'e.g. Q1 (a)', counterText: ''),
                     ),
                   ),
-                  const SizedBox(width: 10),
+                  SizedBox(width: 10),
                   Expanded(
                     flex: 2,
                     child: TextField(
                       controller: _scheme[i].marks,
                       keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                      decoration: const InputDecoration(labelText: 'Marks'),
+                      decoration: InputDecoration(labelText: 'Marks'),
                       onChanged: (_) => setState(() {}),
                     ),
                   ),
                   IconButton(
                     tooltip: 'Remove written question ${i + 1}',
-                    icon: const Icon(Icons.delete_outline),
+                    icon: Icon(Icons.delete_outline),
                     onPressed: () => setState(() => _scheme.removeAt(i).dispose()),
                   ),
                 ],
@@ -530,7 +530,7 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> with SingleTickerPr
         Text(
           'Marks set so far: ${trimNumber(_mcqTotal)} MCQ${_type != 'MCQ' && _scheme.isNotEmpty ? ' + ${trimNumber(_writtenTotal)} written' : ''}'
           ' = ${trimNumber(allocated)} of ${trimNumber(total)} total.',
-          style: TextStyle(color: allocated > total ? AppColors.danger : AppColors.muted, fontSize: 13, fontWeight: allocated > total ? FontWeight.w700 : null),
+          style: TextStyle(color: allocated > total ? AppColors.danger : Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13, fontWeight: allocated > total ? FontWeight.w700 : null),
         ),
       ],
     );
@@ -540,13 +540,13 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> with SingleTickerPr
     return AppCard(
       padding: EdgeInsets.zero,
       child: ListTile(
-        leading: const Icon(Icons.event_outlined),
-        title: Text(label, style: const TextStyle(fontSize: 13, color: AppColors.muted)),
+        leading: Icon(Icons.event_outlined),
+        title: Text(label, style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurfaceVariant)),
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(value == null ? (empty ?? 'Not set') : fmtDateTime(value), style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.text)),
-            if (helper != null) Text(helper, style: const TextStyle(fontSize: 12, color: AppColors.muted)),
+            Text(value == null ? (empty ?? 'Not set') : fmtDateTime(value), style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: Theme.of(context).colorScheme.onSurface)),
+            if (helper != null) Text(helper, style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant)),
           ],
         ),
         trailing: value != null && onClear != null
@@ -624,7 +624,7 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> with SingleTickerPr
             value: _shuffle,
             onChanged: (value) => setState(() => _shuffle = value),
             title: const Text('Shuffle MCQ order'),
-            subtitle: const Text('Each student sees the questions in a different order.'),
+            subtitle: Text('Each student sees the questions in a different order.'),
           ),
         ],
       ],
@@ -648,9 +648,9 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> with SingleTickerPr
       children: [
         const Text('When do students see their results?', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
         const SizedBox(height: 4),
-        const Text(
+        Text(
           'Until then a student who has submitted sees only “Results pending” — no marks, no correct answers, no solutions.',
-          style: TextStyle(color: AppColors.muted, fontSize: 13),
+          style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
         ),
         gap12,
         RadioGroup<String>(
@@ -667,7 +667,7 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> with SingleTickerPr
                     child: RadioListTile<String>(
                       value: value,
                       title: Text(label, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
-                      subtitle: Text(hint, style: const TextStyle(color: AppColors.muted, fontSize: 13)),
+                      subtitle: Text(hint, style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13)),
                     ),
                   ),
                 ),
@@ -677,11 +677,11 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> with SingleTickerPr
         if (_resultsMode == 'TIME')
           _dateTile('Publish results at', _resultsAt, empty: 'Choose a date and time', onPicked: (value) => setState(() => _resultsAt = value)),
         if (_type != 'MCQ')
-          const Padding(
+          Padding(
             padding: EdgeInsets.only(top: 8),
             child: Text(
               'MCQs are marked automatically. A written part shows as “awaiting marking” until you have marked it.',
-              style: TextStyle(color: AppColors.muted, fontSize: 13),
+              style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
             ),
           ),
         const SectionTitle('Model solution (optional)', subtitle: 'Students can read it once results are out.'),

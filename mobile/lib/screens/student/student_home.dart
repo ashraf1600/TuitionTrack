@@ -14,6 +14,7 @@ import '../../widgets/ui.dart';
 import '../common/cycle_progress.dart';
 import '../common/leaderboard_screen.dart';
 import '../common/notifications.dart';
+import '../../widgets/app_drawer.dart';
 import 'homework_card.dart';
 import 'connect_by_code.dart';
 import 'exam_result_screen.dart';
@@ -76,6 +77,7 @@ class _StudentHomeState extends State<StudentHome> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: Text(_title()), actions: homeActions(context)),
+      drawer: const AppDrawer(),
       body: Loader<_StudentData>(
         key: _loader,
         load: _load,
@@ -120,7 +122,7 @@ class _GroupsTab extends StatelessWidget {
     final accepted = data.connections.where((c) => c.str('status') == 'ACCEPTED').toList();
     return PageBody(
       children: [
-        const SectionTitle('My tuition groups', icon: Icons.groups_outlined, subtitle: 'Class progress is shared by everyone in the group.'),
+        SectionTitle('My tuition groups', icon: Icons.groups_outlined, subtitle: 'Class progress is shared by everyone in the group.'),
         if (data.tuitions.isEmpty)
           EmptyState(
             icon: Icons.groups_outlined,
@@ -146,14 +148,14 @@ class _GroupsTab extends StatelessWidget {
                       accepted.isEmpty ? 'My tutors${pending.isNotEmpty ? ' (${pending.length} pending)' : ''}' : 'My tutors (${accepted.length} connected)',
                       style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
                     ),
-                    const Text('Routine, classes & homework with countdowns.',
-                        style: TextStyle(color: AppColors.muted, fontSize: 13)),
+                    Text('Routine, classes & homework with countdowns.',
+                        style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13)),
                   ],
                 ),
               ),
               FilledButton(
-                onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const TutorsScreen())),
-                child: const Text('Open'),
+                onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => TutorsScreen())),
+                child: Text('Open'),
               ),
             ],
           ),
@@ -192,7 +194,7 @@ class _GroupCard extends StatelessWidget {
               'Tutor: ${tuition.str('tutor_name')}',
               '${tuition.integer('enrolled_count')} student${tuition.integer('enrolled_count') == 1 ? '' : 's'}',
             ].join(' · '),
-            style: const TextStyle(color: AppColors.muted, fontSize: 13),
+            style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
           ),
           if (tuition.str('description').isNotEmpty) ...[
             gap8,
@@ -215,7 +217,7 @@ class _GroupCard extends StatelessWidget {
           ],
           gap12,
           if (cycle == null)
-            const Text('No classes recorded yet.', style: TextStyle(color: AppColors.muted))
+            Text('No classes recorded yet.', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant))
           else
             CycleProgress(cycle: cycle),
         ],
@@ -440,7 +442,7 @@ class _FindTutorSheetState extends State<_FindTutorSheet> {
                     child: _tutors == null
                         ? const Center(child: CircularProgressIndicator())
                         : _tutors!.isEmpty
-                            ? const Center(child: Text('No tutors match that search.', style: TextStyle(color: AppColors.muted)))
+                            ? Center(child: Text('No tutors match that search.', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant)))
                             : ListView.separated(
                                 itemCount: _tutors!.length,
                                 separatorBuilder: (_, _) => const Divider(),
@@ -585,30 +587,30 @@ class _ExamCard extends StatelessWidget {
           Row(
             children: [
               Pill(isAssignment ? 'Assignment' : 'Exam', color: AppColors.primarySoft),
-              if (minutes > 0 && !isAssignment) ...[const SizedBox(width: 6), Pill('$minutes min', icon: Icons.timer_outlined)],
-              const Spacer(),
-              Text('${trimNumber(exam.number('total_marks'))} marks', style: const TextStyle(fontWeight: FontWeight.w700, color: AppColors.success)),
+              if (minutes > 0 && !isAssignment) ...[SizedBox(width: 6), Pill('$minutes min', icon: Icons.timer_outlined)],
+              Spacer(),
+              Text('${trimNumber(exam.number('total_marks'))} marks', style: TextStyle(fontWeight: FontWeight.w700, color: AppColors.success)),
             ],
           ),
           gap8,
-          Text(exam.str('title'), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
-          if (exam.str('batch_name').isNotEmpty) Text(exam.str('batch_name'), style: const TextStyle(color: AppColors.muted, fontSize: 13)),
+          Text(exam.str('title'), style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+          if (exam.str('batch_name').isNotEmpty) Text(exam.str('batch_name'), style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13)),
           gap8,
           if (upcoming)
-            Text('Opens ${relativeFromNow(start.difference(now))} · ${fmtDateTime(start)}', style: const TextStyle(color: AppColors.primarySoft))
+            Text('Opens ${relativeFromNow(start.difference(now))} · ${fmtDateTime(start)}', style: TextStyle(color: AppColors.primarySoft))
           else
-            Text('${isAssignment ? 'Due' : 'Ends'} ${fmtDateTime(end)}', style: const TextStyle(color: AppColors.muted, fontSize: 13)),
-          if (open && !isLate) Text('Closes ${relativeFromNow(end.difference(now))}', style: const TextStyle(color: AppColors.success, fontWeight: FontWeight.w600)),
+            Text('${isAssignment ? 'Due' : 'Ends'} ${fmtDateTime(end)}', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13)),
+          if (open && !isLate) Text('Closes ${relativeFromNow(end.difference(now))}', style: TextStyle(color: AppColors.success, fontWeight: FontWeight.w600)),
           if (isLate)
             Text(
               lateEnd != null && lateEnd.isAfter(now)
                   ? 'Deadline passed — late work accepted ${relativeFromNow(lateEnd.difference(now)).replaceFirst('in ', 'for ')}'
                   : 'Deadline passed — hand in now',
-              style: const TextStyle(color: AppColors.warning, fontWeight: FontWeight.w600),
+              style: TextStyle(color: AppColors.warning, fontWeight: FontWeight.w600),
             ),
           if (!isAssignment && upcoming && negative > 0)
-            Text('Wrong MCQ answers lose ${trimNumber(negative)} mark(s).', style: const TextStyle(color: AppColors.muted, fontSize: 13)),
-          const Divider(height: 24),
+            Text('Wrong MCQ answers lose ${trimNumber(negative)} mark(s).', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13)),
+          Divider(height: 24),
           if (done) ...[
             Row(
               children: [
@@ -619,16 +621,16 @@ class _ExamCard extends StatelessWidget {
                 if (released && result?.numberOrNull('obtained_marks') != null)
                   Text(
                     '${trimNumber(result!.number('obtained_marks'))} / ${trimNumber(exam.number('total_marks'))}${result.flag('is_graded') ? '' : ' so far'}',
-                    style: const TextStyle(fontWeight: FontWeight.w800, color: AppColors.success),
+                    style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.success),
                   )
                 else
-                  const Pill('Results pending', icon: Icons.hourglass_empty, color: AppColors.muted),
+                  Pill('Results pending', icon: Icons.hourglass_empty, color: Theme.of(context).colorScheme.onSurfaceVariant),
               ],
             ),
             if (!released && exam.str('result_publish_mode') == 'SCHEDULED' && exam.date('results_release_time') != null)
               Padding(
                 padding: const EdgeInsets.only(top: 4),
-                child: Text('Results on ${fmtDateTime(exam.date('results_release_time'))}', style: const TextStyle(color: AppColors.faint, fontSize: 12)),
+                child: Text('Results on ${fmtDateTime(exam.date('results_release_time'))}', style: TextStyle(color: Theme.of(context).colorScheme.outlineVariant, fontSize: 12)),
               ),
             gap12,
             Row(
@@ -640,7 +642,7 @@ class _ExamCard extends StatelessWidget {
                   const SizedBox(width: 8),
                   IconButton.outlined(
                     tooltip: 'Leaderboard',
-                    icon: const Icon(Icons.emoji_events_outlined, color: AppColors.warning),
+                    icon: Icon(Icons.emoji_events_outlined, color: AppColors.warning),
                     onPressed: () => Navigator.push(
                       context,
                       MaterialPageRoute<void>(builder: (_) => LeaderboardScreen(examId: exam.str('id'), title: exam.str('title'))),
@@ -666,7 +668,7 @@ class _ExamCard extends StatelessWidget {
               ),
             )
           else if (upcoming)
-            Text('Questions unlock when the ${isAssignment ? 'assignment' : 'exam'} opens.', style: const TextStyle(color: AppColors.muted, fontSize: 13))
+            Text('Questions unlock when the ${isAssignment ? 'assignment' : 'exam'} opens.', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13))
           else if (missed)
             Text(
               '${isAssignment ? 'The deadline has passed.' : 'This exam has ended.'} You did not turn it in.',

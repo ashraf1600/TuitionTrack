@@ -201,7 +201,7 @@ class _GroupFormScreenState extends State<GroupFormScreen> {
                   child: TextFormField(
                     controller: _length,
                     keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(labelText: 'Classes per cycle'),
+                    decoration: InputDecoration(labelText: 'Classes per cycle'),
                     onChanged: (_) => setState(() {}),
                     validator: (v) {
                       final value = int.tryParse((v ?? '').trim());
@@ -216,7 +216,7 @@ class _GroupFormScreenState extends State<GroupFormScreen> {
               gap8,
               Text(
                 'You earn ${taka(fee / length)} for each class you mark as done.',
-                style: const TextStyle(color: AppColors.muted, fontSize: 13),
+                style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
               ),
             ],
             SectionTitle(
@@ -225,7 +225,7 @@ class _GroupFormScreenState extends State<GroupFormScreen> {
               trailing: TextButton.icon(onPressed: _addSlot, icon: const Icon(Icons.add, size: 18), label: const Text('Add day')),
             ),
             if (_routine.isEmpty)
-              const Text('No class days added yet.', style: TextStyle(color: AppColors.muted))
+              Text('No class days added yet.', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant))
             else
               AppCard(
                 padding: EdgeInsets.zero,

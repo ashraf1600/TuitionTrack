@@ -67,7 +67,7 @@ class _ConnectByCodeCardState extends State<ConnectByCodeCard> {
         children: [
           const Text('Connect with invite code', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
           const SizedBox(height: 4),
-          const Text('Ask your tutor for their invite code.', style: TextStyle(color: AppColors.muted, fontSize: 13)),
+          Text('Ask your tutor for their invite code.', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13)),
           gap12,
           AnimatedContainer(
             duration: const Duration(milliseconds: 220),
@@ -75,7 +75,7 @@ class _ConnectByCodeCardState extends State<ConnectByCodeCard> {
               borderRadius: BorderRadius.circular(16),
               boxShadow: [
                 BoxShadow(
-                  color: (_focused ? AppColors.primary : AppColors.muted).withValues(alpha: 0.25),
+                  color: (_focused ? AppColors.primary : Theme.of(context).colorScheme.onSurfaceVariant).withValues(alpha: 0.25),
                   blurRadius: _focused ? 18 : 8,
                 ),
               ],
@@ -103,11 +103,11 @@ class _ConnectByCodeCardState extends State<ConnectByCodeCard> {
           SizedBox(
             height: 50,
             child: _busy
-                ? const Center(child: SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2.5)))
+                ? Center(child: SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2.5)))
                 : FilledButton.icon(
                     onPressed: _send,
-                    icon: const Icon(Icons.send),
-                    label: const Text('Send Request'),
+                    icon: Icon(Icons.send),
+                    label: Text('Send Request'),
                     style: FilledButton.styleFrom(
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                     ),
@@ -129,18 +129,18 @@ class PendingConnectionView extends StatelessWidget {
     return AppCard(
       child: Row(
         children: [
-          const SizedBox(
+          SizedBox(
             width: 24,
             height: 24,
             child: CircularProgressIndicator(strokeWidth: 2.5),
           ),
-          const SizedBox(width: 12),
+          SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('Pending Connection', style: TextStyle(fontWeight: FontWeight.w700)),
-                Text('Waiting for $tutorName to accept.', style: const TextStyle(color: AppColors.muted, fontSize: 13)),
+                Text('Pending Connection', style: TextStyle(fontWeight: FontWeight.w700)),
+                Text('Waiting for $tutorName to accept.', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13)),
               ],
             ),
           ),

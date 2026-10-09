@@ -69,12 +69,17 @@ class _TuitionTrackAppState extends State<TuitionTrackApp> {
         ChangeNotifierProvider<Session>.value(value: widget.session),
         Provider<Repo>(create: (_) => Repo(widget.session.api)),
       ],
-      child: MaterialApp(
-        title: 'TuitionTrack',
-        debugShowCheckedModeBanner: false,
-        theme: buildTheme(),
-        navigatorKey: _navigator,
-        home: const _Root(),
+      child: ListenableBuilder(
+        listenable: widget.session,
+        builder: (context, _) => MaterialApp(
+          title: 'TuitionTrack',
+          debugShowCheckedModeBanner: false,
+          theme: buildLightTheme(),
+          darkTheme: buildTheme(),
+          themeMode: widget.session.themeMode,
+          navigatorKey: _navigator,
+          home: const _Root(),
+        ),
       ),
     );
   }
