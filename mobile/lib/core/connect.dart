@@ -79,6 +79,11 @@ class HomeworkItem {
     required this.feedback,
     required this.isEvaluated,
     required this.isSubmitted,
+    this.sourceLabel = '',
+    this.tuitionId = '',
+    this.tuitionTitle = '',
+    required this.studentId,
+    required this.studentName,
   });
   final String id;
   final String title;
@@ -89,6 +94,16 @@ class HomeworkItem {
   final String feedback;
   final bool isEvaluated;
   final bool isSubmitted;
+  /// Where it came from, e.g. "Class 4 · Oct 9". Display only.
+  final String sourceLabel;
+  final String tuitionId;
+  final String tuitionTitle;
+  final String studentId;
+  final String studentName;
+
+  /// True for a group-shared row (one task, whole group) as opposed to a
+  /// per-student copy that is reviewed and marked done individually.
+  bool get isSharedGroupTask => tuitionId.isNotEmpty && studentId.isEmpty;
 
   factory HomeworkItem.fromJson(Json j) => HomeworkItem(
         id: j.str('id'),
@@ -100,5 +115,10 @@ class HomeworkItem {
         feedback: j.str('tutor_feedback'),
         isEvaluated: j.flag('is_evaluated'),
         isSubmitted: j.flag('is_submitted') || j.str('submitted_online_url').isNotEmpty,
+        sourceLabel: j.str('source_label'),
+        tuitionId: j.str('tuition_id'),
+        tuitionTitle: j.str('tuition_title'),
+        studentId: j.str('student_id'),
+        studentName: j.str('student_name'),
       );
 }

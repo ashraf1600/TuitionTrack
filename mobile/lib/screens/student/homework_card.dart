@@ -141,6 +141,11 @@ class _HomeworkCardState extends State<HomeworkCard> {
               ),
             ),
           Text(hw.title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+          if (hw.sourceLabel.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Text(hw.sourceLabel, style: const TextStyle(fontSize: 12, color: Colors.indigo)),
+            ),
           if (hw.description.isNotEmpty) ...[gap8, Text(hw.description, style: const TextStyle(fontSize: 13))],
           gap8,
           Row(

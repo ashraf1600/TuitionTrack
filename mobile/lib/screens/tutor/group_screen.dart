@@ -213,8 +213,10 @@ class _ClassesTab extends StatelessWidget {
     if (ok) await reload();
   }
 
-  /// Open a homework composer pre-filled with the class topic + date so the tutor
-  /// can drop in the homework details and send it to the entire tuition group.
+  /// Open a homework composer pre-filled with the class topic + date.
+  /// "Each student" (default) creates one row per enrolled student so each
+  /// submission is reviewed and marked done individually; "whole group"
+  /// creates a single shared task.
   Future<void> _setHomeworkFromClass(
     BuildContext context,
     Json tuition,
@@ -223,19 +225,29 @@ class _ClassesTab extends StatelessWidget {
     DateTime heldOn,
   ) async {
     final repo = context.read<Repo>();
+    final roster = tuition
+        .maps('enrollments')
+        .where((e) => e['is_active'] != false)
+        .map((e) => (id: e.str('student_id'), name: e.str('student_name')))
+        .where((s) => s.id.isNotEmpty)
+        .toList();
     final titleCtrl = TextEditingController(
-      text: topicText.isNotEmpty ? 'Practice on $topicText' : 'Class $classNo follow-up',
+      text: topicText.isNotEmpty ? 'Class $classNo — $topicText' : 'Class $classNo homework',
     );
     final descriptionCtrl = TextEditingController();
-    final initialDue = DateTime.now().add(const Duration(days: 3));
-    var dueDate = DateTime(initialDue.year, initialDue.month, initialDue.day, 23, 59);
+    final initialDue = DateTime.now().add(const Duration(days: 1));
+    var dueDate = DateTime(initialDue.year, initialDue.month, initialDue.day, 18, 0);
+    var perStudent = roster.isNotEmpty;
+    final sourceLabel =
+        'Class $classNo · ${heldOn.day.toString().padLeft(2, '0')}/${heldOn.month.toString().padLeft(2, '0')}';
 
+    var titleTick = 0;
     final saved = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => StatefulBuilder(
         builder: (dialogContext, setStateDialog) {
           // Refresh the Send button whenever the title changes.
-          void onTitleChanged() => setStateDialog(() {});
+          void onTitleChanged() => setStateDialog(() => titleTick++);
           return AlertDialog(
             title: Text('Homework — class $classNo'),
             content: SingleChildScrollView(
@@ -280,15 +292,39 @@ class _ClassesTab extends StatelessWidget {
                         lastDate: DateTime.now().add(const Duration(days: 365)),
                       );
                       if (picked != null) {
+                        final time = await showTimePicker(
+                          context: dialogContext,
+                          initialTime: TimeOfDay.fromDateTime(dueDate),
+                        );
                         setStateDialog(() {
-                          dueDate = DateTime(picked.year, picked.month, picked.day, 23, 59);
+                          dueDate = DateTime(
+                            picked.year,
+                            picked.month,
+                            picked.day,
+                            time?.hour ?? 18,
+                            time?.minute ?? 0,
+                          );
                         });
                       }
                     },
                   ),
+                  if (roster.isNotEmpty) ...[
+                    gap8,
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: Text('One copy per student (${roster.length})',
+                          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                      subtitle: const Text('Each submission is marked done individually. Off = one shared task.',
+                          style: TextStyle(fontSize: 12, color: AppColors.muted)),
+                      value: perStudent,
+                      onChanged: (v) => setStateDialog(() => perStudent = v),
+                    ),
+                  ],
                   gap8,
                   Text(
-                    'Sent to every student in ${tuition.str('title')}.',
+                    perStudent && roster.isNotEmpty
+                        ? 'Sent to ${roster.length} students separately.'
+                        : 'Sent to every student in ${tuition.str('title')}.',
                     style: const TextStyle(color: AppColors.muted, fontSize: 12),
                   ),
                 ],
@@ -306,17 +342,43 @@ class _ClassesTab extends StatelessWidget {
       ),
     );
     if (saved != true || !context.mounted) return;
-    await attempt(
+    final ok = await attempt(
       context,
-      () => repo.createHomework(
-        title: titleCtrl.text.trim(),
-        description: descriptionCtrl.text.trim(),
-        dueDate: dueDate,
-        tuitionId: tuition.str('id'),
-      ),
-      success: 'Homework sent to ${tuition.str('title')}.',
+      () async {
+        final payload = {
+          'title': titleCtrl.text.trim(),
+          'description': descriptionCtrl.text.trim(),
+          'dueDate': dueDate,
+          'sourceLabel': sourceLabel,
+        };
+        if (perStudent && roster.isNotEmpty) {
+          var done = 0;
+          for (final s in roster) {
+            await repo.createHomework(
+              title: payload['title'] as String,
+              description: payload['description'] as String,
+              dueDate: payload['dueDate'] as DateTime,
+              studentId: s.id,
+              sourceLabel: payload['sourceLabel'] as String,
+            );
+            done++;
+          }
+          if (done < roster.length) throw Exception('Only $done of ${roster.length} copies were sent.');
+        } else {
+          await repo.createHomework(
+            title: payload['title'] as String,
+            description: payload['description'] as String,
+            dueDate: payload['dueDate'] as DateTime,
+            tuitionId: tuition.str('id'),
+            sourceLabel: payload['sourceLabel'] as String,
+          );
+        }
+      },
+      success: perStudent && roster.isNotEmpty
+          ? 'Homework sent to ${roster.length} students (one copy each).'
+          : 'Homework sent to ${tuition.str('title')}.',
     );
-    // The class-attendance sheet is already closed; no reload needed here.
+    if (ok) await reload();
   }
 
   Future<void> _startNext(BuildContext context, Json cycle) async {

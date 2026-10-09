@@ -102,22 +102,27 @@ class Repo {
   /// Tutor creates homework tied to one tuition or one student.
   /// `dueDate` is sent as a UTC ISO string; pass a local DateTime.
   /// Description is optional — leaving it empty omits the field.
+  /// `sourceLabel` (e.g. "Class 4 · Oct 9") records where it came from.
   Future<Json> createHomework({
     required String title,
     String description = '',
     required DateTime dueDate,
     String? tuitionId,
     String? studentId,
+    String sourceLabel = '',
   }) async {
     assert(tuitionId != null || studentId != null, 'homework needs a tuition or a student');
     return _map(await api.post('/homework/', {
       'title': title,
       if (description.isNotEmpty) 'description': description,
       'due_date': dueDate.toUtc().toIso8601String(),
+      if (sourceLabel.isNotEmpty) 'source_label': sourceLabel,
       if (tuitionId != null) 'tuition': tuitionId,
       if (studentId != null) 'student': studentId,
     }));
   }
+  Future<Json> updateHomework(String id, Json changes) async => _map(await api.patch('/homework/$id/', changes));
+  Future<void> deleteHomework(String id) async => api.delete('/homework/$id/');
   /// Student upload: URL only — never sends is_evaluated.
   Future<Json> submitHomework(String id, String url) async {
     final data = _map(await api.post('/homework/$id/submit/', {'submitted_online_url': url}));

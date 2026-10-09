@@ -115,21 +115,52 @@ class _TutorDetailScreenState extends State<TutorDetailScreen> {
                         );
                       },
                     ),
-              // Homework tab
-              d.homework.isEmpty
-                  ? const Center(child: Text('No homework assigned.'))
-                  : ListView.separated(
-                      padding: const EdgeInsets.all(16),
-                      itemCount: d.homework.length,
-                      separatorBuilder: (_, _) => const SizedBox(height: 12),
-                      itemBuilder: (_, i) => HomeworkCard(
-                        hw: d.homework[i],
-                        isTutor: isTutor,
-                        onChanged: () async {
-                          await _key.currentState?.reload();
-                        },
-                      ),
-                    ),
+              // Homework tab (pending first, nearest deadline on top)
+              Builder(builder: (context) {
+                final sorted = [...d.homework]..sort((a, b) {
+                    if (a.isEvaluated != b.isEvaluated) return a.isEvaluated ? 1 : -1;
+                    return a.dueDate.compareTo(b.dueDate);
+                  });
+                final pending = sorted.where((h) => !h.isEvaluated).length;
+                final dueSoon = sorted
+                    .where((h) =>
+                        !h.isEvaluated && h.dueDate.difference(DateTime.now()).inHours <= 24)
+                    .length;
+                if (sorted.isEmpty) {
+                  return const Center(child: Text('No homework assigned.'));
+                }
+                return ListView.separated(
+                  padding: const EdgeInsets.all(16),
+                  itemCount: sorted.length + (pending > 0 ? 1 : 0),
+                  separatorBuilder: (_, _) => const SizedBox(height: 12),
+                  itemBuilder: (_, i) {
+                    if (pending > 0 && i == 0) {
+                      return AppCard(
+                        child: Row(
+                          children: [
+                            const Icon(Icons.assignment_late_outlined, color: Colors.amber),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                '$pending pending${dueSoon > 0 ? ' · $dueSoon due within 24 hours' : ''} — newest deadline first.',
+                                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }
+                    final hw = sorted[pending > 0 ? i - 1 : i];
+                    return HomeworkCard(
+                      hw: hw,
+                      isTutor: isTutor,
+                      onChanged: () async {
+                        await _key.currentState?.reload();
+                      },
+                    );
+                  },
+                );
+              }),
             ],
           ),
         ),
