@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import '../../core/connect.dart';
 import '../../core/repo.dart';
+import '../../widgets/theme.dart';
 import '../../widgets/ui.dart';
 
 /// Phase 1: unassigned state — 6-char tutor_code with focus animation,
@@ -66,7 +67,7 @@ class _ConnectByCodeCardState extends State<ConnectByCodeCard> {
         children: [
           const Text('Connect with invite code', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
           const SizedBox(height: 4),
-          const Text('Ask your tutor for their invite code.', style: TextStyle(color: Colors.grey, fontSize: 13)),
+          const Text('Ask your tutor for their invite code.', style: TextStyle(color: AppColors.muted, fontSize: 13)),
           gap12,
           AnimatedContainer(
             duration: const Duration(milliseconds: 220),
@@ -74,7 +75,7 @@ class _ConnectByCodeCardState extends State<ConnectByCodeCard> {
               borderRadius: BorderRadius.circular(16),
               boxShadow: [
                 BoxShadow(
-                  color: (_focused ? Colors.indigo : Colors.grey).withValues(alpha: 0.25),
+                  color: (_focused ? AppColors.primary : AppColors.muted).withValues(alpha: 0.25),
                   blurRadius: _focused ? 18 : 8,
                 ),
               ],
@@ -82,7 +83,7 @@ class _ConnectByCodeCardState extends State<ConnectByCodeCard> {
             child: TextField(
               controller: _code,
               focusNode: _focus,
-              maxLength: 6,
+              maxLength: 8,
               textCapitalization: TextCapitalization.characters,
               inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[A-Za-z0-9]'))],
               decoration: const InputDecoration(
@@ -139,11 +140,11 @@ class PendingConnectionView extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text('Pending Connection', style: TextStyle(fontWeight: FontWeight.w700)),
-                Text('Waiting for $tutorName to accept.', style: const TextStyle(color: Colors.grey, fontSize: 13)),
+                Text('Waiting for $tutorName to accept.', style: const TextStyle(color: AppColors.muted, fontSize: 13)),
               ],
             ),
           ),
-          const Pill('PENDING', color: Colors.amber, icon: Icons.hourglass_empty),
+          const Pill('PENDING', color: AppColors.warning, icon: Icons.hourglass_empty),
         ],
       ),
     );

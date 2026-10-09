@@ -150,7 +150,7 @@ class _WalletCard extends StatelessWidget {
               value: total <= 0 ? 0 : earned / total,
               minHeight: 8,
               color: AppColors.success,
-              backgroundColor: Colors.white12,
+              backgroundColor: AppColors.card,
               semanticsLabel: 'Share of current cycles already earned',
             ),
           ),

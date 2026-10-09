@@ -6,6 +6,7 @@ import '../../core/api.dart';
 import '../../core/connect.dart';
 import '../../core/json.dart';
 import '../../core/repo.dart';
+import '../../widgets/theme.dart';
 import '../../widgets/ui.dart';
 import '../student/homework_card.dart';
 
@@ -198,15 +199,15 @@ class _TutorHomeworkRow extends StatelessWidget {
             child: Row(
               children: [
                 Icon(hw.studentName.isNotEmpty ? Icons.person_outline : Icons.groups_outlined,
-                    size: 14, color: Colors.indigo),
+                    size: 14, color: AppColors.primarySoft),
                 const SizedBox(width: 4),
                 Expanded(
                   child: Text(target,
-                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.indigo),
+                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.primarySoft),
                       overflow: TextOverflow.ellipsis),
                 ),
                 if (hw.isSharedGroupTask)
-                  const Text('shared', style: TextStyle(fontSize: 11, color: Colors.grey)),
+                  const Text('shared', style: TextStyle(fontSize: 11, color: AppColors.muted)),
               ],
             ),
           ),

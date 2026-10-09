@@ -5,6 +5,7 @@ import '../../core/connect.dart';
 import '../../core/json.dart';
 import '../../core/repo.dart';
 import '../../core/session.dart';
+import '../../widgets/theme.dart';
 import '../../widgets/ui.dart';
 import 'homework_card.dart';
 
@@ -78,16 +79,17 @@ class _TutorDetailScreenState extends State<TutorDetailScreen> {
                               Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                                 decoration: BoxDecoration(
-                                    color: Colors.indigo.shade50, borderRadius: BorderRadius.circular(12)),
+                                    color: AppColors.primary.withValues(alpha: 0.15),
+                                    borderRadius: BorderRadius.circular(12)),
                                 child: Text(r.day.length > 3 ? r.day.substring(0, 3).toUpperCase() : r.day.toUpperCase(),
-                                    style: const TextStyle(fontWeight: FontWeight.w800, color: Colors.indigo)),
+                                    style: const TextStyle(fontWeight: FontWeight.w800, color: AppColors.primarySoft)),
                               ),
                               const SizedBox(width: 12),
                               Expanded(
                                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                                   Text(r.subject.isEmpty ? 'Class' : r.subject,
                                       style: const TextStyle(fontWeight: FontWeight.w700)),
-                                  Text('${r.start} – ${r.end}', style: const TextStyle(color: Colors.grey)),
+                                  Text('${r.start} – ${r.end}', style: const TextStyle(color: AppColors.muted)),
                                 ]),
                               ),
                             ],
@@ -107,7 +109,7 @@ class _TutorDetailScreenState extends State<TutorDetailScreen> {
                         return AppCard(
                           child: ListTile(
                             contentPadding: EdgeInsets.zero,
-                            leading: const Icon(Icons.event_rounded, color: Colors.indigo),
+                            leading: const Icon(Icons.event_rounded, color: AppColors.primarySoft),
                             title: Text(c.topic.isEmpty ? 'Class' : c.topic,
                                 style: const TextStyle(fontWeight: FontWeight.w700)),
                             subtitle: Text('${c.at.toLocal()}'.substring(0, 16)),
@@ -138,7 +140,7 @@ class _TutorDetailScreenState extends State<TutorDetailScreen> {
                       return AppCard(
                         child: Row(
                           children: [
-                            const Icon(Icons.assignment_late_outlined, color: Colors.amber),
+                            const Icon(Icons.assignment_late_outlined, color: AppColors.warning),
                             const SizedBox(width: 10),
                             Expanded(
                               child: Text(

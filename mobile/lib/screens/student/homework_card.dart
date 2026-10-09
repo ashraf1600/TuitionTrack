@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 
 import '../../core/connect.dart';
 import '../../core/repo.dart';
+import '../../widgets/theme.dart';
 import '../../widgets/ui.dart';
 
 /// Phase 4 (critical): ticking countdown + <=2h alert + role-correct actions.
@@ -120,7 +121,7 @@ class _HomeworkCardState extends State<HomeworkCard> {
     final hw = widget.hw;
     final urgent = !hw.isEvaluated && _left.inSeconds > 0 && _left.inSeconds <= 7200;
     return AppCard(
-      borderColor: urgent ? Colors.red.withValues(alpha: 0.6) : null,
+      borderColor: urgent ? AppColors.danger.withValues(alpha: 0.6) : null,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -128,14 +129,14 @@ class _HomeworkCardState extends State<HomeworkCard> {
             Container(
               margin: const EdgeInsets.only(bottom: 10),
               padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(color: Colors.red.shade50, borderRadius: BorderRadius.circular(12)),
+              decoration: BoxDecoration(color: AppColors.danger.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(12)),
               child: const Row(
                 children: [
-                  Icon(Icons.alarm, color: Colors.red, size: 18),
+                  Icon(Icons.alarm, color: AppColors.danger, size: 18),
                   SizedBox(width: 8),
                   Expanded(
                     child: Text('Hurry! Homework due in less than 2 hours!',
-                        style: TextStyle(color: Colors.red, fontWeight: FontWeight.w700, fontSize: 13)),
+                        style: TextStyle(color: AppColors.danger, fontWeight: FontWeight.w700, fontSize: 13)),
                   ),
                 ],
               ),
@@ -144,23 +145,23 @@ class _HomeworkCardState extends State<HomeworkCard> {
           if (hw.sourceLabel.isNotEmpty)
             Padding(
               padding: const EdgeInsets.only(top: 2),
-              child: Text(hw.sourceLabel, style: const TextStyle(fontSize: 12, color: Colors.indigo)),
+              child: Text(hw.sourceLabel, style: const TextStyle(fontSize: 12, color: AppColors.primarySoft)),
             ),
           if (hw.description.isNotEmpty) ...[gap8, Text(hw.description, style: const TextStyle(fontSize: 13))],
           gap8,
           Row(
             children: [
-              const Icon(Icons.timer_outlined, size: 16, color: Colors.indigo),
+              const Icon(Icons.timer_outlined, size: 16, color: AppColors.primarySoft),
               const SizedBox(width: 6),
               Text(_countdown,
                   style: TextStyle(
                       fontWeight: FontWeight.w700,
-                      color: _left.isNegative || urgent ? Colors.red : Colors.indigo)),
+                      color: _left.isNegative || urgent ? AppColors.danger : AppColors.primarySoft)),
             ],
           ),
           gap8,
           Pill(hw.isEvaluated ? 'Marked as Done' : 'Pending Tutor Review',
-              color: hw.isEvaluated ? Colors.green : Colors.amber, icon: hw.isEvaluated ? Icons.verified : Icons.hourglass_empty),
+              color: hw.isEvaluated ? AppColors.success : AppColors.warning, icon: hw.isEvaluated ? Icons.verified : Icons.hourglass_empty),
           if (hw.feedback.isNotEmpty) ...[gap8, Text('Feedback: ${hw.feedback}', style: const TextStyle(fontSize: 13))],
           gap12,
           if (!widget.isTutor) ...[
@@ -193,7 +194,7 @@ class _HomeworkCardState extends State<HomeworkCard> {
               child: BusyButton(
                 label: hw.isEvaluated ? 'Evaluated ✓' : 'Mark as Done',
                 icon: Icons.verified,
-                color: Colors.green,
+                color: AppColors.success,
                 onPressed: (hw.isEvaluated || _busy)
                     ? null
                     : () async {
