@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/format.dart';
@@ -35,6 +36,7 @@ class HomeTab extends StatelessWidget {
         children: [
           _WalletCard(wallet: data.wallet),
           _TodayClasses(tuitions: data.tuitions, reload: reload),
+          _WeeklyMap(tuitions: data.tuitions, reload: reload),
           if (data.requests.isNotEmpty) _Requests(requests: data.requests, tuitions: data.tuitions, reload: reload),
           SectionTitle(
             'Earnings by group',
@@ -332,9 +334,125 @@ class _TodayClassesState extends State<_TodayClasses> {
   }
 }
 
+/// Weekly routine map: every weekday with each tuition's time + subject.
+/// Saturday-first order (BD week). Tapping a row opens that group.
+class _WeeklyMap extends StatelessWidget {
+  const _WeeklyMap({required this.tuitions, required this.reload});
+  final List<Json> tuitions;
+  final Future<void> Function() reload;
+
+  static const _order = ['Saturday', 'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+  static const _abbr = {'sat': 'Saturday', 'sun': 'Sunday', 'mon': 'Monday', 'tue': 'Tuesday', 'wed': 'Wednesday', 'thu': 'Thursday', 'fri': 'Friday'};
+
+  static String _normDay(String raw) {
+    final t = raw.trim();
+    if (t.isEmpty) return '';
+    final cap = t[0].toUpperCase() + t.substring(1).toLowerCase();
+    if (_order.contains(cap)) return cap;
+    return _abbr[cap.substring(0, 3).toLowerCase()] ?? '';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final today = weekdayName(DateTime.now());
+    final byDay = {for (final d in _order) d: <Json>[]};
+    for (final tuition in tuitions) {
+      for (final slot in tuition.maps('routine')) {
+        final day = _normDay(slot.str('day'));
+        if (day.isEmpty) continue;
+        byDay[day]!.add(Json.from({
+          ...slot,
+          '_tuition_id': tuition.str('id'),
+          '_tuition_title': tuition.str('title'),
+          '_subject': tuition.str('subject'),
+        }));
+      }
+    }
+    if (byDay.values.every((slots) => slots.isEmpty)) return const SizedBox.shrink();
+    for (final slots in byDay.values) {
+      slots.sort((a, b) => a.str('start_time', a.str('time')).compareTo(b.str('start_time', b.str('time'))));
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const SectionTitle('Weekly routine', icon: Icons.calendar_month_outlined, subtitle: 'Every class day, group and time. Tap a class to open its group.'),
+        for (final day in _order) ...[
+          AppCard(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(day,
+                          style: TextStyle(
+                              fontWeight: FontWeight.w700,
+                              color: day == today ? AppColors.primarySoft : Theme.of(context).colorScheme.onSurface)),
+                    ),
+                    if (day == today)
+                      const Pill('Today', color: AppColors.primarySoft)
+                    else if (byDay[day]!.isEmpty)
+                      Text('No classes', style: TextStyle(color: Theme.of(context).colorScheme.outlineVariant, fontSize: 12)),
+                    if (byDay[day]!.isNotEmpty)
+                      Text('${byDay[day]!.length} class${byDay[day]!.length == 1 ? '' : 'es'}',
+                          style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 12)),
+                  ],
+                ),
+                for (final slot in byDay[day]!) ...[
+                  const SizedBox(height: 6),
+                  InkWell(
+                    borderRadius: BorderRadius.circular(10),
+                    onTap: () async {
+                      HapticFeedback.lightImpact();
+                      await Navigator.push(
+                          context, MaterialPageRoute<void>(builder: (_) => GroupScreen(tuitionId: slot.str('_tuition_id'))));
+                      await reload();
+                    },
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      child: Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                            decoration: BoxDecoration(
+                                color: AppColors.primary.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(8)),
+                            child: Text(
+                              '${to12h(slot.str('start_time', slot.str('time')))}${slot.str('end_time').isNotEmpty ? ' – ${to12h(slot.str('end_time'))}' : ''}',
+                              style: TextStyle(
+                                  fontWeight: FontWeight.w700, fontSize: 12, color: tone(context, AppColors.primarySoft)),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(slot.str('_tuition_title'), style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                                if (slot.str('_subject').isNotEmpty)
+                                  Text(slot.str('_subject'),
+                                      style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 12)),
+                              ],
+                            ),
+                          ),
+                          const Icon(Icons.chevron_right, size: 18, color: AppColors.faint),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          gap8,
+        ],
+      ],
+    );
+  }
+}
+
 /// Students who asked to join this tutor.
-class _Requests extends StatelessWidget {
-  const _Requests({required this.requests, required this.tuitions, required this.reload});
+class _Requests extends StatelessWidget {  const _Requests({required this.requests, required this.tuitions, required this.reload});
   final List<Json> requests;
   final List<Json> tuitions;
   final Future<void> Function() reload;
