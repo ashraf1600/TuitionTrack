@@ -212,4 +212,41 @@ class NotificationsView(APIView):
                     '', req.responded_at, '/student',
                 )
 
+            # Completed billing cycle → payment due. Derived from the ACTIVE
+            # cycle, so it clears itself as soon as the tutor starts the next one.
+            from apps.cycles.models import Cycle as LegacyCycle
+            from apps.students.models import TuitionEnrollment
+            seen_cycle_ids = set()
+            for enr in TuitionEnrollment.objects.filter(
+                student=user, is_active=True
+            ).select_related('tuition', 'tuition__tutor'):
+                tuition = enr.tuition
+                cycle = tuition.cycles.filter(status=AttendanceCycle.Status.ACTIVE).first()
+                if not cycle or not cycle.is_complete or cycle.id in seen_cycle_ids:
+                    continue
+                seen_cycle_ids.add(cycle.id)
+                tutor = tuition.tutor
+                tutor_name = f'{(tutor.first_name or "").strip() or tutor.username} Sir'
+                amount = f'৳{float(cycle.total_fee):,.0f}'
+                add(
+                    f'cycle-due-{cycle.id}', 'cycle',
+                    f'{tuition.title}: cycle #{cycle.cycle_number} complete — payment due',
+                    f'{tutor_name} · {amount}', cycle.updated_at, f'/student?tutor={tutor.id}',
+                )
+
+            # Legacy 1-on-1 billing (students with no tuition group).
+            for cycle in LegacyCycle.objects.filter(
+                student=user, status=LegacyCycle.Status.ACTIVE
+            ).select_related('tutor'):
+                if not cycle.is_complete:
+                    continue
+                tutor = cycle.tutor
+                tutor_name = f'{(tutor.first_name or "").strip() or tutor.username} Sir'
+                amount = f'৳{float(cycle.fee_snapshot):,.0f}'
+                add(
+                    f'cycle-due-{cycle.id}', 'cycle',
+                    f'Cycle #{cycle.cycle_number} complete — payment due',
+                    f'{tutor_name} · {amount}', cycle.updated_at, '/student',
+                )
+
         return Response({'count': len(items), 'notifications': items})
