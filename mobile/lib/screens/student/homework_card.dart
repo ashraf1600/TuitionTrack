@@ -194,7 +194,7 @@ class _HomeworkCardState extends State<HomeworkCard> {
               child: BusyButton(
                 label: hw.isEvaluated ? 'Evaluated ✓' : 'Mark as Done',
                 icon: Icons.verified,
-                color: AppColors.success,
+                color: AppColors.successDeep,
                 onPressed: (hw.isEvaluated || _busy)
                     ? null
                     : () async {

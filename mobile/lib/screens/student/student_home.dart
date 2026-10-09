@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -49,7 +51,12 @@ class _StudentHomeState extends State<StudentHome> {
     final homework = results[3]
         .map(HomeworkItem.fromJson)
         .toList()
-      ..sort((a, b) => a.dueDate.compareTo(b.dueDate));
+      // Pending first (nearest deadline on top), evaluated sink below —
+      // same ordering as the web dashboard so nothing pending gets buried.
+      ..sort((a, b) {
+        if (a.isEvaluated != b.isEvaluated) return a.isEvaluated ? 1 : -1;
+        return a.dueDate.compareTo(b.dueDate);
+      });
     return _StudentData(results[0], results[1], results[2], homework);
   }
 
@@ -340,6 +347,7 @@ class _FindTutorSheetState extends State<_FindTutorSheet> {
   List<Json>? _tutors;
   String _search = '';
   Json? _picked;
+  Timer? _debounce;
 
   @override
   void initState() {
@@ -350,6 +358,7 @@ class _FindTutorSheetState extends State<_FindTutorSheet> {
   @override
   void dispose() {
     _message.dispose();
+    _debounce?.cancel();
     super.dispose();
   }
 
@@ -417,8 +426,13 @@ class _FindTutorSheetState extends State<_FindTutorSheet> {
                   TextField(
                     decoration: const InputDecoration(labelText: 'Search by name, username or subject', prefixIcon: Icon(Icons.search)),
                     onChanged: (value) {
-                      _search = value.trim();
-                      _load();
+                      // Debounce: one request per pause, not per keystroke.
+                      _debounce?.cancel();
+                      _debounce = Timer(const Duration(milliseconds: 350), () {
+                        if (!mounted) return;
+                        _search = value.trim();
+                        _load();
+                      });
                     },
                   ),
                   gap12,
@@ -570,7 +584,7 @@ class _ExamCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              Pill(isAssignment ? 'Assignment' : 'Exam', color: isAssignment ? AppColors.purple : AppColors.primarySoft),
+              Pill(isAssignment ? 'Assignment' : 'Exam', color: AppColors.primarySoft),
               if (minutes > 0 && !isAssignment) ...[const SizedBox(width: 6), Pill('$minutes min', icon: Icons.timer_outlined)],
               const Spacer(),
               Text('${trimNumber(exam.number('total_marks'))} marks', style: const TextStyle(fontWeight: FontWeight.w700, color: AppColors.success)),
@@ -640,7 +654,7 @@ class _ExamCard extends StatelessWidget {
               width: double.infinity,
               child: BusyButton(
                 onPressed: () => _take(context),
-                color: isLate ? const Color(0xFFB45309) : const Color(0xFF059669),
+                color: isLate ? AppColors.warningDeep : AppColors.successDeep,
                 icon: Icons.arrow_forward,
                 label: isLate
                     ? 'Hand in late'
@@ -674,6 +688,10 @@ class _HomeworkTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final pending = items.where((h) => !h.isEvaluated).length;
+    final dueSoon = items
+        .where((h) => !h.isEvaluated && h.dueDate.difference(DateTime.now()).inHours <= 24)
+        .length;
     if (items.isEmpty) {
       return const PageBody(children: [
         EmptyState(
@@ -686,6 +704,22 @@ class _HomeworkTab extends StatelessWidget {
     return PageBody(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
       children: [
+        if (pending > 0)
+          AppCard(
+            child: Row(
+              children: [
+                const Icon(Icons.assignment_late_outlined, color: AppColors.warning),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    '$pending pending${dueSoon > 0 ? ' · $dueSoon due within 24 hours' : ''} — newest deadline first.',
+                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        if (pending > 0) gap12,
         for (final hw in items) ...[
           HomeworkCard(hw: hw, isTutor: false, onChanged: reload),
           gap12,

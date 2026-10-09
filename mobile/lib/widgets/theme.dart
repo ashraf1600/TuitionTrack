@@ -12,7 +12,9 @@ class AppColors {
   static const primary = Color(0xFF6366F1); // indigo-500
   static const primarySoft = Color(0xFFA5B4FC); // indigo-300
   static const success = Color(0xFF34D399); // emerald-400
+  static const successDeep = Color(0xFF059669); // emerald-600: filled buttons with white text
   static const warning = Color(0xFFFBBF24); // amber-400
+  static const warningDeep = Color(0xFFB45309); // amber-700: filled buttons with white text
   static const danger = Color(0xFFFB7185); // rose-400
   static const purple = Color(0xFFC084FC);
 }

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -393,11 +395,18 @@ class _TutorPickerState extends State<_TutorPicker> {
   List<Json>? _tutors;
   String? _error;
   String _search = '';
+  Timer? _debounce;
 
   @override
   void initState() {
     super.initState();
     _load();
+  }
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -425,8 +434,12 @@ class _TutorPickerState extends State<_TutorPicker> {
               autofocus: true,
               decoration: const InputDecoration(labelText: 'Search by name, username or subject', prefixIcon: Icon(Icons.search)),
               onChanged: (value) {
-                _search = value.trim();
-                _load();
+                _debounce?.cancel();
+                _debounce = Timer(const Duration(milliseconds: 350), () {
+                  if (!mounted) return;
+                  _search = value.trim();
+                  _load();
+                });
               },
             ),
             gap12,
