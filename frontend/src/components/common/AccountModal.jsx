@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { AlertCircle, Loader2 } from 'lucide-react';
+import { AlertCircle, Loader2, Copy, Check } from 'lucide-react';
 import Modal from './Modal';
 import PasswordField from './PasswordField';
 import { useAuth } from '../../context/AuthContext';
@@ -29,6 +29,7 @@ export default function AccountModal({ isOpen, onClose }) {
   const [current, setCurrent] = useState('');
   const [next, setNext] = useState('');
   const [confirm, setConfirm] = useState('');
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     if (!isOpen || !user) return;
@@ -119,6 +120,34 @@ export default function AccountModal({ isOpen, onClose }) {
 
       {tab === 'profile' ? (
         <form onSubmit={saveProfile} className="space-y-4">
+          {!isStudent && user?.tutor_code && (
+            <div className="p-4 rounded-xl bg-indigo-500/10 border border-indigo-500/30 flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <div className="text-[11px] font-bold uppercase tracking-wider text-indigo-300">
+                  My student invite code
+                </div>
+                <div className="font-mono text-lg font-black tracking-widest text-indigo-100 select-all">
+                  {user.tutor_code}
+                </div>
+                <p className="text-[11px] text-slate-400 mt-0.5">
+                  Students enter this code to request connection with you.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  navigator.clipboard.writeText(user.tutor_code);
+                  setCopied(true);
+                  notify.success('Invite code copied.');
+                  setTimeout(() => setCopied(false), 2000);
+                }}
+                className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold flex items-center gap-1.5 transition"
+              >
+                {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                {copied ? 'Copied' : 'Copy'}
+              </button>
+            </div>
+          )}
           <p className="text-xs text-slate-400">
             Username <span className="font-mono text-slate-200">@{user?.username}</span> cannot be changed.
           </p>

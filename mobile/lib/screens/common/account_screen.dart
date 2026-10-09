@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/api.dart';
@@ -134,6 +135,39 @@ class _AccountScreenState extends State<AccountScreen> {
               ),
             ),
             SectionTitle('My details'),
+            if (session.isTutor && (user.str('tutor_code').isNotEmpty)) ...[
+              AppCard(
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('MY STUDENT INVITE CODE',
+                              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.primarySoft)),
+                          const SizedBox(height: 4),
+                          Text(user.str('tutor_code'),
+                              style: const TextStyle(
+                                  fontSize: 22, fontWeight: FontWeight.w900, letterSpacing: 3, color: AppColors.primarySoft)),
+                          const Text('Students enter this code to request connection with you.',
+                              style: TextStyle(color: AppColors.muted, fontSize: 12)),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: 'Copy invite code',
+                      icon: const Icon(Icons.copy, color: AppColors.primarySoft),
+                      onPressed: () async {
+                        HapticFeedback.lightImpact();
+                        await Clipboard.setData(ClipboardData(text: user.str('tutor_code')));
+                        if (context.mounted) showToast(context, 'Invite code copied.');
+                      },
+                    ),
+                  ],
+                ),
+              ),
+              gap12,
+            ],
             _field('first_name', 'First name', validator: (v) => (v == null || v.trim().isEmpty) ? 'Required' : null),
             _field('last_name', 'Last name'),
             _field('email', 'Email', type: TextInputType.emailAddress, validator: (value) {
