@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { api } from '../../api/client';
 import { notify } from '../../utils/toast';
+import { confirmAction } from '../common/ConfirmDialog';
 
 export default function HomeworkManager({ tuitions = [], students = [] }) {
   const [homeworkList, setHomeworkList] = useState([]);
@@ -34,7 +35,13 @@ export default function HomeworkManager({ tuitions = [], students = [] }) {
   }, []);
 
   const handleDelete = async (id) => {
-    if (!window.confirm('Are you sure you want to delete this homework assignment?')) return;
+    const ok = await confirmAction({
+      title: 'Delete homework?',
+      message: 'This homework assignment will be removed for all students. This cannot be undone.',
+      confirmLabel: 'Delete',
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await api.deleteHomework(id);
       setHomeworkList((prev) => prev.filter((h) => h.id !== id));

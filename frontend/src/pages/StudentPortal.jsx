@@ -9,6 +9,7 @@ import TutorCodeConnect from '../components/student/TutorCodeConnect';
 import ExamTakerModal from '../components/student/ExamTakerModal';
 import ExamResultModal from '../components/student/ExamResultModal';
 import LeaderboardModal from '../components/common/LeaderboardModal';
+import { confirmAction } from '../components/common/ConfirmDialog';
 import { api } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 
@@ -88,9 +89,11 @@ export default function StudentPortal() {
     try {
       const target = exams.find((e) => e.id === examId);
       if (target?.duration_minutes && target.category !== 'ASSIGNMENT') {
-        const ok = window.confirm(
-          `This exam is timed: you get ${target.duration_minutes} minutes from the moment you start, and the clock keeps running if you close the window. Start now?`
-        );
+        const ok = await confirmAction({
+          title: 'Start the timed exam?',
+          message: `You get ${target.duration_minutes} minutes from the moment you start, and the clock keeps running if you close the window.`,
+          confirmLabel: 'Start now',
+        });
         if (!ok) return;
       }
       const started = await api.startExam(examId);

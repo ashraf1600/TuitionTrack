@@ -7,6 +7,7 @@ import ExamAuthoringModal from './ExamAuthoringModal';
 import ExamSubmissionsModal from './ExamSubmissionsModal';
 import { api } from '../../api/client';
 import { notify } from '../../utils/toast';
+import { confirmAction } from '../common/ConfirmDialog';
 
 const fmt = (value) =>
   new Date(value).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
@@ -97,9 +98,16 @@ export default function ExamManager({ exams = [], loading = false, students = []
     act(exam, () => api.updateExam(exam.id, { is_published: true }), `"${exam.title}" is published. Students have been notified.`);
 
   // Publishing or hiding by hand always wins over the exam's automatic rule.
-  const toggleResults = (exam) => {
+  const toggleResults = async (exam) => {
     const out = exam.results_released;
-    if (out && !window.confirm(`Hide the results of "${exam.title}" from students? They will see "Results pending" until you publish again.`)) return;
+    if (out) {
+      const ok = await confirmAction({
+        title: 'Hide results?',
+        message: `Hide the results of "${exam.title}" from students? They will see "Results pending" until you publish again.`,
+        confirmLabel: 'Hide results',
+      });
+      if (!ok) return;
+    }
     act(
       exam,
       () => api.publishExamResults(exam.id, !out),
@@ -119,11 +127,12 @@ export default function ExamManager({ exams = [], loading = false, students = []
     return { text: 'Publish results', hint: 'Marks and answers are hidden from students. Click to publish them.' };
   };
 
-  const remove = (exam) => {
+  const remove = async (exam) => {
     const warning = exam.submissions_count > 0
       ? `Delete "${exam.title}"? ${exam.submissions_count} student submission(s) and their marks will be deleted too. This cannot be undone.`
       : `Delete "${exam.title}"? This cannot be undone.`;
-    if (!window.confirm(warning)) return;
+    const ok = await confirmAction({ title: 'Delete exam?', message: warning, confirmLabel: 'Delete', danger: true });
+    if (!ok) return;
     act(exam, () => api.deleteExam(exam.id), 'Deleted.');
   };
 

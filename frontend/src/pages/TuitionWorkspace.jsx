@@ -10,6 +10,7 @@ import TuitionBatchesModal from '../components/tutor/TuitionBatchesModal';
 import ExamAuthoringModal from '../components/tutor/ExamAuthoringModal';
 import StudentCredentialsModal from '../components/tutor/StudentCredentialsModal';
 import Modal from '../components/common/Modal';
+import { confirmAction } from '../components/common/ConfirmDialog';
 import { api } from '../api/client';
 import {
   ArrowLeft,
@@ -178,9 +179,13 @@ export default function TuitionWorkspace() {
 
   // Unenroll Student from Tuition
   const handleUnenrollStudent = async (studentId, studentName) => {
-    if (!confirm(`Remove ${studentName} from "${tuition.title}"? They will stop seeing this group's classes and exams. The group's class tracker and earnings are not affected.`)) {
-      return;
-    }
+    const ok = await confirmAction({
+      title: `Remove ${studentName}?`,
+      message: `They will stop seeing this group's classes and exams. The group's class tracker and earnings are not affected.`,
+      confirmLabel: 'Remove',
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await api.unenrollFromTuition(tuitionId, studentId);
       await loadTuitionData();
@@ -305,13 +310,13 @@ export default function TuitionWorkspace() {
               className="hover:text-indigo-400 flex items-center gap-1 transition flex-shrink-0"
             >
               <ArrowLeft className="w-3.5 h-3.5" />
-              <span className="hidden xs:inline">Tutor Dashboard</span>
+              <span className="hidden min-[420px]:inline">Tutor Dashboard</span>
             </Link>
             <ChevronRight className="w-3.5 h-3.5 text-slate-600 flex-shrink-0" />
-            <span className="text-slate-200 font-semibold truncate max-w-[130px] xs:max-w-[220px] sm:max-w-md">
+            <span className="text-slate-200 font-semibold truncate max-w-[130px] min-[420px]:max-w-[220px] sm:max-w-md">
               {tuition.title}
             </span>
-            <span className="hidden xs:inline-block px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 text-[10px] font-mono flex-shrink-0">
+            <span className="hidden min-[420px]:inline-block px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 text-[10px] font-mono flex-shrink-0">
               Workspace
             </span>
           </div>
@@ -372,7 +377,7 @@ export default function TuitionWorkspace() {
                   setAuthorCategory('EXAM');
                   setAuthorExamModalOpen(true);
                 }}
-                className="px-3 sm:px-3.5 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-semibold text-xs flex items-center justify-center gap-1.5 shadow-lg shadow-purple-600/30 transition"
+                className="px-3 sm:px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs flex items-center justify-center gap-1.5 shadow-lg shadow-indigo-600/30 transition"
               >
                 <Plus className="w-4 h-4" />
                 <span>Schedule Exam</span>

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Inbox, Check, X, GraduationCap, MapPin, Phone, School, RefreshCw, Loader2, MessageSquare } from 'lucide-react';
 import { api } from '../../api/client';
+import { confirmAction } from '../common/ConfirmDialog';
 
 /**
  * The tutor's inbox of students waiting for a place.
@@ -49,8 +50,14 @@ export default function ConnectionRequestsPanel({ students = [], tuitions = [], 
 
   const handleAcceptOnly = (student) => run(student.id, () => api.acceptConnection(student.request_id));
 
-  const handleDecline = (student) => {
-    if (!window.confirm(`Decline the request from ${student.full_name}?`)) return;
+  const handleDecline = async (student) => {
+    const ok = await confirmAction({
+      title: 'Decline request?',
+      message: `Decline the request from ${student.full_name}? They will need to send a new one.`,
+      confirmLabel: 'Decline',
+      danger: true,
+    });
+    if (!ok) return;
     run(student.id, () => api.rejectConnection(student.request_id));
   };
 

@@ -14,6 +14,7 @@ import TuitionBatchesModal from '../components/tutor/TuitionBatchesModal';
 import HomeworkManager from '../components/tutor/HomeworkManager';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../api/client';
+import { confirmAction } from '../components/common/ConfirmDialog';
 
 // Sat-first canonical week order shared with TuitionWorkspace (Sat -> Fri for BD context).
 // Keep this single source consistent everywhere weekly routines are rendered/sorted.
@@ -47,7 +48,7 @@ import {
   Sparkles,
   UserPlus,
   CalendarDays,
-  Check,
+  Copy,
 } from 'lucide-react';
 
 export default function TutorDashboard() {
@@ -218,7 +219,13 @@ export default function TutorDashboard() {
   };
 
   const handleDeleteBatch = async (batchId) => {
-    if (!window.confirm('Delete this tuition group? Its students and exams are removed from it. What it has already earned stays in your lifetime earnings.')) return;
+    const ok = await confirmAction({
+      title: 'Delete tuition group?',
+      message: 'Its students and exams are removed from it. What it has already earned stays in your lifetime earnings.',
+      confirmLabel: 'Delete group',
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await api.deleteTuition(batchId);
       loadTuitions();
@@ -380,7 +387,7 @@ export default function TutorDashboard() {
               }}
               className="px-3.5 sm:px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-md shadow-indigo-600/25 active:scale-[0.98] flex-shrink-0"
             >
-              <Check className="w-4 h-4" />
+              <Copy className="w-4 h-4" />
               <span>Copy</span>
             </button>
           </div>
@@ -710,7 +717,7 @@ export default function TutorDashboard() {
                       <div className="pt-2 space-y-2" onClick={(e) => e.stopPropagation()}>
                         <button
                           onClick={() => navigate(`/tuitions/${batch.id}`)}
-                          className="w-full py-2.5 px-3 rounded-xl bg-gradient-to-r from-indigo-600 via-indigo-500 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold text-xs shadow-md shadow-indigo-600/25 flex items-center justify-center gap-1.5 transition group/btn"
+                          className="w-full py-2.5 px-3 rounded-xl bg-gradient-to-r from-indigo-600 via-indigo-500 to-indigo-500 hover:from-indigo-500 hover:to-indigo-400 text-white font-bold text-xs shadow-md shadow-indigo-600/25 flex items-center justify-center gap-1.5 transition group/btn"
                         >
                           <span>Open Tuition Workspace</span>
                           <ChevronRight className="w-4 h-4 group-hover/btn:translate-x-0.5 transition-transform" />
