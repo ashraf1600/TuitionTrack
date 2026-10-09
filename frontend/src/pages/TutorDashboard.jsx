@@ -534,6 +534,8 @@ export default function TutorDashboard() {
                         cycle={selectedTuition.active_cycle}
                         tuitionTitle={selectedTuition.title || selectedTuition.name}
                         studentCount={selectedTuition.enrolled_count ?? selectedTuition.enrollments?.length ?? 0}
+                        tuitionId={selectedTuition.id}
+                        students={filteredStudents}
                         onCycleChange={(cycle) => handleCycleChange(selectedTuition.id, cycle)}
                         onAddStudent={() => setAddStudentModalOpen(true)}
                       />

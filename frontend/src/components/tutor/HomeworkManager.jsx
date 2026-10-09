@@ -70,6 +70,47 @@ export default function HomeworkManager({ tuitions = [], students = [] }) {
     }
   };
 
+  const handleSplitGroup = async (hw) => {
+    const tuition = tuitions.find((t) => String(t.id) === String(hw.tuition_id));
+    const roster = (tuition?.enrollments || [])
+      .filter((e) => e.is_active !== false)
+      .map((e) => ({
+        id: String(e.student_id ?? e.student ?? e.id ?? ''),
+        name: e.student_name || e.full_name || e.username || 'Student',
+      }))
+      .filter((s) => s.id);
+    if (roster.length === 0) {
+      notify.error('No enrolled students found in this group to split across.');
+      return;
+    }
+    const ok = await confirmAction({
+      title: 'Split into per-student copies?',
+      message: `"${hw.title}" becomes ${roster.length} individual rows (one per student) so you can review and mark each done separately. The shared row is removed.`,
+      confirmLabel: `Split (${roster.length})`,
+    });
+    if (!ok) return;
+    try {
+      const base = {
+        title: hw.title,
+        description: hw.description || '',
+        due_date: hw.due_date,
+        source_label: hw.source_label || '',
+      };
+      const results = await Promise.allSettled(roster.map((s) => api.createHomework({ ...base, student: s.id })));
+      const created = results.filter((r) => r.status === 'fulfilled').map((r) => r.value);
+      if (created.length === 0) throw new Error('Could not create individual copies.');
+      await api.deleteHomework(hw.id);
+      setHomeworkList((prev) => [...created, ...prev.filter((h) => h.id !== hw.id)]);
+      notify.success(
+        created.length === roster.length
+          ? `Split into ${created.length} individual copies.`
+          : `Split into ${created.length} of ${roster.length} copies; the shared row was removed.`
+      );
+    } catch (err) {
+      notify.error(err.message || 'Failed to split homework.');
+    }
+  };
+
   const filtered = homeworkList.filter((h) => {
     if (filter === 'pending') return !h.is_evaluated;
     if (filter === 'evaluated') return h.is_evaluated;
@@ -199,6 +240,11 @@ export default function HomeworkManager({ tuitions = [], students = [] }) {
                   {/* Title & Instructions */}
                   <div>
                     <h3 className="text-base font-bold text-slate-100">{hw.title}</h3>
+                    {hw.source_label && (
+                      <p className="text-[11px] text-indigo-300/90 font-medium mt-0.5 flex items-center gap-1">
+                        <BookOpen className="w-3 h-3" /> {hw.source_label}
+                      </p>
+                    )}
                     {hw.description && (
                       <p className="text-xs text-slate-400 mt-1 line-clamp-3 leading-relaxed">
                         {hw.description}
@@ -252,14 +298,27 @@ export default function HomeworkManager({ tuitions = [], students = [] }) {
 
                 {/* Actions */}
                 <div className="mt-4 pt-3 border-t border-slate-800 flex items-center justify-between gap-2">
-                  <button
-                    type="button"
-                    onClick={() => handleDelete(hw.id)}
-                    className="p-1.5 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-slate-800 transition"
-                    title="Delete Homework"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => handleDelete(hw.id)}
+                      className="p-1.5 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-slate-800 transition"
+                      title="Delete Homework"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                    {hw.tuition_id && !hw.student && (
+                      <button
+                        type="button"
+                        onClick={() => handleSplitGroup(hw)}
+                        className="px-2.5 py-1.5 rounded-lg text-[11px] font-bold text-indigo-300 hover:text-indigo-200 hover:bg-indigo-500/10 border border-transparent hover:border-indigo-500/30 transition flex items-center gap-1"
+                        title="Split this shared task into one row per student"
+                      >
+                        <Users className="w-3.5 h-3.5" />
+                        Split per student
+                      </button>
+                    )}
+                  </div>
 
                   {!hw.is_evaluated && (
                     <button
@@ -287,8 +346,8 @@ export default function HomeworkManager({ tuitions = [], students = [] }) {
           tuitions={tuitions}
           students={students}
           onClose={() => setCreateModalOpen(false)}
-          onCreated={(newHw) => {
-            setHomeworkList((prev) => [newHw, ...prev]);
+          onCreated={(newItems) => {
+            setHomeworkList((prev) => [...(Array.isArray(newItems) ? newItems : [newItems]), ...prev]);
             setCreateModalOpen(false);
           }}
         />
@@ -360,9 +419,20 @@ function CreateHomeworkModal({ tuitions, students, onClose, onCreated }) {
   const [description, setDescription] = useState('');
   const [targetType, setTargetType] = useState('tuition'); // 'tuition' | 'student'
   const [targetId, setTargetId] = useState(tuitions[0]?.id || '');
+  const [perStudent, setPerStudent] = useState(true); // fan out one copy per student
   const [dueDate, setDueDate] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+
+  const selectedTuition = tuitions.find((t) => String(t.id) === String(targetId)) || null;
+  const groupRoster = (selectedTuition?.enrollments || [])
+    .filter((e) => e.is_active !== false)
+    .map((e) => ({
+      id: String(e.student_id ?? e.student ?? e.id ?? ''),
+      name: e.student_name || e.full_name || e.username || 'Student',
+    }))
+    .filter((s) => s.id);
+  const showFanOut = targetType === 'tuition' && groupRoster.length > 0;
 
   // Default to tomorrow 6:00 PM
   useEffect(() => {
@@ -389,20 +459,39 @@ function CreateHomeworkModal({ tuitions, students, onClose, onCreated }) {
     setSubmitting(true);
 
     try {
-      const payload = {
+      const base = {
         title: title.trim(),
         description: description.trim(),
         due_date: new Date(dueDate).toISOString(),
       };
+      let created = [];
       if (targetType === 'tuition') {
-        payload.tuition = targetId;
+        if (perStudent && groupRoster.length > 0) {
+          // One row per student so each submission is reviewed and marked done individually.
+          const results = await Promise.allSettled(
+            groupRoster.map((s) => api.createHomework({ ...base, student: s.id }))
+          );
+          created = results.filter((r) => r.status === 'fulfilled').map((r) => r.value);
+          if (created.length === 0) {
+            const reason = results.find((r) => r.status === 'rejected')?.reason;
+            throw new Error(reason?.message || 'Could not assign homework.');
+          }
+          notify.success(
+            created.length === groupRoster.length
+              ? `Homework assigned to ${created.length} students (one copy each).`
+              : `${created.length} of ${groupRoster.length} copies assigned; ${groupRoster.length - created.length} failed.`
+          );
+        } else {
+          const res = await api.createHomework({ ...base, tuition: targetId });
+          created = [res];
+          notify.success('Shared homework created for the group.');
+        }
       } else {
-        payload.student = targetId;
+        const res = await api.createHomework({ ...base, student: targetId });
+        created = [res];
+        notify.success('Homework created successfully!');
       }
-
-      const res = await api.createHomework(payload);
-      notify.success('Homework created successfully!');
-      onCreated(res);
+      onCreated(created);
     } catch (err) {
       setError(err.message || 'Failed to create homework.');
     } finally {
@@ -514,6 +603,25 @@ function CreateHomeworkModal({ tuitions, students, onClose, onCreated }) {
                     </option>
                   ))}
                 </select>
+              )}
+              {showFanOut && (
+                <label className="mt-2.5 flex items-start gap-2.5 rounded-xl border border-indigo-500/30 bg-indigo-500/10 p-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={perStudent}
+                    onChange={(e) => setPerStudent(e.target.checked)}
+                    className="w-4 h-4 mt-0.5 rounded accent-indigo-500"
+                  />
+                  <span>
+                    <span className="block text-xs font-bold text-indigo-200">
+                      Separate copy per student ({groupRoster.length})
+                    </span>
+                    <span className="block text-[11px] text-slate-400 mt-0.5 leading-relaxed">
+                      Recommended — each student submits on their own row and you mark each done individually.
+                      Unchecked creates one shared task for the whole group.
+                    </span>
+                  </span>
+                </label>
               )}
             </div>
 

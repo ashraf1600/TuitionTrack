@@ -11,6 +11,20 @@ export function toDateInputValue(value = new Date()) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
+/** A Date as a local `YYYY-MM-DDTHH:MM`, for <input type="datetime-local">. */
+export function toDateTimeInputValue(value = new Date()) {
+  const d = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(d.getTime())) return toDateTimeInputValue(new Date());
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/** Default homework deadline: tomorrow at 18:00 local time. */
+export function defaultHomeworkDue() {
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
+  d.setHours(18, 0, 0, 0);
+  return toDateTimeInputValue(d);
+}
 /** A `YYYY-MM-DD` picked by the user as an ISO timestamp at local noon, so it shows as the same day everywhere nearby. */
 export function dateInputToIso(dateStr) {
   if (!dateStr) return new Date().toISOString();

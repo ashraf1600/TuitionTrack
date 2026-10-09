@@ -2,9 +2,17 @@ import React, { useState } from 'react';
 import { Check, RotateCcw, Users, CalendarDays, BookOpen, Loader2, PartyPopper, UserPlus, Info } from 'lucide-react';
 import Modal from '../common/Modal';
 import { api } from '../../api/client';
-import { toDateInputValue, dateInputToIso, formatShortDate, formatLongDate, formatTaka } from '../../utils/dates';
+import { notify } from '../../utils/toast';
+import { toDateInputValue, dateInputToIso, defaultHomeworkDue, formatShortDate, formatLongDate, formatTaka } from '../../utils/dates';
 
 const classNoOf = (c) => Number(c.class_no ?? c.classNo);
+const normRoster = (students) =>
+  (students || [])
+    .map((s) => ({
+      id: String(s?.student_id ?? s?.id ?? s ?? ''),
+      name: s?.full_name || s?.student_name || s?.username || 'Student',
+    }))
+    .filter((s) => s.id);
 
 /**
  * The tutor's class tracker for one tuition group.
@@ -17,6 +25,8 @@ export default function SharedCycleBoard({
   cycle,
   tuitionTitle = '',
   studentCount = 0,
+  tuitionId = null,
+  students = [],
   onCycleChange,
   onAddStudent = null,
   compact = false,
@@ -29,6 +39,15 @@ export default function SharedCycleBoard({
   const [savingEdit, setSavingEdit] = useState(false);
   const [confirmNext, setConfirmNext] = useState(false);
   const [startingNext, setStartingNext] = useState(false);
+  // Homework-for-this-class (optional, created together with Save below).
+  const [hwEnabled, setHwEnabled] = useState(false);
+  const [hwTitle, setHwTitle] = useState('');
+  const [hwDesc, setHwDesc] = useState('');
+  const [hwDue, setHwDue] = useState('');
+  const [hwMode, setHwMode] = useState('per-student'); // 'per-student' | 'group'
+  const [hwError, setHwError] = useState('');
+  const roster = normRoster(students);
+  const canAssignHw = Boolean(tuitionId) || roster.length > 0;
 
   if (!cycle) {
     return (
@@ -55,13 +74,25 @@ export default function SharedCycleBoard({
     onCycleChange?.(res.cycle || res);
   };
 
+  const openEditor = (cls) => {
+    const classNo = classNoOf(cls);
+    setEditing(cls);
+    setEditDate(toDateInputValue(cls.date || new Date()));
+    setEditTopic(cls.topic || '');
+    // Prefill homework from the topic; tutor opts in with the checkbox.
+    setHwEnabled(false);
+    setHwError('');
+    setHwTitle(cls.topic?.trim() ? `Class ${classNo} — ${cls.topic.trim()}` : `Class ${classNo} homework`);
+    setHwDesc('');
+    setHwDue(defaultHomeworkDue());
+    setHwMode(roster.length > 0 ? 'per-student' : 'group');
+  };
+
   const handleTileClick = async (cls) => {
     const classNo = classNoOf(cls);
     if (busyClass) return;
     if (cls.completed) {
-      setEditing(cls);
-      setEditDate(toDateInputValue(cls.date || new Date()));
-      setEditTopic(cls.topic || '');
+      openEditor(cls);
       return;
     }
     // One click marks the class done today for the whole group.
@@ -75,12 +106,58 @@ export default function SharedCycleBoard({
     }
   };
 
+  const createHomeworkForClass = async (classNo, topic, heldDate) => {
+    const title = hwTitle.trim();
+    if (!title) throw new Error('Homework title is required.');
+    if (!hwDue) throw new Error('Homework deadline is required.');
+    const due = new Date(hwDue);
+    if (Number.isNaN(due.getTime())) throw new Error('Homework deadline is invalid.');
+    if (due.getTime() <= Date.now()) throw new Error('Homework deadline must be in the future.');
+    const source = `Class ${classNo}${heldDate ? ` · ${formatShortDate(heldDate)}` : ''}`;
+    const base = {
+      title,
+      description: hwDesc.trim() || (topic?.trim() ? `Topic covered: ${topic.trim()}` : ''),
+      due_date: due.toISOString(),
+      source_label: source,
+    };
+    if (hwMode === 'per-student' && roster.length > 0) {
+      // One row per student so each submission is evaluated individually.
+      const results = await Promise.allSettled(roster.map((s) => api.createHomework({ ...base, student: s.id })));
+      const okCount = results.filter((r) => r.status === 'fulfilled').length;
+      if (okCount === 0) {
+        const reason = results.find((r) => r.status === 'rejected')?.reason;
+        throw new Error(reason?.message || 'Could not assign homework.');
+      }
+      return `${okCount} homework assignment${okCount === 1 ? '' : 's'} (one per student)`;
+    }
+    if (!tuitionId) throw new Error('This group context is missing, so homework cannot be assigned.');
+    await api.createHomework({ ...base, tuition: tuitionId });
+    return '1 shared homework assignment for the group';
+  };
+
   const handleSaveEdit = async (e) => {
     e?.preventDefault();
     if (!editing) return;
+    setHwError('');
+    // Validate homework first so attendance is never saved half-way with a broken assignment.
+    if (hwEnabled && canAssignHw) {
+      if (!hwTitle.trim()) { setHwError('Homework title is required.'); return; }
+      if (!hwDue) { setHwError('Homework deadline is required.'); return; }
+      if (new Date(hwDue).getTime() <= Date.now()) { setHwError('Homework deadline must be in the future.'); return; }
+    }
     setSavingEdit(true);
     try {
-      await save(classNoOf(editing), true, dateInputToIso(editDate), editTopic.trim());
+      const classNo = classNoOf(editing);
+      const heldIso = dateInputToIso(editDate);
+      await save(classNo, true, heldIso, editTopic.trim());
+      if (hwEnabled && canAssignHw) {
+        try {
+          const summary = await createHomeworkForClass(classNo, editTopic, heldIso);
+          notify.success(`Class ${classNo} saved + ${summary}.`);
+        } catch (hwErr) {
+          notify(`Class saved, but homework failed: ${hwErr.message}`);
+        }
+      }
       setEditing(null);
     } catch (err) {
       setError(err.message || 'Could not save the class.');
@@ -291,6 +368,92 @@ export default function SharedCycleBoard({
                 className="w-full px-3 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-sm text-slate-100 focus:outline-none focus:border-indigo-500"
               />
             </div>
+            {/* Homework for this class (optional) */}
+            {canAssignHw && (
+              <div className="rounded-xl border border-slate-700/80 bg-slate-800/40 p-3.5 space-y-3">
+                <label className="flex items-center gap-2.5 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={hwEnabled}
+                    onChange={(e) => setHwEnabled(e.target.checked)}
+                    className="w-4 h-4 rounded accent-indigo-500"
+                  />
+                  <span className="text-xs font-bold text-slate-200 flex items-center gap-2">
+                    <BookOpen className="w-4 h-4 text-indigo-400" />
+                    Assign homework for this class
+                    <span className="px-1.5 py-0.5 rounded-md bg-indigo-500/20 text-indigo-300 text-[10px] font-bold">NEW</span>
+                  </span>
+                </label>
+                {hwEnabled && (
+                  <div className="space-y-3 pt-1">
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                        Homework title *
+                      </label>
+                      <input
+                        type="text"
+                        value={hwTitle}
+                        maxLength={255}
+                        onChange={(e) => setHwTitle(e.target.value)}
+                        placeholder="e.g. Class 4 — Newton's laws problems"
+                        className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-sm text-slate-100 placeholder:text-slate-600 focus:outline-none focus:border-indigo-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                        Instructions <span className="font-normal normal-case">(optional)</span>
+                      </label>
+                      <textarea
+                        value={hwDesc}
+                        onChange={(e) => setHwDesc(e.target.value)}
+                        rows={2}
+                        placeholder="What should students solve or submit?"
+                        className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-sm text-slate-100 placeholder:text-slate-600 focus:outline-none focus:border-indigo-500 resize-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                        Deadline *
+                      </label>
+                      <input
+                        type="datetime-local"
+                        value={hwDue}
+                        onChange={(e) => setHwDue(e.target.value)}
+                        className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-sm text-slate-100 focus:outline-none focus:border-indigo-500"
+                      />
+                    </div>
+                    {roster.length > 0 && tuitionId && (
+                      <div className="flex rounded-xl bg-slate-900 p-1 border border-slate-700 text-xs font-semibold">
+                        <button
+                          type="button"
+                          onClick={() => setHwMode('per-student')}
+                          className={`flex-1 py-1.5 rounded-lg transition ${hwMode === 'per-student' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-slate-200'}`}
+                        >
+                          Each student ({roster.length})
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setHwMode('group')}
+                          className={`flex-1 py-1.5 rounded-lg transition ${hwMode === 'group' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-slate-200'}`}
+                        >
+                          Whole group (shared)
+                        </button>
+                      </div>
+                    )}
+                    <p className="text-[11px] text-slate-500 leading-relaxed">
+                      {hwMode === 'per-student' && roster.length > 0
+                        ? `Creates ${roster.length} separate copies — one per student — so you can review and mark each done individually.`
+                        : 'Creates one shared task for the whole group. Marking it done applies to everyone.'}
+                    </p>
+                    {hwError && (
+                      <div className="px-3 py-2 rounded-xl bg-rose-500/10 border border-rose-500/25 text-rose-300 text-xs">
+                        {hwError}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
             <div className="flex items-center justify-between gap-2 pt-3 border-t border-slate-800">
               <button
                 type="button"
@@ -313,7 +476,7 @@ export default function SharedCycleBoard({
                   disabled={savingEdit}
                   className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold transition disabled:opacity-50"
                 >
-                  {savingEdit ? 'Saving…' : 'Save'}
+                  {savingEdit ? 'Saving…' : hwEnabled && canAssignHw ? 'Save & assign' : 'Save'}
                 </button>
               </div>
             </div>

@@ -153,7 +153,14 @@ export default function TutorWorkspaceView({
   const examsOnly = tutorExams.filter((e) => e.category !== 'ASSIGNMENT');
 
   const pendingHomework = homework.filter((h) => !h.is_evaluated && new Date(h.due_date) > new Date());
+  const dueSoonHomework = pendingHomework.filter((h) => new Date(h.due_date).getTime() - Date.now() <= 86_400_000);
   const totalTasksCount = homework.length + tutorExams.length;
+
+  // Pending first (nearest deadline on top), then evaluated — nothing pending gets buried.
+  const sortedHomework = [...homework].sort((a, b) => {
+    if (!!a.is_evaluated !== !!b.is_evaluated) return a.is_evaluated ? 1 : -1;
+    return new Date(a.due_date).getTime() - new Date(b.due_date).getTime();
+  });
 
   // ── Aggregate & Sort Weekly Routine Slots ──
   const allRoutineSlots = [];
@@ -504,7 +511,25 @@ export default function TutorWorkspaceView({
                   <BookOpen className="w-3.5 h-3.5 text-indigo-600" />
                   <span>Homework ({homework.length})</span>
                 </h4>
+                {pendingHomework.length > 0 && (
+                  <span className="px-2.5 py-0.5 rounded-full bg-amber-100 border border-amber-300 text-amber-800 text-[11px] font-bold">
+                    {pendingHomework.length} pending
+                  </span>
+                )}
               </div>
+
+              {pendingHomework.length > 0 && (
+                <div className="px-4 py-3 rounded-2xl bg-amber-50 border border-amber-200 flex items-center gap-2.5">
+                  <BookOpen className="w-4 h-4 text-amber-600 flex-shrink-0" />
+                  <p className="text-xs text-amber-800">
+                    <strong>{pendingHomework.length} homework still pending review</strong>
+                    {dueSoonHomework.length > 0 && (
+                      <> — <strong>{dueSoonHomework.length} due within 24 hours</strong>, finish them first.</>
+                    )}
+                    {dueSoonHomework.length === 0 && <> — newest deadline first below.</>}
+                  </p>
+                </div>
+              )}
 
               {homework.length === 0 ? (
                 <EmptyWorkspaceCard
@@ -514,7 +539,7 @@ export default function TutorWorkspaceView({
                 />
               ) : (
                 <div className="space-y-3">
-                  {homework.map((hw) => (
+                  {sortedHomework.map((hw) => (
                     <HomeworkCard
                       key={hw.id}
                       homework={hw}

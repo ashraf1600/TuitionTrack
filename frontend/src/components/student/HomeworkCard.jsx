@@ -188,6 +188,11 @@ export default function HomeworkCard({ homework, isTutor = false, onUpdated }) {
 
               <div className="min-w-0">
                 <h4 className="text-sm font-bold text-slate-100 leading-tight">{homework.title}</h4>
+                {homework.source_label && (
+                  <div className="text-[11px] text-indigo-300/90 font-medium mt-0.5">
+                    {homework.source_label}
+                  </div>
+                )}
                 <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-1">
                   <span className="text-[11px] text-indigo-300 font-medium">
                     {homework.tutor_display_name}

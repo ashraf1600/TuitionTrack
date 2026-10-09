@@ -606,9 +606,9 @@ class HomeworkSerializer(serializers.ModelSerializer):
         from .models import Homework
         model = Homework
         fields = [
-            "id", "title", "description", "due_date",
+            "id", "title", "description", "due_date", "source_label",
             "tutor_name", "tutor_display_name", "tutor_profile_picture",
-            "student_name", "tuition_title",
+            "student_id", "student_name", "tuition_id", "tuition_title",
             "submitted_online_url", "submitted_at", "is_submitted",
             "is_evaluated", "evaluated_at", "tutor_feedback",
             "created_at", "updated_at",
@@ -648,7 +648,7 @@ class HomeworkCreateUpdateSerializer(serializers.ModelSerializer):
         from .models import Homework
         model = Homework
         fields = [
-            "id", "title", "description", "due_date",
+            "id", "title", "description", "due_date", "source_label",
             "student", "tuition", "tutor_feedback",
         ]
         read_only_fields = ["id"]

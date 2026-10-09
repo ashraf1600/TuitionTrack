@@ -473,6 +473,8 @@ export default function TuitionWorkspace() {
               cycle={activeCycle}
               tuitionTitle={tuition.title}
               studentCount={enrolledStudents.length}
+              tuitionId={tuitionId}
+              students={enrolledStudents}
               onCycleChange={handleCycleChange}
               onAddStudent={() => setAddStudentModalOpen(true)}
             />

@@ -268,6 +268,12 @@ class Homework(models.Model):
     title = models.CharField(max_length=255, verbose_name='Title')
     description = models.TextField(blank=True, verbose_name='Description / Instructions')
     due_date = models.DateTimeField(verbose_name='Due Date & Time', db_index=True)
+    # Optional origin tag, e.g. "Class 4 · Oct 9" — set when created from the class tracker.
+    source_label = models.CharField(
+        max_length=255, blank=True, default='',
+        verbose_name='Source Label',
+        help_text='Where this homework came from (e.g. which class). Display only.',
+    )
 
     # Student-side optional submission.
     submitted_online_url = models.URLField(
