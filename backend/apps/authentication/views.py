@@ -5,6 +5,7 @@ from rest_framework import generics, status
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.throttling import ScopedRateThrottle
+from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenObtainPairView
 
@@ -122,6 +123,57 @@ class MeView(APIView):
         serializer = ProfileUpdateSerializer(request.user, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
+        return Response(UserProfileSerializer(user, context={'request': request}).data)
+
+
+class ProfilePhotoView(APIView):
+    """
+    POST   /api/v1/auth/me/photo/   multipart {photo}  — sets the signed-in user's photo
+    DELETE /api/v1/auth/me/photo/                       — removes it
+    Answers with the same profile as GET /auth/me/. Only PNG, JPEG or WebP
+    pictures up to 5 MB whose content really is that picture are kept.
+    """
+    permission_classes = [IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser]
+    MAX_BYTES = 5 * 1024 * 1024
+
+    def post(self, request):
+        import os
+        import uuid
+
+        from PIL import Image, UnidentifiedImageError
+        from apps.exams.uploads import UploadRejected, validate_upload
+
+        photo = request.FILES.get('photo')
+        try:
+            validate_upload(photo)
+            ext = os.path.splitext(photo.name or '')[1].lower()
+            if ext == '.pdf':
+                raise UploadRejected('Choose a picture (PNG, JPEG or WebP).')
+            if photo.size > self.MAX_BYTES:
+                raise UploadRejected('The picture is larger than 5 MB.')
+            try:
+                Image.open(photo).verify()
+            except (UnidentifiedImageError, OSError, SyntaxError, ValueError) as exc:
+                raise UploadRejected('This file is not a picture that can be opened.') from exc
+            photo.seek(0)
+        except UploadRejected as exc:
+            return Response({'photo': [str(exc)]}, status=status.HTTP_400_BAD_REQUEST)
+
+        user = request.user
+        old = user.profile_picture.name if user.profile_picture else ''
+        user.profile_picture.save(f'{user.pk}-{uuid.uuid4().hex[:8]}{ext}', photo, save=False)
+        user.save(update_fields=['profile_picture', 'updated_at'])
+        if old and old != user.profile_picture.name:
+            user.profile_picture.storage.delete(old)
+        return Response(UserProfileSerializer(user, context={'request': request}).data)
+
+    def delete(self, request):
+        user = request.user
+        if user.profile_picture:
+            user.profile_picture.delete(save=False)
+            user.profile_picture = None
+            user.save(update_fields=['profile_picture', 'updated_at'])
         return Response(UserProfileSerializer(user, context={'request': request}).data)
 
 
