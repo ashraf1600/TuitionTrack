@@ -31,8 +31,10 @@ def revoke_refresh_token(raw_token):
 
 def revoke_all_sessions(user):
     """Sign the user out everywhere: every refresh token issued so far stops working."""
-    for token in OutstandingToken.objects.filter(user=user, blacklistedtoken__isnull=True):
-        BlacklistedToken.objects.get_or_create(token=token)
+    open_tokens = OutstandingToken.objects.filter(user=user, blacklistedtoken__isnull=True)
+    BlacklistedToken.objects.bulk_create(
+        [BlacklistedToken(token=token) for token in open_tokens], ignore_conflicts=True,
+    )
 
 
 def resolve_login_name(identifier):

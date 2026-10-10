@@ -229,6 +229,7 @@ class TutorDirectoryView(generics.ListAPIView):
                 Q(first_name__icontains=search) |
                 Q(last_name__icontains=search) |
                 Q(username__icontains=search) |
-                Q(tuitions__title__icontains=search)
+                Q(tuitions__title__icontains=search) |
+                Q(tuitions__subject__icontains=search)
             ).distinct()
         return qs.order_by('first_name', 'last_name')

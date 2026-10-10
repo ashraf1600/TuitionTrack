@@ -95,7 +95,7 @@ class TutorRegistrationSerializer(serializers.ModelSerializer):
         try:
             _validated_new_password(attrs['password'], candidate)
         except serializers.ValidationError as exc:
-            raise serializers.ValidationError({'password': exc.detail})
+            raise serializers.ValidationError({'password': exc.detail}) from exc
         return attrs
 
     def create(self, validated_data):
@@ -182,7 +182,7 @@ class StudentSelfRegistrationSerializer(serializers.Serializer):
         try:
             uuid.UUID(str(value).strip())
         except (ValueError, AttributeError):
-            raise serializers.ValidationError('Invalid tutor ID format.')
+            raise serializers.ValidationError('Invalid tutor ID format.') from None
         return str(value).strip()
 
     def validate(self, attrs):
@@ -192,7 +192,7 @@ class StudentSelfRegistrationSerializer(serializers.Serializer):
         try:
             _validated_new_password(attrs['password'], candidate)
         except serializers.ValidationError as exc:
-            raise serializers.ValidationError({'password': exc.detail})
+            raise serializers.ValidationError({'password': exc.detail}) from exc
         return attrs
 
     def create(self, validated_data):
@@ -240,7 +240,7 @@ class StudentSelfRegistrationSerializer(serializers.Serializer):
             selected_tutor=target_tutor,
         )
 
-        profile = StudentProfile.objects.create(
+        StudentProfile.objects.create(
             user=user,
             grade_level=grade_level,
             institution=institution,
@@ -348,7 +348,7 @@ def _validated_new_password(value, user):
     try:
         validate_password(value, user=user)
     except DjangoValidationError as exc:
-        raise serializers.ValidationError(list(exc.messages))
+        raise serializers.ValidationError(list(exc.messages)) from exc
     return value
 
 
@@ -387,12 +387,12 @@ class PasswordResetConfirmSerializer(serializers.Serializer):
         try:
             user = User.objects.get(pk=force_str(urlsafe_base64_decode(attrs['uid'])), is_active=True)
         except Exception:
-            raise invalid
+            raise invalid from None
         if not default_token_generator.check_token(user, attrs['token']):
             raise invalid
         try:
             _validated_new_password(attrs['new_password'], user)
         except serializers.ValidationError as exc:
-            raise serializers.ValidationError({'new_password': exc.detail})
+            raise serializers.ValidationError({'new_password': exc.detail}) from exc
         attrs['user'] = user
         return attrs
