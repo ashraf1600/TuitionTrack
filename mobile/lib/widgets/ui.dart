@@ -363,7 +363,8 @@ class AppCard extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final shape = RoundedRectangleBorder(
       borderRadius: BorderRadius.circular(16),
-      side: BorderSide(color: borderColor ?? scheme.outline),
+      // Hairline borders: cards are told apart by their fill, not by heavy outlines.
+      side: BorderSide(color: borderColor ?? scheme.outline.withValues(alpha: 0.45)),
     );
     return Material(
       color: scheme.surface,
@@ -477,3 +478,272 @@ const gap8 = SizedBox(height: 8);
 const gap12 = SizedBox(height: 12);
 const gap16 = SizedBox(height: 16);
 const gap24 = SizedBox(height: 24);
+
+/// A rounded block of rows with hairline dividers, like a phone's Settings app.
+/// Use it instead of separate bordered cards for forms and lists of actions.
+class FlatGroup extends StatelessWidget {
+  const FlatGroup({super.key, required this.children, this.title});
+  final List<Widget> children;
+
+  /// A small caps label above the block.
+  final String? title;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final block = Material(
+      color: scheme.surface,
+      borderRadius: BorderRadius.circular(14),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (var i = 0; i < children.length; i++) ...[
+            if (i > 0) Divider(height: 1, indent: 16, color: scheme.outline.withValues(alpha: 0.7)),
+            children[i],
+          ],
+        ],
+      ),
+    );
+    if (title == null) return block;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(4, 0, 4, 6),
+          child: Text(title!.toUpperCase(),
+              style: TextStyle(fontSize: 12, letterSpacing: 0.8, fontWeight: FontWeight.w700, color: scheme.onSurfaceVariant)),
+        ),
+        block,
+      ],
+    );
+  }
+}
+
+/// A borderless text field for use inside a [FlatGroup].
+class FlatField extends StatelessWidget {
+  const FlatField({
+    super.key,
+    required this.controller,
+    this.hint,
+    this.minLines = 1,
+    this.maxLines = 1,
+    this.autofocus = false,
+    this.style,
+    this.onChanged,
+    this.capitalization = TextCapitalization.sentences,
+  });
+  final TextEditingController controller;
+  final String? hint;
+  final int minLines;
+  final int maxLines;
+  final bool autofocus;
+  final TextStyle? style;
+  final ValueChanged<String>? onChanged;
+  final TextCapitalization capitalization;
+
+  @override
+  Widget build(BuildContext context) {
+    const none = InputBorder.none;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: TextField(
+        controller: controller,
+        minLines: minLines,
+        maxLines: maxLines,
+        autofocus: autofocus,
+        onChanged: onChanged,
+        textCapitalization: capitalization,
+        style: style ?? const TextStyle(fontSize: 15),
+        decoration: InputDecoration(
+          hintText: hint,
+          filled: false,
+          isDense: true,
+          contentPadding: const EdgeInsets.symmetric(vertical: 14),
+          border: none,
+          enabledBorder: none,
+          focusedBorder: none,
+        ),
+      ),
+    );
+  }
+}
+
+/// One tappable row inside a [FlatGroup]: icon or avatar, label, current value, chevron.
+class PickerRow extends StatelessWidget {
+  const PickerRow({super.key, required this.label, required this.value, required this.onTap, this.leading, this.trailing});
+  final String label;
+  final String value;
+  final VoidCallback? onTap;
+  final Widget? leading;
+  final Widget? trailing;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
+        child: Row(
+          children: [
+            if (leading != null) ...[leading!, const SizedBox(width: 12)],
+            Text(label, style: TextStyle(fontSize: 14, color: scheme.onSurfaceVariant)),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(value,
+                  textAlign: TextAlign.right,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+            ),
+            trailing ?? Icon(Icons.chevron_right, size: 20, color: scheme.onSurfaceVariant),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// A small (i) that explains a choice on tap, instead of a paragraph on screen.
+class InfoTip extends StatelessWidget {
+  const InfoTip(this.message, {super.key, this.title});
+  final String message;
+  final String? title;
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton(
+      tooltip: 'More about this',
+      visualDensity: VisualDensity.compact,
+      iconSize: 18,
+      constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+      icon: Icon(Icons.info_outline, color: Theme.of(context).colorScheme.onSurfaceVariant),
+      onPressed: () => showModalBottomSheet<void>(
+        context: context,
+        builder: (context) => SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (title != null) ...[Text(title!, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700)), gap8],
+                Text(message, style: const TextStyle(fontSize: 14, height: 1.4)),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// A round placeholder with the first letter of a name (or an icon).
+class InitialAvatar extends StatelessWidget {
+  const InitialAvatar(this.name, {super.key, this.radius = 14, this.icon});
+  final String name;
+  final double radius;
+  final IconData? icon;
+
+  @override
+  Widget build(BuildContext context) {
+    final ink = tone(context, AppColors.primarySoft);
+    return CircleAvatar(
+      radius: radius,
+      backgroundColor: AppColors.primary.withValues(alpha: 0.18),
+      child: icon != null
+          ? Icon(icon, size: radius * 1.1, color: ink)
+          : Text(name.trim().isEmpty ? '?' : name.trim().characters.first.toUpperCase(),
+              style: TextStyle(fontSize: radius * 0.9, fontWeight: FontWeight.w800, color: ink)),
+    );
+  }
+}
+
+/// Shows [options] in a bottom sheet with an optional search box; returns the chosen value.
+Future<String?> pickFromSheet(
+  BuildContext context, {
+  required String title,
+  required List<({String value, String label, String? subtitle})> options,
+  String? selected,
+  IconData? icon,
+}) {
+  return showModalBottomSheet<String>(
+    context: context,
+    isScrollControlled: true,
+    builder: (context) => _PickSheet(title: title, options: options, selected: selected, icon: icon),
+  );
+}
+
+class _PickSheet extends StatefulWidget {
+  const _PickSheet({required this.title, required this.options, this.selected, this.icon});
+  final String title;
+  final List<({String value, String label, String? subtitle})> options;
+  final String? selected;
+  final IconData? icon;
+
+  @override
+  State<_PickSheet> createState() => _PickSheetState();
+}
+
+class _PickSheetState extends State<_PickSheet> {
+  String _query = '';
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final q = _query.trim().toLowerCase();
+    final shown = q.isEmpty
+        ? widget.options
+        : widget.options.where((o) => o.label.toLowerCase().contains(q) || (o.subtitle ?? '').toLowerCase().contains(q)).toList();
+    return SafeArea(
+      child: Padding(
+        padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.75),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+                child: Text(widget.title, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
+              ),
+              if (widget.options.length > 7)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                  child: TextField(
+                    autofocus: false,
+                    onChanged: (v) => setState(() => _query = v),
+                    decoration: const InputDecoration(hintText: 'Search', prefixIcon: Icon(Icons.search), isDense: true),
+                  ),
+                ),
+              Flexible(
+                child: ListView(
+                  shrinkWrap: true,
+                  children: [
+                    for (final o in shown)
+                      ListTile(
+                        leading: InitialAvatar(o.label, radius: 16, icon: widget.icon),
+                        title: Text(o.label, maxLines: 1, overflow: TextOverflow.ellipsis),
+                        subtitle: o.subtitle == null || o.subtitle!.isEmpty
+                            ? null
+                            : Text(o.subtitle!, style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
+                        trailing: o.value == widget.selected ? Icon(Icons.check, color: tone(context, AppColors.primarySoft)) : null,
+                        onTap: () => Navigator.pop(context, o.value),
+                      ),
+                    if (shown.isEmpty)
+                      Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: Text('Nothing matches.', textAlign: TextAlign.center, style: TextStyle(color: scheme.onSurfaceVariant)),
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
