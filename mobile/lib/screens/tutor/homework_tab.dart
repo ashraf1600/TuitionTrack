@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import '../../core/api.dart';
 import '../../core/connect.dart';
+import '../../core/format.dart';
 import '../../core/json.dart';
 import '../../core/repo.dart';
 import '../../widgets/theme.dart';
@@ -263,7 +264,18 @@ class _HomeworkFormScreenState extends State<HomeworkFormScreen> {
   String? _tuitionId;
   String? _studentId;
   bool _perStudent = true;
-  DateTime _due = DateTime.now().add(const Duration(days: 1));
+  bool _showInstructions = false;
+  DateTime _due = _at(1, 18);
+
+  /// [days] from today at [hour]:00.
+  static DateTime _at(int days, int hour) {
+    final now = DateTime.now();
+    return DateTime(now.year, now.month, now.day + days, hour);
+  }
+
+  Json? get _tuition => _firstOrNull(widget.tuitions, (t) => t.str('id') == _tuitionId) ?? _firstOrNull(widget.tuitions);
+  Json? get _student => _firstOrNull(widget.students, (s) => s.str('id') == _studentId) ?? _firstOrNull(widget.students);
+  static String _studentName(Json s) => s.str('full_name').isNotEmpty ? s.str('full_name') : '@${s.str('username')}';
 
   @override
   void dispose() {
@@ -273,7 +285,7 @@ class _HomeworkFormScreenState extends State<HomeworkFormScreen> {
   }
 
   List<(String, String)> get _roster {
-    final t = _firstOrNull(widget.tuitions, (t) => t.str('id') == _tuitionId);
+    final t = _tuition;
     if (t == null) return const [];
     return (t.maps('enrollments'))
         .where((e) => e['is_active'] != false && e.str('student_id').isNotEmpty)
@@ -362,80 +374,157 @@ class _HomeworkFormScreenState extends State<HomeworkFormScreen> {
     if (ok && mounted) Navigator.pop(context, true);
   }
 
+  Future<void> _chooseTarget() async {
+    final picked = _toGroup
+        ? await pickFromSheet(
+            context,
+            title: 'Choose a tuition',
+            icon: Icons.class_outlined,
+            selected: _tuition?.str('id'),
+            options: [
+              for (final t in widget.tuitions)
+                (
+                  value: t.str('id'),
+                  label: t.str('title'),
+                  subtitle: '${t.integer('enrolled_count')} student${t.integer('enrolled_count') == 1 ? '' : 's'}',
+                ),
+            ],
+          )
+        : await pickFromSheet(
+            context,
+            title: 'Choose a student',
+            selected: _student?.str('id'),
+            options: [
+              for (final s in widget.students) (value: s.str('id'), label: _studentName(s), subtitle: '@${s.str('username')}'),
+            ],
+          );
+    if (picked == null || !mounted) return;
+    setState(() {
+      if (_toGroup) {
+        _tuitionId = picked;
+      } else {
+        _studentId = picked;
+      }
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     final roster = _roster;
+    final tuition = _tuition;
+    final student = _student;
+    final targetName = _toGroup ? (tuition?.str('title') ?? 'No tuitions yet') : (student == null ? 'No students yet' : _studentName(student));
+    final quick = <(String, DateTime)>[('Tomorrow', _at(1, 18)), ('In 3 days', _at(3, 18)), ('Next week', _at(7, 18))];
     return Scaffold(
       appBar: AppBar(title: const Text('Assign homework')),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+      body: Column(
         children: [
-          TextField(
-            controller: _title,
-            textCapitalization: TextCapitalization.sentences,
-            decoration: const InputDecoration(labelText: 'Title *', hintText: 'e.g. Chapter 4 problems'),
-          ),
-          gap12,
-          TextField(
-            controller: _desc,
-            minLines: 2,
-            maxLines: 5,
-            textCapitalization: TextCapitalization.sentences,
-            decoration: const InputDecoration(labelText: 'Instructions (optional)'),
-          ),
-          gap12,
-          SegmentedButton<bool>(
-            segments: const [
-              ButtonSegment(value: true, label: Text('Tuition'), icon: Icon(Icons.class_outlined)),
-              ButtonSegment(value: false, label: Text('Student'), icon: Icon(Icons.person_outline)),
-            ],
-            selected: {_toGroup},
-            onSelectionChanged: (s) => setState(() => _toGroup = s.first),
-          ),
-          gap12,
-          if (_toGroup)
-            DropdownButtonFormField<String>(
-              initialValue: _tuitionId ?? _firstOrNull(widget.tuitions)?.str('id'),
-              decoration: const InputDecoration(labelText: 'Tuition'),
-              items: [
-                for (final t in widget.tuitions)
-                  DropdownMenuItem(value: t.str('id'), child: Text(t.str('title'), overflow: TextOverflow.ellipsis)),
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+              children: [
+                FlatGroup(children: [
+                  FlatField(
+                    controller: _title,
+                    hint: 'Title, e.g. Chapter 4 problems',
+                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                    onChanged: (_) => setState(() {}),
+                  ),
+                  AnimatedSize(
+                    duration: const Duration(milliseconds: 180),
+                    alignment: Alignment.topCenter,
+                    child: _showInstructions || _desc.text.isNotEmpty
+                        ? FlatField(controller: _desc, hint: 'Instructions: pages, problems, how to hand in…', minLines: 3, maxLines: 8, autofocus: _desc.text.isEmpty)
+                        : InkWell(
+                            onTap: () => setState(() => _showInstructions = true),
+                            child: Padding(
+                              padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+                              child: Row(
+                                children: [
+                                  Icon(Icons.add, size: 18, color: scheme.onSurfaceVariant),
+                                  const SizedBox(width: 8),
+                                  Text('Add instructions', style: TextStyle(color: scheme.onSurfaceVariant)),
+                                ],
+                              ),
+                            ),
+                          ),
+                  ),
+                ]),
+                gap16,
+                SizedBox(
+                  width: double.infinity,
+                  child: SegmentedButton<bool>(
+                    showSelectedIcon: false,
+                    style: const ButtonStyle(visualDensity: VisualDensity.compact),
+                    segments: const [
+                      ButtonSegment(value: true, label: Text('Tuition'), icon: Icon(Icons.class_outlined, size: 18)),
+                      ButtonSegment(value: false, label: Text('Student'), icon: Icon(Icons.person_outline, size: 18)),
+                    ],
+                    selected: {_toGroup},
+                    onSelectionChanged: (s) => setState(() => _toGroup = s.first),
+                  ),
+                ),
+                gap12,
+                FlatGroup(children: [
+                  PickerRow(
+                    leading: InitialAvatar(targetName, radius: 14, icon: _toGroup ? Icons.class_outlined : null),
+                    label: _toGroup ? 'Tuition' : 'Student',
+                    value: targetName,
+                    onTap: (_toGroup ? widget.tuitions.isEmpty : widget.students.isEmpty) ? null : _chooseTarget,
+                  ),
+                  if (_toGroup && roster.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(left: 16, right: 4),
+                      child: Row(
+                        children: [
+                          Expanded(child: Text('One copy per student (${roster.length})', style: const TextStyle(fontSize: 14))),
+                          const InfoTip(
+                            'On: every student gets their own copy, and you mark each one done separately.\n\n'
+                            'Off: one shared task for the whole tuition; marking it done counts for everyone.',
+                            title: 'One copy per student',
+                          ),
+                          Switch(value: _perStudent, onChanged: (v) => setState(() => _perStudent = v)),
+                        ],
+                      ),
+                    ),
+                  PickerRow(
+                    leading: Icon(Icons.calendar_month_outlined, size: 22, color: tone(context, AppColors.primarySoft)),
+                    label: 'Due',
+                    value: '${fmtShortDate(_due)}, ${weekdayName(_due).substring(0, 3)} · ${fmtTime(_due)}',
+                    onTap: _pickDue,
+                  ),
+                ]),
+                gap8,
+                Wrap(
+                  spacing: 8,
+                  children: [
+                    for (final (label, at) in quick)
+                      ChoiceChip(
+                        label: Text(label),
+                        selected: _due == at,
+                        visualDensity: VisualDensity.compact,
+                        onSelected: (_) => setState(() => _due = at),
+                      ),
+                  ],
+                ),
               ],
-              onChanged: (v) => setState(() => _tuitionId = v),
-            )
-          else
-            DropdownButtonFormField<String>(
-              initialValue: _studentId ?? _firstOrNull(widget.students)?.str('id'),
-              decoration: const InputDecoration(labelText: 'Student'),
-              items: [
-                for (final s in widget.students)
-                  DropdownMenuItem(
-                      value: s.str('id'),
-                      child: Text(s.str('full_name').isNotEmpty ? s.str('full_name') : '@${s.str('username')}',
-                          overflow: TextOverflow.ellipsis)),
-              ],
-              onChanged: (v) => setState(() => _studentId = v),
             ),
-          if (_toGroup && roster.isNotEmpty) ...[
-            gap8,
-            CheckboxListTile(
-              contentPadding: EdgeInsets.zero,
-              title: Text('Separate copy per student (${roster.length})',
-                  style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
-              subtitle: const Text('Each submission is marked done individually. Off = one shared task.',
-                  style: TextStyle(fontSize: 12)),
-              value: _perStudent,
-              onChanged: (v) => setState(() => _perStudent = v ?? true),
-            ),
-          ],
-          gap12,
-          OutlinedButton.icon(
-            onPressed: _pickDue,
-            icon: const Icon(Icons.event_outlined),
-            label: Text('Deadline: ${_due.day}/${_due.month} ${_due.hour.toString().padLeft(2, '0')}:${_due.minute.toString().padLeft(2, '0')}'),
           ),
-          gap16,
-          BusyButton(label: 'Assign homework', icon: Icons.send, onPressed: _send),
+          SafeArea(
+            top: false,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+              child: SizedBox(
+                width: double.infinity,
+                child: BusyButton(
+                  label: _toGroup && _perStudent && roster.isNotEmpty ? 'Assign to ${roster.length} students' : 'Assign homework',
+                  icon: Icons.send,
+                  onPressed: _title.text.trim().isEmpty ? null : _send,
+                ),
+              ),
+            ),
+          ),
         ],
       ),
     );
