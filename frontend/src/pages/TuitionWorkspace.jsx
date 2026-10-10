@@ -92,7 +92,7 @@ export default function TuitionWorkspace() {
       if (unassignedRes.status === 'fulfilled') setUnassignedStudents(asList(unassignedRes));
       if (studentsRes.status === 'fulfilled') setAllStudents(asList(studentsRes));
       const failed = [cyclesRes, examsRes, unassignedRes, studentsRes].find((r) => r.status === 'rejected');
-      if (failed) notify.error(`Some parts of this group could not be loaded: ${failed.reason?.message || 'try again'}`);
+      if (failed) notify.error(`Some parts of this tuition could not be loaded: ${failed.reason?.message || 'try again'}`);
     } catch (err) {
       setError(err.message || 'Failed to load tuition workspace.');
     } finally {
@@ -136,7 +136,7 @@ export default function TuitionWorkspace() {
   const handleUnenrollStudent = async (studentId, studentName) => {
     const ok = await confirmAction({
       title: `Remove ${studentName}?`,
-      message: `They will stop seeing this group's classes and exams. The group's class tracker and earnings are not affected.`,
+      message: `They will stop seeing this tuition's classes and exams. The tuition's class tracker and earnings are not affected.`,
       confirmLabel: 'Remove',
       danger: true
     });

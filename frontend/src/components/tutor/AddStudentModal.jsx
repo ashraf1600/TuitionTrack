@@ -286,7 +286,7 @@ export default function AddStudentModal({
         {tuitions && tuitions.length > 0 && (
           <div className="p-3 rounded-xl bg-indigo-500/10 border border-indigo-500/20 space-y-1.5">
             <label className="block text-xs font-semibold text-indigo-300">
-              Tuition group (optional)
+              Tuition (optional)
             </label>
             <select
               name="tuition_id"
@@ -294,7 +294,7 @@ export default function AddStudentModal({
               onChange={handleTuitionChange}
               className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 text-sm focus:outline-none focus:border-indigo-500 transition"
             >
-              <option value="">No group yet — place them later</option>
+              <option value="">No tuition yet — place them later</option>
               {tuitions.map((t) => (
                 <option key={t.id} value={t.id}>
                   {t.title} ({t.enrolled_count ?? t.enrollments?.length ?? 0} students · {t.cycle_length} classes per cycle)
@@ -303,7 +303,7 @@ export default function AddStudentModal({
             </select>
             {formData.tuition_id && (
               <p className="text-[11px] text-emerald-400 font-medium">
-                ✓ They join this group straight away and share its class tracker and exams.
+                ✓ They join this tuition straight away and share its class tracker and exams.
               </p>
             )}
           </div>

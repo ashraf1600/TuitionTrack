@@ -209,7 +209,7 @@ export default function ExamAuthoringModal({
       setBatches(list);
       if (list.length > 0) setBatchId((current) => current || list[0].id);
     } catch (err) {
-      notify.error(`Could not load your tuition groups: ${err.message}`);
+      notify.error(`Could not load your tuitions: ${err.message}`);
     } finally {
       setLoadingBatches(false);
     }
@@ -577,7 +577,7 @@ export default function ExamAuthoringModal({
 
           <div className="sm:col-span-3">
             <label className="block text-[11px] font-bold text-slate-300 uppercase tracking-wider mb-1">
-              Tuition group
+              Tuition
             </label>
             {targetType === 'student' ? (
               <div>
@@ -604,9 +604,9 @@ export default function ExamAuthoringModal({
                   className="w-full px-2.5 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-100 text-xs focus:outline-none focus:border-indigo-500"
                 >
                   {loadingBatches && batches.length === 0 ? (
-                    <option value="">Loading groups…</option>
+                    <option value="">Loading tuitions…</option>
                   ) : batches.length === 0 ? (
-                    <option value="">Create a tuition group first</option>
+                    <option value="">Create a tuition first</option>
                   ) : (
                     batches.map((b) => (
                       <option key={b.id} value={b.id}>
@@ -616,7 +616,7 @@ export default function ExamAuthoringModal({
                   )}
                 </select>
                 <span className="block text-[10px] text-emerald-400 mt-1">
-                  Every student in this group gets it and submits their own answers.
+                  Every student in this tuition gets it and submits their own answers.
                 </span>
               </div>
             )}
@@ -1081,7 +1081,7 @@ export default function ExamAuthoringModal({
                   value: 'IMMEDIATE',
                   label: 'As soon as each student submits',
                   hint: targetType === 'batch'
-                    ? 'Marks and correct answers appear the moment they hand in. In a group, someone who finishes early could pass the answers on.'
+                    ? 'Marks and correct answers appear the moment they hand in. In a tuition, someone who finishes early could pass the answers on.'
                     : 'Marks and correct answers appear the moment they hand in.'
                 },
                 { value: 'CLOSE', label: 'When the exam closes', hint: 'After the deadline and any late-work time, when nobody can still be answering.' },

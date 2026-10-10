@@ -195,7 +195,7 @@ export default function ConnectedTutorsHub({
                     {/* Batch info */}
                     <div className="flex items-center gap-1.5 text-xs text-slate-500 font-medium pt-1">
                       <Layers className="w-3.5 h-3.5 text-slate-400" />
-                      <span>{tuitionCount} Tuition Group{tuitionCount === 1 ? '' : 's'}</span>
+                      <span>{tuitionCount} Tuition{tuitionCount === 1 ? '' : 's'}</span>
                     </div>
                   </div>
 

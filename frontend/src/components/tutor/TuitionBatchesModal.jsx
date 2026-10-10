@@ -315,7 +315,7 @@ export default function TuitionBatchesModal({
 
           <div>
             <label className="block text-xs font-semibold text-slate-300 mb-1">
-              Total fee per cycle (৳) — whole group
+              Total fee per cycle (৳) — whole tuition
             </label>
             <input
               type="number"

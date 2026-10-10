@@ -11,7 +11,7 @@ const inputCls =
   'w-full px-3.5 py-2.5 rounded-xl bg-slate-900/90 border border-slate-700/80 text-slate-100 text-base sm:text-sm placeholder:text-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 hover:border-slate-600 transition-all duration-200';
 
 const HIGHLIGHTS = [
-  { icon: CalendarCheck, title: 'One class tracker per group', text: 'Tick a class once — every student in the group sees it instantly, with the date and topic.' },
+  { icon: CalendarCheck, title: 'One class tracker per tuition', text: 'Tick a class once — every student in the tuition sees it instantly, with the date and topic.' },
   { icon: Wallet, title: 'Earnings that add up themselves', text: 'Each completed class moves your tuition wallet. Full privacy: students never see fees.' },
   { icon: FileText, title: 'Integrated MCQ & Written Exams', text: 'Author rich exams with math formulas, set timers and deadlines, grade and rank in one place.' },
 ];
@@ -154,7 +154,7 @@ export default function LoginPage() {
       ? 'Sign in to your tuition dashboard.'
       : isStudent
       ? 'Join your tutor, follow your classes and take exams.'
-      : 'Set up your groups, track classes and earnings.';
+      : 'Set up your tuitions, track classes and earnings.';
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 grid lg:grid-cols-2">
@@ -222,7 +222,7 @@ export default function LoginPage() {
           {isRegister && (
             <div className="mt-6 grid grid-cols-2 gap-3" role="radiogroup" aria-label="Account type">
               {[
-                { key: 'register-tutor', icon: Presentation, title: "I'm a tutor", text: 'I teach groups & track fees' },
+                { key: 'register-tutor', icon: Presentation, title: "I'm a tutor", text: 'I teach tuitions & track fees' },
                 { key: 'register-student', icon: BookOpen, title: "I'm a student", text: 'I attend classes & take exams' },
               ].map(({ key, icon: Icon, title, text }) => {
                 const active = mode === key;
@@ -326,7 +326,7 @@ export default function LoginPage() {
                     <span className="text-xs text-slate-500">Optional</span>
                   </div>
                   <p className="text-xs text-slate-400 mb-3">
-                    We send them a request. When they accept and add you to a group, your classes appear. You can also do this later.
+                    We send them a request. When they accept and add you to a tuition, your classes appear. You can also do this later.
                   </p>
 
                   {selectedTutor ? (

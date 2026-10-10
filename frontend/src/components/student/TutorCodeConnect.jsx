@@ -186,7 +186,7 @@ export default function TutorCodeConnect({ connections = [], onChanged }) {
       {connections.length === 0 && (
         <div className="flex items-center gap-3 text-xs text-slate-500 px-2">
           <Lock className="w-3.5 h-3.5 flex-shrink-0" />
-          Your tuition groups and homework will appear once your tutor accepts your request.
+          Your tuitions and homework will appear once your tutor accepts your request.
         </div>
       )}
     </div>

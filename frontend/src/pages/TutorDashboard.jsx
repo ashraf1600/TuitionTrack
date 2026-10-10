@@ -16,17 +16,8 @@ import { useAuth } from '../context/auth';
 import { api } from '../api/client';
 import { confirmAction } from '../components/common/ConfirmDialog';
 import { ErrorState } from '../components/common/States';
-import { useNow } from '../hooks/useNow';
 
-// Sat-first canonical week order shared with TuitionWorkspace (Sat -> Fri for BD context).
-// Keep this single source consistent everywhere weekly routines are rendered/sorted.
-const DAYS_ORDER = ['Saturday', 'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
 const normId = (s) => String(s?.student_id ?? s?.id ?? s ?? '');
-const timeToMinutes = (t) => {
-  const m = String(t || '18:00').match(/(\d{1,2}):(\d{2})/);
-  if (!m) return 18 * 60;
-  return parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
-};
 import {
   FileText,
   Plus,
@@ -42,7 +33,6 @@ import {
   Trash2,
   Sparkles,
   UserPlus,
-  CalendarDays,
   Copy
 } from 'lucide-react';
 
@@ -50,7 +40,6 @@ export default function TutorDashboard() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState('batches'); // 'batches' | 'homework' | 'attendance' | 'exams'
-  const todayName = new Date(useNow(60_000)).toLocaleDateString('en-US', { weekday: 'long' });
 
   // Data states
   const [analytics, setAnalytics] = useState(null);
@@ -225,9 +214,9 @@ export default function TutorDashboard() {
 
   const handleDeleteBatch = async (batchId) => {
     const ok = await confirmAction({
-      title: 'Delete tuition group?',
+      title: 'Delete tuition?',
       message: 'Its students and exams are removed from it. What it has already earned stays in your lifetime earnings.',
-      confirmLabel: 'Delete group',
+      confirmLabel: 'Delete tuition',
       danger: true
     });
     if (!ok) return;
@@ -270,38 +259,6 @@ export default function TutorDashboard() {
     return ids.size;
   }, [tuitions]);
 
-  // DAYS_ORDER is defined once at module top (Sat-first canonical order).
-  const weeklyScheduleByDay = useMemo(() => {
-    const schedule = {};
-    DAYS_ORDER.forEach((day) => {
-      schedule[day] = [];
-    });
-
-    tuitions.forEach((t) => {
-      const routine = t.routine || t.weekly_routine || [];
-      routine.forEach((slot) => {
-        const dayMatch = DAYS_ORDER.find((d) => d.toLowerCase() === (slot.day || '').toLowerCase());
-        if (dayMatch) {
-          schedule[dayMatch].push({
-            tuitionId: t.id,
-            tuitionTitle: t.title || t.name,
-            subject: t.subject || '',
-            startTime: slot.start_time || slot.time || '18:00',
-            endTime: slot.end_time || '19:30',
-            studentCount: t.student_count || t.enrollment_count || t.enrollments?.length || 0,
-            fee: t.tuition_fee || t.monthly_fee || 0
-          });
-        }
-      });
-    });
-
-    DAYS_ORDER.forEach((day) => {
-      schedule[day].sort((a, b) => timeToMinutes(a.startTime) - timeToMinutes(b.startTime));
-    });
-
-    return schedule;
-  }, [tuitions]);
-
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
       <Navbar />
@@ -324,9 +281,9 @@ export default function TutorDashboard() {
               Welcome back, {user?.name || user?.username || 'Tutor'}
             </h1>
             <p className="text-xs sm:text-sm text-slate-400 mt-1">
-              {tuitions.length} tuition group{tuitions.length === 1 ? '' : 's'} · {enrolledCount} student{enrolledCount === 1 ? '' : 's'} enrolled
+              {tuitions.length} tuition{tuitions.length === 1 ? '' : 's'} · {enrolledCount} student{enrolledCount === 1 ? '' : 's'} enrolled
               {unassignedStudents.length > 0 && (
-                <span className="text-amber-300 font-semibold"> · {unassignedStudents.length} waiting for a group</span>
+                <span className="text-amber-300 font-semibold"> · {unassignedStudents.length} waiting for a tuition</span>
               )}
             </p>
           </div>
@@ -349,7 +306,7 @@ export default function TutorDashboard() {
               className="px-3 sm:px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-lg shadow-indigo-600/25 transition active:scale-[0.98]"
             >
               <Plus className="w-4 h-4" />
-              <span>New group</span>
+              <span>New tuition</span>
             </button>
             <button
               onClick={() => setAddStudentModalOpen(true)}
@@ -365,7 +322,7 @@ export default function TutorDashboard() {
                 setAuthorExamModalOpen(true);
               }}
               disabled={tuitions.length === 0}
-              title={tuitions.length === 0 ? 'Create a tuition group first' : 'Schedule an exam for a group'}
+              title={tuitions.length === 0 ? 'Create a tuition first' : 'Schedule an exam for a tuition'}
               className="px-3 sm:px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-100 border border-slate-700 font-semibold text-xs flex items-center justify-center gap-1.5 transition disabled:opacity-50 active:scale-[0.98] col-span-2 sm:col-span-1"
             >
               <FileText className="w-4 h-4 text-indigo-400" />
@@ -411,7 +368,7 @@ export default function TutorDashboard() {
           </div>
         </div>
 
-        {/* Students who asked to join, or have no group yet */}
+        {/* Students who asked to join, or have no tuition yet */}
         <ConnectionRequestsPanel
           students={unassignedStudents}
           tuitions={tuitions}
@@ -443,7 +400,7 @@ export default function TutorDashboard() {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800/80 pb-3">
           <div className="p-1 rounded-2xl bg-slate-900/90 border border-slate-800/80 flex overflow-x-auto no-scrollbar scroll-smooth gap-1 w-full sm:w-auto backdrop-blur-md">
             {[
-              { id: 'batches', icon: Layers, label: 'Tuition groups', count: tuitions.length },
+              { id: 'batches', icon: Layers, label: 'Tuitions', count: tuitions.length },
               { id: 'attendance', icon: Calendar, label: 'Class tracker' },
               { id: 'exams', icon: FileText, label: 'Exams', count: exams.length },
               { id: 'homework', icon: BookOpen, label: 'Homework' },
@@ -482,7 +439,7 @@ export default function TutorDashboard() {
                 className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs flex items-center gap-1.5 shadow-md shadow-indigo-600/20 transition active:scale-[0.98]"
               >
                 <Plus className="w-4 h-4" />
-                <span>New tuition group</span>
+                <span>New tuition</span>
               </button>
             )}
           </div>
@@ -494,9 +451,9 @@ export default function TutorDashboard() {
             {tuitions.length === 0 ? (
               <div className="rounded-2xl border border-dashed border-slate-700 bg-slate-900/40 p-10 text-center">
                 <Layers className="w-10 h-10 mx-auto text-slate-600 mb-3" />
-                <p className="text-sm font-semibold text-slate-200">Create a tuition group to start tracking classes</p>
+                <p className="text-sm font-semibold text-slate-200">Create a tuition to start tracking classes</p>
                 <p className="text-xs text-slate-400 mt-1 mb-4 max-w-md mx-auto">
-                  Each group has one class tracker that all of its students share.
+                  Each tuition has one class tracker that all of its students share.
                 </p>
                 <button
                   onClick={() => {
@@ -505,7 +462,7 @@ export default function TutorDashboard() {
                   }}
                   className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold"
                 >
-                  New tuition group
+                  New tuition
                 </button>
               </div>
             ) : (
@@ -583,10 +540,10 @@ export default function TutorDashboard() {
               <div>
                 <h3 className="text-xl font-bold text-slate-100 flex items-center gap-2">
                   <Layers className="w-5 h-5 text-indigo-400" />
-                  Tuition groups
+                  Tuitions
                 </h3>
                 <p className="text-xs text-slate-400 mt-0.5">
-                  Organize students into group tuitions with custom weekly days, times, and unified exams
+                  Each tuition has its students, weekly days and times, fee and exams
                 </p>
               </div>
 
@@ -608,9 +565,9 @@ export default function TutorDashboard() {
             ) : batches.length === 0 ? (
               <div className="text-center py-14 px-4 rounded-xl border border-dashed border-slate-800 text-slate-400">
                 <Layers className="w-12 h-12 mx-auto text-slate-600 mb-2" />
-                <p className="text-sm font-semibold text-slate-300">No tuition groups yet</p>
+                <p className="text-sm font-semibold text-slate-300">No tuitions yet</p>
                 <p className="text-xs text-slate-500 mt-1 mb-4">
-                  Create a batch to group multiple students together with a weekly routine and collective exams.
+                  Create a tuition to put students together with a weekly routine, a fee and shared exams.
                 </p>
                 <button
                   onClick={() => {
@@ -619,7 +576,7 @@ export default function TutorDashboard() {
                   }}
                   className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold"
                 >
-                  Create your first group
+                  Create your first tuition
                 </button>
               </div>
             ) : (
@@ -698,12 +655,12 @@ export default function TutorDashboard() {
                         {batch.active_cycle && (
                           <div className="mt-4">
                             <div className="flex items-center justify-between text-[11px] text-slate-400 mb-1">
-                              <span>Cycle #{batch.active_cycle.cycle_number} · {batch.active_cycle.completed_classes}/{batch.active_cycle.total_classes} classes</span>
+                              <span><span className="text-sm font-bold text-slate-100">{batch.active_cycle.completed_classes}/{batch.active_cycle.total_classes} classes done</span> · cycle #{batch.active_cycle.cycle_number}</span>
                               <span className="font-mono text-emerald-400 font-semibold">৳{Number(batch.active_cycle.earned_revenue || 0).toLocaleString()} earned</span>
                             </div>
                             <div className="h-1.5 rounded-full bg-slate-800 overflow-hidden">
                               <div
-                                className="h-full bg-gradient-to-r from-indigo-500 to-emerald-400 transition-all duration-500"
+                                className="h-full bg-emerald-600 transition-all duration-500"
                                 style={{ width: `${batch.active_cycle.progress_percent || 0}%` }}
                               />
                             </div>
@@ -773,78 +730,6 @@ export default function TutorDashboard() {
               </div>
             )}
 
-            {/* Section 2: Weekly Routine Agenda / Master Calendar */}
-            <div className="pt-6 border-t border-slate-800/80 space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h4 className="text-base sm:text-lg font-bold text-slate-100 flex items-center gap-2">
-                    <CalendarDays className="w-5 h-5 text-indigo-400" />
-                    Weekly Routine Agenda & Master Calendar
-                  </h4>
-                  <p className="text-xs text-slate-400">
-                    Unified 7-day schedule across all active tuitions and student cohorts
-                  </p>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
-                {DAYS_ORDER.map((day) => {
-                  const daySlots = weeklyScheduleByDay[day] || [];
-                  const isToday = todayName === day;
-                  return (
-                    <div
-                      key={day}
-                      className={`p-3 rounded-2xl border transition flex flex-col min-h-[160px] ${
-                        isToday
-                          ? 'bg-indigo-950/30 border-indigo-500/50 shadow-sm shadow-indigo-500/10'
-                          : 'bg-slate-900/60 border-slate-800'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between border-b border-slate-800 pb-2 mb-2.5">
-                        <span className={`text-xs font-bold ${isToday ? 'text-indigo-300' : 'text-slate-300'}`}>
-                          {day.slice(0, 3)}
-                        </span>
-                        {isToday && (
-                          <span className="text-[9px] uppercase tracking-wider font-extrabold px-1.5 py-0.2 rounded-full bg-indigo-500 text-white">
-                            Today
-                          </span>
-                        )}
-                        <span className="text-[10px] text-slate-500 font-mono">
-                          {daySlots.length} class{daySlots.length === 1 ? '' : 'es'}
-                        </span>
-                      </div>
-
-                      <div className="flex-1 space-y-2">
-                        {daySlots.length === 0 ? (
-                          <div className="h-full flex items-center justify-center text-center py-6">
-                            <span className="text-[11px] text-slate-600 italic">No classes</span>
-                          </div>
-                        ) : (
-                          daySlots.map((slot, sIdx) => (
-                            <div
-                              key={sIdx}
-                              className="p-2 rounded-xl bg-slate-800/90 border border-slate-700/60 text-xs space-y-1 hover:border-indigo-500/40 transition"
-                            >
-                              <div className="font-bold text-slate-200 text-[11px] truncate" title={slot.tuitionTitle}>
-                                {slot.tuitionTitle}
-                              </div>
-                              <div className="flex items-center justify-between text-[10px] text-slate-400 font-mono">
-                                <span className="text-indigo-300 font-semibold">
-                                  {slot.startTime} - {slot.endTime}
-                                </span>
-                                <span className="px-1.5 py-0.2 rounded-md bg-slate-900 text-slate-400">
-                                  {slot.studentCount}s
-                                </span>
-                              </div>
-                            </div>
-                          ))
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
           </div>
         )}
 

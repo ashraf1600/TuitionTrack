@@ -399,7 +399,7 @@ export default function TutorWorkspaceView({
           {tutorTuitions.length === 0 ? (
             <EmptyWorkspaceCard
               icon={Calendar}
-              title="No Tuition Group Enrolled"
+              title="Not in a tuition yet"
               desc={`You are not enrolled in any batch for ${data.display_name} yet.`}
             />
           ) : (
@@ -604,7 +604,7 @@ export default function TutorWorkspaceView({
                 <EmptyWorkspaceCard
                   icon={Award}
                   title="No Exams Scheduled"
-                  desc={`${data.display_name} has not scheduled any exams for this group right now.`}
+                  desc={`${data.display_name} has not scheduled any exams for this tuition right now.`}
                 />
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">

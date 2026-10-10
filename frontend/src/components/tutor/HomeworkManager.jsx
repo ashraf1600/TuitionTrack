@@ -486,7 +486,7 @@ function CreateHomeworkModal({ tuitions, students, onClose, onCreated }) {
         } else {
           const res = await api.createHomework({ ...base, tuition: targetId });
           created = [res];
-          notify.success('Shared homework created for the group.');
+          notify.success('Shared homework created for the tuition.');
         }
       } else {
         const res = await api.createHomework({ ...base, student: targetId });
@@ -565,7 +565,7 @@ function CreateHomeworkModal({ tuitions, students, onClose, onCreated }) {
                     targetType === 'tuition' ? 'bg-indigo-600 text-white' : 'text-slate-400'
                   }`}
                 >
-                  Tuition Group
+                  Tuition
                 </button>
                 <button
                   type="button"
@@ -620,7 +620,7 @@ function CreateHomeworkModal({ tuitions, students, onClose, onCreated }) {
                     </span>
                     <span className="block text-[11px] text-slate-400 mt-0.5 leading-relaxed">
                       Recommended — each student submits on their own row and you mark each done individually.
-                      Unchecked creates one shared task for the whole group.
+                      Unchecked creates one shared task for the whole tuition.
                     </span>
                   </span>
                 </label>
