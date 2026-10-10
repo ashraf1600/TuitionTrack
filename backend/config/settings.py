@@ -75,6 +75,10 @@ else:
 # Render provides its own public hostname.
 if os.getenv('RENDER_EXTERNAL_HOSTNAME'):
     ALLOWED_HOSTS.append(os.environ['RENDER_EXTERNAL_HOSTNAME'])
+# Kept from the original deploy so Render's health check keeps passing. (Host names only:
+# CORS/CSRF below do not trust other onrender.com sites.)
+if (os.getenv('RENDER') or os.getenv('RENDER_EXTERNAL_HOSTNAME')) and '.onrender.com' not in ALLOWED_HOSTS:
+    ALLOWED_HOSTS.append('.onrender.com')
 
 # ─── Application Definition ───────────────────────────────────────────────────
 DJANGO_APPS = [
