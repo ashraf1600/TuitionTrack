@@ -85,6 +85,7 @@ class HomeworkItem {
     this.tuitionTitle = '',
     required this.studentId,
     required this.studentName,
+    this.isPending = false,
   });
   final String id;
   final String title;
@@ -103,6 +104,9 @@ class HomeworkItem {
   final String tuitionTitle;
   final String studentId;
   final String studentName;
+
+  /// Assigned on this phone while offline and not on the server yet.
+  final bool isPending;
 
   /// True for a group-shared row (one task, whole group) as opposed to a
   /// per-student copy that is reviewed and marked done individually.
@@ -126,5 +130,6 @@ class HomeworkItem {
         tuitionTitle: j.str('tuition_title'),
         studentId: j.str('student_id'),
         studentName: j.str('student_name'),
+        isPending: j.flag('pending_sync'),
       );
 }

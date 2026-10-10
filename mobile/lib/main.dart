@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'core/api.dart';
+import 'core/offline.dart';
 import 'core/repo.dart';
 import 'core/session.dart';
 import 'screens/auth/force_password_screen.dart';
@@ -27,7 +28,13 @@ Future<void> main() async {
   if (kIsWeb) SemanticsBinding.instance.ensureSemantics();
   final prefs = await SharedPreferences.getInstance();
   final session = Session(
-    api: ApiClient(baseUrl: defaultServer, tokens: SecureTokenStore()),
+    api: ApiClient(
+      baseUrl: defaultServer,
+      tokens: SecureTokenStore(),
+      // What the server last sent is kept on the phone, so screens open offline
+      // and instantly while a sleeping server wakes up.
+      cache: ResponseCache(storage: canPersistCache ? FileCacheStorage() : null),
+    ),
     settings: PrefsSettings(prefs),
   );
   runApp(TuitionTrackApp(session: session));
@@ -42,7 +49,7 @@ class TuitionTrackApp extends StatefulWidget {
   State<TuitionTrackApp> createState() => _TuitionTrackAppState();
 }
 
-class _TuitionTrackAppState extends State<TuitionTrackApp> {
+class _TuitionTrackAppState extends State<TuitionTrackApp> with WidgetsBindingObserver {
   final _navigator = GlobalKey<NavigatorState>();
   String? _lastUser;
 
@@ -50,11 +57,26 @@ class _TuitionTrackAppState extends State<TuitionTrackApp> {
   void initState() {
     super.initState();
     widget.session.addListener(_onSessionChanged);
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Back in the app: see whether the server can be reached and send anything made offline.
+    if (state != AppLifecycleState.resumed) return;
+    final session = widget.session;
+    if (!session.signedIn) return;
+    if (session.api.offline.value) {
+      session.api.checkConnection();
+    } else {
+      session.syncPending();
+    }
   }
 
   @override
   void dispose() {
     widget.session.removeListener(_onSessionChanged);
+    WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
 
@@ -72,7 +94,7 @@ class _TuitionTrackAppState extends State<TuitionTrackApp> {
     return MultiProvider(
       providers: [
         ChangeNotifierProvider<Session>.value(value: widget.session),
-        Provider<Repo>(create: (_) => Repo(widget.session.api)),
+        Provider<Repo>(create: (_) => Repo(widget.session.api, outbox: widget.session.outbox)),
       ],
       child: ListenableBuilder(
         listenable: widget.session,

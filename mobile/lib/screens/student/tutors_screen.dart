@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/connect.dart';
@@ -30,7 +29,7 @@ class _TutorsScreenState extends State<TutorsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text('My Tutors', style: GoogleFonts.inter(fontWeight: FontWeight.w700))),
+      appBar: AppBar(title: const Text('My Tutors')),
       body: Loader<List<ConnectedTutor>>(
         key: _key,
         load: _load,
@@ -88,8 +87,8 @@ class _TutorCard extends StatelessWidget {
           backgroundImage: url.isNotEmpty ? NetworkImage(url) : null,
           child: url.isEmpty ? const Icon(Icons.person, size: 30) : null,
         ),
-        title: Text(tutor.displayName, style: GoogleFonts.inter(fontWeight: FontWeight.w700, fontSize: 17)),
-        subtitle: Text('@${tutor.username}', style: GoogleFonts.inter(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13)),
+        title: Text(tutor.displayName, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 17)),
+        subtitle: Text('@${tutor.username}', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13)),
         trailing: const Icon(Icons.chevron_right_rounded),
         onTap: () {
           HapticFeedback.lightImpact();

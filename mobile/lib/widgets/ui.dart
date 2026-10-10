@@ -1,6 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 import '../core/api.dart';
+import '../core/repo.dart';
 import 'theme.dart';
 
 void showToast(BuildContext context, String message, {bool error = false}) {
@@ -21,6 +25,21 @@ bool checkForm(BuildContext context, GlobalKey<FormState> form) {
   if (form.currentState?.validate() ?? false) return true;
   showToast(context, 'Some details are missing or not right. Check the fields marked in red.', error: true);
   return false;
+}
+
+/// Like [attempt] for changes that also work offline ([Repo] methods that may
+/// answer `queued: true`): the toast says the change was kept on the phone
+/// instead of claiming the server has it.
+Future<bool> attemptSave(BuildContext context, Future<Map<String, dynamic>> Function() action, {required String success}) async {
+  Map<String, dynamic>? result;
+  final ok = await attempt(context, () async {
+    result = await action();
+  });
+  if (ok && context.mounted) {
+    final queued = result?['queued'] == true;
+    showToast(context, queued ? 'Saved on this phone. It will be sent when you are back online.' : success);
+  }
+  return ok;
 }
 
 /// Runs an action, reporting failure as a toast. Returns true when it succeeded.
@@ -82,14 +101,41 @@ class LoaderState<T> extends State<Loader<T>> {
   T? _data;
   bool _loaded = false;
   String? _error;
+  bool _slow = false;
+  Timer? _slowTimer;
+  ValueNotifier<int>? _dataVersion;
 
   @override
   void initState() {
     super.initState();
+    // Load again by itself when fresh data is available (back online, offline changes sent).
+    try {
+      _dataVersion = Provider.of<Repo>(context, listen: false).api.dataVersion..addListener(_onDataChanged);
+    } on ProviderNotFoundException {
+      _dataVersion = null;
+    }
     reload();
   }
 
+  @override
+  void dispose() {
+    _dataVersion?.removeListener(_onDataChanged);
+    _slowTimer?.cancel();
+    super.dispose();
+  }
+
+  void _onDataChanged() {
+    if (mounted) reload();
+  }
+
   Future<void> reload() async {
+    // A first load that takes long is usually the free server waking up: say so.
+    if (!_loaded) {
+      _slowTimer?.cancel();
+      _slowTimer = Timer(const Duration(seconds: 6), () {
+        if (mounted && !_loaded) setState(() => _slow = true);
+      });
+    }
     try {
       final data = await widget.load();
       if (!mounted) return;
@@ -113,6 +159,9 @@ class LoaderState<T> extends State<Loader<T>> {
       } else {
         setState(() => _error = 'Something went wrong while loading. Please try again.');
       }
+    } finally {
+      _slowTimer?.cancel();
+      if (mounted && _slow) setState(() => _slow = false);
     }
   }
 
@@ -125,7 +174,25 @@ class LoaderState<T> extends State<Loader<T>> {
           reload();
         });
       }
-      return const Center(child: CircularProgressIndicator());
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const CircularProgressIndicator(),
+              if (_slow) ...[
+                const SizedBox(height: 16),
+                Text(
+                  'Connecting to the server…\nIt can take up to a minute to wake up.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
+                ),
+              ],
+            ],
+          ),
+        ),
+      );
     }
     final child = widget.builder(context, _data as T, reload);
     if (!widget.scrollable) return child;
@@ -358,20 +425,26 @@ class _BusyButtonState extends State<BusyButton> {
 
 /// A labelled figure for dashboards.
 class Stat extends StatelessWidget {
-  const Stat({super.key, required this.label, required this.value, this.color = AppColors.text});
+  const Stat({super.key, required this.label, required this.value, this.color});
   final String label;
   final String value;
-  final Color color;
+  /// Accent for the figure; the theme's text colour when left out.
+  final Color? color;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final accent = color;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(label, style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 12)),
         const SizedBox(height: 2),
-        Text(value, style: TextStyle(color: color, fontSize: 18, fontWeight: FontWeight.w800)),
+        Text(value,
+            style: TextStyle(
+                color: accent == null || accent == AppColors.text ? scheme.onSurface : tone(context, accent),
+                fontSize: 18,
+                fontWeight: FontWeight.w800)),
       ],
     );
   }
