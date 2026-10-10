@@ -91,10 +91,14 @@ class StudentDetailView(generics.RetrieveUpdateDestroyAPIView):
     http_method_names = ['get', 'patch', 'delete', 'head', 'options']
 
     def get_queryset(self):
-        return User.objects.filter(
-            role='STUDENT',
-            tutor=self.request.user
-        ).select_related('student_profile')
+        # Any student on the tutor's list can be opened; only the tutor who owns
+        # the account (created or first accepted it) may change or deactivate it.
+        from .services import manageable_students
+        if self.request.method in ('GET', 'HEAD', 'OPTIONS'):
+            qs = manageable_students(self.request.user)
+        else:
+            qs = User.objects.filter(role='STUDENT', tutor=self.request.user)
+        return qs.select_related('student_profile')
 
     def destroy(self, request, *args, **kwargs):
         """
@@ -198,10 +202,25 @@ class TuitionViewSet(viewsets.ModelViewSet):
             return [IsAuthenticated(), IsTutorOrStudent()]
         return [IsAuthenticated(), IsTutor()]
 
+    @staticmethod
+    def _with_related(qs):
+        """Loads cycles and current members in two queries for the whole page, not per row."""
+        from django.db.models import Prefetch
+        from .models import TuitionEnrollment
+        return qs.select_related('tutor').prefetch_related(
+            'cycles',
+            Prefetch(
+                'enrollments',
+                queryset=TuitionEnrollment.objects.filter(is_active=True, student__is_active=True)
+                .select_related('student', 'student__student_profile'),
+                to_attr='active_enrollments_cache',
+            ),
+        )
+
     def get_queryset(self):
         from .models import Tuition
         user = self.request.user
-        qs = Tuition.objects.select_related('tutor').prefetch_related('cycles')
+        qs = self._with_related(Tuition.objects.all())
         if user.role == 'TUTOR':
             return qs.filter(tutor=user)
         if user.role == 'STUDENT':
@@ -217,8 +236,11 @@ class TuitionViewSet(viewsets.ModelViewSet):
         return StudentTuitionSerializer
 
     def _detail(self, tuition):
+        """The tutor's view of the group as it is now (re-read, so a change just made shows)."""
+        from .models import Tuition
         from .serializers import TuitionSerializer
-        return TuitionSerializer(tuition, context=self.get_serializer_context()).data
+        fresh = self._with_related(Tuition.objects.filter(pk=tuition.pk)).first() or tuition
+        return TuitionSerializer(fresh, context=self.get_serializer_context()).data
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
@@ -261,7 +283,7 @@ class TuitionViewSet(viewsets.ModelViewSet):
         try:
             ids = {uuid.UUID(str(value)) for value in raw}
         except (ValueError, TypeError, AttributeError):
-            raise ValidationError({'student_id': 'Invalid student id.'})
+            raise ValidationError({'student_id': 'Invalid student id.'}) from None
 
         existing = User.objects.filter(id__in=ids, role=User.Role.STUDENT)
         if existing.count() != len(ids):
@@ -696,37 +718,54 @@ class HomeworkViewSet(viewsets.GenericViewSet):
     PATCH  /api/v1/homework/<id>/               - Tutor edits homework
     DELETE /api/v1/homework/<id>/               - Tutor deletes homework
     POST   /api/v1/homework/<id>/mark_done/     - Tutor marks as evaluated
-    POST   /api/v1/homework/<id>/submit/        - Student submits online link
+    POST   /api/v1/homework/<id>/evaluate/      - Tutor sets is_evaluated true/false
+    POST   /api/v1/homework/<id>/split/         - Tutor turns a group task into one copy per student
+    POST   /api/v1/homework/<id>/submit/        - Student submits a link and/or file
+
+    A group task (tuition set, no student) is shared. A student never writes on
+    it: handing in work creates (or reuses) their own copy, and from then on
+    they see that copy instead of the shared row.
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsTutorOrStudent]
 
     def get_queryset(self):
-        from .models import Homework
+        from .models import Homework, TuitionEnrollment
         user = self.request.user
         qs = Homework.objects.select_related("tutor", "student", "tuition")
         if user.role == "TUTOR":
             return qs.filter(tutor=user)
         if user.role == "STUDENT":
-            from .models import TuitionEnrollment
             enrolled_tuition_ids = TuitionEnrollment.objects.filter(
                 student=user, is_active=True
             ).values_list("tuition_id", flat=True)
+            copied_group_ids = Homework.objects.filter(
+                student=user, group_source__isnull=False
+            ).values_list("group_source_id", flat=True)
             return qs.filter(
-                Q(student=user) | Q(tuition_id__in=enrolled_tuition_ids)
-            )
+                Q(student=user) | Q(student__isnull=True, tuition_id__in=enrolled_tuition_ids)
+            ).exclude(id__in=copied_group_ids)
         return Homework.objects.none()
 
+    def _tutor_only(self, request, verb):
+        if request.user.role != "TUTOR":
+            return Response({"error": f"Only tutors can {verb} homework."}, status=status.HTTP_403_FORBIDDEN)
+        return None
+
     def list(self, request):
+        import uuid as _uuid
         from .serializers import HomeworkSerializer
         qs = self.get_queryset().order_by("due_date")
 
-        # Optional query filters
         tutor_id = request.query_params.get("tutor_id")
         evaluated = request.query_params.get("evaluated")
         if tutor_id:
+            try:
+                _uuid.UUID(str(tutor_id))
+            except (ValueError, TypeError):
+                return Response({"tutor_id": ["Invalid tutor id."]}, status=status.HTTP_400_BAD_REQUEST)
             qs = qs.filter(tutor_id=tutor_id)
-        if evaluated is not None:
-            qs = qs.filter(is_evaluated=(evaluated.lower() == "true"))
+        if evaluated is not None and evaluated != "":
+            qs = qs.filter(is_evaluated=(evaluated.lower() in ("true", "1", "yes")))
 
         return Response(HomeworkSerializer(qs, many=True, context={"request": request}).data)
 
@@ -737,39 +776,30 @@ class HomeworkViewSet(viewsets.GenericViewSet):
 
     def create(self, request):
         from .serializers import HomeworkCreateUpdateSerializer, HomeworkSerializer
-        from .models import Homework
-        if request.user.role != "TUTOR":
-            return Response({"error": "Only tutors can create homework."}, status=status.HTTP_403_FORBIDDEN)
-
-        serializer = HomeworkCreateUpdateSerializer(data=request.data)
+        denied = self._tutor_only(request, "create")
+        if denied:
+            return denied
+        serializer = HomeworkCreateUpdateSerializer(data=request.data, context={"request": request})
         serializer.is_valid(raise_exception=True)
-
-        # Ensure the student / tuition belongs to this tutor.
-        student = serializer.validated_data.get("student")
-        tuition = serializer.validated_data.get("tuition")
-        if student and student.tutor != request.user:
-            return Response({"student": "This student does not belong to you."}, status=status.HTTP_400_BAD_REQUEST)
-        if tuition and tuition.tutor != request.user:
-            return Response({"tuition": "This tuition does not belong to you."}, status=status.HTTP_400_BAD_REQUEST)
-
         hw = serializer.save(tutor=request.user)
         return Response(HomeworkSerializer(hw, context={"request": request}).data, status=status.HTTP_201_CREATED)
 
     def partial_update(self, request, pk=None):
         from .serializers import HomeworkCreateUpdateSerializer, HomeworkSerializer
-        if request.user.role != "TUTOR":
-            return Response({"error": "Only tutors can edit homework."}, status=status.HTTP_403_FORBIDDEN)
+        denied = self._tutor_only(request, "edit")
+        if denied:
+            return denied
         hw = get_object_or_404(self.get_queryset(), pk=pk)
-        serializer = HomeworkCreateUpdateSerializer(hw, data=request.data, partial=True)
+        serializer = HomeworkCreateUpdateSerializer(hw, data=request.data, partial=True, context={"request": request})
         serializer.is_valid(raise_exception=True)
         hw = serializer.save()
         return Response(HomeworkSerializer(hw, context={"request": request}).data)
 
     def destroy(self, request, pk=None):
-        if request.user.role != "TUTOR":
-            return Response({"error": "Only tutors can delete homework."}, status=status.HTTP_403_FORBIDDEN)
-        from .models import Homework
-        hw = get_object_or_404(Homework, pk=pk, tutor=request.user)
+        denied = self._tutor_only(request, "delete")
+        if denied:
+            return denied
+        hw = get_object_or_404(self.get_queryset(), pk=pk)
         hw.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
@@ -788,12 +818,51 @@ class HomeworkViewSet(viewsets.GenericViewSet):
         hw.evaluated_at = timezone.now()
         if serializer.validated_data.get("feedback"):
             hw.tutor_feedback = serializer.validated_data["feedback"]
-        hw.save(update_fields=["is_evaluated", "evaluated_at", "tutor_feedback"])
+        hw.save(update_fields=["is_evaluated", "evaluated_at", "tutor_feedback", "updated_at"])
 
         return Response({
             "message": "Homework marked as done.",
             "homework": HomeworkSerializer(hw, context={"request": request}).data,
         })
+
+    @action(detail=True, methods=["post"], permission_classes=[IsAuthenticated, IsTutor])
+    def split(self, request, pk=None):
+        """
+        POST /api/v1/homework/<id>/split/
+        Turns a shared group task into one row per current member, in one step:
+        students who already handed in keep their copy, everyone else gets a
+        fresh one, and the shared row is removed. Returns the per-student rows.
+        """
+        from django.db import transaction
+        from .models import Homework, TuitionEnrollment
+        from .serializers import HomeworkSerializer
+
+        with transaction.atomic():
+            hw = get_object_or_404(self.get_queryset().select_for_update(of=("self",)), pk=pk)
+            if hw.student_id or not hw.tuition_id:
+                return Response({"error": "Only a shared group task can be split."}, status=status.HTTP_400_BAD_REQUEST)
+            members = [
+                enr.student for enr in TuitionEnrollment.objects.filter(
+                    tuition_id=hw.tuition_id, is_active=True, student__is_active=True
+                ).select_related("student")
+            ]
+            if not members:
+                return Response(
+                    {"error": "No enrolled students found in this group to split across."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            copies = [hw.personal_copy_for(student) for student in members]
+            # Copies made earlier for students who have since left stay as they are.
+            copy_ids = [c.id for c in copies] + list(
+                Homework.objects.filter(group_source=hw).exclude(id__in=[c.id for c in copies]).values_list("id", flat=True)
+            )
+            hw.delete()
+            rows = Homework.objects.filter(id__in=copy_ids).select_related("tutor", "student", "tuition")
+
+        return Response({
+            "message": f"Split into {len(copies)} individual copies.",
+            "homework": HomeworkSerializer(rows, many=True, context={"request": request}).data,
+        }, status=status.HTTP_200_OK)
 
     @action(detail=True, methods=["post"])
     def submit(self, request, pk=None):
@@ -801,23 +870,32 @@ class HomeworkViewSet(viewsets.GenericViewSet):
         POST /api/v1/homework/<id>/submit/ — STUDENT ONLY.
         May upload submission_file and/or submitted_online_url.
         Can NEVER touch is_evaluated (field not even in serializer).
+        On a shared group task the work goes onto the student's own copy,
+        which is what the response returns (its id differs from the one posted).
         """
+        from django.db import transaction
         from .serializers import StudentHomeworkSubmitSerializer, HomeworkSerializer
         if request.user.role != "STUDENT":
             return Response({"error": "Only students can submit homework."}, status=status.HTTP_403_FORBIDDEN)
         hw = get_object_or_404(self.get_queryset(), pk=pk)
         serializer = StudentHomeworkSubmitSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+        if hw.is_evaluated:
+            return Response({"error": "This homework has already been checked."}, status=status.HTTP_400_BAD_REQUEST)
 
-        hw.submitted_online_url = serializer.validated_data.get("submitted_online_url", hw.submitted_online_url)
-        if serializer.validated_data.get("submission_file"):
-            hw.submission_file = serializer.validated_data["submission_file"]
-        hw.submitted_at = timezone.now()
-        hw.save(update_fields=["submitted_online_url", "submission_file", "submitted_at"])
+        with transaction.atomic():
+            target = hw if hw.student_id else hw.personal_copy_for(request.user)
+            target.submitted_online_url = serializer.validated_data.get(
+                "submitted_online_url", target.submitted_online_url
+            )
+            if serializer.validated_data.get("submission_file"):
+                target.submission_file = serializer.validated_data["submission_file"]
+            target.submitted_at = timezone.now()
+            target.save(update_fields=["submitted_online_url", "submission_file", "submitted_at", "updated_at"])
 
         return Response({
             "message": "Homework submission recorded.",
-            "homework": HomeworkSerializer(hw, context={"request": request}).data,
+            "homework": HomeworkSerializer(target, context={"request": request}).data,
         })
 
     @action(detail=True, methods=["post", "patch"], permission_classes=[IsAuthenticated, IsTutor],
@@ -832,17 +910,35 @@ class HomeworkViewSet(viewsets.GenericViewSet):
         hw.evaluated_at = timezone.now() if hw.is_evaluated else None
         if serializer.validated_data.get("tutor_feedback"):
             hw.tutor_feedback = serializer.validated_data["tutor_feedback"]
-        hw.save(update_fields=["is_evaluated", "evaluated_at", "tutor_feedback"])
+        hw.save(update_fields=["is_evaluated", "evaluated_at", "tutor_feedback", "updated_at"])
         return Response({
             "message": "Homework evaluation updated.",
             "homework": HomeworkSerializer(hw, context={"request": request}).data,
         })
 
 
-class WeeklyRoutineViewSet(viewsets.ModelViewSet):
-    """Tutor manages slots; student reads own (scoped)."""
-    permission_classes = [IsAuthenticated]
+class _TutorWritesViewSet(viewsets.ModelViewSet):
+    """Tutors manage the rows; students only ever read the ones meant for them."""
     http_method_names = ["get", "post", "patch", "delete", "head", "options"]
+
+    def get_permissions(self):
+        from rest_framework.permissions import SAFE_METHODS
+        if self.request.method in SAFE_METHODS:
+            return [IsAuthenticated(), IsTutorOrStudent()]
+        return [IsAuthenticated(), IsTutor()]
+
+    def _student_scope(self, user):
+        """Rows for the student personally, or for a group they are in now."""
+        from .models import TuitionEnrollment
+        tuition_ids = TuitionEnrollment.objects.filter(student=user, is_active=True).values_list("tuition_id", flat=True)
+        return Q(student=user) | Q(tuition_id__in=tuition_ids)
+
+    def perform_create(self, serializer):
+        serializer.save(tutor=self.request.user)
+
+
+class WeeklyRoutineViewSet(_TutorWritesViewSet):
+    """Tutor manages slots; student reads own (scoped)."""
 
     def get_queryset(self):
         from .models import WeeklyRoutine
@@ -851,24 +947,16 @@ class WeeklyRoutineViewSet(viewsets.ModelViewSet):
         if user.role == "TUTOR":
             return qs.filter(tutor=user).order_by("day_of_week", "start_time")
         if user.role == "STUDENT":
-            return qs.filter(Q(student=user) | Q(tuition__enrollments__student=user)).order_by("day_of_week", "start_time")
+            return qs.filter(self._student_scope(user)).order_by("day_of_week", "start_time")
         return WeeklyRoutine.objects.none()
 
     def get_serializer_class(self):
         from .serializers import WeeklyRoutineSerializer
         return WeeklyRoutineSerializer
 
-    def perform_create(self, serializer):
-        if self.request.user.role != "TUTOR":
-            from rest_framework.exceptions import PermissionDenied
-            raise PermissionDenied("Only tutors can create routines.")
-        serializer.save(tutor=self.request.user)
 
-
-class ClassScheduleViewSet(viewsets.ModelViewSet):
+class ClassScheduleViewSet(_TutorWritesViewSet):
     """Tutor manages dated classes; student reads upcoming own."""
-    permission_classes = [IsAuthenticated]
-    http_method_names = ["get", "post", "patch", "delete", "head", "options"]
 
     def get_queryset(self):
         from .models import ClassSchedule
@@ -877,7 +965,7 @@ class ClassScheduleViewSet(viewsets.ModelViewSet):
         if user.role == "TUTOR":
             qs = qs.filter(tutor=user)
         elif user.role == "STUDENT":
-            qs = qs.filter(Q(student=user) | Q(tuition__enrollments__student=user))
+            qs = qs.filter(self._student_scope(user))
         else:
             return ClassSchedule.objects.none()
         upcoming = self.request.query_params.get("upcoming")
@@ -888,9 +976,3 @@ class ClassScheduleViewSet(viewsets.ModelViewSet):
     def get_serializer_class(self):
         from .serializers import ClassScheduleSerializer
         return ClassScheduleSerializer
-
-    def perform_create(self, serializer):
-        if self.request.user.role != "TUTOR":
-            from rest_framework.exceptions import PermissionDenied
-            raise PermissionDenied("Only tutors can schedule classes.")
-        serializer.save(tutor=self.request.user)
