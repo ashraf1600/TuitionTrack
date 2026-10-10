@@ -340,21 +340,37 @@ class StudentTuitionSerializer(serializers.ModelSerializer):
     name = serializers.CharField(source='title', read_only=True)
     weekly_routine = serializers.JSONField(source='routine', read_only=True)
     tutor_name = serializers.SerializerMethodField()
+    tutor_id = serializers.UUIDField(read_only=True)
     enrolled_count = serializers.SerializerMethodField()
     active_cycle = serializers.SerializerMethodField()
+    pending_payments = serializers.SerializerMethodField()
 
     class Meta:
         from .models import Tuition
         model = Tuition
         fields = [
-            'id', 'tutor_name', 'title', 'name', 'subject', 'description',
+            'id', 'tutor_id', 'tutor_name', 'title', 'name', 'subject', 'description',
             'cycle_length', 'routine', 'weekly_routine',
-            'enrolled_count', 'active_cycle', 'created_at',
+            'enrolled_count', 'active_cycle', 'pending_payments', 'created_at',
         ]
         read_only_fields = fields
 
     def get_tutor_name(self, obj):
         return obj.tutor.get_full_name() or obj.tutor.username
+
+    @staticmethod
+    def _unpaid_finished_cycles(obj):
+        return sorted(
+            (c for c in _cycles(obj) if c.status == 'ARCHIVED' and c.payment_status == 'PENDING'),
+            key=lambda c: c.cycle_number,
+        )
+
+    def get_pending_payments(self, obj):
+        """Finished cycles not marked paid yet. Never blocks anything; shown as a reminder."""
+        return [
+            {'cycle_id': str(c.id), 'cycle_number': c.cycle_number, 'finished_at': c.updated_at}
+            for c in self._unpaid_finished_cycles(obj)
+        ]
 
     def get_enrolled_count(self, obj):
         return len(_active_enrollments(obj))
@@ -383,6 +399,14 @@ class TuitionSerializer(StudentTuitionSerializer):
             'enrollments', 'students_detail', 'wallet_summary', 'updated_at',
         ]
         read_only_fields = fields
+
+    def get_pending_payments(self, obj):
+        # The tutor also sees what each unpaid cycle is worth.
+        return [
+            {'cycle_id': str(c.id), 'cycle_number': c.cycle_number, 'finished_at': c.updated_at,
+             'amount': float(c.earned_revenue)}
+            for c in self._unpaid_finished_cycles(obj)
+        ]
 
     def get_active_cycle(self, obj):
         from apps.cycles.serializers import AttendanceCycleSerializer

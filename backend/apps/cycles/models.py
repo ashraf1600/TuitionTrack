@@ -235,6 +235,25 @@ class AttendanceCycle(models.Model):
         db_index=True,
         verbose_name='Cycle Status'
     )
+
+    # ── Payment (cash, recorded by the tutor) ────────────────────────────────
+    # Never blocks anything: a cycle rolls over and classes keep being tracked
+    # whether or not the previous one is paid. Students only see "pending" and
+    # which cycle; amounts stay tutor-only.
+    class Payment(models.TextChoices):
+        PENDING = 'PENDING', 'Pending'
+        PAID = 'PAID', 'Paid'
+
+    payment_status = models.CharField(
+        max_length=10,
+        choices=Payment.choices,
+        default=Payment.PENDING,
+        db_index=True,
+        verbose_name='Payment status',
+    )
+    paid_at = models.DateTimeField(null=True, blank=True, verbose_name='Paid at')
+    payment_note = models.CharField(max_length=255, blank=True, default='', verbose_name='Payment note')
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -297,6 +316,28 @@ class AttendanceCycle(models.Model):
                 return cls.start_for(tuition)
         except IntegrityError:
             return cls.objects.get(tuition=tuition, status=cls.Status.ACTIVE)
+
+    def roll_over(self):
+        """
+        Archive this (complete, ACTIVE) cycle and start the next one at once, so
+        the next class can be tracked straight away. Call inside a transaction
+        holding this row's lock. Returns the new cycle, or None when nothing
+        was due (not active, not complete, or the tuition is gone).
+        """
+        if self.status != self.Status.ACTIVE or not self.is_complete or not self.tuition_id:
+            return None
+        self.status = self.Status.ARCHIVED
+        self.save(update_fields=['status', 'updated_at'])
+        return type(self).start_for(self.tuition, cycle_number=self.cycle_number + 1)
+
+    def set_payment(self, paid, note=None):
+        """Record (or undo) the cash payment for this cycle."""
+        from django.utils import timezone
+        self.payment_status = self.Payment.PAID if paid else self.Payment.PENDING
+        self.paid_at = timezone.now() if paid else None
+        if note is not None:
+            self.payment_note = note[:255]
+        self.save(update_fields=['payment_status', 'paid_at', 'payment_note', 'updated_at'])
 
     @staticmethod
     def _class_no(item):

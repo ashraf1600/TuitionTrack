@@ -388,10 +388,12 @@ class GroupTuitionWorkflowTests(APITestCase):
         group = self._create_group()
         cycle = AttendanceCycle.objects.get(tuition_id=group['id'])
         for n in range(1, 9):
-            self.client.patch(reverse('attendance-cycle-toggle-class', kwargs={'pk': cycle.id}), {'class_no': n, 'completed': True}, format='json')
-        reset = self.client.post(reverse('attendance-cycle-reset', kwargs={'pk': cycle.id}))
-        self.assertEqual(reset.status_code, status.HTTP_201_CREATED, reset.data)
-        new_cycle_id = reset.data['cycle']['id']
+            last = self.client.patch(reverse('attendance-cycle-toggle-class', kwargs={'pk': cycle.id}), {'class_no': n, 'completed': True}, format='json')
+        # Marking the last class archives the cycle and starts the next one by itself.
+        self.assertEqual(last.status_code, status.HTTP_200_OK, last.data)
+        self.assertEqual(last.data['completed_cycle']['cycle_number'], 1)
+        new_cycle_id = last.data['cycle']['id']
+        self.assertEqual(last.data['cycle']['cycle_number'], 2)
         self.client.patch(reverse('attendance-cycle-toggle-class', kwargs={'pk': new_cycle_id}), {'class_no': 5, 'completed': True}, format='json')
 
         # Cannot shrink below a completed class
