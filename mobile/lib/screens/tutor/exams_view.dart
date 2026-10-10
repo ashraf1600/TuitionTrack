@@ -16,7 +16,7 @@ class _ExamsData {
   final List<Json> tuitions;
 }
 
-/// The tutor's exams and assignments — all of them, or one group's.
+/// The tutor's exams and assignments — all of them, or one tuition's.
 class ExamsView extends StatelessWidget {
   const ExamsView({super.key, this.tuitionId});
   final String? tuitionId;

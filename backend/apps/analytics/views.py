@@ -29,6 +29,7 @@ class WalletAnalyticsView(APIView):
     permission_classes = [IsAuthenticated, IsTutor]
 
     def get(self, request):
+        from decimal import Decimal
         from django.db.models import Q
         from apps.cycles.models import AttendanceCycle
         from apps.students.models import TuitionEnrollment
@@ -60,9 +61,18 @@ class WalletAnalyticsView(APIView):
         ).exclude(student_id__in=enrolled_student_ids).select_related('student')
         legacy_archived = Cycle.objects.filter(tutor=tutor, status=Cycle.Status.ARCHIVED)
 
-        total_earned = sum(float(c.earned_revenue) for c in group_active) + sum(float(c.earned_amount) for c in legacy_active)
-        total_pending = sum(float(c.pending_balance) for c in group_active) + sum(float(c.pending_amount) for c in legacy_active)
-        lifetime_archived = sum(float(c.earned_revenue) for c in group_archived) + sum(float(c.earned_amount) for c in legacy_archived)
+        # Money is added up as Decimal and turned into a number only for the response.
+        zero = Decimal('0.00')
+        total_earned = float(
+            sum((c.earned_revenue for c in group_active), zero) + sum((Decimal(c.earned_amount) for c in legacy_active), zero)
+        )
+        total_pending = float(
+            sum((c.pending_balance for c in group_active), zero) + sum((Decimal(c.pending_amount) for c in legacy_active), zero)
+        )
+        lifetime_archived = float(
+            sum((c.earned_revenue for c in group_archived), zero)
+            + sum((Decimal(c.earned_amount) for c in legacy_archived), zero)
+        )
 
         students_per_tuition = {}
         for tuition_id in TuitionEnrollment.objects.filter(
@@ -219,19 +229,20 @@ class NotificationsView(APIView):
             seen_cycle_ids = set()
             for enr in TuitionEnrollment.objects.filter(
                 student=user, is_active=True
-            ).select_related('tuition', 'tuition__tutor'):
+            ).select_related('tuition', 'tuition__tutor').prefetch_related('tuition__cycles'):
                 tuition = enr.tuition
-                cycle = tuition.cycles.filter(status=AttendanceCycle.Status.ACTIVE).first()
+                cycle = tuition.active_cycle
                 if not cycle or not cycle.is_complete or cycle.id in seen_cycle_ids:
                     continue
                 seen_cycle_ids.add(cycle.id)
                 tutor = tuition.tutor
                 tutor_name = f'{(tutor.first_name or "").strip() or tutor.username} Sir'
-                amount = f'৳{float(cycle.total_fee):,.0f}'
+                # No amount here: the cycle's fee is the whole group's total, which
+                # is the tutor's business and is not what one student owes.
                 add(
                     f'cycle-due-{cycle.id}', 'cycle',
                     f'{tuition.title}: cycle #{cycle.cycle_number} complete — payment due',
-                    f'{tutor_name} · {amount}', cycle.updated_at, f'/student?tutor={tutor.id}',
+                    f'Pay {tutor_name} for this cycle.', cycle.updated_at, f'/student?tutor={tutor.id}',
                 )
 
             # Legacy 1-on-1 billing (students with no tuition group).

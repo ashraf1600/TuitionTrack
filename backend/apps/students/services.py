@@ -69,3 +69,19 @@ def unenroll_student(tuition, student):
         enrollment.left_at = timezone.now()
         enrollment.save(update_fields=['is_active', 'left_at'])
     return enrollment
+
+
+def student_homework(student):
+    """
+    Homework a student sees: their own rows, plus shared group tasks of groups
+    they are in now — except group tasks they already have a personal copy of
+    (that copy replaces the shared row for them).
+    """
+    from .models import Homework
+    tuition_ids = TuitionEnrollment.objects.filter(student=student, is_active=True).values_list('tuition_id', flat=True)
+    copied_group_ids = Homework.objects.filter(
+        student=student, group_source__isnull=False
+    ).values_list('group_source_id', flat=True)
+    return Homework.objects.filter(
+        Q(student=student) | Q(student__isnull=True, tuition_id__in=tuition_ids)
+    ).exclude(id__in=copied_group_ids)

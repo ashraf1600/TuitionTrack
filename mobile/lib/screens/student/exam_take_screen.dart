@@ -49,7 +49,9 @@ class _ExamTakeScreenState extends State<ExamTakeScreen> {
   String? _error;
 
   Json get exam => widget.exam;
-  String get _draftKey => 'exam_draft_${exam.str('id')}';
+
+  /// Drafts are per exam and per account, so two students sharing a phone never see each other's answers.
+  late final String _draftKey;
   List<Json> get _questions => exam.maps('mcq_data');
   bool get _mcqOnly => exam.str('exam_type') == 'MCQ';
   bool get _isAssignment => exam.str('category') == 'ASSIGNMENT';
@@ -61,6 +63,8 @@ class _ExamTakeScreenState extends State<ExamTakeScreen> {
   @override
   void initState() {
     super.initState();
+    final userId = context.read<Session>().user?.str('id') ?? '';
+    _draftKey = 'exam_draft_${exam.str('id')}_$userId';
     _restoreDraft();
     _text.addListener(_saveDraft);
     _tick();
@@ -190,6 +194,13 @@ class _ExamTakeScreenState extends State<ExamTakeScreen> {
       setState(() {
         _submitting = false;
         _error = auto ? 'Time is up, and your answers could not be sent: ${error.message} Tap "Turn in" to try again.' : error.message;
+      });
+    } catch (_) {
+      // Never leave the button stuck on "sending": the answers are still saved on the device.
+      if (!mounted) return;
+      setState(() {
+        _submitting = false;
+        _error = 'Your answers could not be sent. They are saved on this phone; tap "Turn in" to try again.';
       });
     }
   }

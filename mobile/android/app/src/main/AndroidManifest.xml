@@ -1,11 +1,11 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <!-- Talks to the TuitionTrack server. -->
     <uses-permission android:name="android.permission.INTERNET"/>
-    <!-- usesCleartextTraffic lets the app reach a server on the local network over plain http
-         (http://192.168.x.x:8000) while developing. Remove it once the server has https. -->
+    <!-- Release builds talk https only, so sign-in tokens never cross the network in clear text.
+         Plain http to a computer on the local network (http://192.168.x.x:8000) is allowed in
+         debug and profile builds only: see src/debug and src/profile. -->
     <application
         android:label="TuitionTrack"
-        android:usesCleartextTraffic="true"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity

@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Bell, UserPlus, ClipboardCheck, RotateCcw, FileText, Clock, Trophy, AlertTriangle, Link2 } from 'lucide-react';
 import { api } from '../../api/client';
-import { useAuth } from '../../context/AuthContext';
+import { useAuth } from '../../context/auth';
 
 const ICONS = {
   request: UserPlus,

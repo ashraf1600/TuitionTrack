@@ -5,12 +5,14 @@ django-storages[s3]==1.14.6
 Django==5.2.17
 djangorestframework==3.18.1
 djangorestframework_simplejwt==5.5.1
+drf-spectacular==0.30.0
 gunicorn==26.2.0
 nh3==0.3.7
 pillow==12.3.0
 psycopg2-binary==2.9.13
 PyJWT==2.15.1
 python-dotenv==1.2.4
+sentry-sdk==2.71.0
 sqlparse==0.6.0
 tzdata==2026.5
 whitenoise==6.12.0

@@ -5,6 +5,7 @@ from rest_framework import generics, status
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.throttling import ScopedRateThrottle
+from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenObtainPairView
 
@@ -125,6 +126,57 @@ class MeView(APIView):
         return Response(UserProfileSerializer(user, context={'request': request}).data)
 
 
+class ProfilePhotoView(APIView):
+    """
+    POST   /api/v1/auth/me/photo/   multipart {photo}  — sets the signed-in user's photo
+    DELETE /api/v1/auth/me/photo/                       — removes it
+    Answers with the same profile as GET /auth/me/. Only PNG, JPEG or WebP
+    pictures up to 5 MB whose content really is that picture are kept.
+    """
+    permission_classes = [IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser]
+    MAX_BYTES = 5 * 1024 * 1024
+
+    def post(self, request):
+        import os
+        import uuid
+
+        from PIL import Image, UnidentifiedImageError
+        from apps.exams.uploads import UploadRejected, validate_upload
+
+        photo = request.FILES.get('photo')
+        try:
+            validate_upload(photo)
+            ext = os.path.splitext(photo.name or '')[1].lower()
+            if ext == '.pdf':
+                raise UploadRejected('Choose a picture (PNG, JPEG or WebP).')
+            if photo.size > self.MAX_BYTES:
+                raise UploadRejected('The picture is larger than 5 MB.')
+            try:
+                Image.open(photo).verify()
+            except (UnidentifiedImageError, OSError, SyntaxError, ValueError) as exc:
+                raise UploadRejected('This file is not a picture that can be opened.') from exc
+            photo.seek(0)
+        except UploadRejected as exc:
+            return Response({'photo': [str(exc)]}, status=status.HTTP_400_BAD_REQUEST)
+
+        user = request.user
+        old = user.profile_picture.name if user.profile_picture else ''
+        user.profile_picture.save(f'{user.pk}-{uuid.uuid4().hex[:8]}{ext}', photo, save=False)
+        user.save(update_fields=['profile_picture', 'updated_at'])
+        if old and old != user.profile_picture.name:
+            user.profile_picture.storage.delete(old)
+        return Response(UserProfileSerializer(user, context={'request': request}).data)
+
+    def delete(self, request):
+        user = request.user
+        if user.profile_picture:
+            user.profile_picture.delete(save=False)
+            user.profile_picture = None
+            user.save(update_fields=['profile_picture', 'updated_at'])
+        return Response(UserProfileSerializer(user, context={'request': request}).data)
+
+
 class ChangePasswordView(APIView):
     """POST /api/v1/auth/change-password/ — needs the current password; clears the forced-change flag."""
     permission_classes = [IsAuthenticated]
@@ -169,22 +221,33 @@ class PasswordResetRequestView(APIView):
             Q(username__iexact=identifier) | Q(email__iexact=identifier)
         ).exclude(email='')[:3]
 
+        from config.background import run_after_commit
+        messages = []
         for user in users:
             uid = urlsafe_base64_encode(force_bytes(user.pk))
             token = default_token_generator.make_token(user)
             link = f"{settings.FRONTEND_URL.rstrip('/')}/reset-password?uid={uid}&token={token}"
-            send_mail(
-                subject='[TuitionTrack] Reset your password',
-                message=(
-                    f'Hello {user.get_full_name() or user.username},\n\n'
-                    f'Use this link to choose a new password for your TuitionTrack account '
-                    f'(username: {user.username}):\n\n{link}\n\n'
-                    f'If you did not ask for this, you can ignore this email.'
-                ),
-                from_email=settings.DEFAULT_FROM_EMAIL,
-                recipient_list=[user.email],
-                fail_silently=True,
-            )
+            messages.append((
+                user.email,
+                f'Hello {user.get_full_name() or user.username},\n\n'
+                f'Use this link to choose a new password for your TuitionTrack account '
+                f'(username: {user.username}):\n\n{link}\n\n'
+                f'If you did not ask for this, you can ignore this email.',
+            ))
+
+        def send_all():
+            for address, text in messages:
+                send_mail(
+                    subject='[TuitionTrack] Reset your password',
+                    message=text,
+                    from_email=settings.DEFAULT_FROM_EMAIL,
+                    recipient_list=[address],
+                    fail_silently=True,
+                )
+
+        # Off the request, so the answer does not reveal (by its timing) whether an e-mail went out.
+        if messages:
+            run_after_commit(send_all)
 
         return Response({
             'message': 'If that account has an email address, a reset link has been sent to it. '
@@ -229,6 +292,7 @@ class TutorDirectoryView(generics.ListAPIView):
                 Q(first_name__icontains=search) |
                 Q(last_name__icontains=search) |
                 Q(username__icontains=search) |
-                Q(tuitions__title__icontains=search)
+                Q(tuitions__title__icontains=search) |
+                Q(tuitions__subject__icontains=search)
             ).distinct()
         return qs.order_by('first_name', 'last_name')

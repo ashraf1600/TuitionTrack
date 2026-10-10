@@ -1,13 +1,14 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   ArrowLeft, GraduationCap, Calendar, BookOpen, Clock,
-  Loader2, RefreshCw, AlertCircle, CheckCircle2, Layers,
-  FileText, Award, HelpCircle, Check, Timer
+  Loader2, RefreshCw, AlertCircle, Layers,
+  FileText, Award, Check
 } from 'lucide-react';
 import { api, getMediaUrl } from '../../api/client';
 import StudentCycleProgress from './StudentCycleProgress';
 import HomeworkCard from './HomeworkCard';
 import ExamCard from './ExamCard';
+import { useNow } from '../../hooks/useNow';
 
 const TABS = [
   { key: 'routine', label: '1. Class Routine', shortLabel: 'Class Routine', icon: Clock },
@@ -63,6 +64,7 @@ export default function TutorWorkspaceView({
   const [weeklyRoutine, setWeeklyRoutine] = useState([]);
   const [taskFilter, setTaskFilter] = useState('all'); // 'all' | 'homework' | 'assignments' | 'exams'
   const [selectedBatchId, setSelectedBatchId] = useState(null);
+  const now = useNow(60_000);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -83,8 +85,11 @@ export default function TutorWorkspaceView({
     load();
   }, [load]);
 
-  const handleHomeworkUpdate = (updated) => {
-    setHomework((prev) => prev.map((h) => (h.id === updated.id ? updated : h)));
+  // On a shared group task the server answers with the student's own copy (a new id),
+  // so the row is replaced by the id that was submitted, not the one that came back.
+  const handleHomeworkUpdate = (updated, submittedId = updated?.id) => {
+    if (!updated) return;
+    setHomework((prev) => prev.map((h) => (h.id === submittedId ? updated : h)));
   };
 
   if (loading && !data) {
@@ -152,8 +157,8 @@ export default function TutorWorkspaceView({
   const assignments = tutorExams.filter((e) => e.category === 'ASSIGNMENT');
   const examsOnly = tutorExams.filter((e) => e.category !== 'ASSIGNMENT');
 
-  const pendingHomework = homework.filter((h) => !h.is_evaluated && new Date(h.due_date) > new Date());
-  const dueSoonHomework = pendingHomework.filter((h) => new Date(h.due_date).getTime() - Date.now() <= 86_400_000);
+  const pendingHomework = homework.filter((h) => !h.is_evaluated && new Date(h.due_date).getTime() > now);
+  const dueSoonHomework = pendingHomework.filter((h) => new Date(h.due_date).getTime() - now <= 86_400_000);
   const totalTasksCount = homework.length + tutorExams.length;
 
   // Pending first (nearest deadline on top), then evaluated — nothing pending gets buried.
@@ -294,13 +299,13 @@ export default function TutorWorkspaceView({
               key={key}
               type="button"
               onClick={() => setActiveTab(key)}
-              className={`flex-1 flex items-center justify-center gap-2 py-2.5 sm:py-3 px-3 rounded-xl text-xs sm:text-sm font-bold transition-all duration-150 ${
+              className={`flex-1 min-w-0 flex items-center justify-center gap-1.5 sm:gap-2 py-2.5 sm:py-3 px-2 sm:px-3 rounded-xl text-xs sm:text-sm font-bold leading-tight text-center transition-all duration-150 ${
                 isActive
                   ? 'bg-indigo-600 text-white shadow-sm'
                   : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
               }`}
             >
-              <Icon className="w-4 h-4 flex-shrink-0" />
+              <Icon className="hidden min-[420px]:block w-4 h-4 flex-shrink-0" />
               <span className="hidden md:inline">{label}</span>
               <span className="md:hidden">{shortLabel}</span>
               {badgeCount !== null && badgeCount > 0 && (
@@ -394,7 +399,7 @@ export default function TutorWorkspaceView({
           {tutorTuitions.length === 0 ? (
             <EmptyWorkspaceCard
               icon={Calendar}
-              title="No Tuition Group Enrolled"
+              title="Not in a tuition yet"
               desc={`You are not enrolled in any batch for ${data.display_name} yet.`}
             />
           ) : (
@@ -599,7 +604,7 @@ export default function TutorWorkspaceView({
                 <EmptyWorkspaceCard
                   icon={Award}
                   title="No Exams Scheduled"
-                  desc={`${data.display_name} has not scheduled any exams for this group right now.`}
+                  desc={`${data.display_name} has not scheduled any exams for this tuition right now.`}
                 />
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">

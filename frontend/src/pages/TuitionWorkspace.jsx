@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { notify } from '../utils/toast';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import { useParams, Link } from 'react-router-dom';
 import Navbar from '../components/common/Navbar';
 import AddStudentModal from '../components/tutor/AddStudentModal';
 import SharedCycleBoard from '../components/tutor/SharedCycleBoard';
@@ -8,56 +8,34 @@ import ExamManager from '../components/tutor/ExamManager';
 import AssignStudentModal from '../components/tutor/AssignStudentModal';
 import TuitionBatchesModal from '../components/tutor/TuitionBatchesModal';
 import ExamAuthoringModal from '../components/tutor/ExamAuthoringModal';
-import StudentCredentialsModal from '../components/tutor/StudentCredentialsModal';
 import Modal from '../components/common/Modal';
 import { confirmAction } from '../components/common/ConfirmDialog';
+import StudentCredentialsModal from '../components/tutor/StudentCredentialsModal';
 import { api } from '../api/client';
 import {
   ArrowLeft,
   Calendar,
   Clock,
-  DollarSign,
   Users,
-  Layers,
   FileText,
   Plus,
-  RotateCcw,
-  CheckCircle2,
   Check,
   AlertCircle,
-  Award,
   Key,
-  Trophy,
   Edit2,
   Trash2,
   UserPlus,
-  Mail,
-  Phone,
-  School,
-  Sparkles,
-  CalendarDays,
   X,
-  ExternalLink,
   ChevronRight,
-  TrendingUp,
   RefreshCw,
-  Search,
+  Search
 } from 'lucide-react';
 
 const DAYS_ORDER = ['Saturday', 'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
 
-const toLocalDateString = (d = new Date()) => {
-  const dt = d instanceof Date ? d : new Date(d);
-  return dt.getFullYear() + '-' + String(dt.getMonth() + 1).padStart(2, '0') + '-' + String(dt.getDate()).padStart(2, '0');
-};
-
-const getLocalTodayIso = () => {
-  return `${toLocalDateString(new Date())}T12:00:00Z`;
-};
 
 export default function TuitionWorkspace() {
   const { id: tuitionId } = useParams();
-  const navigate = useNavigate();
 
   // Active Tab: 'attendance' | 'exams' | 'routine' | 'roster'
   const [activeTab, setActiveTab] = useState('attendance');
@@ -79,11 +57,6 @@ export default function TuitionWorkspace() {
   const [authorExamModalOpen, setAuthorExamModalOpen] = useState(false);
   const [authorCategory, setAuthorCategory] = useState('EXAM');
 
-  // Grading & Leaderboard
-  const [gradingModalOpen, setGradingModalOpen] = useState(false);
-  const [selectedExamForGrading, setSelectedExamForGrading] = useState(null);
-  const [selectedSubmissionForGrading, setSelectedSubmissionForGrading] = useState(null);
-  const [selectedExamForLeaderboard, setSelectedExamForLeaderboard] = useState(null);
   const [selectedStudentForCredentials, setSelectedStudentForCredentials] = useState(null);
   const [enrollExistingModalOpen, setEnrollExistingModalOpen] = useState(false);
   const [enrollSearch, setEnrollSearch] = useState('');
@@ -97,56 +70,39 @@ export default function TuitionWorkspace() {
   const [newSlotEnd, setNewSlotEnd] = useState('19:30');
   const [savingRoutine, setSavingRoutine] = useState(false);
 
-  // Load Tuition Data
-  const loadTuitionData = async () => {
+  // Load everything the workspace shows in parallel. The group itself is required;
+  // the side lists keep what they had if they fail, and the page says so.
+  const loadTuitionData = useCallback(async () => {
     if (!tuitionId) return;
+    setError('');
     try {
-      setLoading(true);
-      setError('');
-
-      // 1. Fetch Tuition Detail
-      const tData = await api.getTuitionDetail(tuitionId);
-      setTuition(tData);
-      setRoutineSlots(tData.routine || []);
-
-      // 2. Fetch Attendance Cycles for this Tuition
-      try {
-        const cData = await api.getAttendanceCycles(tuitionId);
-        const cycleList = Array.isArray(cData) ? cData : cData.results || [];
-        setCycles(cycleList);
-      } catch (cErr) {
-        console.error('Failed to load cycles for tuition:', cErr);
-      }
-
-      // 3. Fetch Exams assigned to this Tuition
-      try {
-        const eData = await api.getExams(null, null, tuitionId);
-        const examList = Array.isArray(eData) ? eData : eData.results || [];
-        setExams(examList);
-      } catch (eErr) {
-        console.error('Failed to load exams for tuition:', eErr);
-      }
-
-      // 4. Fetch Unassigned Students & All Students
-      try {
-        const uData = await api.getUnassignedStudents();
-        setUnassignedStudents(Array.isArray(uData) ? uData : uData.results || []);
-      } catch (_) {}
-
-      try {
-        const sData = await api.getStudents();
-        setAllStudents(Array.isArray(sData) ? sData : sData.results || []);
-      } catch (_) {}
+      const [detail, cyclesRes, examsRes, unassignedRes, studentsRes] = await Promise.allSettled([
+        api.getTuitionDetail(tuitionId),
+        api.getAttendanceCycles(tuitionId),
+        api.getExams(null, null, tuitionId),
+        api.getUnassignedStudents(),
+        api.getStudents(),
+      ]);
+      if (detail.status === 'rejected') throw detail.reason;
+      const asList = (res) => (Array.isArray(res.value) ? res.value : res.value?.results || []);
+      setTuition(detail.value);
+      setRoutineSlots(detail.value.routine || []);
+      if (cyclesRes.status === 'fulfilled') setCycles(asList(cyclesRes));
+      if (examsRes.status === 'fulfilled') setExams(asList(examsRes));
+      if (unassignedRes.status === 'fulfilled') setUnassignedStudents(asList(unassignedRes));
+      if (studentsRes.status === 'fulfilled') setAllStudents(asList(studentsRes));
+      const failed = [cyclesRes, examsRes, unassignedRes, studentsRes].find((r) => r.status === 'rejected');
+      if (failed) notify.error(`Some parts of this tuition could not be loaded: ${failed.reason?.message || 'try again'}`);
     } catch (err) {
       setError(err.message || 'Failed to load tuition workspace.');
     } finally {
       setLoading(false);
     }
-  };
+  }, [tuitionId]);
 
   useEffect(() => {
     loadTuitionData();
-  }, [tuitionId]);
+  }, [loadTuitionData]);
 
   // Tuition Wallet for this group. The server owns the maths:
   // earned = (total fee / classes in the cycle) * completed classes.
@@ -162,8 +118,7 @@ export default function TuitionWorkspace() {
     loadTuitionData();
   };
 
-  // Helpers shared by attendance lookups: numeric class-no compare + time overlap.
-  const classNoOf = (c) => parseInt(c?.class_no ?? c?.classNo, 10);
+  // Helpers for routine slots: time overlap.
   const slotToMinutes = (t) => {
     const m = String(t || '00:00').match(/(\d{1,2}):(\d{2})/);
     return m ? parseInt(m[1], 10) * 60 + parseInt(m[2], 10) : 0;
@@ -181,9 +136,9 @@ export default function TuitionWorkspace() {
   const handleUnenrollStudent = async (studentId, studentName) => {
     const ok = await confirmAction({
       title: `Remove ${studentName}?`,
-      message: `They will stop seeing this group's classes and exams. The group's class tracker and earnings are not affected.`,
+      message: `They will stop seeing this tuition's classes and exams. The tuition's class tracker and earnings are not affected.`,
       confirmLabel: 'Remove',
-      danger: true,
+      danger: true
     });
     if (!ok) return;
     try {
@@ -920,6 +875,15 @@ export default function TuitionWorkspace() {
           </div>
         </div>
       </Modal>
+      {/* Temporary password for a student (the Password button on the roster) */}
+      {selectedStudentForCredentials && (
+        <StudentCredentialsModal
+          key={selectedStudentForCredentials.student_id || selectedStudentForCredentials.id}
+          isOpen
+          onClose={() => setSelectedStudentForCredentials(null)}
+          student={selectedStudentForCredentials}
+        />
+      )}
     </div>
   );
 }

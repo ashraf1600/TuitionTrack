@@ -288,7 +288,7 @@ class GroupTuitionWorkflowTests(APITestCase):
 
         # Another tutor cannot see or act on it
         self.client.force_authenticate(user=self.other_tutor)
-        self.assertEqual(len(self.client.get(reverse('connection-list')).data), 0)
+        self.assertEqual(self.client.get(reverse('connection-list')).data['count'], 0)
         self.assertEqual(
             self.client.post(reverse('connection-accept', kwargs={'pk': request_id})).status_code,
             status.HTTP_404_NOT_FOUND,
@@ -296,7 +296,7 @@ class GroupTuitionWorkflowTests(APITestCase):
 
         self.client.force_authenticate(user=self.tutor)
         inbox = self.client.get(reverse('connection-list'), {'status': 'PENDING'})
-        self.assertIn(request_id, [r['id'] for r in inbox.data])
+        self.assertIn(request_id, [r['id'] for r in inbox.data['results']])
         acc = self.client.post(reverse('connection-accept', kwargs={'pk': request_id}), {'tuition_id': group['id']}, format='json')
         self.assertEqual(acc.status_code, status.HTTP_200_OK, acc.data)
         self.assertEqual(ConnectionRequest.objects.get(id=request_id).status, ConnectionRequest.Status.ACCEPTED)

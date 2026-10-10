@@ -129,6 +129,9 @@ def _result_status(exam, submission):
 def _assigned_student_count(exam):
     if exam.student_id:
         return 1
+    annotated = getattr(exam, 'assigned_active_count', None)
+    if annotated is not None:
+        return annotated
     if exam.tuition_id:
         return exam.tuition.enrollments.filter(is_active=True, student__is_active=True).count()
     return 0
@@ -615,6 +618,13 @@ class ExamCreateUpdateSerializer(serializers.ModelSerializer):
             return ''
         return sanitize_exam_html(value)
 
+    def validate_solution_media_url(self, value):
+        """Shown to students as a link: only a stored file (/media/…) or a web address."""
+        value = (value or '').strip()
+        if value and not (value.startswith('/media/') or value.lower().startswith(('http://', 'https://'))):
+            raise serializers.ValidationError('Use an uploaded file or a link that starts with https://.')
+        return value
+
     def validate_written_scheme(self, value):
         """Normalise to [{id, label, marks}] with server-made ids and positive marks."""
         import uuid
@@ -632,7 +642,7 @@ class ExamCreateUpdateSerializer(serializers.ModelSerializer):
             try:
                 marks = round(float(item.get('marks')), 2)
             except (TypeError, ValueError):
-                raise serializers.ValidationError(f'"{label}" needs a number of marks.')
+                raise serializers.ValidationError(f'"{label}" needs a number of marks.') from None
             if marks <= 0:
                 raise serializers.ValidationError(f'"{label}" must be worth more than 0 marks.')
             item_id = str(item.get('id') or '')
@@ -718,7 +728,7 @@ class ExamCreateUpdateSerializer(serializers.ModelSerializer):
                 try:
                     points = round(float(raw_points), 2)
                 except (TypeError, ValueError):
-                    raise serializers.ValidationError({'mcq_data': f'Question #{idx+1} needs a number of marks.'})
+                    raise serializers.ValidationError({'mcq_data': f'Question #{idx+1} needs a number of marks.'}) from None
                 if points <= 0:
                     raise serializers.ValidationError({'mcq_data': f'Question #{idx+1} must be worth more than 0 marks.'})
 
@@ -747,7 +757,7 @@ class ExamCreateUpdateSerializer(serializers.ModelSerializer):
                     except (ValueError, TypeError):
                         raise serializers.ValidationError({
                             'mcq_data': f'Question #{idx+1} has invalid correct_answer key: {raw_ans}'
-                        })
+                        }) from None
                     if correct_idx < 0 or correct_idx >= len(options):
                         raise serializers.ValidationError({
                             'mcq_data': f'Question #{idx+1} correct_answer index ({correct_idx}) is out of bounds for {len(options)} options.'
@@ -845,7 +855,7 @@ class ExamCreateUpdateSerializer(serializers.ModelSerializer):
             try:
                 tuition = Tuition.objects.get(id=tuition_id, tutor=request.user)
             except Tuition.DoesNotExist:
-                raise serializers.ValidationError({'tuition_id': 'Selected tuition does not exist.'})
+                raise serializers.ValidationError({'tuition_id': 'Selected tuition does not exist.'}) from None
             attrs['tuition'] = tuition
             attrs['student'] = None
         elif student_id:
@@ -853,7 +863,7 @@ class ExamCreateUpdateSerializer(serializers.ModelSerializer):
                 from apps.students.services import manageable_students
                 student = manageable_students(request.user).get(id=student_id)
             except User.DoesNotExist:
-                raise serializers.ValidationError({'student_id': 'Selected student does not exist or belongs to another tutor.'})
+                raise serializers.ValidationError({'student_id': 'Selected student does not exist or belongs to another tutor.'}) from None
             attrs['student'] = student
             attrs['tuition'] = None
 
@@ -861,13 +871,16 @@ class ExamCreateUpdateSerializer(serializers.ModelSerializer):
 
     def update(self, instance, validated_data):
         """Save the edit, then re-mark MCQs so existing submissions match the new answer key."""
+        from django.db import transaction
         regrade = any(key in validated_data for key in ('mcq_data', 'negative_marks_per_wrong', 'total_marks', 'exam_type'))
-        exam = super().update(instance, validated_data)
-        if regrade:
-            for submission in exam.submissions.exclude(status=ExamSubmission.Status.MISSED):
-                submission.exam = exam
-                submission.calculate_mcq_score()
-                submission.save(update_fields=['mcq_score', 'obtained_marks', 'is_graded', 'graded_at', 'updated_at'])
+        # The edit and the re-marking land together, so marks never disagree with the key.
+        with transaction.atomic():
+            exam = super().update(instance, validated_data)
+            if regrade:
+                for submission in exam.submissions.exclude(status=ExamSubmission.Status.MISSED):
+                    submission.exam = exam
+                    submission.calculate_mcq_score()
+                    submission.save(update_fields=['mcq_score', 'obtained_marks', 'is_graded', 'graded_at', 'updated_at'])
         return exam
 
 
@@ -900,7 +913,8 @@ class SubmitExamSerializer(serializers.Serializer):
                 if not u:
                     raise serializers.ValidationError({key: 'Empty URL is not allowed.'})
                 low = u.lower()
-                if low.startswith(('javascript:', 'data:text/html', 'vbscript:')):
+                # Only files this API stored ("/media/…") or plain web addresses.
+                if not (low.startswith(('http://', 'https://')) or (low.startswith('/') and not low.startswith('//'))):
                     raise serializers.ValidationError({key: 'Unsafe URL scheme.'})
                 if len(u) > 500:
                     raise serializers.ValidationError({key: 'URL too long.'})

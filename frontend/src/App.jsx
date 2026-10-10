@@ -1,24 +1,31 @@
-import React from 'react';
+import React, { Suspense, lazy } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { AuthProvider, useAuth } from './context/AuthContext';
+import { AuthProvider } from './context/AuthContext';
+import { useAuth } from './context/auth';
 import { ProtectedRoute } from './routes/ProtectedRoute';
 import LoginPage from './pages/LoginPage';
-import TutorDashboard from './pages/TutorDashboard';
-import StudentPortal from './pages/StudentPortal';
-
-import TuitionWorkspace from './pages/TuitionWorkspace';
 import Toaster from './components/common/Toaster';
 import ResetPasswordPage from './pages/ResetPasswordPage';
+import { Spinner } from './components/common/States';
+
+// Each role's pages load on demand: a student never downloads the tutor's exam editor.
+const TutorDashboard = lazy(() => import('./pages/TutorDashboard'));
+const StudentPortal = lazy(() => import('./pages/StudentPortal'));
+const TuitionWorkspace = lazy(() => import('./pages/TuitionWorkspace'));
+
+function FullPageSpinner() {
+  return (
+    <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+      <Spinner className="w-10 h-10 border-4" />
+    </div>
+  );
+}
 
 function RootRedirect() {
   const { user, token, loading } = useAuth();
 
   if (loading) {
-    return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
-        <div className="w-10 h-10 rounded-full border-4 border-indigo-500/20 border-t-indigo-500 animate-spin" />
-      </div>
-    );
+    return <FullPageSpinner />;
   }
 
   if (!token || !user) {
@@ -32,6 +39,7 @@ export default function App() {
   return (
     <AuthProvider>
       <BrowserRouter>
+        <Suspense fallback={<FullPageSpinner />}>
         <Routes>
           <Route path="/" element={<RootRedirect />} />
           <Route path="/login" element={<LoginPage />} />
@@ -62,6 +70,7 @@ export default function App() {
           />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
+        </Suspense>
       </BrowserRouter>
       <Toaster />
     </AuthProvider>

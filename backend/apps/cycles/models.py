@@ -129,14 +129,16 @@ class Cycle(models.Model):
         Guards against division by zero.
         """
         if not self.total_classes:
-            return 0
-        per_class_rate = self.fee_snapshot / self.total_classes
-        return round(per_class_rate * self.completed_classes, 2)
+            return Decimal('0.00')
+        fee = Decimal(str(self.fee_snapshot or '0'))
+        completed = min(self.completed_classes, self.total_classes)
+        return (fee * completed / Decimal(self.total_classes)).quantize(Decimal('0.01'))
 
     @property
     def pending_amount(self):
         """Revenue yet to be earned in this cycle."""
-        return round(self.fee_snapshot - self.earned_amount, 2)
+        fee = Decimal(str(self.fee_snapshot or '0'))
+        return max(Decimal('0.00'), (fee - self.earned_amount).quantize(Decimal('0.01')))
 
     @property
     def is_complete(self):
@@ -285,7 +287,16 @@ class AttendanceCycle(models.Model):
     @classmethod
     def ensure_active(cls, tuition):
         """Return the tuition's ACTIVE cycle, creating it if the group has none yet."""
-        return cls.objects.filter(tuition=tuition, status=cls.Status.ACTIVE).first() or cls.start_for(tuition)
+        from django.db import IntegrityError, transaction
+        existing = cls.objects.filter(tuition=tuition, status=cls.Status.ACTIVE).first()
+        if existing:
+            return existing
+        try:
+            # A savepoint, so losing the race to a parallel request does not break the caller's transaction.
+            with transaction.atomic():
+                return cls.start_for(tuition)
+        except IntegrityError:
+            return cls.objects.get(tuition=tuition, status=cls.Status.ACTIVE)
 
     @staticmethod
     def _class_no(item):

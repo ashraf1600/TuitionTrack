@@ -3,8 +3,11 @@ import 'dart:convert';
 import 'dart:developer' as developer;
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show ValueNotifier;
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
+
+import 'offline.dart';
 
 typedef Json = Map<String, dynamic>;
 
@@ -20,6 +23,10 @@ class ApiException implements Exception {
   final Map<String, dynamic> errors;
 
   bool get isOffline => status == 0;
+
+  /// The server could not be reached or is not answering (offline, timed out,
+  /// or the hosting platform says the app is starting up / unavailable).
+  bool get isUnreachable => status == 0 || status == 502 || status == 503 || status == 504;
 
   @override
   String toString() => message;
@@ -49,12 +56,36 @@ class MemoryTokenStore implements TokenStore {
 /// when it has expired, follows pagination and turns error bodies into
 /// [ApiException]s.
 class ApiClient {
-  ApiClient({required String baseUrl, required this.tokens, http.Client? client})
+  ApiClient({required String baseUrl, required this.tokens, http.Client? client, this.cache})
       : _http = client ?? http.Client(),
         _baseUrl = _clean(baseUrl);
 
   static const _prefix = '/api/v1';
-  static const _timeout = Duration(seconds: 30);
+
+  /// A free hosted server can take close to a minute to wake up.
+  static const _timeout = Duration(seconds: 60);
+
+  /// With a saved answer to show instead, nobody waits that long.
+  static const _quickTimeout = Duration(seconds: 10);
+  static const _unavailable = {502, 503, 504};
+
+  /// The last answer of every GET, shown when the server cannot be reached.
+  final ResponseCache? cache;
+
+  /// True while the server cannot be reached; screens are then showing saved data.
+  final ValueNotifier<bool> offline = ValueNotifier(false);
+
+  /// Bumped when screens should load fresh data again (back online, offline changes sent).
+  final ValueNotifier<int> dataVersion = ValueNotifier(0);
+
+  /// Shows changes that are still waiting to be sent on top of every answer (see [Outbox.applyTo]).
+  dynamic Function(String key, dynamic data)? overlay;
+
+  /// Called once when the server answers again after being unreachable.
+  Future<void> Function()? onBackOnline;
+
+  Timer? _probe;
+  bool _probing = false;
 
   final http.Client _http;
   final TokenStore tokens;
@@ -84,7 +115,12 @@ class ApiClient {
     while (value.endsWith('/')) {
       value = value.substring(0, value.length - 1);
     }
-    if (value.isNotEmpty && !value.startsWith('http://') && !value.startsWith('https://')) value = 'http://$value';
+    if (value.isNotEmpty && !value.startsWith('http://') && !value.startsWith('https://')) {
+      // A typed address without a scheme: https for a real host, http only for this
+      // computer or the local network (release builds refuse plain http anyway).
+      final local = RegExp(r'^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)').hasMatch(value);
+      value = '${local ? 'http' : 'https'}://$value';
+    }
     return value;
   }
 
@@ -122,11 +158,11 @@ class ApiClient {
         if (_access != null && _access!.isNotEmpty) 'Authorization': 'Bearer $_access',
       };
 
-  Future<http.Response> _send(String method, Uri uri, Object? body) async {
+  Future<http.Response> _send(String method, Uri uri, Object? body, {Duration timeout = _timeout}) async {
     final request = http.Request(method, uri)..headers.addAll(_headers());
     if (body != null) request.body = jsonEncode(body);
     try {
-      return await http.Response.fromStream(await _http.send(request).timeout(_timeout));
+      return await http.Response.fromStream(await _http.send(request).timeout(timeout));
     } on TimeoutException {
       throw ApiException('The server took too long to answer. Check your connection and try again.');
     } on ApiException {
@@ -230,14 +266,73 @@ class ApiClient {
 
   Future<dynamic> _request(String method, String path, {Object? body, Map<String, dynamic>? query}) async {
     final uri = _uri(path, query);
-    var response = await _send(method, uri, body);
-    if (response.statusCode == 401 && hasSession && !path.startsWith('/auth/token')) {
-      if (await _renew()) {
-        response = await _send(method, uri, body);
+    final key = method == 'GET' && cache != null ? cacheKeyFor(uri) : null;
+    final hasSaved = key != null && cache!.contains(key);
+    // With a saved answer to fall back on, do not keep the person waiting on a sleeping server.
+    final timeout = hasSaved ? _quickTimeout : _timeout;
+    http.Response response;
+    try {
+      response = await _send(method, uri, body, timeout: timeout);
+      if (response.statusCode == 401 && hasSession && !path.startsWith('/auth/token')) {
+        if (await _renew()) {
+          response = await _send(method, uri, body, timeout: timeout);
+        }
       }
+    } on ApiException catch (error) {
+      if (error.isUnreachable) {
+        _wentOffline();
+        if (hasSaved) return _saved(key);
+      }
+      rethrow;
     }
-    return _decode(response);
+    if (_unavailable.contains(response.statusCode)) {
+      _wentOffline();
+      if (hasSaved) return _saved(key);
+    } else {
+      _cameOnline();
+    }
+    final data = _decode(response);
+    if (key == null) return data;
+    cache!.write(key, data);
+    return overlay == null ? data : overlay!(key, data);
   }
+
+  dynamic _saved(String key) {
+    final data = cache!.read(key);
+    return overlay == null ? data : overlay!(key, data);
+  }
+
+  void _wentOffline() {
+    if (!offline.value) offline.value = true;
+    _probe ??= Timer.periodic(const Duration(seconds: 20), (_) => checkConnection());
+  }
+
+  void _cameOnline() {
+    if (!offline.value) return;
+    offline.value = false;
+    _probe?.cancel();
+    _probe = null;
+    final callback = onBackOnline;
+    if (callback != null) unawaited(callback().catchError((_) {}));
+  }
+
+  /// Asks the server whether it is reachable (this also wakes a sleeping one up).
+  /// While offline this runs every 20 seconds by itself.
+  Future<void> checkConnection() async {
+    if (_probing) return;
+    _probing = true;
+    try {
+      final response = await _send('GET', _uri('/meta/'), null);
+      if (!_unavailable.contains(response.statusCode)) _cameOnline();
+    } on ApiException {
+      _wentOffline();
+    } finally {
+      _probing = false;
+    }
+  }
+
+  /// Sends one saved change exactly as it was made (see [Outbox]).
+  Future<dynamic> send(String method, String path, Object? body) => _request(method, path, body: body);
 
   Future<dynamic> get(String path, {Map<String, dynamic>? query}) => _request('GET', path, query: query);
   Future<dynamic> post(String path, [Object? body]) => _request('POST', path, body: body ?? const <String, dynamic>{});
@@ -265,12 +360,12 @@ class ApiClient {
     }
   }
 
-  /// Uploads one picture or PDF and returns its stored address (relative, e.g. "/media/uploads/…").
-  Future<String> upload(Uint8List bytes, String filename) async {
+  /// Sends one file as multipart form data (one field) and returns the decoded answer.
+  Future<dynamic> _multipart(String path, String field, Uint8List bytes, String filename) async {
     Future<http.Response> attempt() async {
-      final request = http.MultipartRequest('POST', _uri('/media/upload/'))
+      final request = http.MultipartRequest('POST', _uri(path))
         ..headers.addAll(_headers(json: false))
-        ..files.add(http.MultipartFile.fromBytes('file', bytes, filename: filename, contentType: _mediaType(filename)));
+        ..files.add(http.MultipartFile.fromBytes(field, bytes, filename: filename, contentType: _mediaType(filename)));
       try {
         return await http.Response.fromStream(await _http.send(request).timeout(const Duration(seconds: 90)));
       } on TimeoutException {
@@ -282,7 +377,12 @@ class ApiClient {
 
     var response = await attempt();
     if (response.statusCode == 401 && hasSession && await _renew()) response = await attempt();
-    final data = _decode(response);
+    return _decode(response);
+  }
+
+  /// Uploads one picture or PDF and returns its stored address (relative, e.g. "/media/uploads/…").
+  Future<String> upload(Uint8List bytes, String filename) async {
+    final data = await _multipart('/media/upload/', 'file', bytes, filename);
     final url = data is Map ? data['url'] : null;
     if (url is! String || !(url.startsWith('/media/') || url.startsWith('http://') || url.startsWith('https://'))) {
       throw ApiException(
@@ -292,6 +392,10 @@ class ApiClient {
     }
     return url;
   }
+
+  /// Sets the signed-in user's profile photo; answers with the updated profile.
+  Future<dynamic> uploadProfilePhoto(Uint8List bytes, String filename) =>
+      _multipart('/auth/me/photo/', 'photo', bytes, filename);
 
   static MediaType _mediaType(String filename) {
     final name = filename.toLowerCase();

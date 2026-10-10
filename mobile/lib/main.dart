@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'core/api.dart';
+import 'core/offline.dart';
 import 'core/repo.dart';
 import 'core/session.dart';
 import 'screens/auth/force_password_screen.dart';
@@ -14,15 +15,26 @@ import 'screens/tutor/tutor_home.dart';
 import 'widgets/theme.dart';
 
 /// The server the app talks to until the user sets another one on the sign-in screen.
-/// 10.0.2.2 is how an Android emulator reaches the computer it runs on.
-const defaultServer = String.fromEnvironment('API_BASE_URL', defaultValue: 'http://10.0.2.2:8000');
+/// Override at build time with --dart-define=API_BASE_URL=https://… . Release builds
+/// default to the hosted API (https); development builds to the computer they run on
+/// (10.0.2.2 is how an Android emulator reaches it).
+const defaultServer = String.fromEnvironment(
+  'API_BASE_URL',
+  defaultValue: kReleaseMode ? 'https://tuitiontrack-api.onrender.com' : 'http://10.0.2.2:8000',
+);
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   if (kIsWeb) SemanticsBinding.instance.ensureSemantics();
   final prefs = await SharedPreferences.getInstance();
   final session = Session(
-    api: ApiClient(baseUrl: defaultServer, tokens: SecureTokenStore()),
+    api: ApiClient(
+      baseUrl: defaultServer,
+      tokens: SecureTokenStore(),
+      // What the server last sent is kept on the phone, so screens open offline
+      // and instantly while a sleeping server wakes up.
+      cache: ResponseCache(storage: canPersistCache ? FileCacheStorage() : null),
+    ),
     settings: PrefsSettings(prefs),
   );
   runApp(TuitionTrackApp(session: session));
@@ -37,7 +49,7 @@ class TuitionTrackApp extends StatefulWidget {
   State<TuitionTrackApp> createState() => _TuitionTrackAppState();
 }
 
-class _TuitionTrackAppState extends State<TuitionTrackApp> {
+class _TuitionTrackAppState extends State<TuitionTrackApp> with WidgetsBindingObserver {
   final _navigator = GlobalKey<NavigatorState>();
   String? _lastUser;
 
@@ -45,11 +57,26 @@ class _TuitionTrackAppState extends State<TuitionTrackApp> {
   void initState() {
     super.initState();
     widget.session.addListener(_onSessionChanged);
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Back in the app: see whether the server can be reached and send anything made offline.
+    if (state != AppLifecycleState.resumed) return;
+    final session = widget.session;
+    if (!session.signedIn) return;
+    if (session.api.offline.value) {
+      session.api.checkConnection();
+    } else {
+      session.syncPending();
+    }
   }
 
   @override
   void dispose() {
     widget.session.removeListener(_onSessionChanged);
+    WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
 
@@ -67,7 +94,7 @@ class _TuitionTrackAppState extends State<TuitionTrackApp> {
     return MultiProvider(
       providers: [
         ChangeNotifierProvider<Session>.value(value: widget.session),
-        Provider<Repo>(create: (_) => Repo(widget.session.api)),
+        Provider<Repo>(create: (_) => Repo(widget.session.api, outbox: widget.session.outbox)),
       ],
       child: ListenableBuilder(
         listenable: widget.session,

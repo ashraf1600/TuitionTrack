@@ -11,7 +11,7 @@ import ExamResultModal from '../components/student/ExamResultModal';
 import LeaderboardModal from '../components/common/LeaderboardModal';
 import { confirmAction } from '../components/common/ConfirmDialog';
 import { api } from '../api/client';
-import { useAuth } from '../context/AuthContext';
+import { useAuth } from '../context/auth';
 
 const asList = (data) => (Array.isArray(data) ? data : data?.results || []);
 
@@ -52,16 +52,22 @@ export default function StudentPortal() {
     setError('');
     try {
       setLoading(true);
-      const [tuitionData, connectionData, tutorsData, examData] = await Promise.all([
-        api.getTuitions().catch(() => []),
-        api.getConnections().catch(() => []),
-        api.getMyTutors().catch(() => []),
-        api.getExams().catch(() => []),
+      const results = await Promise.allSettled([
+        api.getTuitions(),
+        api.getConnections(),
+        api.getMyTutors(),
+        api.getExams(),
       ]);
-      setTuitions(asList(tuitionData));
-      setConnections(asList(connectionData));
-      setTutors(asList(tutorsData));
-      setExams(asList(examData));
+      const [tuitionData, connectionData, tutorsData, examData] = results.map((r) =>
+        r.status === 'fulfilled' ? asList(r.value) : null
+      );
+      // Keep what is already on screen for any part that failed this time.
+      if (tuitionData) setTuitions(tuitionData);
+      if (connectionData) setConnections(connectionData);
+      if (tutorsData) setTutors(tutorsData);
+      if (examData) setExams(examData);
+      const failed = results.find((r) => r.status === 'rejected');
+      if (failed) throw failed.reason;
     } catch (err) {
       setError(err.message || 'Could not load your portal data.');
     } finally {

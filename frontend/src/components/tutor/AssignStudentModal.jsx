@@ -1,14 +1,14 @@
 import React, { useState } from 'react';
 import Modal from '../common/Modal';
 import { api } from '../../api/client';
-import { Users, CheckCircle2, AlertCircle, BookOpen, Calendar, Clock, DollarSign, Sparkles } from 'lucide-react';
+import { CheckCircle2, AlertCircle, Clock, Sparkles } from 'lucide-react';
 
 export default function AssignStudentModal({
   isOpen,
   onClose,
   student,
   tuitions = [],
-  onAssigned,
+  onAssigned
 }) {
   const [selectedTuitionId, setSelectedTuitionId] = useState('');
   const [loading, setLoading] = useState(false);

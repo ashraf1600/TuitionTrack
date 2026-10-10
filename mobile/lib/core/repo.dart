@@ -1,16 +1,75 @@
+import 'dart:typed_data';
+
 import 'api.dart';
 import 'connect.dart';
+import 'offline.dart';
 
 Json _map(dynamic data) => data is Map ? Map<String, dynamic>.from(data) : <String, dynamic>{};
 
 /// Every server call the app makes, one method per endpoint.
+///
+/// Reads come from the server, or from what was saved on the phone when it
+/// cannot be reached (see [ApiClient.cache]). A few writes also work offline:
+/// they are kept in the [outbox] and sent later, and their result carries
+/// `queued: true` instead of the server's answer.
 class Repo {
-  Repo(this.api);
+  Repo(this.api, {this.outbox});
   final ApiClient api;
+  final Outbox? outbox;
+
+  /// Sends a change now, or keeps it for later when the server cannot be reached.
+  Future<Json> _sendOrKeep(
+    String method,
+    String path,
+    Json body, {
+    required String kind,
+    required String label,
+    Json extra = const {},
+  }) async {
+    try {
+      return _map(await api.send(method, path, body));
+    } on ApiException catch (error) {
+      final box = outbox;
+      if (box == null || !error.isUnreachable) rethrow;
+      await box.add(PendingChange(
+        id: newLocalId(),
+        kind: kind,
+        method: method,
+        path: path,
+        body: body,
+        extra: extra,
+        label: label,
+      ));
+      return {'queued': true, 'message': '$label saved on this phone. It will be sent when you are back online.'};
+    }
+  }
+
+  /// Completed classes of a tuition's current cycle as saved on the phone, with
+  /// every waiting change and then [classNo] applied (for the wallet while offline).
+  int? _completedAfter(String tuitionId, int classNo, bool completed) {
+    final cache = api.cache;
+    if (cache == null) return null;
+    for (final key in cache.keys.toList()) {
+      Json? found;
+      final data = outbox?.applyTo(key, cache.read(key)) ?? cache.read(key);
+      visitMaps(data, (map) {
+        if (found == null && '${map['id']}' == tuitionId && map['active_cycle'] is Map<String, dynamic>) found = map;
+      });
+      final tuition = found;
+      if (tuition == null) continue;
+      if (!markClassInTuition(tuition, classNo, completed, null, '')) return null;
+      final cycle = tuition['active_cycle'] as Map<String, dynamic>;
+      final done = cycle['completed_classes'];
+      return done is num ? done.toInt() : null;
+    }
+    return null;
+  }
 
   // ── Account ────────────────────────────────────────────────────────────────
   Future<Json> meta() async => _map(await api.get('/meta/'));
   Future<Json> updateMe(Json changes) async => _map(await api.patch('/auth/me/', changes));
+  Future<Json> setProfilePhoto(Uint8List bytes, String filename) async => _map(await api.uploadProfilePhoto(bytes, filename));
+  Future<Json> removeProfilePhoto() async => _map(await api.delete('/auth/me/photo/'));
   Future<String> requestPasswordReset(String identifier) async =>
       _map(await api.post('/auth/password-reset/', {'identifier': identifier}))['message'] as String? ?? '';
   Future<List<Json>> tutors([String search = '']) => api.list('/auth/tutors/', query: {'search': search});
@@ -46,13 +105,29 @@ class Repo {
       _map(await api.post('/tuitions/$tuitionId/enroll/', {'student_ids': studentIds}));
   Future<Json> unenroll(String tuitionId, String studentId) async =>
       _map(await api.post('/tuitions/$tuitionId/unenroll/', {'student_id': studentId}));
-  Future<Json> markClass(String tuitionId, int classNo, bool completed, {DateTime? date, String topic = ''}) async =>
-      _map(await api.patch('/tuitions/$tuitionId/mark_class/', {
-        'class_no': classNo,
-        'completed': completed,
-        if (date != null) 'date': date.toUtc().toIso8601String(),
-        if (topic.isNotEmpty) 'topic': topic,
-      }));
+  /// Marks a class of the tuition's current cycle. Works offline: the class
+  /// is dated now (or [date]) on the phone, so it keeps that date when sent later.
+  Future<Json> markClass(String tuitionId, int classNo, bool completed,
+      {DateTime? date, String topic = '', String tuitionTitle = ''}) async {
+    final at = completed ? (date ?? DateTime.now()) : null;
+    final body = <String, dynamic>{
+      'class_no': classNo,
+      'completed': completed,
+      if (at != null) 'date': at.toUtc().toIso8601String(),
+      if (topic.isNotEmpty) 'topic': topic,
+    };
+    return _sendOrKeep(
+      'PATCH',
+      '/tuitions/$tuitionId/mark_class/',
+      body,
+      kind: PendingKind.markClass,
+      label: tuitionTitle.isEmpty ? 'Class $classNo' : 'Class $classNo of $tuitionTitle',
+      extra: {
+        'tuition_id': tuitionId,
+        if (_completedAfter(tuitionId, classNo, completed) case final int done) 'completed_after': done,
+      },
+    );
+  }
   Future<List<Json>> cycles(String tuitionId) => api.list('/attendance-cycles/', query: {'tuition_id': tuitionId});
   Future<Json> resetCycle(String cycleId) async => _map(await api.post('/attendance-cycles/$cycleId/reset/'));
   Future<Json> wallet() async => _map(await api.get('/analytics/wallet/'));
@@ -70,7 +145,7 @@ class Repo {
   /// GET /my-tutors/ -> [{id, display_name, username, profile_picture(_url), tuitions, subjects}]
   Future<List<Json>> myTutors() => api.list('/my-tutors/');
 
-  /// GET /my-tutors/<id>/ -> {tutor, weekly_routine, upcoming_classes, homework}
+  /// `GET /my-tutors/{id}/` -> {tutor, weekly_routine, upcoming_classes, homework}
   Future<Json> tutorDetail(String tutorId) async => _map(await api.get('/my-tutors/$tutorId/'));
 
   /// POST /connections/by-code/ {tutor_code, message} -> {status, tutor_display_name, ...}
@@ -103,6 +178,9 @@ class Repo {
   /// `dueDate` is sent as a UTC ISO string; pass a local DateTime.
   /// Description is optional — leaving it empty omits the field.
   /// `sourceLabel` (e.g. "Class 4 · Oct 9") records where it came from.
+  /// Works offline. Every request carries a `client_ref`, so sending it again
+  /// (a retry after reconnecting) never makes a second copy on the server.
+  /// [targetName] (the tuition or student) is only for showing it before it is sent.
   Future<Json> createHomework({
     required String title,
     String description = '',
@@ -110,39 +188,62 @@ class Repo {
     String? tuitionId,
     String? studentId,
     String sourceLabel = '',
+    String targetName = '',
   }) async {
     assert(tuitionId != null || studentId != null, 'homework needs a tuition or a student');
-    return _map(await api.post('/homework/', {
+    final body = <String, dynamic>{
       'title': title,
       if (description.isNotEmpty) 'description': description,
       'due_date': dueDate.toUtc().toIso8601String(),
       if (sourceLabel.isNotEmpty) 'source_label': sourceLabel,
       if (tuitionId != null) 'tuition': tuitionId,
       if (studentId != null) 'student': studentId,
-    }));
+      'client_ref': newLocalId(),
+    };
+    return _sendOrKeep('POST', '/homework/', body,
+        kind: PendingKind.createHomework,
+        label: 'Homework "$title"${targetName.isEmpty ? '' : ' for $targetName'}',
+        extra: {'target_name': targetName});
   }
-  Future<Json> updateHomework(String id, Json changes) async => _map(await api.patch('/homework/$id/', changes));
-  Future<void> deleteHomework(String id) async => api.delete('/homework/$id/');
-  /// Student upload: URL only — never sends is_evaluated.
+  Future<Json> updateHomework(String id, Json changes) async {
+    _refuseLocal(id);
+    return _map(await api.patch('/homework/$id/', changes));
+  }
+
+  Future<void> deleteHomework(String id) async {
+    _refuseLocal(id);
+    await api.delete('/homework/$id/');
+  }
+  /// Tutor: turn a shared group task into one row per enrolled student, in one
+  /// server step. Work already handed in is kept. Returns the per-student rows.
+  Future<List<Json>> splitHomework(String id) async {
+    final data = _map(await api.post('/homework/$id/split/'));
+    return (data['homework'] as List? ?? const []).whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+  }
+
+  /// Student upload: URL only — never sends is_evaluated. On a shared group
+  /// task the server answers with the student's own copy (a different id).
+  /// Works offline.
   Future<Json> submitHomework(String id, String url) async {
-    final data = _map(await api.post('/homework/$id/submit/', {'submitted_online_url': url}));
+    _refuseLocal(id);
+    final data = await _sendOrKeep('POST', '/homework/$id/submit/', {'submitted_online_url': url},
+        kind: PendingKind.submitHomework, label: 'Your homework link', extra: {'homework_id': id});
     return data.containsKey('homework') ? _map(data['homework']) : data;
   }
 
-  /// Tutor close: the ONLY writer of is_evaluated (tries evaluate/, falls back to mark_done/).
+  /// Tutor close: the ONLY writer of is_evaluated. Works offline.
   Future<Json> evaluateHomework(String id, {bool evaluated = true, String feedback = ''}) async {
-    try {
-      final data = _map(await api.post('/homework/$id/evaluate/', {
-        'is_evaluated': evaluated,
-        'tutor_feedback': feedback,
-      }));
-      return data.containsKey('homework') ? _map(data['homework']) : data;
-    } on ApiException catch (e) {
-      if (e.status == 404) {
-        final data = _map(await api.post('/homework/$id/mark_done/', {'feedback': feedback}));
-        return data.containsKey('homework') ? _map(data['homework']) : data;
-      }
-      rethrow;
+    _refuseLocal(id);
+    final data = await _sendOrKeep('POST', '/homework/$id/evaluate/', {'is_evaluated': evaluated, 'tutor_feedback': feedback},
+        kind: PendingKind.evaluateHomework, label: 'Homework check', extra: {'homework_id': id});
+    return data.containsKey('homework') ? _map(data['homework']) : data;
+  }
+
+  /// Homework assigned offline has no server id yet; it can be changed once it is sent.
+  void _refuseLocal(String id) {
+    if (id.startsWith('local-')) {
+      throw ApiException('This homework is still waiting to be sent. Try again once you are back online.',
+          code: 'pending_sync');
     }
   }
 

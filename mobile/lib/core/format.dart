@@ -57,3 +57,34 @@ String dayKey(DateTime value) {
 
 const weekdays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 String weekdayName(DateTime value) => weekdays[value.weekday - 1];
+
+const _dayAbbr = {'mon': 0, 'tue': 1, 'wed': 2, 'thu': 3, 'fri': 4, 'sat': 5, 'sun': 6};
+
+/// "sat", "SATURDAY", " Saturday " -> "Saturday"; '' when it is not a weekday.
+String normalizeDay(String raw) {
+  final t = raw.trim().toLowerCase();
+  if (t.length < 3) return '';
+  final index = _dayAbbr[t.substring(0, 3)];
+  return index == null ? '' : weekdays[index];
+}
+
+/// Routine slots of [routine] that fall on [day], earliest first.
+List<Map<String, dynamic>> slotsOn(List<Map<String, dynamic>> routine, DateTime day) {
+  final name = weekdayName(day);
+  final slots = routine.where((s) => normalizeDay('${s['day'] ?? s['day_of_week'] ?? ''}') == name).toList();
+  slots.sort((a, b) => minutesOf(slotStart(a)).compareTo(minutesOf(slotStart(b))));
+  return slots;
+}
+
+/// A routine slot's start time ("18:00"), whichever key the server used.
+String slotStart(Map<String, dynamic> slot) {
+  final start = slot['start_time'] ?? slot['time'];
+  return start == null ? '' : '$start';
+}
+
+/// "18:30" -> 1110 minutes after midnight; a time that cannot be read sorts last.
+int minutesOf(String time) {
+  final match = RegExp(r'^(\d{1,2}):(\d{2})').firstMatch(time.trim());
+  if (match == null) return 24 * 60;
+  return int.parse(match[1]!) * 60 + int.parse(match[2]!);
+}

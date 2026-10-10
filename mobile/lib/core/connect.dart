@@ -80,10 +80,12 @@ class HomeworkItem {
     required this.isEvaluated,
     required this.isSubmitted,
     this.sourceLabel = '',
+    this.submissionFileUrl = '',
     this.tuitionId = '',
     this.tuitionTitle = '',
     required this.studentId,
     required this.studentName,
+    this.isPending = false,
   });
   final String id;
   final String title;
@@ -91,6 +93,8 @@ class HomeworkItem {
   final DateTime dueDate;
   final String tutorDisplay;
   final String submittedUrl;
+  /// The uploaded file the student handed in, if any (absolute URL).
+  final String submissionFileUrl;
   final String feedback;
   final bool isEvaluated;
   final bool isSubmitted;
@@ -100,6 +104,9 @@ class HomeworkItem {
   final String tuitionTitle;
   final String studentId;
   final String studentName;
+
+  /// Assigned on this phone while offline and not on the server yet.
+  final bool isPending;
 
   /// True for a group-shared row (one task, whole group) as opposed to a
   /// per-student copy that is reviewed and marked done individually.
@@ -112,13 +119,17 @@ class HomeworkItem {
         dueDate: j.date('due_date') ?? DateTime.now().add(const Duration(days: 7)),
         tutorDisplay: formatTutorName(j.str('tutor_display_name')),
         submittedUrl: j.str('submitted_online_url'),
+        submissionFileUrl: j.str('submission_file_url'),
         feedback: j.str('tutor_feedback'),
         isEvaluated: j.flag('is_evaluated'),
-        isSubmitted: j.flag('is_submitted') || j.str('submitted_online_url').isNotEmpty,
+        isSubmitted: j.flag('is_submitted') ||
+            j.str('submitted_online_url').isNotEmpty ||
+            j.str('submission_file_url').isNotEmpty,
         sourceLabel: j.str('source_label'),
         tuitionId: j.str('tuition_id'),
         tuitionTitle: j.str('tuition_title'),
         studentId: j.str('student_id'),
         studentName: j.str('student_name'),
+        isPending: j.flag('pending_sync'),
       );
 }

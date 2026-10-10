@@ -123,7 +123,7 @@ class Tuition(models.Model):
     @property
     def active_cycle(self):
         """The single shared cycle every enrolled student currently sees."""
-        return self.cycles.filter(status='ACTIVE').first()
+        return next((c for c in self.cycles.all() if c.status == 'ACTIVE'), None)
 
 
 class TuitionEnrollment(models.Model):
@@ -164,6 +164,10 @@ class TuitionEnrollment(models.Model):
         verbose_name_plural = 'Tuition Enrollments'
         unique_together = ('tuition', 'student')
         ordering = ['-joined_at']
+        indexes = [
+            models.Index(fields=['student', 'is_active'], name='enrollment_student_active_idx'),
+            models.Index(fields=['tuition', 'is_active'], name='enrollment_tuition_active_idx'),
+        ]
 
     def __str__(self):
         return f'{self.student.get_full_name() or self.student.username} in {self.tuition.title}'
@@ -221,6 +225,9 @@ class ConnectionRequest(models.Model):
                 name='unique_connection_request_per_student_tutor'
             )
         ]
+        indexes = [
+            models.Index(fields=['tutor', 'status'], name='connection_tutor_status_idx'),
+        ]
 
     def __str__(self):
         return f'{self.student.username} -> {self.tutor.username} ({self.status})'
@@ -263,6 +270,27 @@ class Homework(models.Model):
         related_name='homework_assignments',
         verbose_name='Tuition Group',
         help_text='Null when assigned to an individual student.',
+    )
+
+    # A student's own copy of a shared group task, made when they hand in their
+    # work (or when the tutor splits the task), so one student's submission is
+    # never written onto — or shown on — the row their classmates share.
+    group_source = models.ForeignKey(
+        'self',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='personal_copies',
+        verbose_name='Copied From Group Task',
+    )
+
+    # Set by an app that created this homework while offline: sending the same
+    # request again (the phone retrying after it reconnects) returns this row
+    # instead of making a duplicate.
+    client_ref = models.CharField(
+        max_length=64, blank=True, default='',
+        verbose_name='Client Reference',
+        help_text='Idempotency key chosen by the client app. Empty for homework made online.',
     )
 
     title = models.CharField(max_length=255, verbose_name='Title')
@@ -310,6 +338,37 @@ class Homework(models.Model):
         verbose_name = 'Homework'
         verbose_name_plural = 'Homework Assignments'
         ordering = ['due_date']
+        indexes = [
+            models.Index(fields=['tutor', 'due_date'], name='homework_tutor_due_idx'),
+        ]
+        constraints = [
+            # At most one personal copy of a group task per student.
+            models.UniqueConstraint(
+                fields=['group_source', 'student'],
+                condition=models.Q(group_source__isnull=False),
+                name='unique_personal_copy_per_student',
+            ),
+            models.UniqueConstraint(
+                fields=['tutor', 'client_ref'],
+                condition=~models.Q(client_ref=''),
+                name='unique_homework_client_ref_per_tutor',
+            ),
+        ]
+
+    def personal_copy_for(self, student):
+        """This group task's copy for one student, created on first use (caller holds a transaction)."""
+        copy, _ = Homework.objects.get_or_create(
+            group_source=self,
+            student=student,
+            defaults={
+                'tutor_id': self.tutor_id,
+                'title': self.title,
+                'description': self.description,
+                'due_date': self.due_date,
+                'source_label': self.source_label,
+            },
+        )
+        return copy
 
     def __str__(self):
         recipient = (
@@ -374,6 +433,9 @@ class ClassSchedule(models.Model):
 
     class Meta:
         ordering = ['scheduled_at']
+        indexes = [
+            models.Index(fields=['tutor', 'scheduled_at'], name='schedule_tutor_time_idx'),
+        ]
 
     def __str__(self):
         return f'{self.tutor.username} @ {self.scheduled_at:%Y-%m-%d %H:%M}'

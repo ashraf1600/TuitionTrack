@@ -38,7 +38,7 @@ export default function ConnectionRequestsPanel({ students = [], tuitions = [], 
   const handleAdd = (student) => {
     const tuitionId = tuitionFor(student);
     if (!tuitionId) {
-      setError(`Choose a tuition group for ${student.full_name} first.`);
+      setError(`Choose a tuition for ${student.full_name} first.`);
       return;
     }
     run(student.id, () =>
@@ -70,15 +70,15 @@ export default function ConnectionRequestsPanel({ students = [], tuitions = [], 
           </div>
           <div>
             <h3 className="font-bold text-slate-100 flex items-center gap-2">
-              Students waiting for a group
+              Students waiting for a tuition
               <span className="px-2 py-0.5 rounded-full text-[11px] bg-amber-400 text-slate-950 font-extrabold">
                 {students.length}
               </span>
             </h3>
             <p className="text-xs text-slate-400">
               {pendingCount > 0
-                ? `${pendingCount} new request${pendingCount === 1 ? '' : 's'} from students who chose you. Add them to a tuition group to get started.`
-                : 'These students are yours but are not in a tuition group yet.'}
+                ? `${pendingCount} new request${pendingCount === 1 ? '' : 's'} from students who chose you. Add them to a tuition to get started.`
+                : 'These students are yours but are not in a tuition yet.'}
             </p>
           </div>
         </div>
@@ -100,14 +100,14 @@ export default function ConnectionRequestsPanel({ students = [], tuitions = [], 
 
       {tuitions.length === 0 && (
         <div className="px-3.5 py-3 rounded-xl bg-slate-800/60 border border-slate-700 text-xs text-slate-300 flex flex-wrap items-center justify-between gap-3">
-          <span>Create your first tuition group, then add these students to it.</span>
+          <span>Create your first tuition, then add these students to it.</span>
           {onCreateTuition && (
             <button
               type="button"
               onClick={onCreateTuition}
               className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-bold transition"
             >
-              Create tuition group
+              Create tuition
             </button>
           )}
         </div>
@@ -136,7 +136,7 @@ export default function ConnectionRequestsPanel({ students = [], tuitions = [], 
                       : 'bg-slate-800 text-slate-300 border-slate-700'
                   }`}
                 >
-                  {isPending ? 'New request' : 'Not in a group'}
+                  {isPending ? 'New request' : 'Not in a tuition'}
                 </span>
               </div>
 
@@ -159,10 +159,10 @@ export default function ConnectionRequestsPanel({ students = [], tuitions = [], 
                   value={tuitionFor(st)}
                   onChange={(e) => setChoice((prev) => ({ ...prev, [st.id]: e.target.value }))}
                   disabled={tuitions.length === 0 || isBusy}
-                  aria-label={`Tuition group for ${st.full_name}`}
+                  aria-label={`Tuition for ${st.full_name}`}
                   className="flex-1 min-w-[150px] px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-xs text-slate-100 focus:outline-none focus:border-indigo-500 disabled:opacity-50"
                 >
-                  <option value="">{tuitions.length ? 'Choose a tuition group…' : 'No groups yet'}</option>
+                  <option value="">{tuitions.length ? 'Choose a tuition…' : 'No tuitions yet'}</option>
                   {tuitions.map((t) => (
                     <option key={t.id} value={t.id}>
                       {t.title} ({t.enrolled_count ?? t.enrollments?.length ?? 0} students)
@@ -176,7 +176,7 @@ export default function ConnectionRequestsPanel({ students = [], tuitions = [], 
                   className="px-3.5 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold flex items-center gap-1.5 transition disabled:opacity-50"
                 >
                   {isBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
-                  {isPending ? 'Accept & add' : 'Add to group'}
+                  {isPending ? 'Accept & add' : 'Add to tuition'}
                 </button>
                 {isPending && (
                   <>
@@ -184,7 +184,7 @@ export default function ConnectionRequestsPanel({ students = [], tuitions = [], 
                       type="button"
                       onClick={() => handleAcceptOnly(st)}
                       disabled={isBusy}
-                      title="Accept now and choose a group later"
+                      title="Accept now and choose a tuition later"
                       className="px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-semibold transition disabled:opacity-50"
                     >
                       Accept only

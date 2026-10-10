@@ -6,6 +6,7 @@ from django.conf.urls.static import static
 
 from config.api import api_not_found
 from config.meta import MetaView
+from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 
 handler500 = 'config.api.server_error'
 
@@ -17,6 +18,8 @@ urlpatterns = [
     path('api/v1/', include('apps.analytics.urls')),
     path('api/v1/', include('apps.exams.urls')),
     path('api/v1/meta/', MetaView.as_view(), name='api-meta'),
+    path('api/v1/schema/', SpectacularAPIView.as_view(), name='api-schema'),
+    path('api/v1/docs/', SpectacularSwaggerView.as_view(url_name='api-schema'), name='api-docs'),
     # Anything else under /api/ is a JSON 404, in DEBUG too.
     re_path(r'^api/', api_not_found),
 ]

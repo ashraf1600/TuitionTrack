@@ -42,7 +42,7 @@ class AuthenticationTests(APITestCase):
         self.assertIn('password_confirm', response.data)
 
     def test_jwt_login_returns_custom_claims_and_user_profile(self):
-        tutor = User.objects.create_user(
+        User.objects.create_user(
             username='logintutor',
             password='testpassword123',
             email='logintutor@example.com',

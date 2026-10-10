@@ -1,15 +1,13 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/format.dart';
 import '../../core/json.dart';
 import '../../core/repo.dart';
-import '../../core/session.dart';
+import '../../widgets/charts.dart';
 import '../../widgets/theme.dart';
 import '../../widgets/ui.dart';
-import '../common/cycle_progress.dart';
-import 'group_screen.dart';
+import 'tuition_screen.dart';
 
 class _HomeData {
   _HomeData(this.wallet, this.tuitions, this.requests);
@@ -18,10 +16,13 @@ class _HomeData {
   final List<Json> requests;
 }
 
-/// Overview: the Tuition Wallet, today's classes from the weekly routine, and students asking to join.
+/// Overview on one screen: the wallet, the week at a glance, and every tuition
+/// as a card. Tap a tuition to mark classes, see its students and exams.
 class HomeTab extends StatelessWidget {
-  const HomeTab({super.key, required this.onOpenTab});
-  final void Function(int index) onOpenTab;
+  const HomeTab({super.key, required this.onCreateTuition});
+
+  /// Opens the "New tuition" form (the same as the + button).
+  final Future<void> Function() onCreateTuition;
 
   @override
   Widget build(BuildContext context) {
@@ -31,446 +32,394 @@ class HomeTab extends StatelessWidget {
         final results = await Future.wait<dynamic>([repo.wallet(), repo.tuitions(), repo.connections('PENDING')]);
         return _HomeData(results[0] as Json, results[1] as List<Json>, results[2] as List<Json>);
       },
-      builder: (context, data, reload) => PageBody(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 96),
-        children: [
-          _WalletCard(wallet: data.wallet),
-          _TodayClasses(tuitions: data.tuitions, reload: reload),
-          _WeeklyMap(tuitions: data.tuitions, reload: reload),
-          if (data.requests.isNotEmpty) _Requests(requests: data.requests, tuitions: data.tuitions, reload: reload),
-          SectionTitle(
-            'Earnings by group',
-            icon: Icons.account_balance_wallet_outlined,
-            trailing: TextButton(onPressed: () => onOpenTab(1), child: Text('All groups')),
-          ),
-          if (data.wallet.maps('tuition_breakdowns').isEmpty)
-            EmptyState(
-              icon: Icons.groups_outlined,
-              title: 'No tuition groups yet',
-              message: 'Create a group, add students, and mark classes as you teach. Your earnings build up here.',
-              action: FilledButton(onPressed: () => onOpenTab(1), child: Text('Go to groups')),
-            )
-          else
-            for (final row in data.wallet.maps('tuition_breakdowns')) ...[
-              AppCard(
-                onTap: () async {
-                  await Navigator.push(context, MaterialPageRoute<void>(builder: (_) => GroupScreen(tuitionId: row.str('tuition_id'))));
-                  await reload();
-                },
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Expanded(child: Text(row.str('tuition_title'), style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15))),
-                        Text(taka(row.number('earned')), style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.success)),
-                        Text(' of ${taka(row.number('total_fee'))}', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 12)),
-                      ],
-                    ),
-                    SizedBox(height: 2),
-                    Text(
-                      'Cycle #${row.integer('cycle_number')} · ${row.integer('completed_classes')}/${row.integer('total_classes')} classes · '
-                      '${row.integer('student_count')} student${row.integer('student_count') == 1 ? '' : 's'} · ${taka(row.number('per_class_rate'))} per class',
-                      style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 12),
-                    ),
-                    gap8,
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(6),
-                      child: LinearProgressIndicator(
-                        value: row.integer('total_classes') == 0 ? 0 : row.integer('completed_classes') / row.integer('total_classes'),
-                        minHeight: 6,
-                        color: AppColors.success,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+      builder: (context, data, reload) {
+        Future<void> open(String tuitionId) async {
+          await Navigator.push(context, MaterialPageRoute<void>(builder: (_) => TuitionScreen(tuitionId: tuitionId)));
+          await reload();
+        }
+
+        return PageBody(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
+          children: [
+            _WalletStrip(wallet: data.wallet),
+            if (data.requests.isNotEmpty) ...[
               gap8,
+              _RequestsBanner(requests: data.requests, tuitions: data.tuitions, reload: reload),
             ],
-          if (data.wallet.maps('student_breakdowns').isNotEmpty) ...[
-            SectionTitle('One-to-one students', subtitle: 'Older individual cycles, not part of a group.'),
-            for (final row in data.wallet.maps('student_breakdowns')) ...[
-              AppCard(
-                padding: const EdgeInsets.all(12),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(row.str('student_name'), style: const TextStyle(fontWeight: FontWeight.w600)),
-                          Text('${row.integer('completed_classes')}/${row.integer('total_classes')} classes', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 12)),
-                        ],
-                      ),
-                    ),
-                    Text(taka(row.number('earned')), style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.success)),
-                  ],
-                ),
-              ),
-              gap8,
-            ],
+            const _Heading('This week'),
+            _WeekAtAGlance(tuitions: data.tuitions, onOpen: open),
+            _Heading('Tuitions', trailing: data.tuitions.isEmpty ? null : '${data.tuitions.length}'),
+            if (data.tuitions.isEmpty)
+              EmptyState(
+                icon: Icons.class_outlined,
+                title: 'No tuitions yet',
+                message: 'Create a tuition, add its students and class days, then mark classes as you teach.',
+                action: FilledButton.icon(onPressed: onCreateTuition, icon: const Icon(Icons.add), label: const Text('New tuition')),
+              )
+            else
+              _TuitionGrid(tuitions: data.tuitions, onOpen: open),
           ],
+        );
+      },
+    );
+  }
+}
+
+/// A quiet section label: small caps, no icon, optional count on the right.
+class _Heading extends StatelessWidget {
+  const _Heading(this.title, {this.trailing});
+  final String title;
+  final String? trailing;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(2, 18, 2, 8),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(title.toUpperCase(),
+                style: TextStyle(fontSize: 12, letterSpacing: 0.8, fontWeight: FontWeight.w700, color: scheme.onSurfaceVariant)),
+          ),
+          if (trailing != null) Text(trailing!, style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
         ],
       ),
     );
   }
 }
 
-class _WalletCard extends StatelessWidget {
-  const _WalletCard({required this.wallet});
+/// The wallet in one line: earned in the current cycles and how far along they are.
+class _WalletStrip extends StatelessWidget {
+  const _WalletStrip({required this.wallet});
   final Json wallet;
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     final earned = wallet.number('total_earned');
     final pending = wallet.number('total_pending');
     final total = earned + pending;
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(colors: [Color(0xFF312E81), Color(0xFF0F172A)], begin: Alignment.topLeft, end: Alignment.bottomRight),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: AppColors.primary.withValues(alpha: 0.4)),
-      ),
+    final share = total <= 0 ? 0.0 : earned / total;
+    return AppCard(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Row(
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              Icon(Icons.account_balance_wallet_outlined, color: AppColors.primarySoft, size: 20),
-              SizedBox(width: 8),
-              Text('Tuition Wallet', style: TextStyle(color: AppColors.primarySoft, fontWeight: FontWeight.w700)),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Earned in current cycles', style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
+                    const SizedBox(height: 2),
+                    Text(taka(earned), style: TextStyle(fontSize: 26, fontWeight: FontWeight.w800, color: tone(context, AppColors.success))),
+                  ],
+                ),
+              ),
+              Text('of ${taka(total)}', style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
             ],
           ),
-          gap12,
-          Text('Earned in current cycles', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 12)),
-          Text(taka(earned), style: const TextStyle(fontSize: 32, fontWeight: FontWeight.w800, color: AppColors.success)),
-          gap8,
-          ClipRRect(
-            borderRadius: BorderRadius.circular(6),
-            child: LinearProgressIndicator(
-              value: total <= 0 ? 0 : earned / total,
-              minHeight: 8,
-              color: AppColors.success,
-              backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
-              semanticsLabel: 'Share of current cycles already earned',
-            ),
-          ),
-          gap16,
-          Wrap(
-            spacing: 24,
-            runSpacing: 12,
-            children: [
-              Stat(label: 'Still to earn', value: taka(pending), color: AppColors.primarySoft),
-              Stat(label: 'Past cycles', value: taka(wallet.number('lifetime_archived_earnings'))),
-              Stat(label: 'Groups', value: '${wallet.integer('total_tuitions')}'),
-              Stat(label: 'Students', value: '${wallet.integer('total_students')}'),
-            ],
-          ),
+          const SizedBox(height: 10),
+          ProgressLine(value: share, height: 5, label: 'Share of the current cycles already earned'),
         ],
       ),
     );
   }
 }
 
-class _ClassRow {
-  _ClassRow(this.tuition, this.day, this.time, this.recorded, this.nextClassNo);
-  final Json tuition;
-  final DateTime day;
-  final String time;
-  final bool recorded;
-  final int? nextClassNo;
-  String get key => '${tuition.str('id')}:${dayKey(day)}';
-}
-
-/// Connects the weekly routine to the class tracker.
-///
-///  - Today: every group with a class in today's routine, with one tap to record it.
-///  - Not recorded: routine days in the last week with no class dated that day,
-///    so a class that was held but never ticked does not silently go unpaid.
-class _TodayClasses extends StatefulWidget {
-  const _TodayClasses({required this.tuitions, required this.reload});
+/// Students asking to join, folded into one line that opens the list.
+class _RequestsBanner extends StatelessWidget {
+  const _RequestsBanner({required this.requests, required this.tuitions, required this.reload});
+  final List<Json> requests;
   final List<Json> tuitions;
   final Future<void> Function() reload;
 
   @override
-  State<_TodayClasses> createState() => _TodayClassesState();
+  Widget build(BuildContext context) {
+    final n = requests.length;
+    return Banner2(
+      '$n student${n == 1 ? '' : 's'} asked to join you.',
+      icon: Icons.person_add_alt_1_outlined,
+      action: TextButton(
+        onPressed: () => showModalBottomSheet<void>(
+          context: context,
+          isScrollControlled: true,
+          builder: (sheetContext) => SafeArea(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(maxHeight: MediaQuery.of(sheetContext).size.height * 0.8),
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                child: _Requests(
+                  requests: requests,
+                  tuitions: tuitions,
+                  reload: () async {
+                    if (sheetContext.mounted) Navigator.pop(sheetContext);
+                    await reload();
+                  },
+                ),
+              ),
+            ),
+          ),
+        ),
+        child: const Text('Review'),
+      ),
+    );
+  }
 }
 
-class _TodayClassesState extends State<_TodayClasses> {
-  static const _lookbackDays = 7;
-  static const _dismissKey = 'routine_dismissed_classes';
+class _Slot {
+  _Slot(this.tuition, this.slot);
+  final Json tuition;
+  final Json slot;
+  String get start => slotStart(slot);
+  String get end => '${slot['end_time'] ?? ''}';
+}
+
+/// The whole week without scrolling: a strip of seven days (a dot for a free
+/// day, the number of classes for a busy one), then one slim line per class,
+/// grouped by day, Saturday first. Today stands out.
+class _WeekAtAGlance extends StatelessWidget {
+  const _WeekAtAGlance({required this.tuitions, required this.onOpen});
+  final List<Json> tuitions;
+  final Future<void> Function(String tuitionId) onOpen;
+
+  static const _order = ['Saturday', 'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
 
   @override
   Widget build(BuildContext context) {
-    final settings = context.read<Session>().settings;
-    final dismissed = settings.getList(_dismissKey).toSet();
-    final now = DateTime.now();
-    final today = <_ClassRow>[];
-    final missed = <_ClassRow>[];
-
-    for (final tuition in widget.tuitions) {
-      final cycle = tuition.obj('active_cycle');
-      final routine = tuition.maps('routine');
-      if (cycle == null || routine.isEmpty) continue;
-      final classes = orderedClasses(cycle);
-      final recordedDays = {
-        for (final c in classes)
-          if (c.flag('completed') && c.date('date') != null) dayKey(c.date('date')!),
-      };
-      int? next;
-      for (final c in classes) {
-        if (!c.flag('completed')) {
-          next = classNoOf(c);
-          break;
-        }
-      }
-      // Never look back past the start of the current cycle or the group itself.
-      final cycleStart = cycle.date('created_at') ?? now;
-      final groupStart = tuition.date('created_at') ?? now;
-      final earliest = dayKey(cycleStart.isAfter(groupStart) ? cycleStart : groupStart);
-
-      for (var back = 0; back <= _lookbackDays; back++) {
-        final day = DateTime(now.year, now.month, now.day - back);
-        if (dayKey(day).compareTo(earliest) < 0) break;
-        final slots = routine.where((s) => s.str('day').toLowerCase() == weekdayName(day).toLowerCase()).toList();
-        if (slots.isEmpty) continue;
-        final row = _ClassRow(tuition, day, slots.first.str('start_time', slots.first.str('time')), recordedDays.contains(dayKey(day)), next);
-        if (back == 0) {
-          today.add(row);
-        } else if (!row.recorded && next != null && !dismissed.contains(row.key)) {
-          missed.add(row);
-        }
+    final scheme = Theme.of(context).colorScheme;
+    final today = weekdayName(DateTime.now());
+    final byDay = {for (final d in _order) d: <_Slot>[]};
+    for (final tuition in tuitions) {
+      for (final slot in tuition.maps('routine')) {
+        final day = normalizeDay('${slot['day'] ?? slot['day_of_week'] ?? ''}');
+        if (day.isNotEmpty) byDay[day]!.add(_Slot(tuition, slot));
       }
     }
-    if (today.isEmpty && missed.isEmpty) return const SizedBox.shrink();
-    today.sort((a, b) => a.time.compareTo(b.time));
-    missed.sort((a, b) => b.day.compareTo(a.day));
-
-    Future<void> record(_ClassRow row) async {
-      final repo = context.read<Repo>();
-      final at = DateTime(row.day.year, row.day.month, row.day.day, 12);
-      final ok = await attempt(
-        context,
-        () => repo.markClass(row.tuition.str('id'), row.nextClassNo!, true, date: at),
-        success: 'Class ${row.nextClassNo} recorded for ${row.tuition.str('title')}.',
-      );
-      if (ok) await widget.reload();
+    for (final slots in byDay.values) {
+      slots.sort((a, b) => minutesOf(a.start).compareTo(minutesOf(b.start)));
     }
+    final busyDays = _order.where((d) => byDay[d]!.isNotEmpty).toList();
+    final accent = tone(context, AppColors.primarySoft);
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        SectionTitle("Today's classes", icon: Icons.event_available_outlined),
-        if (today.isEmpty)
-          Text('No classes in your routine today.', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant))
-        else
-          for (final row in today) ...[
-            AppCard(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              child: Row(
-                children: [
-                  Expanded(
+    return AppCard(
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 6),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Seven days in a row.
+          Row(
+            children: [
+              for (final day in _order)
+                Expanded(
+                  child: Semantics(
+                    label: '$day: ${byDay[day]!.isEmpty ? 'no classes' : '${byDay[day]!.length} classes'}${day == today ? ', today' : ''}',
+                    excludeSemantics: true,
                     child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(row.tuition.str('title'), style: TextStyle(fontWeight: FontWeight.w700)),
-                        Text(
-                          row.recorded
-                              ? 'Recorded for today'
-                              : row.nextClassNo == null
-                                  ? 'This cycle is complete'
-                                  : '${to12h(row.time)} · class ${row.nextClassNo} of the cycle',
-                          style: TextStyle(color: row.recorded ? AppColors.success : Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
+                        Text(day.substring(0, 2),
+                            style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: day == today ? FontWeight.w800 : FontWeight.w500,
+                                color: day == today ? accent : scheme.onSurfaceVariant)),
+                        const SizedBox(height: 4),
+                        SizedBox(
+                          height: 22,
+                          child: Center(
+                            child: byDay[day]!.isEmpty
+                                ? Container(
+                                    width: 5,
+                                    height: 5,
+                                    decoration: BoxDecoration(color: scheme.outlineVariant.withValues(alpha: 0.5), shape: BoxShape.circle),
+                                  )
+                                : Container(
+                                    width: 22,
+                                    height: 22,
+                                    alignment: Alignment.center,
+                                    decoration: BoxDecoration(
+                                      color: day == today ? AppColors.chartPending : AppColors.chartPending.withValues(alpha: 0.18),
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: Text('${byDay[day]!.length}',
+                                        style: TextStyle(
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w800,
+                                            color: day == today ? Colors.white : accent)),
+                                  ),
+                          ),
                         ),
                       ],
                     ),
                   ),
-                  if (row.recorded)
-                    Icon(Icons.check_circle, color: AppColors.success)
-                  else if (row.nextClassNo != null)
-                    BusyButton(onPressed: () => record(row), label: 'Mark done', icon: Icons.check),
-                ],
+                ),
+            ],
+          ),
+          if (busyDays.isEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(4, 12, 4, 8),
+              child: Text(
+                tuitions.isEmpty ? 'Your class days appear here.' : 'No class days set yet. Add them when you edit a tuition.',
+                style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
               ),
-            ),
-            gap8,
-          ],
-        if (missed.isNotEmpty) ...[
-          gap8,
-          Text('Not recorded in the last week', style: TextStyle(color: AppColors.warning, fontWeight: FontWeight.w700)),
-          gap8,
-          for (final row in missed) ...[
-            AppCard(
-              borderColor: AppColors.warning.withValues(alpha: 0.4),
-              padding: const EdgeInsets.fromLTRB(14, 8, 6, 8),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(row.tuition.str('title'), style: const TextStyle(fontWeight: FontWeight.w600)),
-                        Text('${fmtDate(row.day)} · was it held?', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13)),
-                      ],
-                    ),
-                  ),
-                  TextButton(onPressed: () => record(row), child: const Text('Yes, record')),
-                  IconButton(
-                    tooltip: 'No class that day',
-                    icon: Icon(Icons.close, size: 20),
-                    onPressed: () async {
-                      await settings.setList(_dismissKey, [...dismissed, row.key].take(200).toList());
-                      if (mounted) setState(() {});
-                    },
-                  ),
-                ],
-              ),
-            ),
-            gap8,
+            )
+          else ...[
+            const SizedBox(height: 8),
+            Divider(height: 1, color: scheme.outline.withValues(alpha: 0.6)),
+            const SizedBox(height: 4),
+            for (final day in busyDays)
+              for (var i = 0; i < byDay[day]!.length; i++)
+                _SlotLine(
+                  day: i == 0 ? day.substring(0, 3) : '',
+                  isToday: day == today,
+                  slot: byDay[day]![i],
+                  onTap: () => onOpen(byDay[day]![i].tuition.str('id')),
+                ),
           ],
         ],
-      ],
+      ),
     );
   }
 }
 
-/// Weekly routine map: every weekday with each tuition's time + subject.
-/// Saturday-first order (BD week). Tapping a row opens that group.
-class _WeeklyMap extends StatelessWidget {
-  const _WeeklyMap({required this.tuitions, required this.reload});
-  final List<Json> tuitions;
-  final Future<void> Function() reload;
-
-  static const _order = ['Saturday', 'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
-  static const _abbr = {'sat': 'Saturday', 'sun': 'Sunday', 'mon': 'Monday', 'tue': 'Tuesday', 'wed': 'Wednesday', 'thu': 'Thursday', 'fri': 'Friday'};
-
-  static String _normDay(String raw) {
-    final t = raw.trim();
-    if (t.isEmpty) return '';
-    final cap = t[0].toUpperCase() + t.substring(1).toLowerCase();
-    if (_order.contains(cap)) return cap;
-    return _abbr[cap.substring(0, 3).toLowerCase()] ?? '';
-  }
+class _SlotLine extends StatelessWidget {
+  const _SlotLine({required this.day, required this.isToday, required this.slot, required this.onTap});
+  final String day;
+  final bool isToday;
+  final _Slot slot;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final today = weekdayName(DateTime.now());
-    final byDay = {for (final d in _order) d: <Json>[]};
-    for (final tuition in tuitions) {
-      for (final slot in tuition.maps('routine')) {
-        final day = _normDay(slot.str('day'));
-        if (day.isEmpty) continue;
-        byDay[day]!.add(Json.from({
-          ...slot,
-          '_tuition_id': tuition.str('id'),
-          '_tuition_title': tuition.str('title'),
-          '_subject': tuition.str('subject'),
-        }));
-      }
-    }
-    if (byDay.values.every((slots) => slots.isEmpty)) return const SizedBox.shrink();
-    for (final slots in byDay.values) {
-      slots.sort((a, b) => a.str('start_time', a.str('time')).compareTo(b.str('start_time', b.str('time'))));
-    }
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        const SectionTitle('Weekly routine', icon: Icons.calendar_month_outlined, subtitle: 'Every class day, group and time. Tap a class to open its group.'),
-        for (final day in _order) ...[
-          AppCard(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(day,
-                          style: TextStyle(
-                              fontWeight: FontWeight.w700,
-                              color: day == today ? AppColors.primarySoft : Theme.of(context).colorScheme.onSurface)),
-                    ),
-                    if (day == today)
-                      const Pill('Today', color: AppColors.primarySoft)
-                    else if (byDay[day]!.isEmpty)
-                      Text('No classes', style: TextStyle(color: Theme.of(context).colorScheme.outlineVariant, fontSize: 12)),
-                    if (byDay[day]!.isNotEmpty)
-                      Text('${byDay[day]!.length} class${byDay[day]!.length == 1 ? '' : 'es'}',
-                          style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 12)),
-                  ],
-                ),
-                for (final slot in byDay[day]!) ...[
-                  const SizedBox(height: 6),
-                  InkWell(
-                    borderRadius: BorderRadius.circular(10),
-                    onTap: () async {
-                      HapticFeedback.lightImpact();
-                      await Navigator.push(
-                          context, MaterialPageRoute<void>(builder: (_) => GroupScreen(tuitionId: slot.str('_tuition_id'))));
-                      await reload();
-                    },
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 4),
-                      child: Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-                            decoration: BoxDecoration(
-                                color: AppColors.primary.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(8)),
-                            child: Text(
-                              '${to12h(slot.str('start_time', slot.str('time')))}${slot.str('end_time').isNotEmpty ? ' – ${to12h(slot.str('end_time'))}' : ''}',
-                              style: TextStyle(
-                                  fontWeight: FontWeight.w700, fontSize: 12, color: tone(context, AppColors.primarySoft)),
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(slot.str('_tuition_title'), style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-                                if (slot.str('_subject').isNotEmpty)
-                                  Text(slot.str('_subject'),
-                                      style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 12)),
-                              ],
-                            ),
-                          ),
-                          const Icon(Icons.chevron_right, size: 18, color: AppColors.faint),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ],
+    final scheme = Theme.of(context).colorScheme;
+    final accent = tone(context, AppColors.primarySoft);
+    final time = slot.end.isEmpty ? to12h(slot.start) : '${to12h(slot.start)} – ${to12h(slot.end)}';
+    return InkWell(
+      borderRadius: BorderRadius.circular(10),
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
+        decoration: isToday
+            ? BoxDecoration(color: AppColors.chartPending.withValues(alpha: 0.10), borderRadius: BorderRadius.circular(10))
+            : null,
+        child: Row(
+          children: [
+            SizedBox(
+              width: 34,
+              child: Text(day,
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: isToday ? accent : scheme.onSurfaceVariant)),
             ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(color: scheme.surfaceContainerHighest, borderRadius: BorderRadius.circular(6)),
+              child: Text(time, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: scheme.onSurface)),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(slot.tuition.str('title'),
+                  maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+            ),
+            Icon(Icons.chevron_right, size: 16, color: scheme.onSurfaceVariant),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Every tuition as a small card, two per row: name, cycle, classes done.
+class _TuitionGrid extends StatelessWidget {
+  const _TuitionGrid({required this.tuitions, required this.onOpen});
+  final List<Json> tuitions;
+  final Future<void> Function(String tuitionId) onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        const spacing = 10.0;
+        final columns = constraints.maxWidth >= 560 ? 3 : 2;
+        final width = (constraints.maxWidth - spacing * (columns - 1)) / columns;
+        return Wrap(
+          spacing: spacing,
+          runSpacing: spacing,
+          children: [
+            for (final tuition in tuitions)
+              SizedBox(width: width, child: _TuitionCard(tuition: tuition, onTap: () => onOpen(tuition.str('id')))),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _TuitionCard extends StatelessWidget {
+  const _TuitionCard({required this.tuition, required this.onTap});
+  final Json tuition;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final cycle = tuition.obj('active_cycle');
+    final done = cycle?.integer('completed_classes') ?? 0;
+    final total = cycle?.integer('total_classes') ?? tuition.integer('cycle_length');
+    final cycleNo = cycle?.integer('cycle_number') ?? 1;
+    final complete = total > 0 && done >= total;
+    return AppCard(
+      onTap: onTap,
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            height: 38,
+            child: Text(tuition.str('title'),
+                maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, height: 1.3)),
           ),
-          gap8,
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              Text('Cycle $cycleNo', style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant)),
+              const Spacer(),
+              Text('$done/$total',
+                  style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                      color: complete ? tone(context, AppColors.success) : scheme.onSurface)),
+            ],
+          ),
+          const SizedBox(height: 6),
+          ProgressLine(value: total == 0 ? 0.0 : done / total, height: 4, label: '$done of $total classes done'),
         ],
-      ],
+      ),
     );
   }
 }
 
 /// Students who asked to join this tutor.
-class _Requests extends StatelessWidget {  const _Requests({required this.requests, required this.tuitions, required this.reload});
+class _Requests extends StatelessWidget {
+  const _Requests({required this.requests, required this.tuitions, required this.reload});
   final List<Json> requests;
   final List<Json> tuitions;
   final Future<void> Function() reload;
 
-  Future<void> _accept(BuildContext context, Json request, {required bool pickGroup}) async {
+  Future<void> _accept(BuildContext context, Json request, {required bool pickTuition}) async {
     final repo = context.read<Repo>();
     String? tuitionId;
-    if (pickGroup) {
+    if (pickTuition) {
       tuitionId = await showModalBottomSheet<String>(
         context: context,
         builder: (context) => SafeArea(
           child: ListView(
             shrinkWrap: true,
             children: [
-              ListTile(title: Text('Add ${request.str('student_name')} to which group?', style: TextStyle(fontWeight: FontWeight.w700))),
+              ListTile(title: Text('Add ${request.str('student_name')} to which tuition?', style: const TextStyle(fontWeight: FontWeight.w700))),
               for (final t in tuitions)
                 ListTile(
-                  leading: Icon(Icons.groups_outlined),
+                  leading: const Icon(Icons.class_outlined),
                   title: Text(t.str('title')),
                   subtitle: Text('${t.integer('enrolled_count')} student${t.integer('enrolled_count') == 1 ? '' : 's'}'),
                   onTap: () => Navigator.pop(context, t.str('id')),
@@ -501,7 +450,7 @@ class _Requests extends StatelessWidget {  const _Requests({required this.reques
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(request.str('student_name'), style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
+                Text(request.str('student_name'), style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
                 Builder(builder: (context) {
                   final s = request.obj('student') ?? {};
                   final details = [
@@ -522,8 +471,8 @@ class _Requests extends StatelessWidget {  const _Requests({required this.reques
                   runSpacing: 8,
                   children: [
                     if (tuitions.isNotEmpty)
-                      FilledButton(onPressed: () => _accept(context, request, pickGroup: true), child: const Text('Accept & add to group')),
-                    OutlinedButton(onPressed: () => _accept(context, request, pickGroup: false), child: const Text('Accept only')),
+                      FilledButton(onPressed: () => _accept(context, request, pickTuition: true), child: const Text('Accept & add to tuition')),
+                    OutlinedButton(onPressed: () => _accept(context, request, pickTuition: false), child: const Text('Accept only')),
                     TextButton(
                       onPressed: () async {
                         final ok = await confirm(

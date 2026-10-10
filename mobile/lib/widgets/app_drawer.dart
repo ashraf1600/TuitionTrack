@@ -81,7 +81,7 @@ class AppDrawer extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              'TuitionTrack helps private tutors run tuition groups, track classes and earnings, '
+              'TuitionTrack helps private tutors run tuitions, track classes and earnings, '
               'set exams and homework — and helps students follow their classes, submit work and see results.',
               style: TextStyle(fontSize: 13, height: 1.5),
             ),
@@ -200,8 +200,12 @@ class AppDrawer extends StatelessWidget {
                 final ok = await confirm(
                   context,
                   title: 'Sign out?',
-                  message: 'You will need your username and password to sign back in.',
+                  message: session.outbox.isEmpty
+                      ? 'You will need your username and password to sign back in.'
+                      : '${session.outbox.length} change${session.outbox.length == 1 ? ' made offline has' : 's made offline have'} not been sent yet. '
+                          'Signing out deletes ${session.outbox.length == 1 ? 'it' : 'them'} from this phone.',
                   confirmLabel: 'Sign out',
+                  danger: session.outbox.isNotEmpty,
                 );
                 if (ok) await session.logout();
               },

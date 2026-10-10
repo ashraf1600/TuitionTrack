@@ -139,10 +139,7 @@ class StudentCycleSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
     def get_tuition_title(self, obj):
-        try:
-            return obj.tuition.title if (obj.tuition_id and obj.tuition) else ''
-        except Exception:
-            return ''
+        return obj.tuition.title if (obj.tuition_id and obj.tuition) else ''
 
 
 class AttendanceCycleSerializer(StudentCycleSerializer):
@@ -172,10 +169,10 @@ class AttendanceCycleSerializer(StudentCycleSerializer):
         read_only_fields = fields
 
     def get_student_count(self, obj):
-        try:
-            return obj.tuition.enrolled_students_count if (obj.tuition_id and obj.tuition) else 0
-        except Exception:
-            return 0
+        # A tuition serializer that already counted its members passes the number down.
+        if 'student_count' in self.context:
+            return self.context['student_count']
+        return obj.tuition.enrolled_students_count if (obj.tuition_id and obj.tuition) else 0
 
     def to_representation(self, instance):
         data = super().to_representation(instance)

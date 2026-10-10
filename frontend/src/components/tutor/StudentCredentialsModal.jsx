@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import Modal from '../common/Modal';
 import { api } from '../../api/client';
 import {
@@ -10,7 +10,6 @@ import {
   User,
   ShieldCheck,
   Send,
-  ExternalLink,
 } from 'lucide-react';
 
 export default function StudentCredentialsModal({
@@ -25,12 +24,9 @@ export default function StudentCredentialsModal({
   const [resetting, setResetting] = useState(false);
   const [resetError, setResetError] = useState('');
 
+  // Parents mount this per student (key) and unmount it on close, so a generated
+  // password is forgotten as soon as the dialog goes away.
   const studentKey = student?.student_id || student?.id || '';
-  useEffect(() => {
-    // A password is shown once: forget it as soon as the dialog closes or the student changes.
-    setGenerated('');
-    setResetError('');
-  }, [studentKey, isOpen]);
 
   if (!student) return null;
 

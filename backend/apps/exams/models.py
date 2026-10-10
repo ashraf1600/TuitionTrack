@@ -2,7 +2,7 @@
 Exams App — Exam & ExamSubmission Models
 
 Key design principles:
-- content_html is ALWAYS sanitized via nh3 before saving (see signals.py).
+- content_html is ALWAYS sanitized via nh3 before saving (Exam.save and the serializers).
 - Dynamic exam status is computed in Python (not stored) using server UTC time.
 - ExamSubmission has a unique constraint (exam, student) to prevent duplicates.
 - Grace period allows late CQ image upload submissions to be marked DELAYED.
@@ -233,14 +233,12 @@ class Exam(models.Model):
     def save(self, *args, **kwargs):
         # Defence-in-depth: sanitize even on direct ORM/admin/shell writes
         # (serializers sanitize too, but must not be the only gate).
-        try:
-            from .sanitizer import sanitize_exam_html
-            if self.content_html:
-                self.content_html = sanitize_exam_html(self.content_html)
-            if self.solution_html:
-                self.solution_html = sanitize_exam_html(self.solution_html)
-        except Exception:
-            pass
+        # Fails closed: if sanitizing ever raised, the save must not go ahead with raw HTML.
+        from .sanitizer import sanitize_exam_html
+        if self.content_html:
+            self.content_html = sanitize_exam_html(self.content_html)
+        if self.solution_html:
+            self.solution_html = sanitize_exam_html(self.solution_html)
         super().save(*args, **kwargs)
 
     # ── Dynamic Status Computation ───────────────────────────────────────────

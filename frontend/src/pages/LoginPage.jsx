@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
+import { useAuth } from '../context/auth';
 import { api } from '../api/client';
 import {
   GraduationCap, Lock, User, Mail, Phone, ArrowRight, AlertCircle, Search, Eye, EyeOff,
@@ -11,7 +11,7 @@ const inputCls =
   'w-full px-3.5 py-2.5 rounded-xl bg-slate-900/90 border border-slate-700/80 text-slate-100 text-base sm:text-sm placeholder:text-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 hover:border-slate-600 transition-all duration-200';
 
 const HIGHLIGHTS = [
-  { icon: CalendarCheck, title: 'One class tracker per group', text: 'Tick a class once — every student in the group sees it instantly, with the date and topic.' },
+  { icon: CalendarCheck, title: 'One class tracker per tuition', text: 'Tick a class once — every student in the tuition sees it instantly, with the date and topic.' },
   { icon: Wallet, title: 'Earnings that add up themselves', text: 'Each completed class moves your tuition wallet. Full privacy: students never see fees.' },
   { icon: FileText, title: 'Integrated MCQ & Written Exams', text: 'Author rich exams with math formulas, set timers and deadlines, grade and rank in one place.' },
 ];
@@ -65,18 +65,24 @@ export default function LoginPage() {
   // Tutor directory for student sign-up
   useEffect(() => {
     if (!isStudent) return undefined;
+    // Only the answer for the latest search may land: typing fast must not let a
+    // slow reply for an older search overwrite the list.
+    let cancelled = false;
     const timeoutId = setTimeout(async () => {
       try {
         setLoadingTutors(true);
         const res = await api.getTutors(tutorSearch);
-        setTutorList(Array.isArray(res) ? res : res.results || []);
-      } catch (err) {
-        console.error('Failed to load tutor directory:', err);
+        if (!cancelled) setTutorList(Array.isArray(res) ? res : res.results || []);
+      } catch {
+        // Picking a tutor is optional; the list simply stays as it was.
       } finally {
-        setLoadingTutors(false);
+        if (!cancelled) setLoadingTutors(false);
       }
     }, 250);
-    return () => clearTimeout(timeoutId);
+    return () => {
+      cancelled = true;
+      clearTimeout(timeoutId);
+    };
   }, [isStudent, tutorSearch]);
 
   const switchMode = (next) => {
@@ -148,7 +154,7 @@ export default function LoginPage() {
       ? 'Sign in to your tuition dashboard.'
       : isStudent
       ? 'Join your tutor, follow your classes and take exams.'
-      : 'Set up your groups, track classes and earnings.';
+      : 'Set up your tuitions, track classes and earnings.';
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 grid lg:grid-cols-2">
@@ -216,7 +222,7 @@ export default function LoginPage() {
           {isRegister && (
             <div className="mt-6 grid grid-cols-2 gap-3" role="radiogroup" aria-label="Account type">
               {[
-                { key: 'register-tutor', icon: Presentation, title: "I'm a tutor", text: 'I teach groups & track fees' },
+                { key: 'register-tutor', icon: Presentation, title: "I'm a tutor", text: 'I teach tuitions & track fees' },
                 { key: 'register-student', icon: BookOpen, title: "I'm a student", text: 'I attend classes & take exams' },
               ].map(({ key, icon: Icon, title, text }) => {
                 const active = mode === key;
@@ -320,7 +326,7 @@ export default function LoginPage() {
                     <span className="text-xs text-slate-500">Optional</span>
                   </div>
                   <p className="text-xs text-slate-400 mb-3">
-                    We send them a request. When they accept and add you to a group, your classes appear. You can also do this later.
+                    We send them a request. When they accept and add you to a tuition, your classes appear. You can also do this later.
                   </p>
 
                   {selectedTutor ? (

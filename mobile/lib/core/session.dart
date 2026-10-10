@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'api.dart';
 import 'json.dart';
+import 'offline.dart';
 
 /// Keeps tokens in the platform keystore; falls back to app preferences where that is unavailable.
 class SecureTokenStore implements TokenStore {
@@ -73,9 +76,16 @@ class MemorySettings implements Settings {
 
 /// Who is signed in, and the API client everything else uses.
 class Session extends ChangeNotifier {
-  Session({required this.api, required this.settings}) {
+  Session({required this.api, required this.settings})
+      : outbox = Outbox(readString: settings.getString, writeString: settings.setString) {
     api.onSessionExpired = _expired;
+    api.overlay = outbox.applyTo;
+    api.onBackOnline = _backOnline;
   }
+
+  /// Changes made while offline, waiting to be sent.
+  final Outbox outbox;
+  bool _syncing = false;
 
   static const serverKey = 'server_url';
   static const _themeKey = 'theme_mode'; // 'dark' | 'light'
@@ -102,10 +112,14 @@ class Session extends ChangeNotifier {
     final saved = settings.getString(serverKey);
     if (saved != null && saved.isNotEmpty) api.baseUrl = saved;
     if (settings.getString(_themeKey) == 'light') themeMode = ThemeMode.light;
+    await api.cache?.load();
     await api.loadTokens();
     if (api.hasSession) {
+      // Whose waiting changes to show, even before the server answers.
+      outbox.useOwner(settings.getString('last_user_id') ?? '');
       try {
         user = Map<String, dynamic>.from(await api.get('/auth/me/') as Map);
+        outbox.useOwner(user!.str('id'));
       } on ApiException catch (error) {
         // Offline at launch: stay signed in as whoever was last here, and let each
         // screen report the connection problem. Any other failure means the session is gone.
@@ -117,12 +131,47 @@ class Session extends ChangeNotifier {
     }
     ready = true;
     notifyListeners();
+    if (user != null) unawaited(syncPending());
   }
 
   Future<void> setServer(String url) async {
     api.baseUrl = url;
     await settings.setString(serverKey, api.baseUrl);
+    // Saved answers belong to the old server.
+    await api.cache?.clear();
     notifyListeners();
+  }
+
+  /// Sends the changes made offline, oldest first. Stops at the first one the
+  /// server cannot take right now (still offline, server error) and keeps it;
+  /// one the server refuses for good is dropped and reported in [Outbox.failures].
+  /// Returns how many were sent.
+  Future<int> syncPending() async {
+    if (_syncing || outbox.isEmpty || !api.hasSession) return 0;
+    _syncing = true;
+    var sent = 0;
+    try {
+      for (final change in outbox.items) {
+        try {
+          await api.send(change.method, change.path, change.body);
+          await outbox.remove(change.id);
+          sent++;
+        } on ApiException catch (error) {
+          if (error.isUnreachable || error.status == 401 || error.status == 429 || error.status >= 500) break;
+          await outbox.remove(change.id, failure: '${change.label} could not be saved: ${error.message}');
+        }
+      }
+    } finally {
+      _syncing = false;
+    }
+    if (sent > 0) api.dataVersion.value++;
+    return sent;
+  }
+
+  Future<void> _backOnline() async {
+    final sent = await syncPending();
+    // Screens showed saved data while offline; let them load fresh data now.
+    if (sent == 0) api.dataVersion.value++;
   }
 
   /// Switches the whole app between dark and light. Remembered on this device.
@@ -136,9 +185,12 @@ class Session extends ChangeNotifier {
     final data = Map<String, dynamic>.from(
       await api.post('/auth/token/', {'username': username.trim(), 'password': password}) as Map,
     );
+    // Whatever was saved on this phone belongs to whoever used it before.
+    await api.cache?.clear();
     await api.setTokens(data.str('access'), data.str('refresh'));
     user = data.obj('user');
     await refreshUser();
+    unawaited(syncPending());
   }
 
   Future<void> registerTutor(Json form) async {
@@ -154,6 +206,8 @@ class Session extends ChangeNotifier {
   /// Re-reads the profile (after editing it, or changing the password).
   Future<void> refreshUser() async {
     user = Map<String, dynamic>.from(await api.get('/auth/me/') as Map);
+    outbox.useOwner(user!.str('id'));
+    await settings.setString('last_user_id', user!.str('id'));
     await settings.setString('last_role', user!.str('role'));
     await settings.setString('last_username', user!.str('username'));
     await settings.setString('last_name', user!.str('name'));
@@ -172,7 +226,7 @@ class Session extends ChangeNotifier {
 
   Future<void> logout() async {
     final refresh = (await api.tokens.read())['refresh'];
-    if (refresh != null && refresh.isNotEmpty) {
+    if (refresh != null && refresh.isNotEmpty && !api.offline.value) {
       try {
         await api.post('/auth/logout/', {'refresh': refresh});
       } catch (_) {
@@ -180,6 +234,11 @@ class Session extends ChangeNotifier {
       }
     }
     await api.setTokens(null, null);
+    // Signing out leaves nothing of this account on the phone.
+    await outbox.clear();
+    outbox.useOwner('');
+    await api.cache?.clear();
+    await settings.setString('last_user_id', '');
     user = null;
     notifyListeners();
   }

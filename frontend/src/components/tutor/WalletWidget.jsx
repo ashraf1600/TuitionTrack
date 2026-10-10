@@ -3,7 +3,7 @@ import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 import { Users, Wallet, Clock, Award, Layers, ChevronRight } from 'lucide-react';
 import { formatTaka } from '../../utils/dates';
 
-const COLORS = { earned: '#10B981', pending: '#6366F1' };
+const COLORS = { earned: '#059669', pending: '#6366F1' };
 
 /**
  * Tutor-only Tuition Wallet.
@@ -91,8 +91,8 @@ export default function WalletWidget({ analytics, loading, onOpenTuition }) {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <Metric icon={Wallet} label="Earned" value={formatTaka(earned)} hint="current cycles" tone="emerald" />
             <Metric icon={Clock} label="Still to earn" value={formatTaka(pending)} hint="remaining classes" tone="indigo" />
-            <Metric icon={Layers} label="Tuition groups" value={totalTuitions} hint="active" />
-            <Metric icon={Users} label="Students" value={totalStudents} hint="in your groups" />
+            <Metric icon={Layers} label="Tuitions" value={totalTuitions} hint="active" />
+            <Metric icon={Users} label="Students" value={totalStudents} hint="in your tuitions" />
           </div>
 
           {groups.length > 0 && (
@@ -133,7 +133,7 @@ export default function WalletWidget({ analytics, loading, onOpenTuition }) {
 
           {legacy.length > 0 && (
             <p className="text-[11px] text-slate-500">
-              Includes {legacy.length} older one-to-one cycle{legacy.length === 1 ? '' : 's'} created before tuition groups.
+              Includes {legacy.length} older one-to-one cycle{legacy.length === 1 ? '' : 's'} created before tuitions.
             </p>
           )}
 

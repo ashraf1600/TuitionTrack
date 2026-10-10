@@ -1,6 +1,5 @@
 """Tests for Exams app — Sanitization, Lifecycle, Submission, Grading & Media Upload"""
 from datetime import timedelta
-import io
 from django.urls import reverse
 from django.utils import timezone
 from django.core.files.uploadedfile import SimpleUploadedFile

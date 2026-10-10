@@ -75,7 +75,7 @@ class SubmissionsScreen extends StatelessWidget {
               ),
               gap16,
               if (roster.isEmpty)
-                const EmptyState(icon: Icons.person_off_outlined, title: 'Nobody is assigned', message: 'Add students to the group to set this for them.')
+                const EmptyState(icon: Icons.person_off_outlined, title: 'Nobody is assigned', message: 'Add students to the tuition to set this for them.')
               else
                 AppCard(
                   padding: EdgeInsets.zero,

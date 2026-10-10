@@ -145,7 +145,7 @@ export default function ExamManager({ exams = [], loading = false, students = []
             Exams & assignments
           </h3>
           <p className="text-xs text-slate-400 mt-0.5">
-            Set work for a whole tuition group. Each student turns in their own answers.
+            Set work for a whole tuition. Each student turns in their own answers.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -277,7 +277,7 @@ export default function ExamManager({ exams = [], loading = false, students = []
                       <IconButton label="Leaderboard" onClick={() => setLeaderboardExam(exam)}><Trophy className="w-4 h-4 text-amber-300" /></IconButton>
                     </>
                   )}
-                  <IconButton label="Copy (reuse for this or another group)" disabled={busy} onClick={() => openCopy(exam)}><Copy className="w-4 h-4" /></IconButton>
+                  <IconButton label="Copy (reuse for this or another tuition)" disabled={busy} onClick={() => openCopy(exam)}><Copy className="w-4 h-4" /></IconButton>
                   <IconButton label="Edit" disabled={busy} onClick={() => openEdit(exam)}><Pencil className="w-4 h-4" /></IconButton>
                   <IconButton label="Delete" disabled={busy} onClick={() => remove(exam)} danger><Trash2 className="w-4 h-4" /></IconButton>
                 </div>
@@ -315,7 +315,7 @@ export default function ExamManager({ exams = [], loading = false, students = []
                 {!copySource.tuition_id && <option value="">Same student as the original</option>}
                 {copyGroups.map((g) => (
                   <option key={g.id} value={g.id}>
-                    {g.title}{g.id === copySource.tuition_id ? ' (same group)' : ''}
+                    {g.title}{g.id === copySource.tuition_id ? ' (same tuition)' : ''}
                   </option>
                 ))}
               </select>

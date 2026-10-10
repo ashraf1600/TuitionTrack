@@ -130,9 +130,9 @@ export default function SharedCycleBoard({
       }
       return `${okCount} homework assignment${okCount === 1 ? '' : 's'} (one per student)`;
     }
-    if (!tuitionId) throw new Error('This group context is missing, so homework cannot be assigned.');
+    if (!tuitionId) throw new Error('This tuition is missing, so homework cannot be assigned.');
     await api.createHomework({ ...base, tuition: tuitionId });
-    return '1 shared homework assignment for the group';
+    return '1 shared homework assignment for the tuition';
   };
 
   const handleSaveEdit = async (e) => {
@@ -211,7 +211,7 @@ export default function SharedCycleBoard({
             {tuitionTitle ? `${tuitionTitle} — class tracker` : 'Class tracker'}
           </h3>
           <p className="text-xs text-slate-400 mt-0.5">
-            Tick a class once and it is recorded, with today's date, for everyone in this group.
+            Tick a class once and it is recorded, with today's date, for everyone in this tuition.
           </p>
         </div>
 
@@ -246,7 +246,7 @@ export default function SharedCycleBoard({
       {/* Wallet strip — tutor only */}
       {!compact && (
         <div className="grid grid-cols-2 lg:grid-cols-4 divide-x divide-y lg:divide-y-0 divide-slate-800 border-b border-slate-800 bg-slate-950/40">
-          <Stat label="Cycle fee (group)" value={formatTaka(cycle.total_fee ?? cycle.tuition_fee)} />
+          <Stat label="Cycle fee (tuition)" value={formatTaka(cycle.total_fee ?? cycle.tuition_fee)} />
           <Stat label="Per class" value={formatTaka(cycle.per_class_rate)} hint="fee ÷ classes" />
           <Stat label="Earned so far" value={formatTaka(cycle.earned_revenue)} tone="emerald" hint={`${completed} × per class`} />
           <Stat label="Still to earn" value={formatTaka(cycle.pending_balance)} tone="indigo" />
@@ -264,7 +264,7 @@ export default function SharedCycleBoard({
           <div className="px-3.5 py-3 rounded-xl bg-amber-500/10 border border-amber-500/25 text-amber-200 text-xs flex flex-wrap items-center justify-between gap-3">
             <span className="flex items-center gap-2">
               <Info className="w-4 h-4 flex-shrink-0" />
-              No students in this group yet. You can still track classes; students see them as soon as they join.
+              No students in this tuition yet. You can still track classes; students see them as soon as they join.
             </span>
             {onAddStudent && (
               <button
@@ -436,14 +436,14 @@ export default function SharedCycleBoard({
                           onClick={() => setHwMode('group')}
                           className={`flex-1 py-1.5 rounded-lg transition ${hwMode === 'group' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-slate-200'}`}
                         >
-                          Whole group (shared)
+                          Whole tuition (shared)
                         </button>
                       </div>
                     )}
                     <p className="text-[11px] text-slate-500 leading-relaxed">
                       {hwMode === 'per-student' && roster.length > 0
                         ? `Creates ${roster.length} separate copies — one per student — so you can review and mark each done individually.`
-                        : 'Creates one shared task for the whole group. Marking it done applies to everyone.'}
+                        : 'Creates one shared task for the whole tuition. Marking it done applies to everyone.'}
                     </p>
                     {hwError && (
                       <div className="px-3 py-2 rounded-xl bg-rose-500/10 border border-rose-500/25 text-rose-300 text-xs">
@@ -491,7 +491,7 @@ export default function SharedCycleBoard({
             <p className="text-sm text-slate-300 leading-relaxed">
               Cycle #{cycle.cycle_number} will be saved to history with{' '}
               <strong className="text-emerald-400">{formatTaka(cycle.earned_revenue)}</strong> earned, and a fresh
-              cycle will start for the whole group using the tuition's current fee and number of classes.
+              cycle will start for the whole tuition using the tuition's current fee and number of classes.
             </p>
             <div className="flex justify-end gap-2 pt-3 border-t border-slate-800">
               <button

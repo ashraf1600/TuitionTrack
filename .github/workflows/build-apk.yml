@@ -24,8 +24,8 @@ jobs:
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
+          # pubspec.yaml needs Dart >= 3.13.5 (Flutter >= 3.44); the old 3.27.4 pin could not resolve packages.
           channel: stable
-          flutter-version: 3.27.4
 
       - name: Cache Flutter packages
         uses: actions/cache@v4
@@ -42,11 +42,16 @@ jobs:
 
       - name: Analyze
         working-directory: mobile
-        run: flutter analyze --no-fatal-infos || true
+        run: flutter analyze --no-fatal-infos
+
+      - name: Test
+        working-directory: mobile
+        run: flutter test
 
       - name: Build release APK
         working-directory: mobile
-        run: flutter build apk --release
+        # The app's default server; set the repository variable API_BASE_URL to change it.
+        run: flutter build apk --release --dart-define=API_BASE_URL=${{ vars.API_BASE_URL || 'https://tuitiontrack-api.onrender.com' }}
 
       - name: Sign APK (placeholder — replace with your keystore)
         # NOTE: This step signs with the debug key so the workflow runs without

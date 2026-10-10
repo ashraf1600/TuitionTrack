@@ -1,17 +1,16 @@
-import React, { useEffect, useId, useRef } from 'react';
+import React, { useEffect, useEffectEvent, useId, useRef } from 'react';
 import { X } from 'lucide-react';
 
 export default function Modal({ isOpen, onClose, title, children, maxWidth = 'max-w-2xl' }) {
   const titleId = useId();
   const dialogRef = useRef(null);
-  // Keep the latest onClose without re-running the effect (and re-focusing) on every parent render.
-  const onCloseRef = useRef(onClose);
-  onCloseRef.current = onClose;
+  // Always calls the latest onClose without re-running the effect (and re-focusing) on every parent render.
+  const closeOnEscape = useEffectEvent(() => onClose?.());
 
   useEffect(() => {
     if (!isOpen) return undefined;
     const handleKeyDown = (e) => {
-      if (e.key === 'Escape') onCloseRef.current?.();
+      if (e.key === 'Escape') closeOnEscape();
     };
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';

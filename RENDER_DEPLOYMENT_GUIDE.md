@@ -12,7 +12,46 @@ This guide walks you through deploying the complete TuitionTrack stack directly 
 When hosting the database on Render:
 - **Private Networking**: The Django backend communicates with the PostgreSQL database over Render's high-speed private internal network (no external internet latency).
 - **Free Tier Note**: Render offers a **Free tier** for PostgreSQL databases (1 GB storage), which **expires after 30 days**. This is great for demos, testing, and evaluation.
-- **Permanent Database**: If you need the database to run permanently without the 30-day expiration, you can upgrade the database on Render to the **Starter plan** ($7/mo), OR you can point `DATABASE_URL` to a free permanent provider like [Supabase](https://supabase.com) or [Neon](https://neon.tech).
+- **Permanent Database**: If you need the database to run permanently without the 30-day expiration, you can upgrade the database on Render to the **Starter plan** ($7/mo), OR you can point `DATABASE_URL` to a free permanent provider such as Neon — see *Moving the database to Neon* below.
+
+---
+
+## 🗄️ Moving the database to Neon (free, does not expire)
+
+Render's free PostgreSQL stops after 30 days. [Neon](https://neon.com)'s free plan keeps the
+database for good: 1 GB per project and 100 compute-hours a month. It goes to sleep after
+5 minutes without queries and wakes on the next one (about a second), which suits a tuition app.
+
+1. **Deploy the current code to Render first**, so the old database has every migration.
+2. **Create the Neon database**: neon.com → New project → region **AWS Asia Pacific (Singapore)**
+   (closest to the Render service) → Postgres 16 or newer. Open **Connect**, turn on
+   **Connection pooling**, and copy the connection string (`postgresql://…-pooler…/neondb?sslmode=require…`).
+3. **Copy your data** on your PC (the TuitionTrack folder with its `venv`): double-click
+   `scripts\move-database.bat` and paste
+   - the **old** address: Render → `tuitiontrack-db` → Connections → *External Database URL*
+   - the **new** address: the Neon string from step 2.
+
+   The script only reads the old database, refuses a new database that already has users,
+   keeps a copy of everything in `backups\`, and never writes the addresses to a file.
+4. **Switch the API over**: Render → `tuitiontrack-api` → Environment:
+   - `DATABASE_URL` = the Neon string
+   - `DB_CONN_MAX_AGE` = `0` (Neon's pooler makes new connections cheap, and idle connections
+     would keep the Neon database awake and use up its free hours)
+
+   In `render.yaml`, also change `DATABASE_URL` to `sync: false` (the commented lines show how),
+   or a later Blueprint sync would point the API back at the Render database.
+5. Check the app and website. When you are sure everything is there, you can delete the Render
+   database yourself (Render → `tuitiontrack-db` → Settings). Nothing does that automatically.
+
+**Keeping the API awake (optional).** The free Render web service sleeps after 15 minutes and takes
+about a minute to wake. The app copes (it shows saved data and sends changes later), but if you want it
+always awake, set the repository variable `KEEP_AWAKE` to `true` (GitHub → Settings → Secrets and
+variables → Actions → Variables). The `keep-awake` workflow then calls `/api/v1/meta/` every 14 minutes.
+That endpoint does not touch the database, so Neon still sleeps. One always-on free service uses about
+730 of Render's 750 free hours a month.
+
+**Error reports (optional).** Set `SENTRY_DSN` on `tuitiontrack-api` to a [Sentry](https://sentry.io) project
+DSN to get an e-mail with the details whenever the server hits an error. Personal data is not sent.
 
 ---
 
@@ -104,7 +143,7 @@ If you prefer to configure each component individually in the Render dashboard:
 3. Configure the settings:
    - **Name**: `tuitiontrack-web`
    - **Root Directory**: `frontend`
-   - **Build Command**: `rm -f package-lock.json && npm install --include=optional && npm run build`
+   - **Build Command**: `npm ci && npm run build`
    - **Publish Directory**: `dist`
 4. Under **Redirects/Rewrites**:
    - **Type**: `Rewrite`
@@ -166,12 +205,13 @@ If these are not set, TuitionTrack automatically uses local media storage.
 
 ## 📱 Connecting the Flutter Mobile App
 
-Once deployed, point your Flutter mobile app to your Render backend:
-In `mobile/lib/`:
-Set your API base URL to:
-```dart
-https://tuitiontrack-api.onrender.com
-```
+Release builds of the app already use `https://tuitiontrack-api.onrender.com`. To use another server,
+build with `--dart-define=API_BASE_URL=https://your-api.example.com`, or type the address on the
+app's sign-in screen (Server settings).
+
+The app keeps what it last loaded on the phone, so it opens and shows tuitions, classes, homework
+and the wallet without internet. Marking classes, assigning or checking homework and handing in
+homework links also work offline; they are sent when the phone is back online.
 
 ---
 
@@ -181,5 +221,5 @@ https://tuitiontrack-api.onrender.com
 - [x] WhiteNoise configured for instant, zero-configuration admin static asset serving
 - [x] `render.yaml` configured with free plan, Singapore region, and health check
 - [x] `frontend/vite.config.js` and `frontend/src/api/client.js` support dynamic backend origins
-- [x] CORS and CSRF configurations pre-allow all `*.onrender.com` subdomains
+- [x] CORS and CSRF trust exactly `FRONTEND_URL` (plus anything listed in `CORS_ALLOWED_ORIGINS` / `CSRF_TRUSTED_ORIGINS`); other `*.onrender.com` sites are not trusted
 - [x] Client-side SPA routing rewrite (`/* -> /index.html`) configured

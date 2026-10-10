@@ -21,6 +21,11 @@ class AppColors {
   static const warningDeep = Color(0xFFB45309); // amber-700: filled buttons with white text
   static const danger = Color(0xFFFB7185); // rose-400
   static const purple = Color(0xFFC084FC);
+
+  // Chart series. Checked for colour-blind separation and contrast on both
+  // the dark (slate-900) and light (white) surfaces; always shown with a legend.
+  static const chartEarned = Color(0xFF059669); // emerald-600: money earned, classes done
+  static const chartPending = Color(0xFF6366F1); // indigo-500: still to earn, classes left
 }
 
 /// Accent color readable as text/icon on the current background.

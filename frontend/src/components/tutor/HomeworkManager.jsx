@@ -1,15 +1,18 @@
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   BookOpen, Plus, Clock, CheckCircle2, AlertTriangle, ExternalLink,
-  Trash2, MessageSquare, Loader2, RefreshCw, X, Calendar, User, Users,
-  Check, ChevronRight
+  Trash2, Loader2, RefreshCw, X, Calendar, User, Users,
+  Check
 } from 'lucide-react';
-import { api } from '../../api/client';
+import { api, getMediaUrl } from '../../api/client';
 import { notify } from '../../utils/toast';
 import { confirmAction } from '../common/ConfirmDialog';
+import { ErrorState } from '../common/States';
+import { useNow } from '../../hooks/useNow';
 
 export default function HomeworkManager({ tuitions = [], students = [] }) {
   const [homeworkList, setHomeworkList] = useState([]);
+  const now = useNow(60_000);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('all'); // 'all' | 'pending' | 'evaluated'
   const [createModalOpen, setCreateModalOpen] = useState(false);
@@ -17,22 +20,29 @@ export default function HomeworkManager({ tuitions = [], students = [] }) {
   const [feedbackText, setFeedbackText] = useState('');
   const [submittingEval, setSubmittingEval] = useState(false);
 
-  const loadHomework = async () => {
+  const [loadError, setLoadError] = useState('');
+
+  // State is only set once the answer is in, so this is safe to start from an effect.
+  const fetchHomework = useCallback(async () => {
     try {
-      setLoading(true);
       const data = await api.getHomework();
       setHomeworkList(Array.isArray(data) ? data : data?.results || []);
+      setLoadError('');
     } catch (err) {
-      console.error('Failed to load homework:', err);
-      notify.error('Could not load homework assignments.');
+      setLoadError(err.message || 'Could not load homework assignments.');
     } finally {
       setLoading(false);
     }
+  }, []);
+
+  const loadHomework = () => {
+    setLoading(true);
+    return fetchHomework();
   };
 
   useEffect(() => {
-    loadHomework();
-  }, []);
+    fetchHomework();
+  }, [fetchHomework]);
 
   const handleDelete = async (id) => {
     const ok = await confirmAction({
@@ -72,40 +82,20 @@ export default function HomeworkManager({ tuitions = [], students = [] }) {
 
   const handleSplitGroup = async (hw) => {
     const tuition = tuitions.find((t) => String(t.id) === String(hw.tuition_id));
-    const roster = (tuition?.enrollments || [])
-      .filter((e) => e.is_active !== false)
-      .map((e) => ({
-        id: String(e.student_id ?? e.student ?? e.id ?? ''),
-        name: e.student_name || e.full_name || e.username || 'Student',
-      }))
-      .filter((s) => s.id);
-    if (roster.length === 0) {
-      notify.error('No enrolled students found in this group to split across.');
-      return;
-    }
+    const memberCount = (tuition?.enrollments || []).filter((e) => e.is_active !== false).length;
     const ok = await confirmAction({
       title: 'Split into per-student copies?',
-      message: `"${hw.title}" becomes ${roster.length} individual rows (one per student) so you can review and mark each done separately. The shared row is removed.`,
-      confirmLabel: `Split (${roster.length})`,
+      message: `"${hw.title}" becomes one row per enrolled student${memberCount ? ` (${memberCount})` : ''} so you can review and mark each done separately. Work already handed in is kept. The shared row is removed.`,
+      confirmLabel: memberCount ? `Split (${memberCount})` : 'Split',
     });
     if (!ok) return;
     try {
-      const base = {
-        title: hw.title,
-        description: hw.description || '',
-        due_date: hw.due_date,
-        source_label: hw.source_label || '',
-      };
-      const results = await Promise.allSettled(roster.map((s) => api.createHomework({ ...base, student: s.id })));
-      const created = results.filter((r) => r.status === 'fulfilled').map((r) => r.value);
-      if (created.length === 0) throw new Error('Could not create individual copies.');
-      await api.deleteHomework(hw.id);
-      setHomeworkList((prev) => [...created, ...prev.filter((h) => h.id !== hw.id)]);
-      notify.success(
-        created.length === roster.length
-          ? `Split into ${created.length} individual copies.`
-          : `Split into ${created.length} of ${roster.length} copies; the shared row was removed.`
-      );
+      // One server step: either every copy is made and the shared row goes, or nothing changes.
+      const res = await api.splitHomework(hw.id);
+      const created = res.homework || [];
+      const createdIds = new Set(created.map((h) => h.id));
+      setHomeworkList((prev) => [...created, ...prev.filter((h) => h.id !== hw.id && !createdIds.has(h.id))]);
+      notify.success(res.message || `Split into ${created.length} individual copies.`);
     } catch (err) {
       notify.error(err.message || 'Failed to split homework.');
     }
@@ -178,6 +168,10 @@ export default function HomeworkManager({ tuitions = [], students = [] }) {
       </div>
 
       {/* Homework List */}
+      {loadError && !loading && (
+        <ErrorState message={loadError} onRetry={loadHomework} />
+      )}
+
       {loading ? (
         <div className="flex items-center justify-center py-16">
           <Loader2 className="w-8 h-8 text-indigo-400 animate-spin" />
@@ -195,7 +189,7 @@ export default function HomeworkManager({ tuitions = [], students = [] }) {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {filtered.map((hw) => {
-            const isDuePassed = new Date(hw.due_date) < new Date();
+            const isDuePassed = new Date(hw.due_date).getTime() < now;
             return (
               <div
                 key={hw.id}
@@ -281,10 +275,22 @@ export default function HomeworkManager({ tuitions = [], students = [] }) {
                           Open Link
                         </a>
                       </div>
-                    ) : (
+                    ) : !hw.submission_file_url && (
                       <div className="text-[11px] text-slate-500 italic">
-                        No online submission link submitted yet
+                        {hw.is_submitted ? 'Marked as submitted (no link or file)' : 'Nothing submitted yet'}
                       </div>
+                    )}
+
+                    {hw.submission_file_url && (
+                      <a
+                        href={getMediaUrl(hw.submission_file_url)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-2 bg-slate-800/60 rounded-xl px-3 py-2 border border-slate-700/60 text-[11px] font-bold text-indigo-400 hover:text-indigo-300"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5 flex-shrink-0" />
+                        Open submitted file
+                      </a>
                     )}
 
                     {hw.tutor_feedback && (
@@ -420,7 +426,13 @@ function CreateHomeworkModal({ tuitions, students, onClose, onCreated }) {
   const [targetType, setTargetType] = useState('tuition'); // 'tuition' | 'student'
   const [targetId, setTargetId] = useState(tuitions[0]?.id || '');
   const [perStudent, setPerStudent] = useState(true); // fan out one copy per student
-  const [dueDate, setDueDate] = useState('');
+  // Defaults to tomorrow 6:00 PM (local time, as a datetime-local value).
+  const [dueDate, setDueDate] = useState(() => {
+    const tmrw = new Date();
+    tmrw.setDate(tmrw.getDate() + 1);
+    tmrw.setHours(18, 0, 0, 0);
+    return new Date(tmrw.getTime() - tmrw.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+  });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
 
@@ -434,16 +446,6 @@ function CreateHomeworkModal({ tuitions, students, onClose, onCreated }) {
     .filter((s) => s.id);
   const showFanOut = targetType === 'tuition' && groupRoster.length > 0;
 
-  // Default to tomorrow 6:00 PM
-  useEffect(() => {
-    const tmrw = new Date();
-    tmrw.setDate(tmrw.getDate() + 1);
-    tmrw.setHours(18, 0, 0, 0);
-    const localIso = new Date(tmrw.getTime() - tmrw.getTimezoneOffset() * 60000)
-      .toISOString()
-      .slice(0, 16);
-    setDueDate(localIso);
-  }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -484,7 +486,7 @@ function CreateHomeworkModal({ tuitions, students, onClose, onCreated }) {
         } else {
           const res = await api.createHomework({ ...base, tuition: targetId });
           created = [res];
-          notify.success('Shared homework created for the group.');
+          notify.success('Shared homework created for the tuition.');
         }
       } else {
         const res = await api.createHomework({ ...base, student: targetId });
@@ -563,7 +565,7 @@ function CreateHomeworkModal({ tuitions, students, onClose, onCreated }) {
                     targetType === 'tuition' ? 'bg-indigo-600 text-white' : 'text-slate-400'
                   }`}
                 >
-                  Tuition Group
+                  Tuition
                 </button>
                 <button
                   type="button"
@@ -618,7 +620,7 @@ function CreateHomeworkModal({ tuitions, students, onClose, onCreated }) {
                     </span>
                     <span className="block text-[11px] text-slate-400 mt-0.5 leading-relaxed">
                       Recommended — each student submits on their own row and you mark each done individually.
-                      Unchecked creates one shared task for the whole group.
+                      Unchecked creates one shared task for the whole tuition.
                     </span>
                   </span>
                 </label>

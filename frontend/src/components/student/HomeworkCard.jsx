@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
-  Clock, CheckCircle2, AlertTriangle, ExternalLink, Send, Loader2,
-  BookOpen, X, Bell, ChevronDown, ChevronUp,
+  Clock, CheckCircle2, ExternalLink, Send, Loader2,
+  BookOpen, X, Bell, ChevronDown, ChevronUp
 } from 'lucide-react';
 import { api } from '../../api/client';
 import { notify } from '../../utils/toast';
@@ -41,11 +41,13 @@ function formatCountdown(ms) {
 }
 
 function urgencyStyle(ms) {
-  if (ms <= 0) return { bg: 'bg-slate-800/60', border: 'border-slate-700', badge: 'bg-slate-700 text-slate-400', dot: 'bg-slate-500', ring: '' };
-  if (ms <= 3_600_000) return { bg: 'bg-rose-950/40', border: 'border-rose-500/40', badge: 'bg-rose-500/20 text-rose-300', dot: 'bg-rose-500 animate-ping', ring: 'ring-2 ring-rose-500/20' };
-  if (ms <= 7_200_000) return { bg: 'bg-orange-950/30', border: 'border-orange-500/40', badge: 'bg-orange-500/15 text-orange-300', dot: 'bg-orange-400', ring: 'ring-1 ring-orange-500/20' };
-  if (ms <= 86_400_000) return { bg: 'bg-amber-950/20', border: 'border-amber-500/30', badge: 'bg-amber-500/15 text-amber-300', dot: 'bg-amber-400', ring: '' };
-  return { bg: 'bg-slate-900/60', border: 'border-slate-800', badge: 'bg-slate-800 text-slate-400', dot: 'bg-indigo-400', ring: '' };
+  // Solid dark cards: they sit on the light student page, where see-through
+  // dark tints turned into a muddy grey with unreadable text.
+  if (ms <= 0) return { bg: 'bg-slate-800', border: 'border-slate-700', badge: 'bg-slate-700 text-slate-300', dot: 'bg-slate-500', ring: '' };
+  if (ms <= 3_600_000) return { bg: 'bg-rose-950', border: 'border-rose-500/50', badge: 'bg-rose-500/20 text-rose-200', dot: 'bg-rose-500 animate-ping', ring: 'ring-2 ring-rose-500/20' };
+  if (ms <= 7_200_000) return { bg: 'bg-orange-950', border: 'border-orange-500/50', badge: 'bg-orange-500/20 text-orange-200', dot: 'bg-orange-400', ring: 'ring-1 ring-orange-500/20' };
+  if (ms <= 86_400_000) return { bg: 'bg-slate-900', border: 'border-amber-500/40', badge: 'bg-amber-500/15 text-amber-200', dot: 'bg-amber-400', ring: '' };
+  return { bg: 'bg-slate-900', border: 'border-slate-800', badge: 'bg-slate-800 text-slate-300', dot: 'bg-indigo-400', ring: '' };
 }
 
 // ─── 2-Hour Alert Modal ───────────────────────────────────────────────────────
@@ -142,9 +144,9 @@ export default function HomeworkCard({ homework, isTutor = false, onUpdated }) {
     try {
       const res = await api.submitHomework(homework.id, submitUrl.trim());
       notify.success('Submission recorded!');
-      onUpdated?.(res.homework);
+      onUpdated?.(res.homework, homework.id);
     } catch (err) {
-      notify(`Submission failed: ${err.message}`);
+      notify.error(`Submission failed: ${err.message}`);
     } finally {
       setSubmitting(false);
     }
@@ -156,9 +158,9 @@ export default function HomeworkCard({ homework, isTutor = false, onUpdated }) {
     try {
       const res = await api.markHomeworkDone(homework.id, feedbackInput.trim());
       notify.success('Homework marked as done!');
-      onUpdated?.(res.homework);
+      onUpdated?.(res.homework, homework.id);
     } catch (err) {
-      notify(`Error: ${err.message}`);
+      notify.error(`Error: ${err.message}`);
     } finally {
       setMarkingDone(false);
     }
@@ -233,7 +235,7 @@ export default function HomeworkCard({ homework, isTutor = false, onUpdated }) {
             <Clock className="w-3 h-3" />
             Due: {new Date(homework.due_date).toLocaleString(undefined, {
               weekday: 'short', month: 'short', day: 'numeric',
-              hour: 'numeric', minute: '2-digit',
+              hour: 'numeric', minute: '2-digit'
             })}
           </div>
 

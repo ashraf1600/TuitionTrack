@@ -32,7 +32,9 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.parsers import MultiPartParser, FormParser
 
 from apps.authentication.permissions import IsTutor, IsStudent, IsTutorOrStudent
+from config.background import run_after_commit
 from .models import Exam, ExamAttempt, ExamSubmission
+from .uploads import ALLOWED_CONTENT_TYPES, ALLOWED_EXTENSIONS, UploadRejected, validate_upload
 from .serializers import (
     ExamListSerializer,
     ExamDetailSerializer,
@@ -42,10 +44,27 @@ from .serializers import (
     ExamSubmissionSerializer,
     SubmitExamSerializer,
     GradeSubmissionSerializer,
-    LeaderboardEntrySerializer,
+
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _send_each(subject, body, html_body, recipients):
+    """One e-mail per student, so nobody sees another student's address."""
+    for recipient in recipients:
+        try:
+            send_mail(
+                subject=subject,
+                message=body,
+                from_email=settings.DEFAULT_FROM_EMAIL,
+                recipient_list=[recipient],
+                html_message=html_body,
+                fail_silently=True,
+            )
+        except Exception as exc:  # noqa: BLE001 - one bad address must not stop the others
+            logger.warning('Failed to send exam notification email to %s: %s', recipient, exc)
+
 
 
 class ExamViewSet(viewsets.ModelViewSet):
@@ -73,7 +92,17 @@ class ExamViewSet(viewsets.ModelViewSet):
         qs = Exam.objects.select_related('tutor', 'student', 'tuition').prefetch_related('submissions')
 
         if user.role == 'TUTOR':
-            qs = qs.filter(models.Q(tutor=user) | models.Q(tuition__tutor=user))
+            qs = qs.filter(models.Q(tutor=user) | models.Q(tuition__tutor=user)).annotate(
+                # Members of the target group, counted in the same query instead of once per exam.
+                assigned_active_count=models.Count(
+                    'tuition__enrollments',
+                    filter=models.Q(
+                        tuition__enrollments__is_active=True,
+                        tuition__enrollments__student__is_active=True,
+                    ),
+                    distinct=True,
+                )
+            )
             student_id = self.request.query_params.get('student_id')
             batch_id = self.request.query_params.get('batch_id')
             tuition_id = self.request.query_params.get('tuition_id')
@@ -176,21 +205,34 @@ class ExamViewSet(viewsets.ModelViewSet):
                 f"Please log in to TuitionTrack before the deadline.\n\n"
                 f"— TuitionTrack Team"
             )
+            from django.utils.html import escape
+            tutor_name = exam.tutor.get_full_name() or exam.tutor.username
+            # Everything below comes from user input; escape it before it goes into HTML.
+            h = {
+                'title': escape(exam.title),
+                'tutor': escape(tutor_name),
+                'category': escape(exam.category),
+                'target': escape(target_desc),
+                'type': escape(exam.get_exam_type_display()),
+                'marks': escape(str(exam.total_marks)),
+                'start': escape(start_str),
+                'end': escape(end_str),
+            }
             html_body = f"""
             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #0f172a; color: #f8fafc; border-radius: 16px; padding: 24px; border: 1px solid #334155;">
                 <div style="text-align: center; margin-bottom: 20px;">
                     <h2 style="color: #818cf8; margin: 0;">TuitionTrack Assessment Alert</h2>
-                    <p style="color: #94a3b8; font-size: 13px; margin: 4px 0 0 0;">New Assessment Published by {exam.tutor.get_full_name() or exam.tutor.username}</p>
+                    <p style="color: #94a3b8; font-size: 13px; margin: 4px 0 0 0;">New Assessment Published by {h['tutor']}</p>
                 </div>
                 <div style="background: #1e293b; border-radius: 12px; padding: 20px; border: 1px solid #334155; margin-bottom: 20px;">
-                    <h3 style="color: #ffffff; margin-top: 0; font-size: 18px;">{exam.title}</h3>
+                    <h3 style="color: #ffffff; margin-top: 0; font-size: 18px;">{h['title']}</h3>
                     <table style="width: 100%; border-collapse: collapse; font-size: 13px; color: #cbd5e1;">
-                        <tr><td style="padding: 6px 0; color: #94a3b8;"><strong>Category:</strong></td><td style="color: #818cf8;">{exam.category}</td></tr>
-                        <tr><td style="padding: 6px 0; color: #94a3b8;"><strong>Target:</strong></td><td style="color: #ffffff;">{target_desc}</td></tr>
-                        <tr><td style="padding: 6px 0; color: #94a3b8;"><strong>Type:</strong></td><td>{exam.get_exam_type_display()}</td></tr>
-                        <tr><td style="padding: 6px 0; color: #94a3b8;"><strong>Total Marks:</strong></td><td style="color: #34d399; font-weight: bold;">{exam.total_marks}</td></tr>
-                        <tr><td style="padding: 6px 0; color: #94a3b8;"><strong>Start Window:</strong></td><td>{start_str}</td></tr>
-                        <tr><td style="padding: 6px 0; color: #94a3b8;"><strong>End / Deadline:</strong></td><td style="color: #f87171;">{end_str}</td></tr>
+                        <tr><td style="padding: 6px 0; color: #94a3b8;"><strong>Category:</strong></td><td style="color: #818cf8;">{h['category']}</td></tr>
+                        <tr><td style="padding: 6px 0; color: #94a3b8;"><strong>Target:</strong></td><td style="color: #ffffff;">{h['target']}</td></tr>
+                        <tr><td style="padding: 6px 0; color: #94a3b8;"><strong>Type:</strong></td><td>{h['type']}</td></tr>
+                        <tr><td style="padding: 6px 0; color: #94a3b8;"><strong>Total Marks:</strong></td><td style="color: #34d399; font-weight: bold;">{h['marks']}</td></tr>
+                        <tr><td style="padding: 6px 0; color: #94a3b8;"><strong>Start Window:</strong></td><td>{h['start']}</td></tr>
+                        <tr><td style="padding: 6px 0; color: #94a3b8;"><strong>End / Deadline:</strong></td><td style="color: #f87171;">{h['end']}</td></tr>
                         <tr><td style="padding: 6px 0; color: #94a3b8;"><strong>Grace Period:</strong></td><td>{exam.grace_period_minutes} min</td></tr>
                     </table>
                 </div>
@@ -199,18 +241,8 @@ class ExamViewSet(viewsets.ModelViewSet):
                 </p>
             </div>
             """
-            for recipient in recipients:
-                try:
-                    send_mail(
-                        subject=subject,
-                        message=body,
-                        from_email=settings.DEFAULT_FROM_EMAIL,
-                        recipient_list=[recipient],
-                        html_message=html_body,
-                        fail_silently=True,
-                    )
-                except Exception as exc:
-                    logger.warning(f'Failed to send exam notification email to {recipient}: {exc}')
+            # Sent after the exam is saved, off the request: the tutor does not wait for the mail server.
+            run_after_commit(_send_each, subject, body, html_body, recipients)
 
     def create(self, request, *args, **kwargs):
         if request.user.role != 'TUTOR':
@@ -750,51 +782,15 @@ class MediaUploadView(APIView):
     permission_classes = [IsAuthenticated]
     parser_classes = [MultiPartParser, FormParser]
 
-    ALLOWED_EXTENSIONS = {'.png', '.jpg', '.jpeg', '.webp', '.pdf'}
-    ALLOWED_CONTENT_TYPES = {'image/png', 'image/jpeg', 'image/webp', 'application/pdf'}
+    ALLOWED_EXTENSIONS = ALLOWED_EXTENSIONS
+    ALLOWED_CONTENT_TYPES = ALLOWED_CONTENT_TYPES
 
     def post(self, request):
         uploaded_file = request.FILES.get('file')
-        if not uploaded_file:
-            return Response({'error': 'No file provided.'}, status=status.HTTP_400_BAD_REQUEST)
-
-        max_mb = getattr(settings, 'MAX_UPLOAD_SIZE_MB', 10)
-        max_bytes = max_mb * 1024 * 1024
-        # Validate file size (reject empty too)
-        if uploaded_file.size == 0:
-            return Response({'error': 'Empty file is not allowed.'}, status=status.HTTP_400_BAD_REQUEST)
-        if uploaded_file.size > max_bytes:
-            return Response(
-                {'error': f'File exceeds maximum size limit of {max_mb}MB ({uploaded_file.size} bytes).'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        # Validate extension
-        _, ext = os.path.splitext(uploaded_file.name)
-        ext = ext.lower()
-        if ext not in self.ALLOWED_EXTENSIONS:
-            return Response(
-                {'error': f'Invalid file format "{ext}". Allowed formats: {", ".join(self.ALLOWED_EXTENSIONS)}'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        # Validate MIME type + magic bytes (blocks polyglot HTML/JS in .png/.pdf)
-        content_type = getattr(uploaded_file, 'content_type', '')
-        if content_type and content_type not in self.ALLOWED_CONTENT_TYPES:
-            return Response(
-                {'error': f'Invalid content type "{content_type}".'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        header = uploaded_file.read(12)
-        uploaded_file.seek(0)
-        valid_magic = (
-            header.startswith(b'\x89PNG') or header.startswith(b'\xff\xd8\xff')
-            or header.startswith(b'RIFF') or header.startswith(b'%PDF')
-        )
-        if not valid_magic:
-            return Response(
-                {'error': 'File content does not match its extension.'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+        try:
+            validate_upload(uploaded_file)
+        except UploadRejected as exc:
+            return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
         # Generate unique filename to avoid overwrites (sanitized, no traversal)
         from django.utils.text import get_valid_filename
