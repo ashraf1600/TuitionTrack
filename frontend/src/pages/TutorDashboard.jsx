@@ -263,6 +263,13 @@ export default function TutorDashboard() {
     return students.filter((s) => enrolledSet.has(normId(s)));
   }, [students, selectedTuition]);
 
+  // Students currently in at least one group (people still waiting for a group are counted separately).
+  const enrolledCount = useMemo(() => {
+    const ids = new Set();
+    tuitions.forEach((t) => (t.enrollments || []).forEach((e) => ids.add(String(e.student_id ?? e.id))));
+    return ids.size;
+  }, [tuitions]);
+
   // DAYS_ORDER is defined once at module top (Sat-first canonical order).
   const weeklyScheduleByDay = useMemo(() => {
     const schedule = {};
@@ -317,7 +324,7 @@ export default function TutorDashboard() {
               Welcome back, {user?.name || user?.username || 'Tutor'}
             </h1>
             <p className="text-xs sm:text-sm text-slate-400 mt-1">
-              {tuitions.length} tuition group{tuitions.length === 1 ? '' : 's'} · {students.length} student{students.length === 1 ? '' : 's'} enrolled
+              {tuitions.length} tuition group{tuitions.length === 1 ? '' : 's'} · {enrolledCount} student{enrolledCount === 1 ? '' : 's'} enrolled
               {unassignedStudents.length > 0 && (
                 <span className="text-amber-300 font-semibold"> · {unassignedStudents.length} waiting for a group</span>
               )}

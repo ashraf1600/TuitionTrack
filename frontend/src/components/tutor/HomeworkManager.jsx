@@ -4,7 +4,7 @@ import {
   Trash2, Loader2, RefreshCw, X, Calendar, User, Users,
   Check
 } from 'lucide-react';
-import { api } from '../../api/client';
+import { api, getMediaUrl } from '../../api/client';
 import { notify } from '../../utils/toast';
 import { confirmAction } from '../common/ConfirmDialog';
 import { ErrorState } from '../common/States';
@@ -275,10 +275,22 @@ export default function HomeworkManager({ tuitions = [], students = [] }) {
                           Open Link
                         </a>
                       </div>
-                    ) : (
+                    ) : !hw.submission_file_url && (
                       <div className="text-[11px] text-slate-500 italic">
-                        No online submission link submitted yet
+                        {hw.is_submitted ? 'Marked as submitted (no link or file)' : 'Nothing submitted yet'}
                       </div>
+                    )}
+
+                    {hw.submission_file_url && (
+                      <a
+                        href={getMediaUrl(hw.submission_file_url)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-2 bg-slate-800/60 rounded-xl px-3 py-2 border border-slate-700/60 text-[11px] font-bold text-indigo-400 hover:text-indigo-300"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5 flex-shrink-0" />
+                        Open submitted file
+                      </a>
                     )}
 
                     {hw.tutor_feedback && (

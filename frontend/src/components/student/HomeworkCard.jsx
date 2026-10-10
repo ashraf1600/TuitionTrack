@@ -41,11 +41,13 @@ function formatCountdown(ms) {
 }
 
 function urgencyStyle(ms) {
-  if (ms <= 0) return { bg: 'bg-slate-800/60', border: 'border-slate-700', badge: 'bg-slate-700 text-slate-400', dot: 'bg-slate-500', ring: '' };
-  if (ms <= 3_600_000) return { bg: 'bg-rose-950/40', border: 'border-rose-500/40', badge: 'bg-rose-500/20 text-rose-300', dot: 'bg-rose-500 animate-ping', ring: 'ring-2 ring-rose-500/20' };
-  if (ms <= 7_200_000) return { bg: 'bg-orange-950/30', border: 'border-orange-500/40', badge: 'bg-orange-500/15 text-orange-300', dot: 'bg-orange-400', ring: 'ring-1 ring-orange-500/20' };
-  if (ms <= 86_400_000) return { bg: 'bg-amber-950/20', border: 'border-amber-500/30', badge: 'bg-amber-500/15 text-amber-300', dot: 'bg-amber-400', ring: '' };
-  return { bg: 'bg-slate-900/60', border: 'border-slate-800', badge: 'bg-slate-800 text-slate-400', dot: 'bg-indigo-400', ring: '' };
+  // Solid dark cards: they sit on the light student page, where see-through
+  // dark tints turned into a muddy grey with unreadable text.
+  if (ms <= 0) return { bg: 'bg-slate-800', border: 'border-slate-700', badge: 'bg-slate-700 text-slate-300', dot: 'bg-slate-500', ring: '' };
+  if (ms <= 3_600_000) return { bg: 'bg-rose-950', border: 'border-rose-500/50', badge: 'bg-rose-500/20 text-rose-200', dot: 'bg-rose-500 animate-ping', ring: 'ring-2 ring-rose-500/20' };
+  if (ms <= 7_200_000) return { bg: 'bg-orange-950', border: 'border-orange-500/50', badge: 'bg-orange-500/20 text-orange-200', dot: 'bg-orange-400', ring: 'ring-1 ring-orange-500/20' };
+  if (ms <= 86_400_000) return { bg: 'bg-slate-900', border: 'border-amber-500/40', badge: 'bg-amber-500/15 text-amber-200', dot: 'bg-amber-400', ring: '' };
+  return { bg: 'bg-slate-900', border: 'border-slate-800', badge: 'bg-slate-800 text-slate-300', dot: 'bg-indigo-400', ring: '' };
 }
 
 // ─── 2-Hour Alert Modal ───────────────────────────────────────────────────────

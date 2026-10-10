@@ -65,18 +65,24 @@ export default function LoginPage() {
   // Tutor directory for student sign-up
   useEffect(() => {
     if (!isStudent) return undefined;
+    // Only the answer for the latest search may land: typing fast must not let a
+    // slow reply for an older search overwrite the list.
+    let cancelled = false;
     const timeoutId = setTimeout(async () => {
       try {
         setLoadingTutors(true);
         const res = await api.getTutors(tutorSearch);
-        setTutorList(Array.isArray(res) ? res : res.results || []);
-      } catch (err) {
-        console.error('Failed to load tutor directory:', err);
+        if (!cancelled) setTutorList(Array.isArray(res) ? res : res.results || []);
+      } catch {
+        // Picking a tutor is optional; the list simply stays as it was.
       } finally {
-        setLoadingTutors(false);
+        if (!cancelled) setLoadingTutors(false);
       }
     }, 250);
-    return () => clearTimeout(timeoutId);
+    return () => {
+      cancelled = true;
+      clearTimeout(timeoutId);
+    };
   }, [isStudent, tutorSearch]);
 
   const switchMode = (next) => {

@@ -299,13 +299,13 @@ export default function TutorWorkspaceView({
               key={key}
               type="button"
               onClick={() => setActiveTab(key)}
-              className={`flex-1 flex items-center justify-center gap-2 py-2.5 sm:py-3 px-3 rounded-xl text-xs sm:text-sm font-bold transition-all duration-150 ${
+              className={`flex-1 min-w-0 flex items-center justify-center gap-1.5 sm:gap-2 py-2.5 sm:py-3 px-2 sm:px-3 rounded-xl text-xs sm:text-sm font-bold leading-tight text-center transition-all duration-150 ${
                 isActive
                   ? 'bg-indigo-600 text-white shadow-sm'
                   : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
               }`}
             >
-              <Icon className="w-4 h-4 flex-shrink-0" />
+              <Icon className="hidden min-[420px]:block w-4 h-4 flex-shrink-0" />
               <span className="hidden md:inline">{label}</span>
               <span className="md:hidden">{shortLabel}</span>
               {badgeCount !== null && badgeCount > 0 && (
