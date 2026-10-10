@@ -16,7 +16,7 @@ import 'package:tuitiontrack/core/session.dart';
 Map<String, dynamic> _tuition({int done = 0}) => {
       'id': 't1',
       'title': 'Physics',
-      'active_cycle': {
+      'active_cycle': <String, dynamic>{
         'id': 'c1',
         'cycle_number': 1,
         'total_classes': 4,
@@ -25,11 +25,11 @@ Map<String, dynamic> _tuition({int done = 0}) => {
         'earned_revenue': done * 1000.0,
         'pending_balance': 4000 - done * 1000.0,
         'is_complete': false,
-        'classes_data': [
-          for (var n = 1; n <= done; n++) {'class_no': n, 'completed': true, 'date': '2026-10-0${n}T12:00:00Z', 'topic': ''},
+        'classes_data': <dynamic>[
+          for (var n = 1; n <= done; n++) <String, dynamic>{'class_no': n, 'completed': true, 'date': '2026-10-0${n}T12:00:00Z', 'topic': ''},
         ],
       },
-      'wallet_summary': {'earned_revenue': done * 1000.0, 'pending_balance': 4000 - done * 1000.0, 'archived_earnings': 0},
+      'wallet_summary': <String, dynamic>{'earned_revenue': done * 1000.0, 'pending_balance': 4000 - done * 1000.0, 'archived_earnings': 0},
     };
 
 Outbox _outbox(MemorySettings settings, [String owner = 'u1']) =>
@@ -96,8 +96,8 @@ void main() {
     final wallet = <String, dynamic>{
       'total_earned': 1000.0,
       'total_pending': 3000.0,
-      'tuition_breakdowns': [
-        {'tuition_id': 't1', 'total_classes': 4, 'completed_classes': 1, 'total_fee': 4000, 'earned': 1000.0},
+      'tuition_breakdowns': <dynamic>[
+        <String, dynamic>{'tuition_id': 't1', 'total_classes': 4, 'completed_classes': 1, 'total_fee': 4000, 'earned': 1000.0},
       ],
     };
     expect(setWalletProgress(wallet, 't1', 3), isTrue);
@@ -128,7 +128,12 @@ void main() {
         extra: {'target_name': 'Physics'},
         label: 'Homework',
       ));
-      final page = {'count': 1, 'results': [{'id': 'server-1', 'title': 'Old'}]};
+      final page = <String, dynamic>{
+        'count': 1,
+        'results': <dynamic>[
+          <String, dynamic>{'id': 'server-1', 'title': 'Old'},
+        ],
+      };
       box.applyTo('/api/v1/homework/?page_size=200', page);
       box.applyTo('/api/v1/homework/?page_size=200', page);
       final rows = page['results'] as List;
