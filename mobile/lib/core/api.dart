@@ -281,13 +281,13 @@ class ApiClient {
     } on ApiException catch (error) {
       if (error.isUnreachable) {
         _wentOffline();
-        if (hasSaved) return _saved(key!);
+        if (hasSaved) return _saved(key);
       }
       rethrow;
     }
     if (_unavailable.contains(response.statusCode)) {
       _wentOffline();
-      if (hasSaved) return _saved(key!);
+      if (hasSaved) return _saved(key);
     } else {
       _cameOnline();
     }

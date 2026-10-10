@@ -149,7 +149,7 @@ class _HomeworkTabState extends State<HomeworkTab> {
                 title: 'No homework found',
                 message: _filter == 'all'
                     ? 'Assign homework to a tuition or a student to get started.'
-                    : 'No ${_filter} homework right now.',
+                    : 'No $_filter homework right now.',
               )
             else
               for (final hw in filtered) ...[

@@ -145,7 +145,7 @@ class Repo {
   /// GET /my-tutors/ -> [{id, display_name, username, profile_picture(_url), tuitions, subjects}]
   Future<List<Json>> myTutors() => api.list('/my-tutors/');
 
-  /// GET /my-tutors/<id>/ -> {tutor, weekly_routine, upcoming_classes, homework}
+  /// `GET /my-tutors/{id}/` -> {tutor, weekly_routine, upcoming_classes, homework}
   Future<Json> tutorDetail(String tutorId) async => _map(await api.get('/my-tutors/$tutorId/'));
 
   /// POST /connections/by-code/ {tutor_code, message} -> {status, tutor_display_name, ...}

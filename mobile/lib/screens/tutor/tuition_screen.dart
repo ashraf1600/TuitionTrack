@@ -294,7 +294,7 @@ class _ClassesTab extends StatelessWidget {
                         firstDate: DateTime.now(),
                         lastDate: DateTime.now().add(const Duration(days: 365)),
                       );
-                      if (picked != null) {
+                      if (picked != null && dialogContext.mounted) {
                         final time = await showTimePicker(
                           context: dialogContext,
                           initialTime: TimeOfDay.fromDateTime(dueDate),

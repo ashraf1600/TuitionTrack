@@ -192,7 +192,7 @@ class PendingChange {
   final String kind;
   final String method;
 
-  /// API path below /api/v1, e.g. "/tuitions/<id>/mark_class/".
+  /// API path below /api/v1, e.g. `/tuitions/{id}/mark_class/`.
   final String path;
   final Map<String, dynamic> body;
 
