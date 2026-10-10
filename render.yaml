@@ -61,20 +61,22 @@ services:
       # - key: DJANGO_SUPERUSER_PASSWORD
       #   sync: false
 
-      # ── Optional: Supabase Storage (S3-compatible) for permanent file uploads ──
-      # If using Supabase Storage, uncomment and supply your credentials:
-      # - key: S3_BUCKET
-      #   value: tuitiontrack-media
-      # - key: S3_REGION
-      #   value: ap-southeast-1
-      # - key: S3_ENDPOINT_URL        # https://<ref>.storage.supabase.co/storage/v1/s3
-      #   sync: false
-      # - key: S3_PUBLIC_DOMAIN       # <ref>.supabase.co/storage/v1/object/public/tuitiontrack-media
-      #   sync: false
-      # - key: S3_ACCESS_KEY_ID       # Supabase → Storage → Settings → S3 access keys
-      #   sync: false
-      # - key: S3_SECRET_ACCESS_KEY
-      #   sync: false
+      # ── Supabase Storage (S3-compatible) for permanent file uploads ──
+      # Render's own disk is wiped on every deploy, so uploads live here instead.
+      # Fill the 6 values below in Dashboard → tuitiontrack-api → Environment
+      # (see project README "Media storage" for where each comes from in Supabase).
+      - key: S3_BUCKET
+        value: tuitiontrack-media
+      - key: S3_REGION
+        value: ap-southeast-1
+      - key: S3_ENDPOINT_URL        # https://<ref>.storage.supabase.co/storage/v1/s3
+        sync: false
+      - key: S3_PUBLIC_DOMAIN       # <ref>.supabase.co/storage/v1/object/public/tuitiontrack-media
+        sync: false
+      - key: S3_ACCESS_KEY_ID       # Supabase → Storage → Settings → S3 access keys
+        sync: false
+      - key: S3_SECRET_ACCESS_KEY
+        sync: false
 
   # ── Frontend Web App (React + Vite Single Page Application) ──
   - type: web
