@@ -53,8 +53,10 @@ class ExamEditorScreen extends StatefulWidget {
   State<ExamEditorScreen> createState() => _ExamEditorScreenState();
 }
 
-class _ExamEditorScreenState extends State<ExamEditorScreen> with SingleTickerProviderStateMixin {
-  late final TabController _tabs = TabController(length: 4, vsync: this);
+class _ExamEditorScreenState extends State<ExamEditorScreen> {
+  // One page of collapsible steps: 0 basic info, 1 questions, 2 extra rules, 3 results.
+  int _open = 0;
+  final _sectionKeys = List.generate(4, (_) => GlobalKey());
   final _title = TextEditingController();
   final _written = TextEditingController();
   final _totalMarks = TextEditingController(text: '100');
@@ -151,7 +153,6 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> with SingleTickerPr
 
   @override
   void dispose() {
-    _tabs.dispose();
     for (final c in [_title, _written, _totalMarks, _duration, _grace, _negative, _solution]) {
       c.dispose();
     }
@@ -164,10 +165,29 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> with SingleTickerPr
   num get _mcqTotal => _type == 'CQ' ? 0 : _mcq.fold<num>(0, (sum, q) => sum + q.number('points', 1));
   num get _writtenTotal => _type == 'MCQ' ? 0 : _scheme.fold<num>(0, (sum, row) => sum + (num.tryParse(row.marks.text.trim()) ?? 0));
 
-  bool _fail(String message, int tab) {
-    setState(() => _error = message);
-    _tabs.animateTo(tab);
+  bool _fail(String message, int section) {
+    setState(() {
+      _error = message;
+      _open = section;
+    });
+    _reveal(section);
     return false;
+  }
+
+  /// Opens [section] (closing the others) and scrolls it into view.
+  void _openSection(int section) {
+    setState(() => _open = _open == section ? -1 : section);
+    if (_open == section) _reveal(section);
+  }
+
+  void _reveal(int section) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await Future<void>.delayed(const Duration(milliseconds: 220)); // let the previous step fold away
+      final target = _sectionKeys[section].currentContext;
+      if (target != null && target.mounted) {
+        await Scrollable.ensureVisible(target, duration: const Duration(milliseconds: 250), alignment: 0.02);
+      }
+    });
   }
 
   bool _validate(bool publish) {
@@ -175,9 +195,9 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> with SingleTickerPr
     if (_title.text.trim().isEmpty) return _fail('Give the exam a title.', 0);
     if (_forGroup && _tuitionId == null) return _fail('Choose the tuition this is for.', 0);
     if (!_forGroup && _studentId == null) return _fail('Choose the student this is for.', 0);
-    if (total == null || total <= 0) return _fail('Enter the total marks.', 2);
-    if (!_end.isAfter(_start)) return _fail('The end time must be after the start time.', 2);
-    if (!_editing && !_end.isAfter(DateTime.now())) return _fail('The end time is already in the past.', 2);
+    if (total == null || total <= 0) return _fail('Enter the total marks.', 0);
+    if (!_end.isAfter(_start)) return _fail('The end time must be after the start time.', 0);
+    if (!_editing && !_end.isAfter(DateTime.now())) return _fail('The end time is already in the past.', 0);
     if (_lateUntil != null && !_lateUntil!.isAfter(_end)) return _fail('"Accept late work until" must be after the deadline.', 2);
     if (_type != 'MCQ' && _scheme.any((row) => (num.tryParse(row.marks.text.trim()) ?? 0) <= 0)) {
       return _fail('Every written question in the marking scheme needs marks above 0.', 1);
@@ -185,7 +205,7 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> with SingleTickerPr
     if (_mcqTotal + _writtenTotal > total) {
       return _fail(
         'MCQ marks (${trimNumber(_mcqTotal)}) plus written marks (${trimNumber(_writtenTotal)}) come to more than the total of ${trimNumber(total)}.',
-        2,
+        0,
       );
     }
     if (publish && _type == 'MCQ' && _mcq.isEmpty) return _fail('Add at least one question, or change the type to written.', 1);
@@ -311,116 +331,19 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> with SingleTickerPr
     showToast(context, 'Added ${items.length} written question${items.length == 1 ? '' : 's'}.');
   }
 
-  // ── Tabs ───────────────────────────────────────────────────────────────────
-
-  Widget _detailsTab() {
-    return PageBody(
-      children: [
-        TextField(
-          controller: _title,
-          textCapitalization: TextCapitalization.sentences,
-          decoration: const InputDecoration(labelText: 'Title', hintText: 'e.g. Chapter 3 quiz — Polynomials'),
-        ),
-        gap16,
-        Text('What is it?', style: TextStyle(fontWeight: FontWeight.w700)),
-        gap8,
-        SegmentedButton<String>(
-          segments: const [
-            ButtonSegment(value: 'EXAM', label: Text('Timed exam'), icon: Icon(Icons.timer_outlined)),
-            ButtonSegment(value: 'ASSIGNMENT', label: Text('Assignment'), icon: Icon(Icons.home_work_outlined)),
-          ],
-          selected: {_category},
-          onSelectionChanged: (value) => setState(() => _category = value.first),
-        ),
-        gap8,
-        Text(
-          _category == 'EXAM' ? 'Sat between a start and an end time, with an optional time limit per student.' : 'Homework with a deadline. No stopwatch.',
-          style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
-        ),
-        gap16,
-        Text('Question types', style: TextStyle(fontWeight: FontWeight.w700)),
-        gap8,
-        SegmentedButton<String>(
-          segments: const [
-            ButtonSegment(value: 'HYBRID', label: Text('Both')),
-            ButtonSegment(value: 'MCQ', label: Text('MCQ only')),
-            ButtonSegment(value: 'CQ', label: Text('Written only')),
-          ],
-          selected: {_type},
-          showSelectedIcon: false,
-          onSelectionChanged: (value) => setState(() => _type = value.first),
-        ),
-        gap8,
-        Text(
-          switch (_type) {
-            'MCQ' => 'Multiple choice only — marked automatically.',
-            'CQ' => 'Written (creative) questions only — you mark them.',
-            _ => 'Multiple choice (marked automatically) plus written questions (you mark them).',
-          },
-          style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
-        ),
-        gap16,
-        const Text('Who is it for?', style: TextStyle(fontWeight: FontWeight.w700)),
-        gap8,
-        SegmentedButton<bool>(
-          segments: const [
-            ButtonSegment(value: true, label: Text('A tuition'), icon: Icon(Icons.class_outlined)),
-            ButtonSegment(value: false, label: Text('One student'), icon: Icon(Icons.person_outline)),
-          ],
-          selected: {_forGroup},
-          onSelectionChanged: (value) => setState(() => _forGroup = value.first),
-        ),
-        gap12,
-        if (_forGroup)
-          _tuitions.isEmpty
-              ? const Text('You have no tuitions yet. Create one first, or choose one student.', style: TextStyle(color: AppColors.warning))
-              : DropdownButtonFormField<String>(
-                  key: ValueKey('group-$_tuitionId-${_tuitions.length}'),
-                  initialValue: _tuitions.any((t) => t.str('id') == _tuitionId) ? _tuitionId : null,
-                  isExpanded: true,
-                  decoration: const InputDecoration(labelText: 'Tuition'),
-                  items: [
-                    for (final t in _tuitions)
-                      DropdownMenuItem(value: t.str('id'), child: Text('${t.str('title')} (${t.integer('enrolled_count')} student${t.integer('enrolled_count') == 1 ? '' : 's'})', overflow: TextOverflow.ellipsis)),
-                  ],
-                  onChanged: (value) => setState(() => _tuitionId = value),
-                )
-        else
-          _students.isEmpty
-              ? const Text('You have no active students yet.', style: TextStyle(color: AppColors.warning))
-              : DropdownButtonFormField<String>(
-                  key: ValueKey('student-$_studentId-${_students.length}'),
-                  initialValue: _students.any((s) => s.str('id') == _studentId) ? _studentId : null,
-                  isExpanded: true,
-                  decoration: const InputDecoration(labelText: 'Student'),
-                  items: [
-                    for (final s in _students)
-                      DropdownMenuItem(value: s.str('id'), child: Text('${s.str('full_name')} (@${s.str('username')})', overflow: TextOverflow.ellipsis)),
-                  ],
-                  onChanged: (value) => setState(() => _studentId = value),
-                ),
-        gap24,
-        OutlinedButton.icon(
-          onPressed: () => _tabs.animateTo(1),
-          icon: const Icon(Icons.arrow_forward),
-          label: const Text('Next: questions'),
-        ),
-      ],
-    );
-  }
-
-  Widget _questionsTab() {
+  Widget _questionsSection() {
     final api = context.read<Session>().api;
     final total = num.tryParse(_totalMarks.text.trim()) ?? 0;
     final allocated = _mcqTotal + _writtenTotal;
     final preview = plainTextToHtml(_written.text);
     final needsPreview = _written.text.contains(r'$') || _written.text.contains(r'\') || _written.text.contains('[picture:');
-    return PageBody(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         if (_type != 'CQ') McqBuilder(questions: _mcq, onChanged: (value) => setState(() => _mcq = value)),
         if (_type != 'MCQ') ...[
           gap8,
-          const SectionTitle('Written questions', subtitle: 'Students type their answer or upload photos of their handwriting.'),
+          const _Label('Written questions', info: 'Students type their answer or upload photos of their handwriting.\n\nLeave a blank line between questions. Maths works as \$x^2\$, \\(x_1\\) or \$\$…\$\$.'),
           if (_keepPaper) ...[
             const Banner2(
               'This paper was formatted on the website (tables, bold or lists). It is kept exactly as it is. '
@@ -449,7 +372,6 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> with SingleTickerPr
               textCapitalization: TextCapitalization.sentences,
               decoration: const InputDecoration(
                 hintText: 'Q1. Prove that …\n\nQ2. Evaluate \$\$\\int_0^1 x^2\\,dx\$\$',
-                helperText: 'Leave a blank line between questions. Maths works as \$x^2\$, \\(x_1\\) or \$\$…\$\$.',
                 alignLabelWithHint: true,
               ),
             ),
@@ -485,9 +407,10 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> with SingleTickerPr
               ),
             ],
           ],
-          SectionTitle(
+          gap12,
+          _Label(
             'Marks per written question',
-            subtitle: 'Optional. List each question and its marks to mark them one by one. Leave empty to give one overall written mark.',
+            info: 'Optional. List each question and its marks to mark them one by one. Leave it empty to give one overall written mark.',
             trailing: TextButton.icon(
               onPressed: () => setState(() => _scheme.add(_SchemeRow(label: 'Q${_scheme.length + 1}'))),
               icon: const Icon(Icons.add, size: 18),
@@ -536,216 +459,320 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> with SingleTickerPr
     );
   }
 
-  Widget _dateTile(String label, DateTime? value, {required ValueChanged<DateTime> onPicked, VoidCallback? onClear, String? helper, String? empty}) {
-    return AppCard(
-      padding: EdgeInsets.zero,
-      child: ListTile(
-        leading: Icon(Icons.event_outlined),
-        title: Text(label, style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurfaceVariant)),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+  // ── Steps ──────────────────────────────────────────────────────────────────
+
+  String get _targetName {
+    if (_forGroup) {
+      final t = _tuitions.where((t) => t.str('id') == _tuitionId).firstOrNull;
+      return t?.str('title') ?? (_tuitions.isEmpty ? 'No tuitions yet' : 'Choose');
+    }
+    final s = _students.where((s) => s.str('id') == _studentId).firstOrNull;
+    return s == null ? (_students.isEmpty ? 'No students yet' : 'Choose') : (s.str('full_name').isNotEmpty ? s.str('full_name') : '@${s.str('username')}');
+  }
+
+  Future<void> _chooseTarget() async {
+    final picked = _forGroup
+        ? await pickFromSheet(
+            context,
+            title: 'Choose a tuition',
+            icon: Icons.class_outlined,
+            selected: _tuitionId,
+            options: [
+              for (final t in _tuitions)
+                (value: t.str('id'), label: t.str('title'), subtitle: '${t.integer('enrolled_count')} student${t.integer('enrolled_count') == 1 ? '' : 's'}'),
+            ],
+          )
+        : await pickFromSheet(
+            context,
+            title: 'Choose a student',
+            selected: _studentId,
+            options: [
+              for (final s in _students)
+                (value: s.str('id'), label: s.str('full_name').isNotEmpty ? s.str('full_name') : '@${s.str('username')}', subtitle: '@${s.str('username')}'),
+            ],
+          );
+    if (picked == null || !mounted) return;
+    setState(() {
+      if (_forGroup) {
+        _tuitionId = picked;
+      } else {
+        _studentId = picked;
+      }
+    });
+  }
+
+  Future<void> _pickInto(String label, DateTime? current, ValueChanged<DateTime> onPicked) async {
+    final picked = await pickDateTime(context, current ?? _end.add(const Duration(days: 1)), help: label);
+    if (picked != null) onPicked(picked);
+  }
+
+  Widget _chips<T>(List<(T, String)> options, T selected, ValueChanged<T> onSelect) {
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        for (final (value, label) in options)
+          ChoiceChip(
+            label: Text(label),
+            selected: value == selected,
+            showCheckmark: false,
+            visualDensity: VisualDensity.compact,
+            onSelected: (_) => setState(() => onSelect(value)),
+          ),
+      ],
+    );
+  }
+
+  Widget _basicSection() {
+    final isExam = _category == 'EXAM';
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        FlatGroup(children: [
+          FlatField(
+            controller: _title,
+            hint: 'Title, e.g. Chapter 3 quiz — Polynomials',
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+            onChanged: (_) => setState(() {}),
+          ),
+        ]),
+        gap12,
+        const _Label('Type', info: 'Timed exam: open between a start and an end time, with an optional time limit per student.\n\nAssignment: homework with a deadline and no stopwatch.'),
+        _chips<String>(const [('EXAM', 'Timed exam'), ('ASSIGNMENT', 'Assignment')], _category, (v) => _category = v),
+        gap12,
+        const _Label('Questions', info: 'MCQ: multiple choice, marked automatically.\n\nWritten: creative questions you mark yourself.\n\nBoth: a mix of the two.'),
+        _chips<String>(const [('HYBRID', 'Both'), ('MCQ', 'MCQ only'), ('CQ', 'Written only')], _type, (v) => _type = v),
+        gap12,
+        const _Label('For'),
+        _chips<bool>(const [(true, 'A tuition'), (false, 'One student')], _forGroup, (v) => _forGroup = v),
+        gap8,
+        FlatGroup(children: [
+          PickerRow(
+            leading: InitialAvatar(_targetName, radius: 14, icon: _forGroup ? Icons.class_outlined : null),
+            label: _forGroup ? 'Tuition' : 'Student',
+            value: _targetName,
+            onTap: (_forGroup ? _tuitions.isEmpty : _students.isEmpty) ? null : _chooseTarget,
+          ),
+          PickerRow(
+            leading: Icon(Icons.play_circle_outline, size: 22, color: tone(context, AppColors.primarySoft)),
+            label: 'Opens',
+            value: fmtDateTime(_start),
+            onTap: () => _pickInto('Opens', _start, (value) => setState(() {
+                  final length = _end.difference(_start);
+                  _start = value;
+                  if (!_end.isAfter(_start)) _end = _start.add(length.isNegative ? const Duration(hours: 1) : length);
+                })),
+          ),
+          PickerRow(
+            leading: Icon(Icons.flag_outlined, size: 22, color: tone(context, AppColors.primarySoft)),
+            label: isExam ? 'Closes' : 'Deadline',
+            value: fmtDateTime(_end),
+            onTap: () => _pickInto(isExam ? 'Closes' : 'Deadline', _end, (value) => setState(() => _end = value)),
+          ),
+          _NumberRow(label: 'Total marks', controller: _totalMarks, onChanged: () => setState(() {})),
+          if (isExam)
+            _NumberRow(
+              label: 'Time limit',
+              controller: _duration,
+              hint: 'No limit',
+              suffix: 'min',
+              info: "Each student's clock starts when they open the exam and never runs past the closing time. Leave empty for no limit.",
+            ),
+        ]),
+      ],
+    );
+  }
+
+  Widget _rulesSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        FlatGroup(children: [
+          PickerRow(
+            leading: Icon(Icons.schedule_send_outlined, size: 22, color: tone(context, AppColors.primarySoft)),
+            label: 'Late work until',
+            value: _lateUntil == null ? 'Not accepted' : fmtDateTime(_lateUntil),
+            onTap: () => _pickInto('Accept late work until', _lateUntil, (value) => setState(() => _lateUntil = value)),
+            trailing: _lateUntil == null
+                ? null
+                : IconButton(
+                    tooltip: 'Do not accept late work',
+                    visualDensity: VisualDensity.compact,
+                    icon: const Icon(Icons.close, size: 18),
+                    onPressed: () => setState(() => _lateUntil = null),
+                  ),
+          ),
+          _NumberRow(
+            label: 'Grace period',
+            controller: _grace,
+            suffix: 'min',
+            info: 'Extra minutes after the end for answers that are still uploading.',
+          ),
+          if (_type != 'CQ') ...[
+            _NumberRow(
+              label: 'Minus per wrong MCQ',
+              controller: _negative,
+              decimal: true,
+              info: '0 means no negative marking. Unanswered questions never lose marks.',
+            ),
+            SwitchListTile(
+              dense: true,
+              value: _shuffle,
+              onChanged: (value) => setState(() => _shuffle = value),
+              title: const Text('Shuffle MCQ order', style: TextStyle(fontSize: 14)),
+            ),
+          ],
+        ]),
+      ],
+    );
+  }
+
+  static const _resultModes = [
+    ('IMMEDIATE', 'On submit'),
+    ('CLOSE', 'When it closes'),
+    ('TIME', 'At a set time'),
+    ('MANUAL', 'When I publish'),
+  ];
+
+  Widget _resultsSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _Label(
+          'Students see results',
+          info: 'Until then a student who has submitted sees only “Results pending”: no marks, no correct answers, no solutions.\n\n'
+              'On submit: marks and answers appear the moment they hand in${_forGroup ? ' (someone who finishes early could pass the answers on)' : ''}.\n'
+              'When it closes: after the deadline and any late-work time.\n'
+              'At a set time: automatically at the date and time you choose.\n'
+              'When I publish: hidden until you press “Publish results”.'
+              '${_type != 'MCQ' ? '\n\nMCQs are marked automatically. A written part shows as “awaiting marking” until you mark it.' : ''}',
+        ),
+        _chips<String>(_resultModes, _resultsMode, (v) => _resultsMode = v),
+        if (_resultsMode == 'TIME') ...[
+          gap8,
+          FlatGroup(children: [
+            PickerRow(
+              leading: Icon(Icons.event_available_outlined, size: 22, color: tone(context, AppColors.primarySoft)),
+              label: 'Publish at',
+              value: _resultsAt == null ? 'Choose' : fmtDateTime(_resultsAt),
+              onTap: () => _pickInto('Publish results at', _resultsAt, (value) => setState(() => _resultsAt = value)),
+            ),
+          ]),
+        ],
+        gap12,
+        const _Label('Model solution', info: 'Optional. Students can read it once results are out.'),
+        FlatGroup(children: [
+          FlatField(controller: _solution, hint: 'Worked solutions. Maths works as \$x^2\$ or \$\$…\$\$.', minLines: 3, maxLines: 10),
+          if (_solutionMedia.isNotEmpty) ...[
+            Padding(padding: const EdgeInsets.all(12), child: ServerImage(_solutionMedia, label: 'solution sheet', height: 140)),
+            ListTile(
+              dense: true,
+              leading: Icon(Icons.delete_outline, color: tone(context, AppColors.danger)),
+              title: Text('Remove the solution sheet', style: TextStyle(color: tone(context, AppColors.danger))),
+              onTap: () => setState(() => _solutionMedia = ''),
+            ),
+          ] else
+            ListTile(
+              dense: true,
+              leading: const Icon(Icons.upload_file_outlined),
+              title: const Text('Attach a photo of the solution sheet'),
+              onTap: () async {
+                final urls = await pickAndUpload(context, multiple: false);
+                if (urls.isNotEmpty && mounted) setState(() => _solutionMedia = urls.first);
+              },
+            ),
+        ]),
+      ],
+    );
+  }
+
+  String get _basicSummary {
+    final title = _title.text.trim().isEmpty ? 'No title yet' : _title.text.trim();
+    return '$title · ${_category == 'EXAM' ? 'Timed exam' : 'Assignment'} · $_targetName';
+  }
+
+  String get _questionsSummary {
+    final parts = <String>[
+      if (_type != 'CQ') '${_mcq.length} MCQ',
+      if (_type != 'MCQ') _keepPaper || _written.text.trim().isNotEmpty ? 'written paper' : 'no written paper yet',
+    ];
+    return '${parts.join(' + ')} · ${trimNumber(_mcqTotal + _writtenTotal)} of ${_totalMarks.text.trim().isEmpty ? '?' : _totalMarks.text.trim()} marks';
+  }
+
+  String get _rulesSummary {
+    final parts = <String>[
+      if (_lateUntil != null) 'late work until ${fmtShortDate(_lateUntil)}',
+      'grace ${_grace.text.trim().isEmpty ? '0' : _grace.text.trim()} min',
+      if (_type != 'CQ' && (num.tryParse(_negative.text.trim()) ?? 0) > 0) 'negative marking',
+      if (_type != 'CQ' && _shuffle) 'shuffled',
+    ];
+    return parts.join(' · ');
+  }
+
+  String get _resultsSummary => _resultModes.firstWhere((m) => m.$1 == _resultsMode, orElse: () => _resultModes.last).$2;
+
+  Widget _step(int index, String title, String summary, Widget body, {bool done = false, bool optional = false}) {
+    final open = _open == index;
+    final last = index == 3;
+    return Padding(
+      key: _sectionKeys[index],
+      padding: const EdgeInsets.only(bottom: 10),
+      child: _Step(
+        number: index + 1,
+        title: title,
+        summary: summary,
+        open: open,
+        done: done,
+        optional: optional,
+        onToggle: () => _openSection(index),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text(value == null ? (empty ?? 'Not set') : fmtDateTime(value), style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: Theme.of(context).colorScheme.onSurface)),
-            if (helper != null) Text(helper, style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant)),
+            body,
+            if (!last) ...[
+              gap12,
+              Align(
+                alignment: Alignment.centerRight,
+                child: FilledButton.tonalIcon(
+                  onPressed: () {
+                    FocusScope.of(context).unfocus();
+                    setState(() => _open = index + 1);
+                    _reveal(index + 1);
+                  },
+                  icon: const Icon(Icons.arrow_downward, size: 18),
+                  label: const Text('Continue'),
+                ),
+              ),
+            ],
           ],
         ),
-        trailing: value != null && onClear != null
-            ? IconButton(tooltip: 'Clear', icon: const Icon(Icons.close), onPressed: onClear)
-            : const Icon(Icons.edit_calendar_outlined),
-        onTap: () async {
-          final picked = await pickDateTime(context, value ?? _end.add(const Duration(days: 1)), help: label);
-          if (picked != null) onPicked(picked);
-        },
       ),
-    );
-  }
-
-  Widget _scheduleTab() {
-    final isExam = _category == 'EXAM';
-    return PageBody(
-      children: [
-        _dateTile('Opens', _start, helper: 'Students cannot see the questions before this.', onPicked: (value) => setState(() {
-              final length = _end.difference(_start);
-              _start = value;
-              if (!_end.isAfter(_start)) _end = _start.add(length.isNegative ? const Duration(hours: 1) : length);
-            })),
-        gap8,
-        _dateTile(isExam ? 'Closes' : 'Deadline', _end, onPicked: (value) => setState(() => _end = value)),
-        gap12,
-        TextField(
-          controller: _totalMarks,
-          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          decoration: const InputDecoration(labelText: 'Total marks'),
-          onChanged: (_) => setState(() {}),
-        ),
-        if (isExam) ...[
-          gap12,
-          TextField(
-            controller: _duration,
-            keyboardType: TextInputType.number,
-            decoration: const InputDecoration(
-              labelText: 'Time limit per student (minutes)',
-              hintText: 'No limit — open until it closes',
-              helperText: "Each student's clock starts when they open the exam and never runs past the closing time.",
-            ),
-          ),
-        ],
-        gap12,
-        _dateTile(
-          'Accept late work until',
-          _lateUntil,
-          empty: 'Not accepted',
-          helper: 'Optional. After the deadline students can still hand in until then, marked "late".',
-          onPicked: (value) => setState(() => _lateUntil = value),
-          onClear: () => setState(() => _lateUntil = null),
-        ),
-        gap12,
-        TextField(
-          controller: _grace,
-          keyboardType: TextInputType.number,
-          decoration: const InputDecoration(
-            labelText: 'Grace period (minutes)',
-            helperText: 'Extra minutes after the end for answers to finish uploading.',
-          ),
-        ),
-        if (_type != 'CQ') ...[
-          gap12,
-          TextField(
-            controller: _negative,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            decoration: const InputDecoration(
-              labelText: 'Marks deducted per wrong MCQ',
-              helperText: '0 means no negative marking. Unanswered questions never lose marks.',
-            ),
-          ),
-          gap8,
-          SwitchListTile(
-            contentPadding: EdgeInsets.zero,
-            value: _shuffle,
-            onChanged: (value) => setState(() => _shuffle = value),
-            title: const Text('Shuffle MCQ order'),
-            subtitle: Text('Each student sees the questions in a different order.'),
-          ),
-        ],
-      ],
-    );
-  }
-
-  Widget _resultsTab() {
-    final options = [
-      (
-        'IMMEDIATE',
-        'As soon as each student submits',
-        _forGroup
-            ? 'Marks and correct answers appear the moment they hand in. In a tuition, someone who finishes early could pass the answers on.'
-            : 'Marks and correct answers appear the moment they hand in.',
-      ),
-      ('CLOSE', 'When the exam closes', 'After the deadline and any late-work time, when nobody can still be answering.'),
-      ('TIME', 'At a time I choose', 'Results come out automatically at the date and time you set.'),
-      ('MANUAL', 'When I publish them', 'Results stay hidden until you press “Publish results” on the exam.'),
-    ];
-    return PageBody(
-      children: [
-        const Text('When do students see their results?', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
-        const SizedBox(height: 4),
-        Text(
-          'Until then a student who has submitted sees only “Results pending” — no marks, no correct answers, no solutions.',
-          style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
-        ),
-        gap12,
-        RadioGroup<String>(
-          groupValue: _resultsMode,
-          onChanged: (value) => setState(() => _resultsMode = value ?? _resultsMode),
-          child: Column(
-            children: [
-              for (final (value, label, hint) in options)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: AppCard(
-                    padding: EdgeInsets.zero,
-                    borderColor: _resultsMode == value ? AppColors.primary : null,
-                    child: RadioListTile<String>(
-                      value: value,
-                      title: Text(label, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
-                      subtitle: Text(hint, style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13)),
-                    ),
-                  ),
-                ),
-            ],
-          ),
-        ),
-        if (_resultsMode == 'TIME')
-          _dateTile('Publish results at', _resultsAt, empty: 'Choose a date and time', onPicked: (value) => setState(() => _resultsAt = value)),
-        if (_type != 'MCQ')
-          Padding(
-            padding: EdgeInsets.only(top: 8),
-            child: Text(
-              'MCQs are marked automatically. A written part shows as “awaiting marking” until you have marked it.',
-              style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
-            ),
-          ),
-        const SectionTitle('Model solution (optional)', subtitle: 'Students can read it once results are out.'),
-        TextField(
-          controller: _solution,
-          maxLines: null,
-          minLines: 4,
-          decoration: const InputDecoration(hintText: 'Worked solutions. Maths works as \$x^2\$ or \$\$…\$\$.', alignLabelWithHint: true),
-        ),
-        gap12,
-        if (_solutionMedia.isNotEmpty) ...[
-          ServerImage(_solutionMedia, label: 'solution sheet'),
-          TextButton.icon(
-            onPressed: () => setState(() => _solutionMedia = ''),
-            icon: const Icon(Icons.delete_outline),
-            label: const Text('Remove the solution sheet'),
-            style: TextButton.styleFrom(foregroundColor: AppColors.danger),
-          ),
-        ] else
-          OutlinedButton.icon(
-            onPressed: () async {
-              final urls = await pickAndUpload(context, multiple: false);
-              if (urls.isNotEmpty && mounted) setState(() => _solutionMedia = urls.first);
-            },
-            icon: const Icon(Icons.upload_file_outlined),
-            label: const Text('Attach a photo of the solution sheet'),
-          ),
-      ],
     );
   }
 
   @override
   Widget build(BuildContext context) {
     final noun = _category == 'ASSIGNMENT' ? 'assignment' : 'exam';
+    final hasQuestions = (_type != 'CQ' && _mcq.isNotEmpty) || (_type != 'MCQ' && (_keepPaper || _written.text.trim().isNotEmpty));
     return Scaffold(
-      appBar: AppBar(
-        title: Text('${_editing ? 'Edit' : 'New'} $noun'),
-        bottom: TabBar(
-          controller: _tabs,
-          isScrollable: true,
-          tabAlignment: TabAlignment.start,
-          tabs: [
-            const Tab(text: 'Details'),
-            Tab(text: 'Questions${_type != 'CQ' && _mcq.isNotEmpty ? ' (${_mcq.length})' : ''}'),
-            const Tab(text: 'Schedule'),
-            const Tab(text: 'Results & solutions'),
-          ],
-        ),
-      ),
-      body: Column(
+      appBar: AppBar(title: Text('${_editing ? 'Edit' : 'New'} $noun')),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
         children: [
-          if (_error != null)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-              child: Banner2(
-                _error!,
-                color: AppColors.danger,
-                icon: Icons.error_outline,
-                action: InkWell(onTap: () => setState(() => _error = null), child: const Icon(Icons.close, size: 18, color: AppColors.danger)),
-              ),
+          if (_error != null) ...[
+            Banner2(
+              _error!,
+              color: AppColors.danger,
+              icon: Icons.error_outline,
+              action: InkWell(onTap: () => setState(() => _error = null), child: Icon(Icons.close, size: 18, color: tone(context, AppColors.danger))),
             ),
-          Expanded(
-            child: TabBarView(controller: _tabs, children: [_detailsTab(), _questionsTab(), _scheduleTab(), _resultsTab()]),
-          ),
+            gap12,
+          ],
+          _step(0, 'Basic info', _basicSummary, _basicSection(),
+              done: _title.text.trim().isNotEmpty && (_forGroup ? _tuitionId != null : _studentId != null)),
+          _step(1, 'Questions', _questionsSummary, _questionsSection(), done: hasQuestions),
+          _step(2, 'Extra rules', _rulesSummary, _rulesSection(), optional: true),
+          _step(3, 'Results & solution', _resultsSummary, _resultsSection(), done: true),
         ],
       ),
       bottomNavigationBar: SafeArea(
@@ -754,7 +781,7 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> with SingleTickerPr
           child: Row(
             children: [
               if (!_wasPublished) ...[
-                Expanded(child: OutlinedButton(onPressed: _saving ? null : () => _save(false), child: const Text('Save as draft'))),
+                Expanded(child: OutlinedButton(onPressed: _saving ? null : () => _save(false), child: const Text('Save draft'))),
                 const SizedBox(width: 12),
               ],
               Expanded(
@@ -769,6 +796,168 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> with SingleTickerPr
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// One collapsible step of the form: a numbered header that shows a one-line
+/// summary while folded, and the step's fields while open.
+class _Step extends StatelessWidget {
+  const _Step({
+    required this.number,
+    required this.title,
+    required this.summary,
+    required this.open,
+    required this.done,
+    required this.optional,
+    required this.onToggle,
+    required this.child,
+  });
+  final int number;
+  final String title;
+  final String summary;
+  final bool open;
+  final bool done;
+  final bool optional;
+  final VoidCallback onToggle;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final accent = done && !open ? AppColors.chartEarned : AppColors.primary;
+    return Material(
+      color: open ? scheme.surface : scheme.surface.withValues(alpha: 0.6),
+      borderRadius: BorderRadius.circular(16),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          InkWell(
+            onTap: onToggle,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
+              child: Row(
+                children: [
+                  Container(
+                    width: 26,
+                    height: 26,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: open || done ? accent : Colors.transparent,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: open || done ? accent : scheme.outlineVariant),
+                    ),
+                    child: done && !open
+                        ? const Icon(Icons.check, size: 15, color: Colors.white)
+                        : Text('$number',
+                            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: open ? Colors.white : scheme.onSurfaceVariant)),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Text(title, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
+                            if (optional) Text('  optional', style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
+                          ],
+                        ),
+                        if (!open && summary.isNotEmpty)
+                          Text(summary, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
+                      ],
+                    ),
+                  ),
+                  AnimatedRotation(
+                    turns: open ? 0.5 : 0,
+                    duration: const Duration(milliseconds: 200),
+                    child: Icon(Icons.expand_more, color: scheme.onSurfaceVariant),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          AnimatedSize(
+            duration: const Duration(milliseconds: 200),
+            curve: Curves.easeOut,
+            alignment: Alignment.topCenter,
+            child: open
+                ? Padding(padding: const EdgeInsets.fromLTRB(14, 0, 14, 14), child: child)
+                : const SizedBox(width: double.infinity),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A small field label with an optional (i) for the explanation.
+class _Label extends StatelessWidget {
+  const _Label(this.text, {this.info, this.trailing});
+  final String text;
+  final String? info;
+  final Widget? trailing;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 2, bottom: 4),
+      child: Row(
+        children: [
+          Text(text, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Theme.of(context).colorScheme.onSurfaceVariant)),
+          if (info != null) InfoTip(info!, title: text) else const SizedBox(height: 36),
+          const Spacer(),
+          if (trailing != null) trailing!,
+        ],
+      ),
+    );
+  }
+}
+
+/// A label and a short number field on one row, inside a [FlatGroup].
+class _NumberRow extends StatelessWidget {
+  const _NumberRow({required this.label, required this.controller, this.hint, this.suffix, this.info, this.decimal = false, this.onChanged});
+  final String label;
+  final TextEditingController controller;
+  final String? hint;
+  final String? suffix;
+  final String? info;
+  final bool decimal;
+  final VoidCallback? onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    const none = InputBorder.none;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
+      child: Row(
+        children: [
+          Text(label, style: TextStyle(fontSize: 14, color: scheme.onSurfaceVariant)),
+          if (info != null) InfoTip(info!, title: label),
+          const SizedBox(width: 8),
+          Expanded(
+            child: TextField(
+              controller: controller,
+              textAlign: TextAlign.right,
+              keyboardType: TextInputType.numberWithOptions(decimal: decimal),
+              onChanged: onChanged == null ? null : (_) => onChanged!(),
+              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+              decoration: InputDecoration(
+                hintText: hint,
+                suffixText: suffix,
+                filled: false,
+                isDense: true,
+                contentPadding: const EdgeInsets.symmetric(vertical: 14),
+                border: none,
+                enabledBorder: none,
+                focusedBorder: none,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
