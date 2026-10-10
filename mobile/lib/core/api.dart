@@ -360,12 +360,12 @@ class ApiClient {
     }
   }
 
-  /// Uploads one picture or PDF and returns its stored address (relative, e.g. "/media/uploads/…").
-  Future<String> upload(Uint8List bytes, String filename) async {
+  /// Sends one file as multipart form data (one field) and returns the decoded answer.
+  Future<dynamic> _multipart(String path, String field, Uint8List bytes, String filename) async {
     Future<http.Response> attempt() async {
-      final request = http.MultipartRequest('POST', _uri('/media/upload/'))
+      final request = http.MultipartRequest('POST', _uri(path))
         ..headers.addAll(_headers(json: false))
-        ..files.add(http.MultipartFile.fromBytes('file', bytes, filename: filename, contentType: _mediaType(filename)));
+        ..files.add(http.MultipartFile.fromBytes(field, bytes, filename: filename, contentType: _mediaType(filename)));
       try {
         return await http.Response.fromStream(await _http.send(request).timeout(const Duration(seconds: 90)));
       } on TimeoutException {
@@ -377,7 +377,12 @@ class ApiClient {
 
     var response = await attempt();
     if (response.statusCode == 401 && hasSession && await _renew()) response = await attempt();
-    final data = _decode(response);
+    return _decode(response);
+  }
+
+  /// Uploads one picture or PDF and returns its stored address (relative, e.g. "/media/uploads/…").
+  Future<String> upload(Uint8List bytes, String filename) async {
+    final data = await _multipart('/media/upload/', 'file', bytes, filename);
     final url = data is Map ? data['url'] : null;
     if (url is! String || !(url.startsWith('/media/') || url.startsWith('http://') || url.startsWith('https://'))) {
       throw ApiException(
@@ -387,6 +392,10 @@ class ApiClient {
     }
     return url;
   }
+
+  /// Sets the signed-in user's profile photo; answers with the updated profile.
+  Future<dynamic> uploadProfilePhoto(Uint8List bytes, String filename) =>
+      _multipart('/auth/me/photo/', 'photo', bytes, filename);
 
   static MediaType _mediaType(String filename) {
     final name = filename.toLowerCase();

@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'api.dart';
 import 'connect.dart';
 import 'offline.dart';
@@ -66,6 +68,8 @@ class Repo {
   // ── Account ────────────────────────────────────────────────────────────────
   Future<Json> meta() async => _map(await api.get('/meta/'));
   Future<Json> updateMe(Json changes) async => _map(await api.patch('/auth/me/', changes));
+  Future<Json> setProfilePhoto(Uint8List bytes, String filename) async => _map(await api.uploadProfilePhoto(bytes, filename));
+  Future<Json> removeProfilePhoto() async => _map(await api.delete('/auth/me/photo/'));
   Future<String> requestPasswordReset(String identifier) async =>
       _map(await api.post('/auth/password-reset/', {'identifier': identifier}))['message'] as String? ?? '';
   Future<List<Json>> tutors([String search = '']) => api.list('/auth/tutors/', query: {'search': search});

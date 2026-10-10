@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/api.dart';
@@ -10,7 +11,9 @@ import '../../widgets/password_field.dart';
 import '../../widgets/theme.dart';
 import '../../widgets/ui.dart';
 
-/// The signed-in person's own details, password and sign-out.
+/// The signed-in person's own details on one screen: a header with photo, name
+/// and invite code, a flat settings-style list of fields (saved from the app
+/// bar), and the password and sign-out actions underneath.
 class AccountScreen extends StatefulWidget {
   const AccountScreen({super.key});
 
@@ -21,21 +24,42 @@ class AccountScreen extends StatefulWidget {
 class _AccountScreenState extends State<AccountScreen> {
   final _form = GlobalKey<FormState>();
   final _c = <String, TextEditingController>{};
-  static const _userFields = ['first_name', 'last_name', 'email', 'phone'];
+  final _initial = <String, String>{};
   static const _profileFields = ['grade_level', 'institution', 'address', 'parent_name', 'parent_phone'];
+  bool _saving = false;
+  bool _photoBusy = false;
 
   @override
   void initState() {
     super.initState();
-    final user = context.read<Session>().user ?? {};
-    final profile = user.obj('profile') ?? {};
-    for (final field in _userFields) {
-      _c[field] = TextEditingController(text: user.str(field));
-    }
-    for (final field in _profileFields) {
-      _c[field] = TextEditingController(text: profile.str(field));
+    _fill(context.read<Session>().user ?? {});
+    for (final controller in _c.values) {
+      controller.addListener(_changed);
     }
   }
+
+  void _fill(Json user) {
+    final profile = user.obj('profile') ?? {};
+    final values = <String, String>{
+      'full_name': [user.str('first_name'), user.str('last_name')].where((p) => p.trim().isNotEmpty).join(' '),
+      'email': user.str('email'),
+      'phone': user.str('phone'),
+      for (final field in _profileFields) field: profile.str(field),
+    };
+    values.forEach((field, value) {
+      _initial[field] = value;
+      final controller = _c[field];
+      if (controller == null) {
+        _c[field] = TextEditingController(text: value);
+      } else if (controller.text != value) {
+        controller.text = value;
+      }
+    });
+  }
+
+  void _changed() => setState(() {});
+
+  bool get _dirty => _c.entries.any((e) => e.value.text.trim() != (_initial[e.key] ?? '').trim());
 
   @override
   void dispose() {
@@ -47,18 +71,89 @@ class _AccountScreenState extends State<AccountScreen> {
 
   Future<void> _save() async {
     if (!checkForm(context, _form)) return;
+    FocusScope.of(context).unfocus();
     final session = context.read<Session>();
     final repo = context.read<Repo>();
-    final changes = <String, dynamic>{for (final field in _userFields) field: _c[field]!.text.trim()};
+    // "Full name" is stored as first name (the first word) and last name (the rest).
+    final name = _c['full_name']!.text.trim().replaceAll(RegExp(r'\s+'), ' ');
+    final space = name.indexOf(' ');
+    final changes = <String, dynamic>{
+      'first_name': space < 0 ? name : name.substring(0, space),
+      'last_name': space < 0 ? '' : name.substring(space + 1),
+      'email': _c['email']!.text.trim(),
+      'phone': _c['phone']!.text.trim(),
+    };
     if (session.isStudent) {
       for (final field in _profileFields) {
         changes[field] = _c[field]!.text.trim();
       }
     }
-    await attempt(context, () async {
+    setState(() => _saving = true);
+    final ok = await attempt(context, () async {
       await repo.updateMe(changes);
       await session.refreshUser();
-    }, success: 'Your details have been saved.');
+    }, success: 'Saved.');
+    if (!mounted) return;
+    if (ok) _fill(session.user ?? {});
+    setState(() => _saving = false);
+  }
+
+  Future<void> _photo(bool hasPhoto) async {
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(leading: const Icon(Icons.photo_camera_outlined), title: const Text('Take a photo'), onTap: () => Navigator.pop(context, 'camera')),
+            ListTile(leading: const Icon(Icons.photo_library_outlined), title: const Text('Choose from gallery'), onTap: () => Navigator.pop(context, 'gallery')),
+            if (hasPhoto)
+              ListTile(
+                leading: Icon(Icons.delete_outline, color: tone(context, AppColors.danger)),
+                title: Text('Remove photo', style: TextStyle(color: tone(context, AppColors.danger))),
+                onTap: () => Navigator.pop(context, 'remove'),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (choice == null || !mounted) return;
+    final session = context.read<Session>();
+    final repo = context.read<Repo>();
+    if (choice == 'remove') {
+      setState(() => _photoBusy = true);
+      await attempt(context, () async {
+        await repo.removeProfilePhoto();
+        await session.refreshUser();
+      }, success: 'Photo removed.');
+      if (mounted) setState(() => _photoBusy = false);
+      return;
+    }
+    XFile? file;
+    try {
+      // A profile photo is shown small: 800 px is plenty and keeps the upload quick.
+      file = await ImagePicker().pickImage(
+        source: choice == 'camera' ? ImageSource.camera : ImageSource.gallery,
+        preferredCameraDevice: CameraDevice.front,
+        maxWidth: 800,
+        maxHeight: 800,
+        imageQuality: 85,
+      );
+    } catch (_) {
+      if (mounted) showToast(context, 'Could not open the camera or gallery. Check the app permissions.', error: true);
+      return;
+    }
+    final picked = file;
+    if (picked == null || !mounted) return;
+    setState(() => _photoBusy = true);
+    await attempt(context, () async {
+      final bytes = await picked.readAsBytes();
+      var name = picked.name.toLowerCase();
+      if (!RegExp(r'\.(png|jpe?g|webp)$').hasMatch(name)) name = '$name.jpg';
+      await repo.setProfilePhoto(bytes, name);
+      await session.refreshUser();
+    }, success: 'Photo updated. Your students see it next to your name.');
+    if (mounted) setState(() => _photoBusy = false);
   }
 
   Future<void> _changePassword() async {
@@ -86,137 +181,253 @@ class _AccountScreenState extends State<AccountScreen> {
     });
   }
 
-  Widget _field(String name, String label, {TextInputType? type, String? Function(String?)? validator, int maxLines = 1}) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: TextFormField(
-        controller: _c[name],
-        keyboardType: type,
-        maxLines: maxLines,
-        textCapitalization: type == null ? TextCapitalization.words : TextCapitalization.none,
-        decoration: InputDecoration(labelText: label),
-        validator: validator,
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final session = context.watch<Session>();
     final user = session.user ?? {};
+    final scheme = Theme.of(context).colorScheme;
+    final dirty = _dirty;
     return Scaffold(
-      appBar: AppBar(title: Text('My account')),
+      appBar: AppBar(
+        title: const Text('My account'),
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: _saving
+                ? const Padding(padding: EdgeInsets.all(14), child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)))
+                : TextButton(onPressed: dirty ? _save : null, child: const Text('Save', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16))),
+          ),
+        ],
+      ),
       body: Form(
         key: _form,
         child: PageBody(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
           children: [
-            AppCard(
-              child: Row(
-                children: [
-                  CircleAvatar(
-                    radius: 26,
-                    backgroundColor: AppColors.primary.withValues(alpha: 0.25),
-                    child: Text(
-                      session.displayName.isEmpty ? '?' : session.displayName[0].toUpperCase(),
-                      style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: AppColors.primarySoft),
-                    ),
-                  ),
-                  SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(session.displayName, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
-                        Text('@${user.str('username')} · ${session.isTutor ? 'Tutor' : 'Student'}', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant)),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            SectionTitle('My details'),
-            if (session.isTutor && (user.str('tutor_code').isNotEmpty)) ...[
-              AppCard(
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text('MY STUDENT INVITE CODE',
-                              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.primarySoft)),
-                          const SizedBox(height: 4),
-                          Text(user.str('tutor_code'),
-                              style: const TextStyle(
-                                  fontSize: 22, fontWeight: FontWeight.w900, letterSpacing: 3, color: AppColors.primarySoft)),
-                          const Text('Students enter this code to request connection with you.',
-                              style: TextStyle(color: AppColors.muted, fontSize: 12)),
-                        ],
-                      ),
-                    ),
-                    IconButton(
-                      tooltip: 'Copy invite code',
-                      icon: const Icon(Icons.copy, color: AppColors.primarySoft),
-                      onPressed: () async {
-                        HapticFeedback.lightImpact();
-                        await Clipboard.setData(ClipboardData(text: user.str('tutor_code')));
-                        if (context.mounted) showToast(context, 'Invite code copied.');
-                      },
-                    ),
-                  ],
-                ),
-              ),
-              gap12,
-            ],
-            _field('first_name', 'First name', validator: (v) => (v == null || v.trim().isEmpty) ? 'Required' : null),
-            _field('last_name', 'Last name'),
-            _field('email', 'Email', type: TextInputType.emailAddress, validator: (value) {
-              final text = (value ?? '').trim();
-              if (text.isEmpty) return null;
-              return RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(text) ? null : 'Enter a valid email address';
-            }),
-            _field('phone', 'Phone', type: TextInputType.phone),
-            if (session.isStudent) ...[
-              _field('grade_level', 'Class / grade'),
-              _field('institution', 'School / college'),
-              _field('address', 'Address'),
-              _field('parent_name', 'Guardian name'),
-              _field('parent_phone', 'Guardian phone', type: TextInputType.phone),
-            ],
-            BusyButton(onPressed: _save, label: 'Save details', icon: Icons.check),
-            SectionTitle('Security'),
-            AppCard(
-              padding: EdgeInsets.zero,
-              child: Column(
-                children: [
-                  ListTile(
-                    leading: const Icon(Icons.lock_outline),
-                    title: const Text('Change password'),
-                    subtitle: const Text('Signs your other devices out'),
-                    trailing: const Icon(Icons.chevron_right),
-                    onTap: _changePassword,
-                  ),
-                  const Divider(),
-                  ListTile(
-                    leading: const Icon(Icons.devices_other_outlined),
-                    title: const Text('Sign out on all devices'),
-                    trailing: const Icon(Icons.chevron_right),
-                    onTap: _signOutEverywhere,
-                  ),
-                  const Divider(),
-                  ListTile(
-                    leading: const Icon(Icons.logout, color: AppColors.danger),
-                    title: Text('Sign out', style: TextStyle(color: AppColors.danger)),
-                    onTap: () => session.logout(),
-                  ),
-                ],
-              ),
+            _Header(
+              user: user,
+              name: session.displayName,
+              isTutor: session.isTutor,
+              photoBusy: _photoBusy,
+              onPhoto: session.isTutor ? () => _photo(user.str('profile_picture_url').isNotEmpty) : null,
             ),
             gap16,
-            Text('Server: ${session.api.baseUrl}', textAlign: TextAlign.center, style: TextStyle(color: Theme.of(context).colorScheme.outlineVariant, fontSize: 12)),
+            FlatGroup(children: [
+              _FieldRow(
+                label: 'Full name',
+                controller: _c['full_name']!,
+                capitalization: TextCapitalization.words,
+                validator: (v) => (v == null || v.trim().isEmpty) ? 'Required' : null,
+              ),
+              _FieldRow(
+                label: 'Email',
+                controller: _c['email']!,
+                type: TextInputType.emailAddress,
+                hint: 'Optional',
+                validator: (value) {
+                  final text = (value ?? '').trim();
+                  if (text.isEmpty) return null;
+                  return RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(text) ? null : 'Enter a valid email address';
+                },
+              ),
+              _FieldRow(label: 'Phone', controller: _c['phone']!, type: TextInputType.phone, hint: 'Optional'),
+              if (session.isStudent) ...[
+                _FieldRow(label: 'Class', controller: _c['grade_level']!, hint: 'e.g. Class 10'),
+                _FieldRow(label: 'School', controller: _c['institution']!, capitalization: TextCapitalization.words),
+                _FieldRow(label: 'Address', controller: _c['address']!, capitalization: TextCapitalization.words),
+                _FieldRow(label: 'Guardian', controller: _c['parent_name']!, capitalization: TextCapitalization.words),
+                _FieldRow(label: 'Guardian phone', controller: _c['parent_phone']!, type: TextInputType.phone),
+              ],
+            ]),
+            gap16,
+            FlatGroup(children: [
+              _ActionRow(icon: Icons.lock_outline, label: 'Change password', onTap: _changePassword),
+              _ActionRow(icon: Icons.devices_other_outlined, label: 'Sign out on all devices', onTap: _signOutEverywhere),
+              _ActionRow(icon: Icons.logout, label: 'Sign out', danger: true, onTap: () => session.logout()),
+            ]),
+            if (dirty) ...[
+              gap12,
+              Text('You have unsaved changes. Tap Save at the top.',
+                  textAlign: TextAlign.center, style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
+            ],
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Photo, name, role and (for tutors) the invite code with a copy button.
+class _Header extends StatelessWidget {
+  const _Header({required this.user, required this.name, required this.isTutor, required this.photoBusy, this.onPhoto});
+  final Json user;
+  final String name;
+  final bool isTutor;
+  final bool photoBusy;
+  final VoidCallback? onPhoto;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final photo = context.read<Session>().api.mediaUrl(user.str('profile_picture_url'));
+    final initial = Text(
+      name.isEmpty ? '?' : name.characters.first.toUpperCase(),
+      style: TextStyle(fontSize: 26, fontWeight: FontWeight.w800, color: tone(context, AppColors.primarySoft)),
+    );
+    final code = user.str('tutor_code');
+    return Row(
+      children: [
+        Semantics(
+          button: onPhoto != null,
+          label: onPhoto == null ? 'Profile picture' : 'Change profile photo',
+          child: GestureDetector(
+            onTap: photoBusy ? null : onPhoto,
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                CircleAvatar(
+                  radius: 34,
+                  backgroundColor: AppColors.primary.withValues(alpha: 0.22),
+                  child: ClipOval(
+                    child: SizedBox.square(
+                      dimension: 68,
+                      child: photoBusy
+                          ? const Padding(padding: EdgeInsets.all(22), child: CircularProgressIndicator(strokeWidth: 2))
+                          : photo.isEmpty
+                              ? Center(child: initial)
+                              : Image.network(photo, fit: BoxFit.cover, errorBuilder: (_, _, _) => Center(child: initial)),
+                    ),
+                  ),
+                ),
+                if (onPhoto != null)
+                  Positioned(
+                    right: -2,
+                    bottom: -2,
+                    child: Container(
+                      padding: const EdgeInsets.all(5),
+                      decoration: BoxDecoration(
+                        color: AppColors.primary,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Theme.of(context).scaffoldBackgroundColor, width: 2),
+                      ),
+                      child: const Icon(Icons.photo_camera, size: 13, color: Colors.white),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(width: 16),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w800)),
+              Text('@${user.str('username')} · ${isTutor ? 'Tutor' : 'Student'}', style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant)),
+              if (isTutor && code.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(8),
+                    onTap: () async {
+                      HapticFeedback.lightImpact();
+                      await Clipboard.setData(ClipboardData(text: code));
+                      if (context.mounted) showToast(context, 'Invite code copied. Students enter it to connect with you.');
+                    },
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 2),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text('Invite code ', style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
+                          Text(code,
+                              style: TextStyle(
+                                  fontSize: 14, fontWeight: FontWeight.w800, letterSpacing: 2, color: tone(context, AppColors.primarySoft))),
+                          const SizedBox(width: 6),
+                          Icon(Icons.copy_rounded, size: 15, color: scheme.onSurfaceVariant),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _FieldRow extends StatelessWidget {
+  const _FieldRow({
+    required this.label,
+    required this.controller,
+    this.type,
+    this.hint,
+    this.validator,
+    this.capitalization = TextCapitalization.none,
+  });
+  final String label;
+  final TextEditingController controller;
+  final TextInputType? type;
+  final String? hint;
+  final String? Function(String?)? validator;
+  final TextCapitalization capitalization;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    const none = InputBorder.none;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 2, 12, 2),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          SizedBox(width: 104, child: Text(label, style: TextStyle(fontSize: 14, color: scheme.onSurfaceVariant))),
+          Expanded(
+            child: TextFormField(
+              controller: controller,
+              keyboardType: type,
+              textCapitalization: capitalization,
+              validator: validator,
+              style: const TextStyle(fontSize: 15),
+              decoration: InputDecoration(
+                hintText: hint,
+                filled: false,
+                isDense: true,
+                contentPadding: const EdgeInsets.symmetric(vertical: 14),
+                border: none,
+                enabledBorder: none,
+                focusedBorder: none,
+                errorBorder: none,
+                focusedErrorBorder: none,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ActionRow extends StatelessWidget {
+  const _ActionRow({required this.icon, required this.label, required this.onTap, this.danger = false});
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  final bool danger;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final color = danger ? tone(context, AppColors.danger) : scheme.onSurface;
+    return ListTile(
+      dense: true,
+      visualDensity: VisualDensity.compact,
+      leading: Icon(icon, size: 20, color: danger ? color : scheme.onSurfaceVariant),
+      title: Text(label, style: TextStyle(fontSize: 15, color: color)),
+      trailing: danger ? null : Icon(Icons.chevron_right, size: 20, color: scheme.onSurfaceVariant),
+      onTap: onTap,
     );
   }
 }
