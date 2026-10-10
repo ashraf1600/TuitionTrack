@@ -618,6 +618,13 @@ class ExamCreateUpdateSerializer(serializers.ModelSerializer):
             return ''
         return sanitize_exam_html(value)
 
+    def validate_solution_media_url(self, value):
+        """Shown to students as a link: only a stored file (/media/…) or a web address."""
+        value = (value or '').strip()
+        if value and not (value.startswith('/media/') or value.lower().startswith(('http://', 'https://'))):
+            raise serializers.ValidationError('Use an uploaded file or a link that starts with https://.')
+        return value
+
     def validate_written_scheme(self, value):
         """Normalise to [{id, label, marks}] with server-made ids and positive marks."""
         import uuid

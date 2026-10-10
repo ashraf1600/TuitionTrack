@@ -353,3 +353,17 @@ class SettingsHardeningTests(AuditBase):
         data = self.client.get('/api/v1/meta/').data
         self.assertEqual(data['uploads']['extensions'], ['.jpeg', '.jpg', '.pdf', '.png', '.webp'])
 
+
+
+class SolutionLinkTests(AuditBase):
+    def test_solution_link_must_be_a_file_or_web_address(self):
+        self.as_user(self.tutor)
+        now = timezone.now()
+        payload = {
+            'title': 'Quiz', 'exam_type': 'CQ', 'tuition_id': str(self.tuition.id),
+            'start_time': (now + timedelta(hours=1)).isoformat(), 'end_time': (now + timedelta(hours=2)).isoformat(),
+        }
+        bad = self.client.post('/api/v1/exams/', {**payload, 'solution_media_url': 'javascript:alert(1)'}, format='json')
+        self.assertEqual(bad.status_code, status.HTTP_400_BAD_REQUEST)
+        good = self.client.post('/api/v1/exams/', {**payload, 'solution_media_url': '/media/uploads/a.pdf'}, format='json')
+        self.assertEqual(good.status_code, status.HTTP_201_CREATED, good.data)
