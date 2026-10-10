@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
-  Clock, CheckCircle2, AlertTriangle, ExternalLink, Send, Loader2,
-  BookOpen, X, Bell, ChevronDown, ChevronUp,
+  Clock, CheckCircle2, ExternalLink, Send, Loader2,
+  BookOpen, X, Bell, ChevronDown, ChevronUp
 } from 'lucide-react';
 import { api } from '../../api/client';
 import { notify } from '../../utils/toast';
@@ -142,9 +142,9 @@ export default function HomeworkCard({ homework, isTutor = false, onUpdated }) {
     try {
       const res = await api.submitHomework(homework.id, submitUrl.trim());
       notify.success('Submission recorded!');
-      onUpdated?.(res.homework);
+      onUpdated?.(res.homework, homework.id);
     } catch (err) {
-      notify(`Submission failed: ${err.message}`);
+      notify.error(`Submission failed: ${err.message}`);
     } finally {
       setSubmitting(false);
     }
@@ -156,9 +156,9 @@ export default function HomeworkCard({ homework, isTutor = false, onUpdated }) {
     try {
       const res = await api.markHomeworkDone(homework.id, feedbackInput.trim());
       notify.success('Homework marked as done!');
-      onUpdated?.(res.homework);
+      onUpdated?.(res.homework, homework.id);
     } catch (err) {
-      notify(`Error: ${err.message}`);
+      notify.error(`Error: ${err.message}`);
     } finally {
       setMarkingDone(false);
     }
@@ -233,7 +233,7 @@ export default function HomeworkCard({ homework, isTutor = false, onUpdated }) {
             <Clock className="w-3 h-3" />
             Due: {new Date(homework.due_date).toLocaleString(undefined, {
               weekday: 'short', month: 'short', day: 'numeric',
-              hour: 'numeric', minute: '2-digit',
+              hour: 'numeric', minute: '2-digit'
             })}
           </div>
 

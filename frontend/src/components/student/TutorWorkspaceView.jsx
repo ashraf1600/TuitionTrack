@@ -1,13 +1,14 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   ArrowLeft, GraduationCap, Calendar, BookOpen, Clock,
-  Loader2, RefreshCw, AlertCircle, CheckCircle2, Layers,
-  FileText, Award, HelpCircle, Check, Timer
+  Loader2, RefreshCw, AlertCircle, Layers,
+  FileText, Award, Check
 } from 'lucide-react';
 import { api, getMediaUrl } from '../../api/client';
 import StudentCycleProgress from './StudentCycleProgress';
 import HomeworkCard from './HomeworkCard';
 import ExamCard from './ExamCard';
+import { useNow } from '../../hooks/useNow';
 
 const TABS = [
   { key: 'routine', label: '1. Class Routine', shortLabel: 'Class Routine', icon: Clock },
@@ -63,6 +64,7 @@ export default function TutorWorkspaceView({
   const [weeklyRoutine, setWeeklyRoutine] = useState([]);
   const [taskFilter, setTaskFilter] = useState('all'); // 'all' | 'homework' | 'assignments' | 'exams'
   const [selectedBatchId, setSelectedBatchId] = useState(null);
+  const now = useNow(60_000);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -83,8 +85,11 @@ export default function TutorWorkspaceView({
     load();
   }, [load]);
 
-  const handleHomeworkUpdate = (updated) => {
-    setHomework((prev) => prev.map((h) => (h.id === updated.id ? updated : h)));
+  // On a shared group task the server answers with the student's own copy (a new id),
+  // so the row is replaced by the id that was submitted, not the one that came back.
+  const handleHomeworkUpdate = (updated, submittedId = updated?.id) => {
+    if (!updated) return;
+    setHomework((prev) => prev.map((h) => (h.id === submittedId ? updated : h)));
   };
 
   if (loading && !data) {
@@ -152,8 +157,8 @@ export default function TutorWorkspaceView({
   const assignments = tutorExams.filter((e) => e.category === 'ASSIGNMENT');
   const examsOnly = tutorExams.filter((e) => e.category !== 'ASSIGNMENT');
 
-  const pendingHomework = homework.filter((h) => !h.is_evaluated && new Date(h.due_date) > new Date());
-  const dueSoonHomework = pendingHomework.filter((h) => new Date(h.due_date).getTime() - Date.now() <= 86_400_000);
+  const pendingHomework = homework.filter((h) => !h.is_evaluated && new Date(h.due_date).getTime() > now);
+  const dueSoonHomework = pendingHomework.filter((h) => new Date(h.due_date).getTime() - now <= 86_400_000);
   const totalTasksCount = homework.length + tutorExams.length;
 
   // Pending first (nearest deadline on top), then evaluated — nothing pending gets buried.
