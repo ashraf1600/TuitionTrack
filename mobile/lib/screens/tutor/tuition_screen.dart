@@ -5,40 +5,41 @@ import '../../core/api.dart';
 import '../../core/format.dart';
 import '../../core/json.dart';
 import '../../core/repo.dart';
+import '../../widgets/charts.dart';
 import '../../widgets/theme.dart';
 import '../../widgets/ui.dart';
 import '../common/cycle_progress.dart';
 import 'exam_editor_screen.dart';
 import 'exams_view.dart';
-import 'group_form_screen.dart';
+import 'tuition_form_screen.dart';
 
-class _GroupData {
-  _GroupData(this.tuition, this.cycles);
+class _TuitionData {
+  _TuitionData(this.tuition, this.cycles);
   final Json tuition;
   final List<Json> cycles;
 }
 
-/// One tuition group: its shared class tracker, its students, and its exams.
-class GroupScreen extends StatefulWidget {
-  const GroupScreen({super.key, required this.tuitionId});
+/// One tuition: its shared class tracker, its students, and its exams.
+class TuitionScreen extends StatefulWidget {
+  const TuitionScreen({super.key, required this.tuitionId});
   final String tuitionId;
 
   @override
-  State<GroupScreen> createState() => _GroupScreenState();
+  State<TuitionScreen> createState() => _TuitionScreenState();
 }
 
-class _GroupScreenState extends State<GroupScreen> {
-  final _loader = GlobalKey<LoaderState<_GroupData>>();
+class _TuitionScreenState extends State<TuitionScreen> {
+  final _loader = GlobalKey<LoaderState<_TuitionData>>();
   int _examsVersion = 0;
 
-  Future<_GroupData> _load() async {
+  Future<_TuitionData> _load() async {
     final repo = context.read<Repo>();
     final results = await Future.wait<dynamic>([repo.tuition(widget.tuitionId), repo.cycles(widget.tuitionId)]);
-    return _GroupData(results[0] as Json, results[1] as List<Json>);
+    return _TuitionData(results[0] as Json, results[1] as List<Json>);
   }
 
   Future<void> _edit(Json tuition) async {
-    final changed = await Navigator.push<bool>(context, MaterialPageRoute(builder: (_) => GroupFormScreen(tuition: tuition)));
+    final changed = await Navigator.push<bool>(context, MaterialPageRoute(builder: (_) => TuitionFormScreen(tuition: tuition)));
     if (changed == true) await _loader.currentState?.reload();
   }
 
@@ -46,14 +47,14 @@ class _GroupScreenState extends State<GroupScreen> {
     final ok = await confirm(
       context,
       title: 'Delete "${tuition.str('title')}"?',
-      message: 'The group, its student list and its exams (with all submissions and marks) will be deleted. '
+      message: 'The tuition, its student list and its exams (with all submissions and marks) will be deleted. '
           'What you already earned stays in your wallet history. This cannot be undone.',
-      confirmLabel: 'Delete group',
+      confirmLabel: 'Delete tuition',
       danger: true,
     );
     if (!ok || !mounted) return;
     final repo = context.read<Repo>();
-    if (await attempt(context, () => repo.deleteTuition(widget.tuitionId), success: 'Group deleted.') && mounted) {
+    if (await attempt(context, () => repo.deleteTuition(widget.tuitionId), success: 'Tuition deleted.') && mounted) {
       Navigator.pop(context);
     }
   }
@@ -62,7 +63,7 @@ class _GroupScreenState extends State<GroupScreen> {
   Widget build(BuildContext context) {
     return DefaultTabController(
       length: 3,
-      child: Loader<_GroupData>(
+      child: Loader<_TuitionData>(
         key: _loader,
         load: _load,
         scrollable: false,
@@ -73,13 +74,13 @@ class _GroupScreenState extends State<GroupScreen> {
               title: Text(tuition.str('title'), overflow: TextOverflow.ellipsis),
               actions: [
                 PopupMenuButton<String>(
-                  tooltip: 'Group options',
+                  tooltip: 'Tuition options',
                   onSelected: (value) => value == 'edit' ? _edit(tuition) : _delete(tuition),
                   itemBuilder: (_) => const [
-                    PopupMenuItem(value: 'edit', child: ListTile(leading: Icon(Icons.edit_outlined), title: Text('Edit group'), contentPadding: EdgeInsets.zero)),
+                    PopupMenuItem(value: 'edit', child: ListTile(leading: Icon(Icons.edit_outlined), title: Text('Edit tuition'), contentPadding: EdgeInsets.zero)),
                     PopupMenuItem(
                       value: 'delete',
-                      child: ListTile(leading: Icon(Icons.delete_outline, color: AppColors.danger), title: Text('Delete group'), contentPadding: EdgeInsets.zero),
+                      child: ListTile(leading: Icon(Icons.delete_outline, color: AppColors.danger), title: Text('Delete tuition'), contentPadding: EdgeInsets.zero),
                     ),
                   ],
                 ),
@@ -94,7 +95,7 @@ class _GroupScreenState extends State<GroupScreen> {
               children: [
                 RefreshIndicator(onRefresh: reload, child: _ClassesTab(data: data, reload: reload)),
                 RefreshIndicator(onRefresh: reload, child: _StudentsTab(tuition: tuition, reload: reload)),
-                ExamsView(key: ValueKey('group-exams-$_examsVersion'), tuitionId: widget.tuitionId),
+                ExamsView(key: ValueKey('tuition-exams-$_examsVersion'), tuitionId: widget.tuitionId),
               ],
             ),
             floatingActionButton: Builder(builder: (context) {
@@ -127,7 +128,7 @@ class _GroupScreenState extends State<GroupScreen> {
 
 class _ClassesTab extends StatelessWidget {
   const _ClassesTab({required this.data, required this.reload});
-  final _GroupData data;
+  final _TuitionData data;
   final Future<void> Function() reload;
 
   Future<void> _openClass(BuildContext context, Json entry) async {
@@ -150,7 +151,7 @@ class _ClassesTab extends StatelessWidget {
             children: [
               Text('Class $classNo', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
               Text(
-                wasDone ? 'Recorded. You can correct the date or topic, or undo it.' : 'Marking it done counts it for every student in the group and adds it to your wallet.',
+                wasDone ? 'Recorded. You can correct the date or topic, or undo it.' : 'Marking it done counts it for every student in the tuition and adds it to your wallet.',
                 style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
               ),
               gap16,
@@ -180,7 +181,7 @@ class _ClassesTab extends StatelessWidget {
                 icon: const Icon(Icons.check),
                 label: Text(wasDone ? 'Save changes' : 'Mark as done'),
               ),
-              // Set homework for this class — applies to the whole tuition group.
+              // Set homework for this class — applies to the whole tuition.
               // The class itself stays independent: marking it done later does not
               // uncreate homework that was already sent to students.
               OutlinedButton.icon(
@@ -199,23 +200,25 @@ class _ClassesTab extends StatelessWidget {
         ),
       ),
     );
+    final topicText = topic.text.trim();
     if (action == null || !context.mounted) return;
     if (action == 'homework') {
-      await _setHomeworkFromClass(context, tuition, classNo, topic.text.trim(), date);
+      await _setHomeworkFromClass(context, tuition, classNo, topicText, date);
       return;
     }
     final done = action == 'done';
-    final ok = await attempt(
+    final ok = await attemptSave(
       context,
-      () => repo.markClass(tuition.str('id'), classNo, done, date: done ? date : null, topic: done ? topic.text.trim() : ''),
-      success: done ? 'Class $classNo recorded for the whole group.' : 'Class $classNo unmarked.',
+      () => repo.markClass(tuition.str('id'), classNo, done,
+          date: done ? date : null, topic: done ? topicText : '', tuitionTitle: tuition.str('title')),
+      success: done ? 'Class $classNo marked done for the whole tuition.' : 'Class $classNo unmarked.',
     );
     if (ok) await reload();
   }
 
   /// Open a homework composer pre-filled with the class topic + date.
   /// "Each student" (default) creates one row per enrolled student so each
-  /// submission is reviewed and marked done individually; "whole group"
+  /// submission is reviewed and marked done individually; "whole tuition"
   /// creates a single shared task.
   Future<void> _setHomeworkFromClass(
     BuildContext context,
@@ -341,44 +344,47 @@ class _ClassesTab extends StatelessWidget {
         },
       ),
     );
+    final title = titleCtrl.text.trim();
+    final description = descriptionCtrl.text.trim();
     if (saved != true || !context.mounted) return;
-    final ok = await attempt(
-      context,
-      () async {
-        final payload = {
-          'title': titleCtrl.text.trim(),
-          'description': descriptionCtrl.text.trim(),
-          'dueDate': dueDate,
-          'sourceLabel': sourceLabel,
-        };
-        if (perStudent && roster.isNotEmpty) {
-          var done = 0;
-          for (final s in roster) {
-            await repo.createHomework(
-              title: payload['title'] as String,
-              description: payload['description'] as String,
-              dueDate: payload['dueDate'] as DateTime,
-              studentId: s.id,
-              sourceLabel: payload['sourceLabel'] as String,
-            );
-            done++;
-          }
-          if (done < roster.length) throw Exception('Only $done of ${roster.length} copies were sent.');
-        } else {
-          await repo.createHomework(
-            title: payload['title'] as String,
-            description: payload['description'] as String,
-            dueDate: payload['dueDate'] as DateTime,
-            tuitionId: tuition.str('id'),
-            sourceLabel: payload['sourceLabel'] as String,
-          );
+    var queued = 0;
+    void count(Json result) {
+      if (result['queued'] == true) queued++;
+    }
+
+    final ok = await attempt(context, () async {
+      if (perStudent && roster.isNotEmpty) {
+        for (final s in roster) {
+          count(await repo.createHomework(
+            title: title,
+            description: description,
+            dueDate: dueDate,
+            studentId: s.id,
+            sourceLabel: sourceLabel,
+            targetName: s.name,
+          ));
         }
-      },
-      success: perStudent && roster.isNotEmpty
-          ? 'Homework sent to ${roster.length} students (one copy each).'
-          : 'Homework sent to ${tuition.str('title')}.',
+      } else {
+        count(await repo.createHomework(
+          title: title,
+          description: description,
+          dueDate: dueDate,
+          tuitionId: tuition.str('id'),
+          sourceLabel: sourceLabel,
+          targetName: tuition.str('title'),
+        ));
+      }
+    });
+    if (!ok || !context.mounted) return;
+    showToast(
+      context,
+      queued > 0
+          ? 'Homework saved on this phone. It will be sent when you are back online.'
+          : perStudent && roster.isNotEmpty
+              ? 'Homework sent to ${roster.length} students (one copy each).'
+              : 'Homework sent to ${tuition.str('title')}.',
     );
-    if (ok) await reload();
+    await reload();
   }
 
   Future<void> _startNext(BuildContext context, Json cycle) async {
@@ -387,7 +393,7 @@ class _ClassesTab extends StatelessWidget {
       context,
       title: 'Start cycle #${cycle.integer('cycle_number') + 1}?',
       message: 'Cycle #${cycle.integer('cycle_number')} is complete. It will be closed with its earnings of '
-          '${taka(cycle.number('earned_revenue'))} kept in your history, and a fresh cycle starts for the group.',
+          '${taka(cycle.number('earned_revenue'))} kept in your history, and a fresh cycle starts for the tuition.',
       confirmLabel: 'Start next cycle',
     );
     if (!ok || !context.mounted) return;
@@ -413,85 +419,146 @@ class _ClassesTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     final tuition = data.tuition;
     final cycle = tuition.obj('active_cycle');
     final wallet = tuition.obj('wallet_summary') ?? {};
     final history = data.cycles.where((c) => c.str('status') == 'ARCHIVED').toList();
 
+    if (cycle == null) {
+      return PageBody(children: [
+        EmptyState(icon: Icons.event_busy_outlined, title: 'No cycle yet', message: 'This tuition has no class cycle yet.'),
+      ]);
+    }
+    final classes = orderedClasses(cycle);
+    final doneClasses = classes.where((c) => c.flag('completed')).toList()
+      ..sort((a, b) {
+        final byDate = (b.date('date') ?? DateTime(0)).compareTo(a.date('date') ?? DateTime(0));
+        return byDate != 0 ? byDate : classNoOf(b).compareTo(classNoOf(a));
+      });
+    final next = classes.where((c) => !c.flag('completed')).firstOrNull;
+    final done = cycle.integer('completed_classes');
+    final total = cycle.integer('total_classes');
+
     return PageBody(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 96),
       children: [
+        // The headline: how far this cycle has got.
         AppCard(
-          child: Wrap(
-            spacing: 24,
-            runSpacing: 12,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Stat(label: 'Earned this cycle', value: taka(wallet.number('earned_revenue')), color: AppColors.success),
-              Stat(label: 'Still to earn', value: taka(wallet.number('pending_balance')), color: AppColors.primarySoft),
-              Stat(label: 'Per class', value: taka(wallet.number('per_class_rate'))),
-              Stat(label: 'Past cycles', value: taka(wallet.number('archived_earnings'))),
+              Row(
+                children: [
+                  ProgressRing(done: done, total: total, size: 104, thickness: 10, caption: 'classes done'),
+                  const SizedBox(width: 18),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Cycle #${cycle.integer('cycle_number')}', style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 13)),
+                        Text('$done/$total classes done', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
+                        const SizedBox(height: 2),
+                        Text(
+                          total - done <= 0 ? 'All classes taught' : '${total - done} class${total - done == 1 ? '' : 'es'} left',
+                          style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 13),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              gap16,
+              Row(
+                children: [
+                  Expanded(child: Stat(label: 'Earned', value: taka(wallet.number('earned_revenue')), color: AppColors.success)),
+                  Expanded(child: Stat(label: 'Still to earn', value: taka(wallet.number('pending_balance')), color: AppColors.primarySoft)),
+                  Expanded(child: Stat(label: 'Per class', value: taka(wallet.number('per_class_rate')))),
+                ],
+              ),
+              if (next != null) ...[
+                gap16,
+                FilledButton.icon(
+                  onPressed: () => _openClass(context, next),
+                  icon: const Icon(Icons.check),
+                  label: Text('Mark class ${classNoOf(next)} done'),
+                ),
+              ],
             ],
           ),
         ),
-        if (cycle == null)
-          Padding(padding: EdgeInsets.only(top: 16), child: Text('This group has no cycle yet.', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant)))
-        else ...[
-          SectionTitle(
-            'Cycle #${cycle.integer('cycle_number')}',
-            subtitle: '${cycle.integer('completed_classes')} of ${cycle.integer('total_classes')} classes done. Tap a class to record it.',
+        if (cycle.flag('is_complete')) ...[
+          gap12,
+          const Banner2(
+            'All classes of this cycle are done. Start the next cycle when you are ready.',
+            color: AppColors.success,
+            icon: Icons.celebration_outlined,
           ),
-          if (cycle.flag('is_complete')) ...[
-            Banner2(
-              'All classes of this cycle are done. Start the next cycle when you are ready.',
-              color: AppColors.success,
-              icon: Icons.celebration_outlined,
-            ),
-            gap8,
-            BusyButton(onPressed: () => _startNext(context, cycle), label: 'Start next cycle', icon: Icons.restart_alt),
-            gap12,
+          gap8,
+          BusyButton(onPressed: () => _startNext(context, cycle), label: 'Start next cycle', icon: Icons.restart_alt),
+        ],
+
+        // Every class of the cycle as a tile: done, next, or still to come.
+        const SectionTitle('Classes', subtitle: 'Tap a class to mark it, change its date or topic, or set homework.'),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            for (final entry in classes)
+              _ClassTile(entry: entry, isNext: identical(entry, next), onTap: () => _openClass(context, entry)),
           ],
+        ),
+
+        // The log of what was taught, newest first.
+        SectionTitle('Done classes ($done/$total)', icon: Icons.task_alt),
+        if (doneClasses.isEmpty)
+          Text('No class marked done yet in this cycle.', style: TextStyle(color: scheme.onSurfaceVariant))
+        else
           AppCard(
             padding: EdgeInsets.zero,
             child: Column(
               children: [
-                for (final entry in orderedClasses(cycle)) ...[
-                  if (classNoOf(entry) > 1) Divider(),
+                for (var i = 0; i < doneClasses.length; i++) ...[
+                  if (i > 0) const Divider(indent: 64),
                   ListTile(
                     leading: CircleAvatar(
-                      backgroundColor: entry.flag('completed') ? AppColors.success.withValues(alpha: 0.2) : Theme.of(context).colorScheme.surfaceContainerHighest,
-                      child: entry.flag('completed')
-                          ? Icon(Icons.check, color: AppColors.success)
-                          : Text('${classNoOf(entry)}', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontWeight: FontWeight.w700)),
+                      backgroundColor: AppColors.chartEarned.withValues(alpha: 0.15),
+                      child: Text('${classNoOf(doneClasses[i])}',
+                          style: TextStyle(fontWeight: FontWeight.w800, color: tone(context, AppColors.success))),
                     ),
-                    title: Text('Class ${classNoOf(entry)}', style: const TextStyle(fontWeight: FontWeight.w600)),
+                    title: Text(
+                      doneClasses[i].str('topic').isNotEmpty ? doneClasses[i].str('topic') : 'Class ${classNoOf(doneClasses[i])}',
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
                     subtitle: Text(
-                      entry.flag('completed')
-                          ? [fmtDate(entry.date('date')), if (entry.str('topic').isNotEmpty) entry.str('topic')].join(' · ')
-                          : 'Not done yet',
-                      style: TextStyle(color: entry.flag('completed') ? Theme.of(context).colorScheme.onSurface : Theme.of(context).colorScheme.outlineVariant),
+                      [
+                        if (doneClasses[i].str('topic').isNotEmpty) 'Class ${classNoOf(doneClasses[i])}',
+                        fmtDate(doneClasses[i].date('date')),
+                      ].join(' · '),
+                      style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 13),
                     ),
-                    trailing: Icon(entry.flag('completed') ? Icons.edit_outlined : Icons.radio_button_unchecked, size: 20),
-                    onTap: () => _openClass(context, entry),
+                    trailing: const Icon(Icons.edit_outlined, size: 18),
+                    onTap: () => _openClass(context, doneClasses[i]),
                   ),
                 ],
               ],
             ),
           ),
-        ],
+
         if (history.isNotEmpty) ...[
-          SectionTitle('Past cycles'),
+          SectionTitle('Past cycles', subtitle: 'Earned in past cycles: ${taka(wallet.number('archived_earnings'))}'),
           AppCard(
             padding: EdgeInsets.zero,
             child: Column(
               children: [
                 for (var i = 0; i < history.length; i++) ...[
-                  if (i > 0) Divider(),
+                  if (i > 0) const Divider(),
                   ExpansionTile(
-                    shape: Border(),
+                    shape: const Border(),
                     title: Text('Cycle #${history[i].integer('cycle_number')}', style: const TextStyle(fontWeight: FontWeight.w600)),
                     subtitle: Text(
-                      '${history[i].integer('completed_classes')}/${history[i].integer('total_classes')} classes · earned ${taka(history[i].number('earned_revenue'))}',
-                      style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
+                      '${history[i].integer('completed_classes')}/${history[i].integer('total_classes')} classes done · earned ${taka(history[i].number('earned_revenue'))}',
+                      style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 13),
                     ),
                     childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
                     expandedCrossAxisAlignment: CrossAxisAlignment.start,
@@ -501,7 +568,7 @@ class _ClassesTab extends StatelessWidget {
                           padding: const EdgeInsets.only(bottom: 4),
                           child: Text(
                             'Class ${classNoOf(entry)} · ${fmtDate(entry.date('date'))}${entry.str('topic').isNotEmpty ? ' · ${entry.str('topic')}' : ''}',
-                            style: TextStyle(fontSize: 13),
+                            style: const TextStyle(fontSize: 13),
                           ),
                         ),
                     ],
@@ -516,7 +583,58 @@ class _ClassesTab extends StatelessWidget {
   }
 }
 
-// ── Students of the group ────────────────────────────────────────────────────
+/// One class of the cycle as a square: a tick when done, highlighted when it is next.
+class _ClassTile extends StatelessWidget {
+  const _ClassTile({required this.entry, required this.isNext, required this.onTap});
+  final Json entry;
+  final bool isNext;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final done = entry.flag('completed');
+    final no = classNoOf(entry);
+    final Color fill = done
+        ? AppColors.chartEarned.withValues(alpha: 0.16)
+        : isNext
+            ? AppColors.chartPending.withValues(alpha: 0.14)
+            : scheme.surfaceContainerHighest;
+    final Color edge = done ? AppColors.chartEarned : (isNext ? AppColors.chartPending : scheme.outline);
+    return Tooltip(
+      message: done ? 'Class $no · ${fmtShortDate(entry.date('date'))}' : (isNext ? 'Class $no · next' : 'Class $no · not yet'),
+      child: Semantics(
+        button: true,
+        label: done ? 'Class $no, done on ${fmtDate(entry.date('date'))}' : 'Class $no, ${isNext ? 'next' : 'not done yet'}',
+        excludeSemantics: true,
+        child: Material(
+          color: fill,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: BorderSide(color: edge, width: isNext ? 2 : 1)),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: onTap,
+            child: SizedBox(
+              width: 52,
+              height: 52,
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text('$no', style: TextStyle(fontWeight: FontWeight.w800, color: done || isNext ? scheme.onSurface : scheme.onSurfaceVariant)),
+                  if (done)
+                    Icon(Icons.check, size: 14, color: tone(context, AppColors.success))
+                  else if (isNext)
+                    Text('next', style: TextStyle(fontSize: 10, color: tone(context, AppColors.primarySoft))),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ── Students of the tuition ───────────────────────────────────────────────────
 
 class _StudentsTab extends StatelessWidget {
   const _StudentsTab({required this.tuition, required this.reload});
@@ -539,12 +657,12 @@ class _StudentsTab extends StatelessWidget {
     return PageBody(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 96),
       children: [
-        FilledButton.icon(onPressed: () => _add(context), icon: Icon(Icons.person_add_alt_1), label: Text('Add students to this group')),
+        FilledButton.icon(onPressed: () => _add(context), icon: Icon(Icons.person_add_alt_1), label: Text('Add students to this tuition')),
         gap16,
         if (students.isEmpty)
           EmptyState(
             icon: Icons.person_outline,
-            title: 'No students in this group yet',
+            title: 'No students in this tuition yet',
             message: 'Add students you created, or ones who asked to join you.',
           )
         else
@@ -566,7 +684,7 @@ class _StudentsTab extends StatelessWidget {
                       style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
                     ),
                     trailing: IconButton(
-                      tooltip: 'Remove ${students[i].str('student_name')} from the group',
+                      tooltip: 'Remove ${students[i].str('student_name')} from the tuition',
                       icon: Icon(Icons.person_remove_outlined),
                       onPressed: () async {
                         final student = students[i];
@@ -574,12 +692,12 @@ class _StudentsTab extends StatelessWidget {
                           context,
                           title: 'Remove ${student.str('student_name')}?',
                           message: 'They leave "${tuition.str('title')}" and stop seeing its classes and exams. '
-                              'Their account stays, and the group\'s cycle and earnings are not changed.',
+                              'Their account stays, and the tuition\'s cycle and earnings are not changed.',
                           confirmLabel: 'Remove',
                           danger: true,
                         );
                         if (!ok || !context.mounted) return;
-                        if (await attempt(context, () => repo.unenroll(tuition.str('id'), student.str('student_id')), success: 'Removed from the group.')) {
+                        if (await attempt(context, () => repo.unenroll(tuition.str('id'), student.str('student_id')), success: 'Removed from the tuition.')) {
                           await reload();
                         }
                       },
@@ -640,7 +758,7 @@ class _AddStudentsSheetState extends State<_AddStudentsSheet> {
                   : _candidates!.isEmpty
                       ? Center(
                           child: Text(
-                            'All your active students are already in this group.\nCreate a student from the Students tab first.',
+                            'All your active students are already in this tuition.\nCreate a student from the Students tab first.',
                             textAlign: TextAlign.center,
                             style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
                           ),
@@ -665,7 +783,7 @@ class _AddStudentsSheetState extends State<_AddStudentsSheet> {
               onPressed: _picked.isEmpty
                   ? null
                   : () async {
-                      final ok = await attempt(context, () => repo.enroll(widget.tuition.str('id'), _picked.toList()), success: 'Added to the group.');
+                      final ok = await attempt(context, () => repo.enroll(widget.tuition.str('id'), _picked.toList()), success: 'Added to the tuition.');
                       if (ok && context.mounted) Navigator.pop(context, true);
                     },
             ),

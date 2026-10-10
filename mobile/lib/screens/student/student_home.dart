@@ -15,6 +15,7 @@ import '../common/cycle_progress.dart';
 import '../common/leaderboard_screen.dart';
 import '../common/notifications.dart';
 import '../../widgets/app_drawer.dart';
+import '../../widgets/offline_banner.dart';
 import 'homework_card.dart';
 import 'connect_by_code.dart';
 import 'exam_result_screen.dart';
@@ -29,7 +30,7 @@ class _StudentData {
   final List<HomeworkItem> homework;
 }
 
-/// The student's app: their groups and class progress, their tutors, and their exams.
+/// The student's app: their tuitions and class progress, their tutors, and their exams.
 class StudentHome extends StatefulWidget {
   const StudentHome({super.key});
 
@@ -78,20 +79,27 @@ class _StudentHomeState extends State<StudentHome> {
     return Scaffold(
       appBar: AppBar(title: Text(_title()), actions: homeActions(context)),
       drawer: const AppDrawer(),
-      body: Loader<_StudentData>(
-        key: _loader,
-        load: _load,
-        builder: (context, data, reload) {
-          Widget body;
-          if (_tab == 0) {
-            body = _GroupsTab(data: data, reload: reload);
-          } else if (_tab == 1) {
-            body = _ExamsTab(exams: data.exams, reload: reload);
-          } else {
-            body = _HomeworkTab(items: data.homework, reload: reload);
-          }
-          return body;
-        },
+      body: Column(
+        children: [
+          const OfflineBanner(),
+          Expanded(
+            child: Loader<_StudentData>(
+              key: _loader,
+              load: _load,
+              builder: (context, data, reload) {
+                Widget body;
+                if (_tab == 0) {
+                  body = _TuitionsTab(data: data, reload: reload);
+                } else if (_tab == 1) {
+                  body = _ExamsTab(exams: data.exams, reload: reload);
+                } else {
+                  body = _HomeworkTab(items: data.homework, reload: reload);
+                }
+                return body;
+              },
+            ),
+          ),
+        ],
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _tab,
@@ -100,7 +108,7 @@ class _StudentHomeState extends State<StudentHome> {
           _loader.currentState?.reload();
         },
         destinations: const [
-          NavigationDestination(icon: Icon(Icons.groups_outlined), selectedIcon: Icon(Icons.groups), label: 'My classes'),
+          NavigationDestination(icon: Icon(Icons.class_outlined), selectedIcon: Icon(Icons.class_), label: 'My classes'),
           NavigationDestination(icon: Icon(Icons.assignment_outlined), selectedIcon: Icon(Icons.assignment), label: 'Exams'),
           NavigationDestination(icon: Icon(Icons.menu_book_outlined), selectedIcon: Icon(Icons.menu_book), label: 'Homework'),
         ],
@@ -111,8 +119,8 @@ class _StudentHomeState extends State<StudentHome> {
 
 // ── My classes ───────────────────────────────────────────────────────────────
 
-class _GroupsTab extends StatelessWidget {
-  const _GroupsTab({required this.data, required this.reload});
+class _TuitionsTab extends StatelessWidget {
+  const _TuitionsTab({required this.data, required this.reload});
   final _StudentData data;
   final Future<void> Function() reload;
 
@@ -122,17 +130,17 @@ class _GroupsTab extends StatelessWidget {
     final accepted = data.connections.where((c) => c.str('status') == 'ACCEPTED').toList();
     return PageBody(
       children: [
-        SectionTitle('My tuition groups', icon: Icons.groups_outlined, subtitle: 'Class progress is shared by everyone in the group.'),
+        SectionTitle('My tuitions', icon: Icons.class_outlined, subtitle: 'Class progress is shared by everyone in the tuition.'),
         if (data.tuitions.isEmpty)
           EmptyState(
-            icon: Icons.groups_outlined,
-            title: 'You are not in a tuition group yet',
+            icon: Icons.class_outlined,
+            title: 'You are not in a tuition yet',
             message: pending.isEmpty
-                ? 'Send a request to your tutor below. Once they accept and add you to a group, it appears here.'
-                : 'Your request is with your tutor. Once they add you to a group, it appears here.',
+                ? 'Send a request to your tutor below. Once they accept and add you to a tuition, it appears here.'
+                : 'Your request is with your tutor. Once they add you to a tuition, it appears here.',
           )
         else
-          for (final tuition in data.tuitions) ...[_GroupCard(tuition: tuition), gap12],
+          for (final tuition in data.tuitions) ...[_TuitionCard(tuition: tuition), gap12],
         gap8,
         // TutorTrack tutors dashboard entry (connected list + detail tabs + homework).
         AppCard(
@@ -175,8 +183,8 @@ class _GroupsTab extends StatelessWidget {
   }
 }
 
-class _GroupCard extends StatelessWidget {
-  const _GroupCard({required this.tuition});
+class _TuitionCard extends StatelessWidget {
+  const _TuitionCard({required this.tuition});
   final Json tuition;
 
   @override

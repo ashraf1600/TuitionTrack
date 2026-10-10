@@ -192,7 +192,7 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
                 child: DropdownButtonFormField<String?>(
                   initialValue: _tuitionId,
                   isExpanded: true,
-                  decoration: const InputDecoration(labelText: 'Add to a group now (optional)'),
+                  decoration: const InputDecoration(labelText: 'Add to a tuition now (optional)'),
                   items: [
                     const DropdownMenuItem<String?>(value: null, child: Text('Not yet')),
                     for (final t in _tuitions) DropdownMenuItem<String?>(value: t.str('id'), child: Text(t.str('title'), overflow: TextOverflow.ellipsis)),

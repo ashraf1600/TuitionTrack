@@ -19,15 +19,15 @@ int _minutes(String time) {
 String _hhmm(TimeOfDay time) => '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
 
 /// Create a tuition group, or edit one. Pops with `true` when saved.
-class GroupFormScreen extends StatefulWidget {
-  const GroupFormScreen({super.key, this.tuition});
+class TuitionFormScreen extends StatefulWidget {
+  const TuitionFormScreen({super.key, this.tuition});
   final Json? tuition;
 
   @override
-  State<GroupFormScreen> createState() => _GroupFormScreenState();
+  State<TuitionFormScreen> createState() => _TuitionFormScreenState();
 }
 
-class _GroupFormScreenState extends State<GroupFormScreen> {
+class _TuitionFormScreenState extends State<TuitionFormScreen> {
   final _form = GlobalKey<FormState>();
   late final _title = TextEditingController(text: widget.tuition?.str('title') ?? '');
   late final _subject = TextEditingController(text: widget.tuition?.str('subject') ?? '');
@@ -151,7 +151,7 @@ class _GroupFormScreenState extends State<GroupFormScreen> {
     try {
       _editing ? await repo.updateTuition(widget.tuition!.str('id'), form) : await repo.createTuition(form);
       if (!mounted) return;
-      showToast(context, _editing ? 'Group updated.' : 'Group created.');
+      showToast(context, _editing ? 'Tuition updated.' : 'Tuition created.');
       Navigator.pop(context, true);
     } on ApiException catch (error) {
       if (mounted) setState(() => _error = error.message);
@@ -163,7 +163,7 @@ class _GroupFormScreenState extends State<GroupFormScreen> {
     final fee = num.tryParse(_fee.text.trim()) ?? 0;
     final length = int.tryParse(_length.text.trim()) ?? 0;
     return Scaffold(
-      appBar: AppBar(title: Text(_editing ? 'Edit group' : 'New tuition group')),
+      appBar: AppBar(title: Text(_editing ? 'Edit tuition' : 'New tuition')),
       body: Form(
         key: _form,
         child: PageBody(
@@ -172,8 +172,8 @@ class _GroupFormScreenState extends State<GroupFormScreen> {
             TextFormField(
               controller: _title,
               textCapitalization: TextCapitalization.words,
-              decoration: const InputDecoration(labelText: 'Group name', hintText: 'e.g. Class 10 Math Batch'),
-              validator: (v) => (v == null || v.trim().isEmpty) ? 'Give the group a name' : null,
+              decoration: const InputDecoration(labelText: 'Tuition name', hintText: 'e.g. Class 10 Math Batch'),
+              validator: (v) => (v == null || v.trim().isEmpty) ? 'Give the tuition a name' : null,
             ),
             gap12,
             TextFormField(controller: _subject, textCapitalization: TextCapitalization.words, decoration: const InputDecoration(labelText: 'Subject (optional)')),
@@ -187,7 +187,7 @@ class _GroupFormScreenState extends State<GroupFormScreen> {
                   child: TextFormField(
                     controller: _fee,
                     keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                    decoration: const InputDecoration(labelText: 'Fee per cycle (৳)', helperText: 'For the whole group'),
+                    decoration: const InputDecoration(labelText: 'Fee per cycle (৳)', helperText: 'For the whole tuition'),
                     onChanged: (_) => setState(() {}),
                     validator: (v) {
                       final value = num.tryParse((v ?? '').trim());
@@ -249,7 +249,7 @@ class _GroupFormScreenState extends State<GroupFormScreen> {
                 ),
               ),
             gap24,
-            BusyButton(onPressed: _save, label: _editing ? 'Save changes' : 'Create group', icon: Icons.check),
+            BusyButton(onPressed: _save, label: _editing ? 'Save changes' : 'Create tuition', icon: Icons.check),
           ],
         ),
       ),

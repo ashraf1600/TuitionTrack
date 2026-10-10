@@ -24,7 +24,7 @@ T? _firstOrNull<T>(Iterable<T> items, [bool Function(T)? test]) {
   return null;
 }
 
-/// Tutor homework: create (whole group or one copy per student), review
+/// Tutor homework: create (whole tuition or one copy per student), review
 /// submissions, mark each done, split shared rows per student.
 /// Same logic as the web HomeworkManager.
 class HomeworkTab extends StatefulWidget {
@@ -69,14 +69,14 @@ class _HomeworkTabState extends State<HomeworkTab> {
     }
   }
 
-  /// Turn one shared group row into one row per enrolled student so each
+  /// Turn one shared tuition row into one row per enrolled student so each
   /// submission is reviewed and marked done individually. One server call:
   /// either every copy is made and the shared row goes, or nothing changes.
   Future<void> _split(HomeworkItem hw, List<Json> tuitions) async {
     final tuition = _firstOrNull(tuitions, (t) => t.str('id') == hw.tuitionId);
     final members = (tuition?.maps('enrollments') ?? const []).where((e) => e['is_active'] != false).length;
     if (members == 0) {
-      showToast(context, 'No enrolled students found in this group to split across.', error: true);
+      showToast(context, 'No enrolled students found in this tuition to split across.', error: true);
       return;
     }
     final ok = await confirm(
@@ -147,7 +147,7 @@ class _HomeworkTabState extends State<HomeworkTab> {
                 icon: Icons.assignment_outlined,
                 title: 'No homework found',
                 message: _filter == 'all'
-                    ? 'Assign homework to a group or a student to get started.'
+                    ? 'Assign homework to a tuition or a student to get started.'
                     : 'No ${_filter} homework right now.',
               )
             else
@@ -187,12 +187,12 @@ class _TutorHomeworkRow extends StatelessWidget {
             padding: const EdgeInsets.only(left: 4, bottom: 4),
             child: Row(
               children: [
-                Icon(hw.studentName.isNotEmpty ? Icons.person_outline : Icons.groups_outlined,
-                    size: 14, color: AppColors.primarySoft),
+                Icon(hw.studentName.isNotEmpty ? Icons.person_outline : Icons.class_outlined,
+                    size: 14, color: tone(context, AppColors.primarySoft)),
                 const SizedBox(width: 4),
                 Expanded(
                   child: Text(target,
-                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.primarySoft),
+                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tone(context, AppColors.primarySoft)),
                       overflow: TextOverflow.ellipsis),
                 ),
                 if (hw.isSharedGroupTask)
@@ -201,34 +201,35 @@ class _TutorHomeworkRow extends StatelessWidget {
             ),
           ),
         HomeworkCard(hw: hw, isTutor: true, onChanged: onChanged),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.end,
-          children: [
-            if (onSplit != null)
-              TextButton.icon(
+        if (!hw.isPending)
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              if (onSplit != null)
+                TextButton.icon(
+                  onPressed: () {
+                    HapticFeedback.lightImpact();
+                    onSplit!();
+                  },
+                  icon: const Icon(Icons.call_split_outlined, size: 16),
+                  label: const Text('Split per student'),
+                ),
+              IconButton(
+                tooltip: 'Delete homework',
+                icon: const Icon(Icons.delete_outline, size: 20),
                 onPressed: () {
                   HapticFeedback.lightImpact();
-                  onSplit!();
+                  onDelete();
                 },
-                icon: const Icon(Icons.call_split_outlined, size: 16),
-                label: const Text('Split per student'),
               ),
-            IconButton(
-              tooltip: 'Delete homework',
-              icon: const Icon(Icons.delete_outline, size: 20),
-              onPressed: () {
-                HapticFeedback.lightImpact();
-                onDelete();
-              },
-            ),
-          ],
-        ),
+            ],
+          ),
       ],
     );
   }
 }
 
-/// Standalone route for the + button: loads groups + students, then the form.
+/// Standalone route for the + button: loads tuitions + students, then the form.
 class HomeworkCreateScreen extends StatelessWidget {
   const HomeworkCreateScreen({super.key});
 
@@ -244,7 +245,7 @@ class HomeworkCreateScreen extends StatelessWidget {
     );
   }
 }
-/// Create sheet: title + deadline required, group or student target,
+/// Create sheet: title + deadline required, tuition or student target,
 /// optional fan-out into one copy per student.
 class HomeworkFormScreen extends StatefulWidget {
   const HomeworkFormScreen({super.key, required this.tuitions, required this.students});
@@ -304,42 +305,60 @@ class _HomeworkFormScreenState extends State<HomeworkFormScreen> {
       return;
     }
     final repo = context.read<Repo>();
+    final title = _title.text.trim();
+    final description = _desc.text.trim();
+    var sent = 0;
+    var queued = 0;
+    void count(Json result) => result['queued'] == true ? queued++ : sent++;
+    var success = 'Homework assigned.';
     final ok = await attempt(context, () async {
       if (_toGroup) {
-        final id = _tuitionId ?? _firstOrNull(widget.tuitions)?.str('id') ?? '';
-        if (id.isEmpty) throw ApiException('Create a tuition group first.');
+        final tuition = _firstOrNull(widget.tuitions, (t) => t.str('id') == _tuitionId) ?? _firstOrNull(widget.tuitions);
+        if (tuition == null) throw ApiException('Create a tuition first.');
         final roster = _roster;
         if (_perStudent && roster.isNotEmpty) {
-          var done = 0;
-          for (final (sid, _) in roster) {
-            await repo.createHomework(
-              title: _title.text.trim(),
-              description: _desc.text.trim(),
+          for (final (sid, name) in roster) {
+            count(await repo.createHomework(
+              title: title,
+              description: description,
               dueDate: _due,
               studentId: sid,
-            );
-            done++;
+              targetName: name,
+            ));
           }
-          if (done < roster.length) throw ApiException('Only $done of ${roster.length} copies were sent.');
+          success = 'Homework sent to ${roster.length} students (one copy each).';
         } else {
-          await repo.createHomework(
-            title: _title.text.trim(),
-            description: _desc.text.trim(),
+          count(await repo.createHomework(
+            title: title,
+            description: description,
             dueDate: _due,
-            tuitionId: id,
-          );
+            tuitionId: tuition.str('id'),
+            targetName: tuition.str('title'),
+          ));
+          success = 'Homework sent to ${tuition.str('title')}.';
         }
       } else {
-        final sid = _studentId ?? _firstOrNull(widget.students)?.str('id') ?? '';
-        if (sid.isEmpty) throw ApiException('Choose a student.');
-        await repo.createHomework(
-          title: _title.text.trim(),
-          description: _desc.text.trim(),
+        final student = _firstOrNull(widget.students, (s) => s.str('id') == _studentId) ?? _firstOrNull(widget.students);
+        if (student == null) throw ApiException('Choose a student.');
+        count(await repo.createHomework(
+          title: title,
+          description: description,
           dueDate: _due,
-          studentId: sid,
-        );
+          studentId: student.str('id'),
+          targetName: student.str('full_name'),
+        ));
       }
-    }, success: 'Homework assigned.');
+    });
+    if (ok && mounted) {
+      showToast(
+        context,
+        queued == 0
+            ? success
+            : sent == 0
+                ? 'Saved on this phone. It will be sent when you are back online.'
+                : '$sent sent, $queued saved on this phone to send when you are back online.',
+      );
+    }
     if (ok && mounted) Navigator.pop(context, true);
   }
 
@@ -367,7 +386,7 @@ class _HomeworkFormScreenState extends State<HomeworkFormScreen> {
           gap12,
           SegmentedButton<bool>(
             segments: const [
-              ButtonSegment(value: true, label: Text('Tuition group'), icon: Icon(Icons.groups_outlined)),
+              ButtonSegment(value: true, label: Text('Tuition'), icon: Icon(Icons.class_outlined)),
               ButtonSegment(value: false, label: Text('Student'), icon: Icon(Icons.person_outline)),
             ],
             selected: {_toGroup},
@@ -377,7 +396,7 @@ class _HomeworkFormScreenState extends State<HomeworkFormScreen> {
           if (_toGroup)
             DropdownButtonFormField<String>(
               initialValue: _tuitionId ?? _firstOrNull(widget.tuitions)?.str('id'),
-              decoration: const InputDecoration(labelText: 'Group'),
+              decoration: const InputDecoration(labelText: 'Tuition'),
               items: [
                 for (final t in widget.tuitions)
                   DropdownMenuItem(value: t.str('id'), child: Text(t.str('title'), overflow: TextOverflow.ellipsis)),

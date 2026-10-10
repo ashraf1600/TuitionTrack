@@ -173,7 +173,7 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> with SingleTickerPr
   bool _validate(bool publish) {
     final total = num.tryParse(_totalMarks.text.trim());
     if (_title.text.trim().isEmpty) return _fail('Give the exam a title.', 0);
-    if (_forGroup && _tuitionId == null) return _fail('Choose the group this is for.', 0);
+    if (_forGroup && _tuitionId == null) return _fail('Choose the tuition this is for.', 0);
     if (!_forGroup && _studentId == null) return _fail('Choose the student this is for.', 0);
     if (total == null || total <= 0) return _fail('Enter the total marks.', 2);
     if (!_end.isAfter(_start)) return _fail('The end time must be after the start time.', 2);
@@ -364,7 +364,7 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> with SingleTickerPr
         gap8,
         SegmentedButton<bool>(
           segments: const [
-            ButtonSegment(value: true, label: Text('A tuition group'), icon: Icon(Icons.groups_outlined)),
+            ButtonSegment(value: true, label: Text('A tuition'), icon: Icon(Icons.class_outlined)),
             ButtonSegment(value: false, label: Text('One student'), icon: Icon(Icons.person_outline)),
           ],
           selected: {_forGroup},
@@ -373,12 +373,12 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> with SingleTickerPr
         gap12,
         if (_forGroup)
           _tuitions.isEmpty
-              ? const Text('You have no tuition groups yet. Create one first, or choose one student.', style: TextStyle(color: AppColors.warning))
+              ? const Text('You have no tuitions yet. Create one first, or choose one student.', style: TextStyle(color: AppColors.warning))
               : DropdownButtonFormField<String>(
                   key: ValueKey('group-$_tuitionId-${_tuitions.length}'),
                   initialValue: _tuitions.any((t) => t.str('id') == _tuitionId) ? _tuitionId : null,
                   isExpanded: true,
-                  decoration: const InputDecoration(labelText: 'Tuition group'),
+                  decoration: const InputDecoration(labelText: 'Tuition'),
                   items: [
                     for (final t in _tuitions)
                       DropdownMenuItem(value: t.str('id'), child: Text('${t.str('title')} (${t.integer('enrolled_count')} student${t.integer('enrolled_count') == 1 ? '' : 's'})', overflow: TextOverflow.ellipsis)),
@@ -637,7 +637,7 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> with SingleTickerPr
         'IMMEDIATE',
         'As soon as each student submits',
         _forGroup
-            ? 'Marks and correct answers appear the moment they hand in. In a group, someone who finishes early could pass the answers on.'
+            ? 'Marks and correct answers appear the moment they hand in. In a tuition, someone who finishes early could pass the answers on.'
             : 'Marks and correct answers appear the moment they hand in.',
       ),
       ('CLOSE', 'When the exam closes', 'After the deadline and any late-work time, when nobody can still be answering.'),

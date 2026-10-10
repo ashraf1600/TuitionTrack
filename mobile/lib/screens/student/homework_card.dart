@@ -91,9 +91,8 @@ class _HomeworkCardState extends State<HomeworkCard> {
     final repo = context.read<Repo>();
     setState(() => _busy = true);
     try {
-      final ok = await attempt(context, () async {
-        await repo.submitHomework(widget.hw.id, _url.text.trim());
-      }, success: 'Submission recorded.');
+      final ok = await attemptSave(context, () => repo.submitHomework(widget.hw.id, _url.text.trim()),
+          success: 'Submission recorded.');
       if (ok) await widget.onChanged();
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -104,13 +103,12 @@ class _HomeworkCardState extends State<HomeworkCard> {
     HapticFeedback.lightImpact();
     final repo = context.read<Repo>();
     final ok = await confirm(context,
-        title: 'Mark as done?', message: 'This sets is_evaluated = true for the student.');
+        title: 'Mark as done?', message: 'The student will see this homework as checked and can no longer change what they handed in.');
     if (!ok || !mounted) return;
     setState(() => _busy = true);
     try {
-      final done = await attempt(context, () async {
-        await repo.evaluateHomework(widget.hw.id, evaluated: true);
-      }, success: 'Marked as done.');
+      final done = await attemptSave(context, () => repo.evaluateHomework(widget.hw.id, evaluated: true),
+          success: 'Marked as done.');
       if (done) await widget.onChanged();
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -161,8 +159,11 @@ class _HomeworkCardState extends State<HomeworkCard> {
             ],
           ),
           gap8,
-          Pill(hw.isEvaluated ? 'Marked as Done' : 'Pending Tutor Review',
-              color: hw.isEvaluated ? AppColors.success : AppColors.warning, icon: hw.isEvaluated ? Icons.verified : Icons.hourglass_empty),
+          if (hw.isPending)
+            const Pill('Waiting to sync', color: AppColors.primarySoft, icon: Icons.cloud_upload_outlined)
+          else
+            Pill(hw.isEvaluated ? 'Marked as Done' : 'Pending Tutor Review',
+                color: hw.isEvaluated ? AppColors.success : AppColors.warning, icon: hw.isEvaluated ? Icons.verified : Icons.hourglass_empty),
           if (hw.feedback.isNotEmpty) ...[gap8, Text('Feedback: ${hw.feedback}', style: const TextStyle(fontSize: 13))],
           // What the student handed in, for the tutor to review (and for the student to check).
           if (hw.submittedUrl.isNotEmpty || hw.submissionFileUrl.isNotEmpty) ...[
@@ -190,7 +191,10 @@ class _HomeworkCardState extends State<HomeworkCard> {
             const Text('Marked as submitted (no link or file).', style: TextStyle(fontSize: 12, color: AppColors.muted)),
           ],
           gap12,
-          if (!widget.isTutor) ...[
+          if (hw.isPending)
+            Text('Assigned on this phone while offline. It reaches your students once you are back online.',
+                style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant))
+          else if (!widget.isTutor) ...[
             // Checked work is closed: the server refuses changes after the tutor marks it done.
             if (!hw.isEvaluated) ...[
               TextField(

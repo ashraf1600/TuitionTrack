@@ -171,14 +171,14 @@ class _StudentCard extends StatelessWidget {
             child: ListView(
               shrinkWrap: true,
               children: [
-                ListTile(title: Text('Add $name to which group?', style: const TextStyle(fontWeight: FontWeight.w700))),
-                if (tuitions.isEmpty) ListTile(title: Text('Create a tuition group first.', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant))),
+                ListTile(title: Text('Add $name to which tuition?', style: const TextStyle(fontWeight: FontWeight.w700))),
+                if (tuitions.isEmpty) ListTile(title: Text('Create a tuition first.', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant))),
                 for (final t in tuitions)
                   ListTile(
                     leading: Icon(Icons.groups_outlined),
                     title: Text(t.str('title')),
                     enabled: !groups.contains(t.str('title')),
-                    subtitle: groups.contains(t.str('title')) ? Text('Already in this group') : null,
+                    subtitle: groups.contains(t.str('title')) ? Text('Already in this tuition') : null,
                     onTap: () => Navigator.pop(context, t.str('id')),
                   ),
               ],
@@ -186,7 +186,7 @@ class _StudentCard extends StatelessWidget {
           ),
         );
         if (tuitionId == null || !context.mounted) return;
-        if (await attempt(context, () => repo.enroll(tuitionId, [id]), success: '$name added to the group.')) await reload();
+        if (await attempt(context, () => repo.enroll(tuitionId, [id]), success: '$name added to the tuition.')) await reload();
       case 'reset':
         final ok = await confirm(
           context,
@@ -249,11 +249,11 @@ class _StudentCard extends StatelessWidget {
                   spacing: 6,
                   runSpacing: 6,
                   children: [
-                    for (final group in groups) Pill(group, color: AppColors.primarySoft, icon: Icons.groups),
+                    for (final group in groups) Pill(group, color: AppColors.primarySoft, icon: Icons.class_outlined),
                     if (pendingRequest)
                       const Pill('Asked to join — answer on Overview', color: AppColors.warning)
                     else if (groups.isEmpty && unassigned && active)
-                      const Pill('Not in a group', color: AppColors.warning),
+                      const Pill('Not in a tuition', color: AppColors.warning),
                     if (student.flag('must_change_password')) const Pill('Temporary password', color: AppColors.warning, icon: Icons.key),
                     if (!active) const Pill('Deactivated', color: AppColors.danger),
                   ],
@@ -267,7 +267,7 @@ class _StudentCard extends StatelessWidget {
               onSelected: (value) => _action(context, value),
               itemBuilder: (_) => [
                 const PopupMenuItem(value: 'edit', child: Text('Edit details')),
-                if (active) const PopupMenuItem(value: 'group', child: Text('Add to a group')),
+                if (active) const PopupMenuItem(value: 'group', child: Text('Add to a tuition')),
                 const PopupMenuItem(value: 'reset', child: Text('Reset password')),
                 PopupMenuItem(value: 'toggle', child: Text(active ? 'Deactivate' : 'Reactivate')),
               ],
