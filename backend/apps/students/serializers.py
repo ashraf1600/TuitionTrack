@@ -717,6 +717,7 @@ class ConnectedTutorSerializer(serializers.Serializer):
 class HomeworkSerializer(serializers.ModelSerializer):
     """Read serializer for students and tutors (homework list/detail)."""
     due_date = serializers.DateTimeField(format="%Y-%m-%dT%H:%M:%SZ")
+    tutor_id = serializers.UUIDField(read_only=True)
     tutor_name = serializers.SerializerMethodField()
     tutor_display_name = serializers.SerializerMethodField()
     tutor_profile_picture = serializers.SerializerMethodField()
@@ -731,7 +732,7 @@ class HomeworkSerializer(serializers.ModelSerializer):
         model = Homework
         fields = [
             "id", "title", "description", "due_date", "source_label",
-            "tutor_name", "tutor_display_name", "tutor_profile_picture",
+            "tutor_id", "tutor_name", "tutor_display_name", "tutor_profile_picture",
             "student_id", "student_name", "tuition_id", "tuition_title",
             "is_group", "group_source_id", "client_ref",
             "submitted_online_url", "submission_file_url", "submitted_at", "is_submitted",
