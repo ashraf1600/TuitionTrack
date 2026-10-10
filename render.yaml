@@ -37,11 +37,19 @@ services:
         value: "30"
 
       # ── Database Connection (Render Managed PostgreSQL) ──
-      # Automatically connects to tuitiontrack-db over Render's low-latency internal network:
+      # Automatically connects to tuitiontrack-db over Render's low-latency internal network.
+      # Render's free database expires after 30 days. After moving to Neon
+      # (RENDER_DEPLOYMENT_GUIDE.md → "Moving the database to Neon"), replace these four
+      # lines with the commented ones below and set the values in the Dashboard:
       - key: DATABASE_URL
         fromDatabase:
           name: tuitiontrack-db
           property: connectionString
+      # - key: DATABASE_URL        # the Neon pooled connection string
+      #   sync: false
+      # - key: DB_CONN_MAX_AGE     # let Neon sleep when nobody is using the app
+      #   value: "0"
+      # Optional: SENTRY_DSN (error reports), set in the Dashboard.
 
       # ── Frontend & CORS ──
       # FRONTEND_URL is the one web origin allowed to call the API from a browser (CORS) and the

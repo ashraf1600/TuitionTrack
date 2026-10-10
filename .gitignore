@@ -110,3 +110,7 @@ TuitionTrack.apk
 *.apk
 *.apk.sha1
 *.apk.sha256
+
+# ─── Database copies made by scripts/move-database.bat ───────
+backups/
+scripts/*.log

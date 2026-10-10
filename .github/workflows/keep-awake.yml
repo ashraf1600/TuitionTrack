@@ -1,0 +1,24 @@
+name: keep-awake
+
+# Optional. Calls the hosted API every 14 minutes so Render's free web service
+# does not fall asleep. Off unless the repository variable KEEP_AWAKE is "true"
+# (Settings → Secrets and variables → Actions → Variables).
+# /api/v1/meta/ does not query the database, so a Neon database still sleeps.
+
+on:
+  schedule:
+    - cron: '*/14 * * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  ping:
+    if: vars.KEEP_AWAKE == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Ping the API
+        env:
+          API_URL: ${{ vars.API_URL || 'https://tuitiontrack-api.onrender.com' }}
+        run: curl --fail --silent --show-error --max-time 90 --retry 2 "$API_URL/api/v1/meta/" > /dev/null
