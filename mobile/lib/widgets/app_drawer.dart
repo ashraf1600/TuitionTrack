@@ -7,6 +7,8 @@ import '../core/session.dart';
 import 'theme.dart';
 import 'ui.dart';
 import '../screens/common/account_screen.dart';
+import '../screens/common/payments_screen.dart';
+import '../screens/student/connect_screen.dart';
 
 /// Change this to the official Facebook page. Used by the drawer's follow link.
 const facebookPageUrl = 'https://www.facebook.com/tuitiontrack';
@@ -161,6 +163,26 @@ class AppDrawer extends StatelessWidget {
                 HapticFeedback.lightImpact();
                 Navigator.pop(context);
                 Navigator.push(context, MaterialPageRoute<void>(builder: (_) => const AccountScreen()));
+              },
+            ),
+            if (session.isStudent)
+              ListTile(
+                leading: const Icon(Icons.key_rounded),
+                title: const Text('Connect to a tutor'),
+                subtitle: const Text('Invite code, requests, find a tutor', style: TextStyle(fontSize: 12)),
+                onTap: () {
+                  HapticFeedback.lightImpact();
+                  Navigator.pop(context);
+                  Navigator.push(context, MaterialPageRoute<void>(builder: (_) => const ConnectScreen()));
+                },
+              ),
+            ListTile(
+              leading: const Icon(Icons.receipt_long_outlined),
+              title: Text(session.isTutor ? 'Payments' : 'Payment history'),
+              onTap: () {
+                HapticFeedback.lightImpact();
+                Navigator.pop(context);
+                Navigator.push(context, MaterialPageRoute<void>(builder: (_) => const PaymentsScreen()));
               },
             ),
             ListTile(

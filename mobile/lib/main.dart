@@ -69,7 +69,11 @@ class _TuitionTrackAppState extends State<TuitionTrackApp> with WidgetsBindingOb
     if (session.api.offline.value) {
       session.api.checkConnection();
     } else {
-      session.syncPending();
+      // Send anything made offline, then let open screens fetch what changed meanwhile
+      // (a class the tutor marked, a payment they recorded).
+      session.syncPending().then((sent) {
+        if (sent == 0) session.api.dataVersion.value++;
+      });
     }
   }
 

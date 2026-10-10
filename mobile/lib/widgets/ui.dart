@@ -125,10 +125,12 @@ class LoaderState<T> extends State<Loader<T>> {
   }
 
   void _onDataChanged() {
-    if (mounted) reload();
+    if (mounted) reload(quiet: true);
   }
 
-  Future<void> reload() async {
+  /// Loads again. [quiet] (background refreshes) keeps failures off screen:
+  /// what was shown stays, and the next refresh tries again.
+  Future<void> reload({bool quiet = false}) async {
     // A first load that takes long is usually the free server waking up: say so.
     if (!_loaded) {
       _slowTimer?.cancel();
@@ -148,14 +150,14 @@ class LoaderState<T> extends State<Loader<T>> {
       if (!mounted) return;
       // Keep showing what we already have; a failed refresh should not blank the screen.
       if (_loaded) {
-        showToast(context, error.message, error: true);
+        if (!quiet) showToast(context, error.message, error: true);
       } else {
         setState(() => _error = error.message);
       }
     } catch (_) {
       if (!mounted) return;
       if (_loaded) {
-        showToast(context, 'Could not refresh. Please try again.', error: true);
+        if (!quiet) showToast(context, 'Could not refresh. Please try again.', error: true);
       } else {
         setState(() => _error = 'Something went wrong while loading. Please try again.');
       }
