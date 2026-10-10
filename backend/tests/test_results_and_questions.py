@@ -147,8 +147,9 @@ class ResultPublicationTests(APITestCase):
         submission = ExamSubmission.objects.get(exam_id=exam['id'], student=self.student)
         request = detail.wsgi_request
         request.user = self.student
-        with self.assertRaises(Exception):
-            ExamResultSerializer(submission, context={'request': request}).data
+        from rest_framework.exceptions import PermissionDenied
+        with self.assertRaises(PermissionDenied):
+            _ = ExamResultSerializer(submission, context={'request': request}).data
 
         # Tutor publishes: the evaluated paper appears.
         self.client.force_authenticate(user=self.tutor)

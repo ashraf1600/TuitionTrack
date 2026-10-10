@@ -1,0 +1,9 @@
+# Lint settings for the Django backend: `ruff check .` from this folder.
+line-length = 120
+target-version = "py311"
+extend-exclude = ["*/migrations/*"]
+
+[lint]
+select = ["E", "F", "W", "B"]
+# Long lines are mostly readable messages and help texts; wrapping them adds noise, not safety.
+ignore = ["E501"]

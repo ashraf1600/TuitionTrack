@@ -12,7 +12,6 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
 from django.utils import timezone
 from django.contrib.auth import get_user_model
-from django.db import connection
 from rest_framework import status
 from rest_framework.test import APITestCase, APITransactionTestCase, APIClient
 
@@ -281,7 +280,7 @@ class ConcurrencyAttendanceToggleTests(APITransactionTestCase):
             total_fee=Decimal('5000.00'),
             cycle_length=12,
         )
-        enrollment = TuitionEnrollment.objects.create(
+        TuitionEnrollment.objects.create(
             tuition=tuition,
             student=student,
             is_active=True,
