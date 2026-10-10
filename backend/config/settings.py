@@ -92,6 +92,8 @@ DJANGO_APPS = [
 
 THIRD_PARTY_APPS = [
     'rest_framework',
+    # OpenAPI description of the API at /api/v1/schema/ (docs at /api/v1/docs/).
+    'drf_spectacular',
     'rest_framework_simplejwt',
     # Lets a refresh token be revoked: sign-out, password change, deactivation.
     'rest_framework_simplejwt.token_blacklist',
@@ -282,6 +284,7 @@ REST_FRAMEWORK = {
         'rest_framework.parsers.MultiPartParser',
     ),
     'EXCEPTION_HANDLER': 'config.api.api_exception_handler',
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
     'DEFAULT_PAGINATION_CLASS': 'apps.authentication.pagination.StandardPagination',
     'PAGE_SIZE': 20,
     # Datetimes are always ISO 8601 in UTC, e.g. 2026-10-06T19:14:07.399411Z (DRF's default),
@@ -298,6 +301,8 @@ REST_FRAMEWORK = {
     },
 }
 TESTING = 'test' in sys.argv
+# Background work (e-mails) runs inline in tests so they can assert on it; see config/background.py.
+BACKGROUND_TASKS_INLINE = TESTING or os.getenv('BACKGROUND_TASKS_INLINE', 'False').lower() in ('true', '1', 't')
 if TESTING:
     # The test suite signs in far more often than a person can; throttling has its own test.
     REST_FRAMEWORK['DEFAULT_THROTTLE_RATES'] = {'anon': '100000/min', 'user': '100000/min', 'auth': '100000/min'}
@@ -356,3 +361,35 @@ LOGGING = {
         'django.request': {'handlers': ['console'], 'level': 'ERROR', 'propagate': False},
     },
 }
+
+# ─── API description (OpenAPI) ────────────────────────────────────────────────
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'TuitionTrack API',
+    'VERSION': 'v1',
+    'DESCRIPTION': 'REST API shared by the TuitionTrack web and mobile apps.',
+    'SERVE_INCLUDE_SCHEMA': False,
+    # Staff only: sign in at /admin/ first, then open /api/v1/docs/.
+    'SERVE_PERMISSIONS': ['rest_framework.permissions.IsAdminUser'],
+    'SERVE_AUTHENTICATION': [
+        'rest_framework.authentication.SessionAuthentication',
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
+    ],
+    # Two different "status" choice sets (connection requests, exam submissions).
+    'ENUM_NAME_OVERRIDES': {
+        'ConnectionStatusEnum': 'apps.students.models.ConnectionRequest.Status',
+        'SubmissionStatusEnum': 'apps.exams.models.ExamSubmission.Status',
+    },
+}
+
+# ─── Error tracking (optional) ────────────────────────────────────────────────
+# Set SENTRY_DSN to have server errors reported to Sentry (sentry.io has a free plan).
+SENTRY_DSN = os.getenv('SENTRY_DSN', '').strip()
+if SENTRY_DSN and not TESTING:
+    import sentry_sdk
+    sentry_sdk.init(
+        dsn=SENTRY_DSN,
+        environment=os.getenv('SENTRY_ENVIRONMENT', 'development' if DEBUG else 'production'),
+        traces_sample_rate=float(os.getenv('SENTRY_TRACES_SAMPLE_RATE', '0')),
+        # Names, e-mails and tokens stay out of error reports.
+        send_default_pii=False,
+    )

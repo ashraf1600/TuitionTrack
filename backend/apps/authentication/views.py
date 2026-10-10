@@ -169,22 +169,33 @@ class PasswordResetRequestView(APIView):
             Q(username__iexact=identifier) | Q(email__iexact=identifier)
         ).exclude(email='')[:3]
 
+        from config.background import run_after_commit
+        messages = []
         for user in users:
             uid = urlsafe_base64_encode(force_bytes(user.pk))
             token = default_token_generator.make_token(user)
             link = f"{settings.FRONTEND_URL.rstrip('/')}/reset-password?uid={uid}&token={token}"
-            send_mail(
-                subject='[TuitionTrack] Reset your password',
-                message=(
-                    f'Hello {user.get_full_name() or user.username},\n\n'
-                    f'Use this link to choose a new password for your TuitionTrack account '
-                    f'(username: {user.username}):\n\n{link}\n\n'
-                    f'If you did not ask for this, you can ignore this email.'
-                ),
-                from_email=settings.DEFAULT_FROM_EMAIL,
-                recipient_list=[user.email],
-                fail_silently=True,
-            )
+            messages.append((
+                user.email,
+                f'Hello {user.get_full_name() or user.username},\n\n'
+                f'Use this link to choose a new password for your TuitionTrack account '
+                f'(username: {user.username}):\n\n{link}\n\n'
+                f'If you did not ask for this, you can ignore this email.',
+            ))
+
+        def send_all():
+            for address, text in messages:
+                send_mail(
+                    subject='[TuitionTrack] Reset your password',
+                    message=text,
+                    from_email=settings.DEFAULT_FROM_EMAIL,
+                    recipient_list=[address],
+                    fail_silently=True,
+                )
+
+        # Off the request, so the answer does not reveal (by its timing) whether an e-mail went out.
+        if messages:
+            run_after_commit(send_all)
 
         return Response({
             'message': 'If that account has an email address, a reset link has been sent to it. '

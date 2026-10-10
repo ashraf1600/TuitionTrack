@@ -409,8 +409,11 @@ class ConnectionRequestViewSet(viewsets.GenericViewSet):
         return qs
 
     def list(self, request):
-        serializer = self.get_serializer(self.get_queryset(), many=True)
-        return Response(serializer.data)
+        # Paged like every other list (?page=, ?page_size=); both apps follow `next`.
+        queryset = self.get_queryset()
+        page = self.paginate_queryset(queryset)
+        serializer = self.get_serializer(page, many=True)
+        return self.get_paginated_response(serializer.data)
 
     def create(self, request):
         """Student sends (or re-sends after a rejection) a request to a tutor."""
@@ -760,7 +763,9 @@ class HomeworkViewSet(viewsets.GenericViewSet):
         if evaluated is not None and evaluated != "":
             qs = qs.filter(is_evaluated=(evaluated.lower() in ("true", "1", "yes")))
 
-        return Response(HomeworkSerializer(qs, many=True, context={"request": request}).data)
+        # Paged like every other list (?page=, ?page_size=); both apps follow `next`.
+        page = self.paginate_queryset(qs)
+        return self.get_paginated_response(HomeworkSerializer(page, many=True, context={"request": request}).data)
 
     def retrieve(self, request, pk=None):
         from .serializers import HomeworkSerializer
@@ -772,9 +777,29 @@ class HomeworkViewSet(viewsets.GenericViewSet):
         denied = self._tutor_only(request, "create")
         if denied:
             return denied
+        from django.db import IntegrityError, transaction
+        from .models import Homework
+
+        # An app that queued this while offline sends a client_ref; a repeat of the
+        # same request (a retry after reconnecting) answers with the row already made.
+        raw_ref = request.data.get("client_ref")
+        client_ref = raw_ref.strip()[:64] if isinstance(raw_ref, str) else ""
+        if client_ref:
+            existing = Homework.objects.filter(tutor=request.user, client_ref=client_ref).first()
+            if existing:
+                return Response(HomeworkSerializer(existing, context={"request": request}).data, status=status.HTTP_200_OK)
+
         serializer = HomeworkCreateUpdateSerializer(data=request.data, context={"request": request})
         serializer.is_valid(raise_exception=True)
-        hw = serializer.save(tutor=request.user)
+        try:
+            with transaction.atomic():
+                hw = serializer.save(tutor=request.user, client_ref=client_ref)
+        except IntegrityError:
+            # Two copies of the same queued request arrived together; the other one won.
+            existing = Homework.objects.filter(tutor=request.user, client_ref=client_ref).first() if client_ref else None
+            if existing is None:
+                raise
+            return Response(HomeworkSerializer(existing, context={"request": request}).data, status=status.HTTP_200_OK)
         return Response(HomeworkSerializer(hw, context={"request": request}).data, status=status.HTTP_201_CREATED)
 
     def partial_update(self, request, pk=None):

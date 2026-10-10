@@ -284,6 +284,15 @@ class Homework(models.Model):
         verbose_name='Copied From Group Task',
     )
 
+    # Set by an app that created this homework while offline: sending the same
+    # request again (the phone retrying after it reconnects) returns this row
+    # instead of making a duplicate.
+    client_ref = models.CharField(
+        max_length=64, blank=True, default='',
+        verbose_name='Client Reference',
+        help_text='Idempotency key chosen by the client app. Empty for homework made online.',
+    )
+
     title = models.CharField(max_length=255, verbose_name='Title')
     description = models.TextField(blank=True, verbose_name='Description / Instructions')
     due_date = models.DateTimeField(verbose_name='Due Date & Time', db_index=True)
@@ -338,6 +347,11 @@ class Homework(models.Model):
                 fields=['group_source', 'student'],
                 condition=models.Q(group_source__isnull=False),
                 name='unique_personal_copy_per_student',
+            ),
+            models.UniqueConstraint(
+                fields=['tutor', 'client_ref'],
+                condition=~models.Q(client_ref=''),
+                name='unique_homework_client_ref_per_tutor',
             ),
         ]
 

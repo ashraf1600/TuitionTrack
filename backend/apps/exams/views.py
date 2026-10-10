@@ -32,6 +32,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.parsers import MultiPartParser, FormParser
 
 from apps.authentication.permissions import IsTutor, IsStudent, IsTutorOrStudent
+from config.background import run_after_commit
 from .models import Exam, ExamAttempt, ExamSubmission
 from .uploads import ALLOWED_CONTENT_TYPES, ALLOWED_EXTENSIONS, UploadRejected, validate_upload
 from .serializers import (
@@ -47,6 +48,23 @@ from .serializers import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _send_each(subject, body, html_body, recipients):
+    """One e-mail per student, so nobody sees another student's address."""
+    for recipient in recipients:
+        try:
+            send_mail(
+                subject=subject,
+                message=body,
+                from_email=settings.DEFAULT_FROM_EMAIL,
+                recipient_list=[recipient],
+                html_message=html_body,
+                fail_silently=True,
+            )
+        except Exception as exc:  # noqa: BLE001 - one bad address must not stop the others
+            logger.warning('Failed to send exam notification email to %s: %s', recipient, exc)
+
 
 
 class ExamViewSet(viewsets.ModelViewSet):
@@ -223,18 +241,8 @@ class ExamViewSet(viewsets.ModelViewSet):
                 </p>
             </div>
             """
-            for recipient in recipients:
-                try:
-                    send_mail(
-                        subject=subject,
-                        message=body,
-                        from_email=settings.DEFAULT_FROM_EMAIL,
-                        recipient_list=[recipient],
-                        html_message=html_body,
-                        fail_silently=True,
-                    )
-                except Exception as exc:  # noqa: BLE001 - one bad address must not stop the others
-                    logger.warning('Failed to send exam notification email to %s: %s', recipient, exc)
+            # Sent after the exam is saved, off the request: the tutor does not wait for the mail server.
+            run_after_commit(_send_each, subject, body, html_body, recipients)
 
     def create(self, request, *args, **kwargs):
         if request.user.role != 'TUTOR':

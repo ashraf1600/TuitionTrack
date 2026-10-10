@@ -148,11 +148,11 @@ class HomeworkTenancyTests(AuditBase):
         group.refresh_from_db()
         self.assertEqual(group.submitted_online_url, '')  # the shared row is untouched
 
-        mine = [h['id'] for h in self.client.get('/api/v1/homework/').data]
+        mine = [h['id'] for h in self.client.get('/api/v1/homework/').data['results']]
         self.assertEqual(mine, [copy_id])  # the copy replaces the shared row for this student
 
         self.as_user(self.classmate)
-        theirs = self.client.get('/api/v1/homework/').data
+        theirs = self.client.get('/api/v1/homework/').data['results']
         self.assertEqual([h['id'] for h in theirs], [str(group.id)])
         self.assertFalse(theirs[0]['is_submitted'])
 
@@ -389,3 +389,68 @@ class SolutionLinkTests(AuditBase):
         self.assertEqual(bad.status_code, status.HTTP_400_BAD_REQUEST)
         good = self.client.post('/api/v1/exams/', {**payload, 'solution_media_url': '/media/uploads/a.pdf'}, format='json')
         self.assertEqual(good.status_code, status.HTTP_201_CREATED, good.data)
+
+
+class OfflineSyncSupportTests(AuditBase):
+    def test_homework_create_with_the_same_client_ref_is_made_once(self):
+        self.as_user(self.tutor)
+        payload = {'title': 'Ch 5', 'due_date': '2030-01-01T10:00:00Z', 'tuition': str(self.tuition.id),
+                   'client_ref': 'phone-1234'}
+        first = self.client.post('/api/v1/homework/', payload, format='json')
+        again = self.client.post('/api/v1/homework/', payload, format='json')
+        self.assertEqual(first.status_code, status.HTTP_201_CREATED, first.data)
+        self.assertEqual(again.status_code, status.HTTP_200_OK)
+        self.assertEqual(first.data['id'], again.data['id'])
+        self.assertEqual(first.data['client_ref'], 'phone-1234')
+        self.assertEqual(Homework.objects.filter(tutor=self.tutor, client_ref='phone-1234').count(), 1)
+        # Another tutor may use the same key for their own homework.
+        self.as_user(self.other_tutor)
+        other = self.client.post('/api/v1/homework/', {**payload, 'tuition': str(self.other_tuition.id)}, format='json')
+        self.assertEqual(other.status_code, status.HTTP_201_CREATED, other.data)
+
+    def test_marking_a_class_twice_is_harmless(self):
+        self.as_user(self.tutor)
+        AttendanceCycle.ensure_active(self.tuition)
+        url = f'/api/v1/tuitions/{self.tuition.id}/mark_class/'
+        body = {'class_no': 2, 'completed': True, 'date': '2026-10-01T12:00:00Z', 'topic': 'Optics'}
+        self.assertEqual(self.client.patch(url, body, format='json').status_code, status.HTTP_200_OK)
+        again = self.client.patch(url, body, format='json')
+        self.assertEqual(again.status_code, status.HTTP_200_OK)
+        self.assertEqual(again.data['cycle']['completed_classes'], 1)
+
+    def test_homework_and_connection_lists_are_paged(self):
+        for n in range(3):
+            Homework.objects.create(tutor=self.tutor, student=self.student, title=f'H{n}',
+                                    due_date=timezone.now() + timedelta(days=n + 1))
+        self.as_user(self.tutor)
+        page = self.client.get('/api/v1/homework/?page_size=2').data
+        self.assertEqual((page['count'], len(page['results'])), (3, 2))
+        self.assertIsNotNone(page['next'])
+        self.assertIn('results', self.client.get('/api/v1/connections/').data)
+
+
+class BackgroundEmailTests(AuditBase):
+    def test_password_reset_mail_is_still_sent(self):
+        from django.core import mail
+        self.tutor.email = 'amin@example.com'
+        self.tutor.save()
+        self.client.post('/api/v1/auth/password-reset/', {'identifier': 'amin@example.com'}, format='json')
+        self.assertEqual(len(mail.outbox), 1)
+
+    def test_a_failing_background_task_is_logged_not_raised(self):
+        from config.background import run_after_commit
+
+        def boom():
+            raise RuntimeError('mail server down')
+
+        with self.assertLogs('config.background', level='ERROR'):
+            run_after_commit(boom)
+
+
+class ApiSchemaTests(AuditBase):
+    def test_schema_is_staff_only_and_builds(self):
+        self.assertIn(self.client.get('/api/v1/schema/').status_code, (401, 403))
+        admin = User.objects.create_user(username='boss', password='Passw0rd!x', role=User.Role.TUTOR, is_staff=True)
+        self.client.force_authenticate(user=admin)
+        resp = self.client.get('/api/v1/schema/?format=json')
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
