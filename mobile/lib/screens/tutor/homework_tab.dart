@@ -70,42 +70,31 @@ class _HomeworkTabState extends State<HomeworkTab> {
   }
 
   /// Turn one shared group row into one row per enrolled student so each
-  /// submission is reviewed and marked done individually.
+  /// submission is reviewed and marked done individually. One server call:
+  /// either every copy is made and the shared row goes, or nothing changes.
   Future<void> _split(HomeworkItem hw, List<Json> tuitions) async {
     final tuition = _firstOrNull(tuitions, (t) => t.str('id') == hw.tuitionId);
-    final roster = (tuition?.maps('enrollments') ?? const [])
-        .where((e) => e['is_active'] != false)
-        .map((e) => (id: e.str('student_id'), name: e.str('student_name')))
-        .where((s) => s.id.isNotEmpty)
-        .toList();
-    if (roster.isEmpty) {
+    final members = (tuition?.maps('enrollments') ?? const []).where((e) => e['is_active'] != false).length;
+    if (members == 0) {
       showToast(context, 'No enrolled students found in this group to split across.', error: true);
       return;
     }
     final ok = await confirm(
       context,
       title: 'Split into per-student copies?',
-      message:
-          '"${hw.title}" becomes ${roster.length} individual rows (one per student). The shared row is removed.',
-      confirmLabel: 'Split (${roster.length})',
+      message: '"${hw.title}" becomes $members individual rows (one per student). '
+          'Work already handed in is kept. The shared row is removed.',
+      confirmLabel: 'Split ($members)',
     );
     if (!ok || !mounted) return;
     final repo = context.read<Repo>();
-    var done = 0;
-    final ok2 = await attempt(context, () async {
-      for (final s in roster) {
-        await repo.createHomework(
-          title: hw.title,
-          description: hw.description,
-          dueDate: hw.dueDate,
-          studentId: s.id,
-          sourceLabel: hw.sourceLabel,
-        );
-        done++;
-      }
-      await repo.deleteHomework(hw.id);
-    }, success: done == roster.length ? 'Split into $done individual copies.' : null);
-    if (ok2) await _key.currentState?.reload();
+    var made = 0;
+    final done = await attempt(context, () async {
+      made = (await repo.splitHomework(hw.id)).length;
+    });
+    if (!done || !mounted) return;
+    showToast(context, 'Split into $made individual copies.');
+    await _key.currentState?.reload();
   }
 
   @override

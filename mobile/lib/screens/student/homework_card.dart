@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 
 import '../../core/connect.dart';
 import '../../core/repo.dart';
+import '../../widgets/media.dart';
 import '../../widgets/theme.dart';
 import '../../widgets/ui.dart';
 
@@ -104,7 +105,7 @@ class _HomeworkCardState extends State<HomeworkCard> {
     final repo = context.read<Repo>();
     final ok = await confirm(context,
         title: 'Mark as done?', message: 'This sets is_evaluated = true for the student.');
-    if (!ok) return;
+    if (!ok || !mounted) return;
     setState(() => _busy = true);
     try {
       final done = await attempt(context, () async {
@@ -163,31 +164,59 @@ class _HomeworkCardState extends State<HomeworkCard> {
           Pill(hw.isEvaluated ? 'Marked as Done' : 'Pending Tutor Review',
               color: hw.isEvaluated ? AppColors.success : AppColors.warning, icon: hw.isEvaluated ? Icons.verified : Icons.hourglass_empty),
           if (hw.feedback.isNotEmpty) ...[gap8, Text('Feedback: ${hw.feedback}', style: const TextStyle(fontSize: 13))],
+          // What the student handed in, for the tutor to review (and for the student to check).
+          if (hw.submittedUrl.isNotEmpty || hw.submissionFileUrl.isNotEmpty) ...[
+            gap8,
+            Wrap(
+              spacing: 8,
+              runSpacing: 4,
+              children: [
+                if (hw.submittedUrl.isNotEmpty)
+                  OutlinedButton.icon(
+                    onPressed: () => openExternal(context, hw.submittedUrl),
+                    icon: const Icon(Icons.link, size: 16),
+                    label: const Text('Open submitted link'),
+                  ),
+                if (hw.submissionFileUrl.isNotEmpty)
+                  OutlinedButton.icon(
+                    onPressed: () => openExternal(context, hw.submissionFileUrl),
+                    icon: const Icon(Icons.attach_file, size: 16),
+                    label: const Text('Open submitted file'),
+                  ),
+              ],
+            ),
+          ] else if (widget.isTutor && hw.isSubmitted) ...[
+            gap8,
+            const Text('Marked as submitted (no link or file).', style: TextStyle(fontSize: 12, color: AppColors.muted)),
+          ],
           gap12,
           if (!widget.isTutor) ...[
-            TextField(
-              controller: _url,
-              keyboardType: TextInputType.url,
-              decoration: const InputDecoration(
-                labelText: 'Submission link (optional)',
-                hintText: 'https://docs.google.com/...',
-                prefixIcon: Icon(Icons.link),
+            // Checked work is closed: the server refuses changes after the tutor marks it done.
+            if (!hw.isEvaluated) ...[
+              TextField(
+                controller: _url,
+                keyboardType: TextInputType.url,
+                decoration: const InputDecoration(
+                  labelText: 'Submission link (optional)',
+                  hintText: 'https://docs.google.com/...',
+                  prefixIcon: Icon(Icons.link),
+                ),
               ),
-            ),
-            gap8,
-            SizedBox(
-              width: double.infinity,
-              child: BusyButton(
-                label: _busy ? 'Uploading...' : 'Upload Homework',
-                icon: Icons.upload,
-                onPressed: _busy
-                    ? null
-                    : () async {
-                        HapticFeedback.lightImpact();
-                        await _submit();
-                      },
+              gap8,
+              SizedBox(
+                width: double.infinity,
+                child: BusyButton(
+                  label: _busy ? 'Submitting...' : (hw.isSubmitted ? 'Update submission' : 'Submit homework'),
+                  icon: Icons.upload,
+                  onPressed: _busy
+                      ? null
+                      : () async {
+                          HapticFeedback.lightImpact();
+                          await _submit();
+                        },
+                ),
               ),
-            ),
+            ],
           ] else
             SizedBox(
               width: double.infinity,

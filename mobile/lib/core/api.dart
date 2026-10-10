@@ -84,7 +84,12 @@ class ApiClient {
     while (value.endsWith('/')) {
       value = value.substring(0, value.length - 1);
     }
-    if (value.isNotEmpty && !value.startsWith('http://') && !value.startsWith('https://')) value = 'http://$value';
+    if (value.isNotEmpty && !value.startsWith('http://') && !value.startsWith('https://')) {
+      // A typed address without a scheme: https for a real host, http only for this
+      // computer or the local network (release builds refuse plain http anyway).
+      final local = RegExp(r'^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)').hasMatch(value);
+      value = '${local ? 'http' : 'https'}://$value';
+    }
     return value;
   }
 

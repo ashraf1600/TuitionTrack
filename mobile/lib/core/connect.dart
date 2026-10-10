@@ -80,6 +80,7 @@ class HomeworkItem {
     required this.isEvaluated,
     required this.isSubmitted,
     this.sourceLabel = '',
+    this.submissionFileUrl = '',
     this.tuitionId = '',
     this.tuitionTitle = '',
     required this.studentId,
@@ -91,6 +92,8 @@ class HomeworkItem {
   final DateTime dueDate;
   final String tutorDisplay;
   final String submittedUrl;
+  /// The uploaded file the student handed in, if any (absolute URL).
+  final String submissionFileUrl;
   final String feedback;
   final bool isEvaluated;
   final bool isSubmitted;
@@ -112,9 +115,12 @@ class HomeworkItem {
         dueDate: j.date('due_date') ?? DateTime.now().add(const Duration(days: 7)),
         tutorDisplay: formatTutorName(j.str('tutor_display_name')),
         submittedUrl: j.str('submitted_online_url'),
+        submissionFileUrl: j.str('submission_file_url'),
         feedback: j.str('tutor_feedback'),
         isEvaluated: j.flag('is_evaluated'),
-        isSubmitted: j.flag('is_submitted') || j.str('submitted_online_url').isNotEmpty,
+        isSubmitted: j.flag('is_submitted') ||
+            j.str('submitted_online_url').isNotEmpty ||
+            j.str('submission_file_url').isNotEmpty,
         sourceLabel: j.str('source_label'),
         tuitionId: j.str('tuition_id'),
         tuitionTitle: j.str('tuition_title'),

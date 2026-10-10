@@ -14,8 +14,13 @@ import 'screens/tutor/tutor_home.dart';
 import 'widgets/theme.dart';
 
 /// The server the app talks to until the user sets another one on the sign-in screen.
-/// 10.0.2.2 is how an Android emulator reaches the computer it runs on.
-const defaultServer = String.fromEnvironment('API_BASE_URL', defaultValue: 'http://10.0.2.2:8000');
+/// Override at build time with --dart-define=API_BASE_URL=https://… . Release builds
+/// default to the hosted API (https); development builds to the computer they run on
+/// (10.0.2.2 is how an Android emulator reaches it).
+const defaultServer = String.fromEnvironment(
+  'API_BASE_URL',
+  defaultValue: kReleaseMode ? 'https://tuitiontrack-api.onrender.com' : 'http://10.0.2.2:8000',
+);
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();

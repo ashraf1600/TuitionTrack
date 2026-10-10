@@ -436,7 +436,7 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> with SingleTickerPr
                   message: 'The text and pictures are kept. Tables, bold text and lists become plain paragraphs.',
                   confirmLabel: 'Rewrite',
                 );
-                if (ok) setState(() => _keepPaper = false);
+                if (ok && mounted) setState(() => _keepPaper = false);
               },
               icon: const Icon(Icons.edit_outlined),
               label: const Text('Rewrite on this phone'),
@@ -462,7 +462,7 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> with SingleTickerPr
                 OutlinedButton.icon(
                   onPressed: () async {
                     final urls = await pickAndUpload(context);
-                    if (urls.isEmpty) return;
+                    if (urls.isEmpty || !mounted) return;
                     setState(() => _written.text = '${_written.text.trimRight()}\n\n${urls.map((u) => '[picture: $u]').join('\n\n')}\n\n'.trimLeft());
                   },
                   icon: const Icon(Icons.add_photo_alternate_outlined, size: 18),

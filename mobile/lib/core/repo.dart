@@ -123,7 +123,15 @@ class Repo {
   }
   Future<Json> updateHomework(String id, Json changes) async => _map(await api.patch('/homework/$id/', changes));
   Future<void> deleteHomework(String id) async => api.delete('/homework/$id/');
-  /// Student upload: URL only — never sends is_evaluated.
+  /// Tutor: turn a shared group task into one row per enrolled student, in one
+  /// server step. Work already handed in is kept. Returns the per-student rows.
+  Future<List<Json>> splitHomework(String id) async {
+    final data = _map(await api.post('/homework/$id/split/'));
+    return (data['homework'] as List? ?? const []).whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+  }
+
+  /// Student upload: URL only — never sends is_evaluated. On a shared group
+  /// task the server answers with the student's own copy (a different id).
   Future<Json> submitHomework(String id, String url) async {
     final data = _map(await api.post('/homework/$id/submit/', {'submitted_online_url': url}));
     return data.containsKey('homework') ? _map(data['homework']) : data;
