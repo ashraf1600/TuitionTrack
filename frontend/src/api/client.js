@@ -1,16 +1,19 @@
 /**
- * API Client with JWT Bearer Token Injection and Auto-Refresh
+ * API client: adds the bearer token, renews it once when it has expired
+ * (parallel 401s share one refresh), follows pagination for GET lists and
+ * turns every error body into an Error with a readable message.
  */
 
 // Where the API lives. Empty in development (the Vite proxy forwards /api to Django);
 // set VITE_API_URL=https://your-api-host when the website and the API are hosted separately.
-const customOrigin = (typeof window !== 'undefined' ? localStorage.getItem('tuitiontrack_api_url') : '') || '';
-let resolvedOrigin = (customOrigin || import.meta.env.VITE_API_URL || '').trim().replace(/\/+$/, '');
-if (resolvedOrigin && !resolvedOrigin.startsWith('http://') && !resolvedOrigin.startsWith('https://')) {
+let resolvedOrigin = (import.meta.env.VITE_API_URL || '').trim().replace(/\/+$/, '');
+if (resolvedOrigin && !/^https?:\/\//i.test(resolvedOrigin)) {
   resolvedOrigin = `https://${resolvedOrigin}`;
 }
 export const API_ORIGIN = resolvedOrigin;
 export const BASE_URL = `${API_ORIGIN}/api/v1`;
+
+const OFFLINE_MESSAGE = 'Cannot reach the server. Check your internet connection and try again.';
 
 let _refreshPromise = null;
 
@@ -31,10 +34,12 @@ export async function apiRequest(endpoint, options = {}) {
   const token = localStorage.getItem('access_token');
 
   const headers = {
+    Accept: 'application/json',
     ...options.headers,
   };
 
-  if (!(options.body instanceof FormData)) {
+  // Only requests that carry JSON say so (a bare GET with this header needs a CORS preflight).
+  if (options.body !== undefined && options.body !== null && !(options.body instanceof FormData)) {
     headers['Content-Type'] = 'application/json';
   }
 
@@ -47,7 +52,16 @@ export async function apiRequest(endpoint, options = {}) {
     headers,
   };
 
-  let response = await fetch(url, config);
+  const send = async (cfg) => {
+    try {
+      return await fetch(url, cfg);
+    } catch {
+      // fetch only rejects when no answer came back at all (offline, DNS, CORS, server down).
+      throw new Error(OFFLINE_MESSAGE);
+    }
+  };
+
+  let response = await send(config);
 
   // If token expired (401), attempt refresh once (single-flight for parallel 401s)
   if (response.status === 401 && localStorage.getItem('refresh_token')) {
@@ -55,7 +69,7 @@ export async function apiRequest(endpoint, options = {}) {
       const refreshToken = localStorage.getItem('refresh_token');
       _refreshPromise = fetch(`${BASE_URL}/auth/token/refresh/`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
         body: JSON.stringify({ refresh: refreshToken }),
       }).then(async (refreshResp) => {
         if (refreshResp.ok) {
@@ -64,61 +78,30 @@ export async function apiRequest(endpoint, options = {}) {
           if (refreshData.refresh) localStorage.setItem('refresh_token', refreshData.refresh);
           return refreshData.access;
         }
-        throw new Error('refresh failed');
-      }).catch(() => {
-        localStorage.removeItem('access_token');
-        localStorage.removeItem('refresh_token');
-        localStorage.removeItem('user_data');
-        window.location.href = '/login';
-        return null;
-      }).finally(() => {
-        // reset on next tick so concurrent callers share the same promise
-        setTimeout(() => { _refreshPromise = null; }, 0);
-      });
-    }
-    try {
-      const newAccess = await _refreshPromise;
-      if (newAccess) {
-        headers['Authorization'] = `Bearer ${newAccess}`;
-        response = await fetch(url, { ...config, headers });
-      }
-    } catch {
-      // redirect already handled
-    }
-  }
-
-  const contentType = response.headers.get('content-type');
-  let data = null;
-  if (contentType && contentType.includes('application/json')) {
-    data = await response.json();
-  } else {
-    data = await response.text();
-  }
-
-  if (!response.ok) {
-    // Flatten DRF field errors: {field: [msg]} -> "field: msg"
-    let errorMsg = 'Request failed';
-    if ([502, 503, 504].includes(response.status)) {
-      // The dev proxy / gateway answered, but the API behind it did not.
-      throw new Error('Cannot reach the server. Make sure the backend is running, then try again.');
-    }
-    if (data && typeof data === 'object') {
-      if (data.error || data.detail || data.message) {
-        errorMsg = data.error || data.detail || data.message;
-      } else {
-        const parts = [];
-        for (const [k, v] of Object.entries(data)) {
-          parts.push(`${k}: ${Array.isArray(v) ? v.join(', ') : v}`);
+        // Only a definite refusal ends the session; a server hiccup must not sign anyone out.
+        if (refreshResp.status === 400 || refreshResp.status === 401) {
+          localStorage.removeItem('access_token');
+          localStorage.removeItem('refresh_token');
+          localStorage.removeItem('user_data');
+          window.location.href = '/login';
         }
-        errorMsg = parts.join(' | ') || errorMsg;
-      }
-    } else if (response.status >= 500 || (typeof data === 'string' && /^\s*<(!doctype|html)/i.test(data))) {
-      // A server crash returns an HTML error page; never show that to the user.
-      errorMsg = 'Something went wrong on the server. Please try again.';
-    } else if (typeof data === 'string' && data) {
-      errorMsg = data;
+        return null;
+      }, () => null) // offline: keep the session and let the caller report the problem
+        .finally(() => {
+          // Callers already waiting hold this promise; the next expiry starts a fresh refresh.
+          _refreshPromise = null;
+        });
     }
-    throw new Error(errorMsg);
+    const newAccess = await _refreshPromise;
+    if (newAccess) {
+      headers['Authorization'] = `Bearer ${newAccess}`;
+      response = await send({ ...config, headers });
+    }
+  }
+
+  const data = await readBody(response);
+  if (!response.ok) {
+    throw apiError(response.status, data);
   }
 
   // Transparent pagination auto-accumulation for GET requests so lists never stop at page 1
@@ -132,7 +115,7 @@ export async function apiRequest(endpoint, options = {}) {
         const parsedNext = new URL(nextUrl, window.location.origin);
         const fetchUrl = `${API_ORIGIN}${parsedNext.pathname}${parsedNext.search}`;
         const nextResp = await fetch(fetchUrl, { ...config, headers });
-        if (!nextResp.ok) break;
+        if (!nextResp.ok) throw apiError(nextResp.status, await readBody(nextResp));
         const nextData = await nextResp.json();
         if (Array.isArray(nextData.results)) {
           accumulated.push(...nextData.results);
@@ -142,26 +125,80 @@ export async function apiRequest(endpoint, options = {}) {
       data.results = accumulated;
       data.count = accumulated.length;
     } catch (pageErr) {
-      console.warn('Pagination auto-accumulation warning:', pageErr);
+      // A half-loaded list would look complete; report the failure instead.
+      throw pageErr instanceof Error && pageErr.status ? pageErr : new Error(OFFLINE_MESSAGE);
     }
   }
 
   return data;
 }
 
-export async function fetchServerOffset() {
+async function readBody(response) {
+  if (response.status === 204) return null;
+  const contentType = response.headers.get('content-type') || '';
   try {
-    const before = Date.now();
-    const resp = await fetch(`${BASE_URL}/auth/me/`, { method: 'HEAD' });
-    const dateHeader = resp.headers.get('date');
-    if (!dateHeader) return 0;
-    const serverMs = new Date(dateHeader).getTime();
-    const after = Date.now();
-    const rtt = (after - before) / 2;
-    return serverMs + rtt - after;
+    return contentType.includes('application/json') ? await response.json() : await response.text();
   } catch {
-    return 0;
+    return null;
   }
+}
+
+/**
+ * One Error for any failed response. The API always sends {message, code,
+ * errors?}; older shapes ({error}, {detail}, {field: [..]}) are still read.
+ * The Error carries `status`, `code` and `fieldErrors` for forms that want them.
+ */
+export function apiError(status, data) {
+  let message = 'The request could not be completed.';
+  if ([502, 503, 504].includes(status)) {
+    // The gateway answered, but the API behind it did not (asleep, deploying or down).
+    message = 'The server is not available right now. Please try again in a moment.';
+  } else if (data && typeof data === 'object') {
+    const general = [data.error, data.detail, data.message].find((m) => typeof m === 'string' && m);
+    if (general) {
+      message = general;
+    } else {
+      const parts = Object.entries(data)
+        .filter(([key]) => key !== 'code')
+        .map(([key, value]) => `${key}: ${Array.isArray(value) ? value.join(', ') : value}`);
+      if (parts.length) message = parts.join(' | ');
+    }
+  } else if (status >= 500 || (typeof data === 'string' && /^\s*<(!doctype|html)/i.test(data))) {
+    // A server crash may return an HTML error page; never show that to the user.
+    message = 'Something went wrong on the server. Please try again.';
+  } else if (typeof data === 'string' && data.trim()) {
+    message = data.trim();
+  }
+  const error = new Error(message);
+  error.status = status;
+  error.code = (data && typeof data === 'object' && typeof data.code === 'string') ? data.code : 'error';
+  error.fieldErrors = (data && typeof data === 'object' && data.errors && typeof data.errors === 'object') ? data.errors : {};
+  return error;
+}
+
+// Exam timers follow the server clock. One measurement serves every card on the page.
+let _offsetPromise = null;
+let _offsetAt = 0;
+const OFFSET_TTL_MS = 5 * 60 * 1000;
+
+export function fetchServerOffset() {
+  if (_offsetPromise && Date.now() - _offsetAt < OFFSET_TTL_MS) return _offsetPromise;
+  _offsetAt = Date.now();
+  _offsetPromise = (async () => {
+    try {
+      const before = Date.now();
+      const resp = await fetch(`${BASE_URL}/meta/`, { headers: { Accept: 'application/json' } });
+      const after = Date.now();
+      const body = resp.ok ? await resp.json() : null;
+      const serverMs = body?.server_time ? new Date(body.server_time).getTime() : new Date(resp.headers.get('date')).getTime();
+      if (!Number.isFinite(serverMs)) return 0;
+      return serverMs + (after - before) / 2 - after;
+    } catch {
+      _offsetPromise = null; // try again next time
+      return 0;
+    }
+  })();
+  return _offsetPromise;
 }
 
 export const api = {
@@ -210,7 +247,6 @@ export const api = {
   getStudents: () => apiRequest('/students/'),
   getUnassignedStudents: () => apiRequest('/students/unassigned/'),
   createStudent: (studentData) => apiRequest('/students/', { method: 'POST', body: JSON.stringify(studentData) }),
-  getStudentDetail: (id) => apiRequest(`/students/${id}/`),
   updateStudent: (id, data) => apiRequest(`/students/${id}/`, { method: 'PATCH', body: JSON.stringify(data) }),
   toggleStudentActive: (id) => apiRequest(`/students/${id}/toggle_active/`, { method: 'POST' }),
   // Sets a new temporary password; the response is the only time it is ever shown.
@@ -253,21 +289,6 @@ export const api = {
   }),
   rejectConnection: (id) => apiRequest(`/connections/${id}/reject/`, { method: 'POST' }),
 
-  // Legacy Tuition Batches (backward compatibility)
-  getBatches: () => apiRequest('/batches/'),
-  createBatch: (data) => apiRequest('/batches/', { method: 'POST', body: JSON.stringify(data) }),
-  getBatchDetail: (id) => apiRequest(`/batches/${id}/`),
-  updateBatch: (id, data) => apiRequest(`/batches/${id}/`, { method: 'PATCH', body: JSON.stringify(data) }),
-  deleteBatch: (id) => apiRequest(`/batches/${id}/`, { method: 'DELETE' }),
-  addStudentToBatch: (batchId, studentId) => apiRequest(`/batches/${batchId}/add_student/`, {
-    method: 'POST',
-    body: JSON.stringify({ student_id: studentId }),
-  }),
-  removeStudentFromBatch: (batchId, studentId) => apiRequest(`/batches/${batchId}/remove_student/`, {
-    method: 'POST',
-    body: JSON.stringify({ student_id: studentId }),
-  }),
-
   // Attendance & Dynamic Cycles (Per-Tuition Engine)
   getAttendanceCycles: (arg1 = null, arg2 = null) => {
     const params = new URLSearchParams();
@@ -288,15 +309,6 @@ export const api = {
     body: JSON.stringify({ class_no: classNo, completed, date, topic }),
   }),
   resetAttendanceCycle: (cycleId) => apiRequest(`/attendance-cycles/${cycleId}/reset/`, { method: 'POST' }),
-
-  // Legacy Cycles
-  getCycles: (studentId) => apiRequest(`/cycles/${studentId ? `?student_id=${studentId}` : ''}`),
-  getCycleDetail: (id) => apiRequest(`/cycles/${id}/`),
-  toggleClass: (cycleId, classNo, completed, date = null, topic = '') => apiRequest(`/cycles/${cycleId}/toggle_class/`, {
-    method: 'PATCH',
-    body: JSON.stringify({ class_no: classNo, completed, date, topic }),
-  }),
-  resetCycle: (cycleId) => apiRequest(`/cycles/${cycleId}/reset/`, { method: 'POST' }),
 
   // Analytics
   getWalletAnalytics: () => apiRequest('/analytics/wallet/'),
@@ -365,7 +377,6 @@ export const api = {
     const qs = query.toString() ? `?${query.toString()}` : '';
     return apiRequest(`/homework/${qs}`);
   },
-  getHomeworkDetail: (id) => apiRequest(`/homework/${id}/`),
   createHomework: (data) =>
     apiRequest('/homework/', { method: 'POST', body: JSON.stringify(data) }),
   updateHomework: (id, data) =>
@@ -377,7 +388,10 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ feedback }),
     }),
-  // Student submits an optional online URL as their submission.
+  // Tutor: turn a shared group task into one row per student (one server step).
+  splitHomework: (id) => apiRequest(`/homework/${id}/split/`, { method: 'POST' }),
+  // Student submits an optional online URL. On a group task the server answers
+  // with the student's own copy, which has a different id from the one posted.
   submitHomework: (id, url = '') =>
     apiRequest(`/homework/${id}/submit/`, {
       method: 'POST',
