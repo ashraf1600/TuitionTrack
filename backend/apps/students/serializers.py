@@ -28,6 +28,19 @@ class StudentProfileSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['id', 'created_at', 'updated_at']
 
+    # Written by the tutor who owns the account; a second tutor the student is
+    # connected to must not read them.
+    OWNER_ONLY_FIELDS = ('notes', 'tuition_fee', 'cycle_length')
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        request = self.context.get('request')
+        viewer_id = getattr(getattr(request, 'user', None), 'id', None)
+        if viewer_id is None or instance.user.tutor_id != viewer_id:
+            for field in self.OWNER_ONLY_FIELDS:
+                data.pop(field, None)
+        return data
+
 
 class StudentListSerializer(serializers.ModelSerializer):
     """

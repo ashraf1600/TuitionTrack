@@ -163,6 +163,15 @@ class HomeworkTenancyTests(AuditBase):
         self.assertEqual(again.data['homework']['id'], copy_id)
         self.assertEqual(Homework.objects.filter(group_source=group).count(), 1)
 
+    def test_tutor_detail_shows_the_copy_instead_of_the_shared_row(self):
+        group = self._homework(tuition=self.tuition)
+        ConnectionRequest.objects.create(student=self.student, tutor=self.tutor,
+                                         status=ConnectionRequest.Status.ACCEPTED)
+        self.as_user(self.student)
+        self.client.post(f'/api/v1/homework/{group.id}/submit/', {'submitted_online_url': 'https://x.io'}, format='json')
+        detail = self.client.get(f'/api/v1/my-tutors/{self.tutor.id}/').data
+        self.assertEqual([h['group_source_id'] for h in detail['homework']], [group.id])
+
     def test_split_is_one_atomic_server_step_and_keeps_existing_work(self):
         group = self._homework(tuition=self.tuition)
         group.personal_copy_for(self.student)
@@ -312,6 +321,19 @@ class StudentVisibilityTests(AuditBase):
         self.as_user(self.student)
         cards = self.client.get('/api/v1/my-tutors/').data
         self.assertEqual([t['title'] for t in cards[0]['tuitions']], ['Physics'])
+
+    def test_owner_notes_and_fee_are_hidden_from_a_second_tutor(self):
+        from apps.students.models import StudentProfile
+        StudentProfile.objects.create(user=self.outsider, notes='Pays late', tuition_fee=1500)
+        ConnectionRequest.objects.create(student=self.outsider, tutor=self.tutor,
+                                         status=ConnectionRequest.Status.ACCEPTED)
+        self.as_user(self.tutor)
+        row = next(s for s in self.client.get('/api/v1/students/').data['results'] if s['id'] == str(self.outsider.id))
+        self.assertNotIn('notes', row['profile'])
+        self.assertNotIn('tuition_fee', row['profile'])
+        self.as_user(self.other_tutor)
+        own = self.client.get(f'/api/v1/students/{self.outsider.id}/').data
+        self.assertEqual(own['profile']['notes'], 'Pays late')
 
     def test_second_tutor_can_open_but_not_edit_a_connected_student(self):
         ConnectionRequest.objects.create(student=self.outsider, tutor=self.tutor,

@@ -648,7 +648,7 @@ class TutorDetailForStudentView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request, tutor_id):
-        from .models import ConnectionRequest, Homework, WeeklyRoutine, ClassSchedule
+        from .models import ConnectionRequest, WeeklyRoutine, ClassSchedule
         from .serializers import ConnectedTutorSerializer, HomeworkSerializer
 
         if request.user.role != "STUDENT":
@@ -681,11 +681,11 @@ class TutorDetailForStudentView(APIView):
             tutor=tutor, scheduled_at__gte=timezone.now(), is_cancelled=False
         ).filter(scope).order_by("scheduled_at")[:20]
 
-        # Homework assigned to this student (by this tutor) or their tuition groups.
-        homework_qs = Homework.objects.filter(
+        # Homework from this tutor: the student's own rows and their groups' shared
+        # tasks (a shared task they already handed in shows as their own copy).
+        from .services import student_homework
+        homework_qs = student_homework(request.user).filter(
             tutor=tutor,
-        ).filter(
-            Q(student=request.user) | Q(tuition_id__in=enrolled_tuition_ids)
         ).select_related("tutor", "student", "tuition").order_by("due_date")
 
         homework_data = HomeworkSerializer(
@@ -729,21 +729,14 @@ class HomeworkViewSet(viewsets.GenericViewSet):
     permission_classes = [IsAuthenticated, IsTutorOrStudent]
 
     def get_queryset(self):
-        from .models import Homework, TuitionEnrollment
+        from .models import Homework
         user = self.request.user
         qs = Homework.objects.select_related("tutor", "student", "tuition")
         if user.role == "TUTOR":
             return qs.filter(tutor=user)
         if user.role == "STUDENT":
-            enrolled_tuition_ids = TuitionEnrollment.objects.filter(
-                student=user, is_active=True
-            ).values_list("tuition_id", flat=True)
-            copied_group_ids = Homework.objects.filter(
-                student=user, group_source__isnull=False
-            ).values_list("group_source_id", flat=True)
-            return qs.filter(
-                Q(student=user) | Q(student__isnull=True, tuition_id__in=enrolled_tuition_ids)
-            ).exclude(id__in=copied_group_ids)
+            from .services import student_homework
+            return student_homework(user).select_related("tutor", "student", "tuition")
         return Homework.objects.none()
 
     def _tutor_only(self, request, verb):
