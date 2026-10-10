@@ -85,7 +85,7 @@ function PendingView({ exam, status }) {
           <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">What you answered</h4>
           <ol className="space-y-2 max-h-[320px] overflow-y-auto pr-1">
             {questions.map((q, idx) => {
-              const raw = answers[q.id] ?? answers[`mcq_${idx}`] ?? answers[String(idx)];
+              const raw = answers[q.id] ?? answers[`mcq-${idx}`] ?? answers[`mcq_${idx}`] ?? answers[String(idx)];
               const chosen = raw === undefined || raw === null || raw === '' ? null : Number(raw);
               return (
                 <li key={q.id || idx} className="rounded-xl border border-slate-700/60 bg-slate-800/30 p-3 text-sm">
@@ -119,7 +119,7 @@ function PendingView({ exam, status }) {
           <p className="whitespace-pre-wrap text-sm text-slate-100 bg-slate-800/40 border border-slate-700/60 rounded-xl p-3.5">{submission.text_answer}</p>
         </div>
       )}
-      <AnswerSheets urls={submission.image_urls} />
+      <AnswerSheets urls={(submission.image_urls && submission.image_urls.length ? submission.image_urls : submission.uploaded_images) || []} />
     </div>
   );
 }

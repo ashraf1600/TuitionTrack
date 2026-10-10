@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import Modal from '../common/Modal';
 import MathRenderer from '../common/MathRenderer';
 import QuestionImage from '../common/QuestionImage';
+import { confirmAction } from '../common/ConfirmDialog';
 import { api } from '../../api/client';
 import {
   Clock,
@@ -35,18 +36,36 @@ export default function ExamTakerModal({
   const [isLateWindow, setIsLateWindow] = useState(false);
   const [textAnswer, setTextAnswer] = useState('');
   const [serverOffsetMs, setServerOffsetMs] = useState(0);
+  const [submitFailed, setSubmitFailed] = useState(false);
 
   const autoSubmitRef = useRef(null);
   const autoSubmittedRef = useRef(false);
+  const autoAttemptsRef = useRef(0);
+  const submittingRef = useRef(false);
+  const uploadingRef = useRef(false);
+
+  // Drafts are per exam AND per user so a shared browser never leaks answers
+  // between accounts.
+  const draftKey = () => {
+    let who = 'anon';
+    try {
+      const u = JSON.parse(localStorage.getItem('user_data') || '{}');
+      who = u.username || u.id || 'anon';
+    } catch {}
+    return `exam_draft_${exam?.id}_${who}`;
+  };
 
   // Restore draft answers from localStorage if available
   useEffect(() => {
     if (exam?.id) {
       setError('');
       setIsExpired(false);
+      setSubmitFailed(false);
+      autoSubmittedRef.current = false;
+      autoAttemptsRef.current = 0;
       api.fetchServerOffset().then(setServerOffsetMs).catch(() => setServerOffsetMs(0));
 
-      const storageKey = `exam_draft_${exam.id}`;
+      const storageKey = draftKey();
       try {
         const saved = localStorage.getItem(storageKey);
         if (saved) {
@@ -70,13 +89,23 @@ export default function ExamTakerModal({
     }
   }, [exam?.id]);
 
-  // Persist in-progress answers so closing modal does not lose answers
+  // Persist in-progress answers so closing modal does not lose answers.
+  // When everything is empty the stale draft is removed so deleted work
+  // cannot resurrect on reopen.
   useEffect(() => {
-    if (exam?.id && (Object.keys(mcqAnswers).length > 0 || imageUrls.length > 0 || textAnswer)) {
-      const storageKey = `exam_draft_${exam.id}`;
+    if (!exam?.id) return;
+    const storageKey = draftKey();
+    if (Object.keys(mcqAnswers).length > 0 || Object.keys(textAnswers).length > 0 || imageUrls.length > 0 || textAnswer) {
       localStorage.setItem(storageKey, JSON.stringify({ mcqAnswers, textAnswers, imageUrls, textAnswer }));
+    } else {
+      localStorage.removeItem(storageKey);
     }
   }, [exam?.id, mcqAnswers, textAnswers, imageUrls, textAnswer]);
+
+  // Keep the mutable uploading flag in sync for the auto-submit path.
+  useEffect(() => {
+    uploadingRef.current = uploading;
+  }, [uploading]);
 
   // Live countdown (server-clock corrected).
   // The on-time deadline is the student's own (timed exams) or the exam end time.
@@ -85,7 +114,6 @@ export default function ExamTakerModal({
   // student can keep working and turn in late.
   useEffect(() => {
     if (!isOpen || !exam) return undefined;
-    autoSubmittedRef.current = false;
 
     const fmt = (ms) => {
       const totalSec = Math.max(0, Math.floor(ms / 1000));
@@ -100,6 +128,13 @@ export default function ExamTakerModal({
     const tick = () => {
       const now = Date.now() + serverOffsetMs;
       const deadline = new Date(exam.attempt_deadline || exam.end_time).getTime();
+      if (Number.isNaN(deadline)) {
+        // Never lock the student out on bad timing data — the server is the
+        // source of truth and will validate on submit.
+        setTimeLeft('--:--:--');
+        setError('Exam timing unavailable — your answers still save as draft. If this persists, reopen the exam.');
+        return;
+      }
       const graceEnd = deadline + (exam.grace_period_minutes ?? 5) * 60 * 1000;
       const lateEnd = exam.late_submission_until ? new Date(exam.late_submission_until).getTime() : 0;
 
@@ -119,9 +154,12 @@ export default function ExamTakerModal({
         setIsLateWindow(false);
         setIsGracePeriod(true);
         setTimeLeft(fmt(graceEnd - now));
-        if (!autoSubmittedRef.current && autoSubmitRef.current) {
+        // Auto-send once; on failure the flag is reset so the next tick
+        // retries (capped) instead of stranding the answers.
+        if (!autoSubmittedRef.current && autoSubmitRef.current && autoAttemptsRef.current < 8) {
           autoSubmittedRef.current = true;
-          autoSubmitRef.current();
+          autoAttemptsRef.current += 1;
+          autoSubmitRef.current(true);
         }
         return;
       }
@@ -192,8 +230,15 @@ export default function ExamTakerModal({
     setImageUrls((prev) => prev.filter((_, i) => i !== index));
   };
 
-  const doSubmit = async () => {
-    if (submitting) return;
+  const doSubmit = async (isAuto = false) => {
+    if (submittingRef.current) return;
+    if (isAuto && uploadingRef.current) {
+      // A photo is still uploading — let it finish; the next tick retries.
+      autoSubmittedRef.current = false;
+      autoAttemptsRef.current = Math.max(0, autoAttemptsRef.current - 1);
+      return;
+    }
+    submittingRef.current = true;
     setSubmitting(true);
     try {
       const answersData = {
@@ -209,24 +254,41 @@ export default function ExamTakerModal({
       });
 
       if (exam?.id) {
-        localStorage.removeItem(`exam_draft_${exam.id}`);
+        localStorage.removeItem(draftKey());
       }
+      setSubmitFailed(false);
       onExamSubmitted(response, exam);
       onClose();
     } catch (err) {
       setError(err.message || 'Submission failed.');
+      if (isAuto) {
+        // Allow the next tick (or the Retry button) to try again.
+        autoSubmittedRef.current = false;
+      } else {
+        setSubmitFailed(true);
+      }
     } finally {
+      submittingRef.current = false;
       setSubmitting(false);
     }
   };
 
   // Auto-submit whatever has been answered so far. Assigned directly rather than in
   // an effect: this sits below the `!exam` early return, where a hook is not allowed.
-  autoSubmitRef.current = doSubmit;
+  autoSubmitRef.current = (isAuto) => doSubmit(isAuto);
+
+  // Written section exists when the paper has real text content (not just
+  // empty editor HTML like <p></p> or <p><br></p>).
+  const stripHtml = (html) =>
+    (html || '').replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim();
+  const hasWrittenContent = !isMCQOnly && !!exam.content_html
+    && exam.content_html.trim() !== '<p>Multiple Choice Examination</p>'
+    && stripHtml(exam.content_html).length > 0;
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
+    setSubmitFailed(false);
     if (isExpired) {
       setError('Submission window has closed (including grace period).');
       return;
@@ -239,18 +301,31 @@ export default function ExamTakerModal({
       return;
     }
 
-    const needsCQ = !isMCQOnly && exam.content_html && exam.content_html !== '<p></p>' && exam.content_html !== '<p>Multiple Choice Examination</p>';
     const hasWritten = imageUrls.length > 0 || textAnswer.trim().length > 0;
     if (!isMCQOnly && !hasWritten && answeredCount === 0) {
       setError('Answer the questions, type your answer, or upload a photo of your written work.');
       return;
     }
-    if (needsCQ && !hasWritten && exam.exam_type !== 'MCQ') {
+    if (hasWrittenContent && !hasWritten && exam.exam_type !== 'MCQ') {
       setError('The written part needs an answer: type it below or upload a photo.');
       return;
     }
 
-    await doSubmit();
+    // Confirm summary so one mis-tap cannot irreversibly end the exam.
+    const blankCount = hasMCQs ? exam.mcq_data.length - answeredCount : 0;
+    const summaryBits = [];
+    if (hasMCQs) summaryBits.push(`${answeredCount} of ${exam.mcq_data.length} MCQs answered`);
+    if (!isMCQOnly) summaryBits.push(hasWritten ? 'written answer attached' : 'no written answer');
+    const ok = await confirmAction({
+      title: isAssignment ? 'Turn in assignment?' : 'Turn in exam?',
+      message: blankCount > 0
+        ? `${summaryBits.join(' · ')}. ${blankCount} MCQ${blankCount === 1 ? ' is' : 's are'} still blank — turn in anyway?`
+        : `${summaryBits.join(' · ')}. Once turned in, answers cannot be changed.`,
+      confirmLabel: isAssignment ? 'Turn in' : 'Turn in exam',
+    });
+    if (!ok) return;
+
+    await doSubmit(false);
   };
 
   const isAssignment = exam.category === 'ASSIGNMENT';
@@ -316,7 +391,16 @@ export default function ExamTakerModal({
         {error && (
           <div className="p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs flex items-center gap-2">
             <AlertCircle className="w-5 h-5 flex-shrink-0" />
-            <span>{error}</span>
+            <span className="flex-1">{error}</span>
+            {submitFailed && !submitting && !isExpired && (
+              <button
+                type="button"
+                onClick={() => doSubmit(false)}
+                className="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold flex-shrink-0 transition"
+              >
+                Retry
+              </button>
+            )}
           </div>
         )}
 
@@ -401,7 +485,7 @@ export default function ExamTakerModal({
           )}
 
           {/* Section 2: Written CQ Paper & Instructions */}
-          {!isMCQOnly && exam.content_html && exam.content_html !== '<p>Multiple Choice Examination</p>' && (
+          {!isMCQOnly && hasWrittenContent && (
             <div className="space-y-3">
               <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2">
                 <FileText className="w-4 h-4 text-indigo-400" />
@@ -489,18 +573,19 @@ export default function ExamTakerModal({
           )}
 
           {/* Submission action */}
-          <div className="pt-3 border-t border-slate-800 flex items-center justify-between gap-3">
+          <div className="pt-3 border-t border-slate-800 flex flex-wrap items-center justify-between gap-3">
             <span className="text-[11px] text-slate-400">
-              Make sure to turn in before the timer expires.
+              {isExpired ? 'The window has closed — your draft is saved on this device.' : 'Make sure to turn in before the timer expires.'}
             </span>
 
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-3">
               <button
                 type="button"
                 onClick={onClose}
-                className="px-4 py-2 rounded-xl border border-slate-700 text-slate-300 text-xs hover:bg-slate-800 transition"
+                disabled={submitting}
+                className="px-4 py-2 rounded-xl border border-slate-700 text-slate-300 text-xs hover:bg-slate-800 transition disabled:opacity-50"
               >
-                Cancel
+                Close
               </button>
               <button
                 type="submit"

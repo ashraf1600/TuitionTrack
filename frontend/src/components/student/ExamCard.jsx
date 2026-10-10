@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Clock, Award, ArrowRight, CheckCircle2, Trophy, Layers, Timer, AlertTriangle, CalendarClock, Hourglass } from 'lucide-react';
+import { api } from '../../api/client';
 
 const fmtDateTime = (value) =>
   new Date(value).toLocaleString(undefined, { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
@@ -21,10 +22,14 @@ function relative(ms) {
  */
 export default function ExamCard({ exam, onTakeExam, onViewResults, onViewLeaderboard, light = true }) {
   const [now, setNow] = useState(Date.now());
+  const [serverOffsetMs, setServerOffsetMs] = useState(0);
   useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), 30000);
+    api.fetchServerOffset().then(setServerOffsetMs).catch(() => setServerOffsetMs(0));
+    // 5s tick: fresh enough at window boundaries that the button the
+    // student sees matches what the exam screen will enforce.
+    const id = setInterval(() => setNow(Date.now() + serverOffsetMs), 5000);
     return () => clearInterval(id);
-  }, []);
+  }, [serverOffsetMs]);
 
   const isAssignment = exam.category === 'ASSIGNMENT';
   const start = new Date(exam.start_time).getTime();
@@ -167,8 +172,8 @@ export default function ExamCard({ exam, onTakeExam, onViewResults, onViewLeader
             Questions unlock when the {noun} opens.
           </p>
         ) : missed ? (
-          <p className="text-xs text-rose-300 text-center py-1.5">
-            {isAssignment ? 'The deadline has passed.' : 'This exam has ended.'} You did not turn it in.
+          <p className="text-xs text-slate-400 text-center py-1.5">
+            {isAssignment ? 'The deadline has passed.' : 'This exam has ended.'} Not submitted.
           </p>
         ) : null}
       </div>
