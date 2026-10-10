@@ -104,7 +104,7 @@ If you prefer to configure each component individually in the Render dashboard:
 3. Configure the settings:
    - **Name**: `tuitiontrack-web`
    - **Root Directory**: `frontend`
-   - **Build Command**: `rm -f package-lock.json && npm install --include=optional && npm run build`
+   - **Build Command**: `npm ci && npm run build`
    - **Publish Directory**: `dist`
 4. Under **Redirects/Rewrites**:
    - **Type**: `Rewrite`
@@ -181,5 +181,5 @@ https://tuitiontrack-api.onrender.com
 - [x] WhiteNoise configured for instant, zero-configuration admin static asset serving
 - [x] `render.yaml` configured with free plan, Singapore region, and health check
 - [x] `frontend/vite.config.js` and `frontend/src/api/client.js` support dynamic backend origins
-- [x] CORS and CSRF configurations pre-allow all `*.onrender.com` subdomains
+- [x] CORS and CSRF trust exactly `FRONTEND_URL` (plus anything listed in `CORS_ALLOWED_ORIGINS` / `CSRF_TRUSTED_ORIGINS`); other `*.onrender.com` sites are not trusted
 - [x] Client-side SPA routing rewrite (`/* -> /index.html`) configured
