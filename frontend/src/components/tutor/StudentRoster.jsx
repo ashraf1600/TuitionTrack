@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { User, Phone, School, DollarSign, Calendar, Check, X, UserPlus, Power, Key } from 'lucide-react';
+import { User, Phone, School, UserPlus, Power, Key } from 'lucide-react';
 import StudentCredentialsModal from './StudentCredentialsModal';
 
 export default function StudentRoster({
@@ -9,7 +9,7 @@ export default function StudentRoster({
   onSelectStudent,
   onToggleActive,
   onOpenAddModal,
-  loading,
+  loading
 }) {
   const [selectedStudentForCredentials, setSelectedStudentForCredentials] = useState(null);
 
@@ -155,11 +155,14 @@ export default function StudentRoster({
         )}
       </div>
 
-      <StudentCredentialsModal
-        isOpen={Boolean(selectedStudentForCredentials)}
-        onClose={() => setSelectedStudentForCredentials(null)}
-        student={selectedStudentForCredentials}
-      />
+      {selectedStudentForCredentials && (
+        <StudentCredentialsModal
+          key={selectedStudentForCredentials.student_id || selectedStudentForCredentials.id}
+          isOpen
+          onClose={() => setSelectedStudentForCredentials(null)}
+          student={selectedStudentForCredentials}
+        />
+      )}
     </>
   );
 }

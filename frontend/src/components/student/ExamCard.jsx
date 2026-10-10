@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Clock, Award, ArrowRight, CheckCircle2, Trophy, Layers, Timer, AlertTriangle, CalendarClock, Hourglass } from 'lucide-react';
 import { api } from '../../api/client';
+import { useNow } from '../../hooks/useNow';
 
 const fmtDateTime = (value) =>
   new Date(value).toLocaleString(undefined, { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
@@ -21,15 +22,17 @@ function relative(ms) {
  * what the server says is possible (`can_submit`, `has_submission`).
  */
 export default function ExamCard({ exam, onTakeExam, onViewResults, onViewLeaderboard, light = true }) {
-  const [now, setNow] = useState(Date.now());
+  // 5s tick: fresh enough at window boundaries that the button the
+  // student sees matches what the exam screen will enforce.
+  const clock = useNow(5000);
   const [serverOffsetMs, setServerOffsetMs] = useState(0);
   useEffect(() => {
-    api.fetchServerOffset().then(setServerOffsetMs).catch(() => setServerOffsetMs(0));
-    // 5s tick: fresh enough at window boundaries that the button the
-    // student sees matches what the exam screen will enforce.
-    const id = setInterval(() => setNow(Date.now() + serverOffsetMs), 5000);
-    return () => clearInterval(id);
-  }, [serverOffsetMs]);
+    let alive = true;
+    // One shared measurement for every card (see fetchServerOffset).
+    api.fetchServerOffset().then((offset) => { if (alive) setServerOffsetMs(offset); });
+    return () => { alive = false; };
+  }, []);
+  const now = clock + serverOffsetMs;
 
   const isAssignment = exam.category === 'ASSIGNMENT';
   const start = new Date(exam.start_time).getTime();

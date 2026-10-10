@@ -1,6 +1,8 @@
 import React, { useMemo } from 'react';
 import DOMPurify from 'dompurify';
 import katex from 'katex';
+// Bundled with the same katex version that renders the math (the CDN copy was an older release).
+import 'katex/dist/katex.min.css';
 
 // Every way maths arrives from ChatGPT, textbooks and our own editor:
 //   $$…$$ and \[…\] (display)   ·   \(…\) and $…$ (inline)
@@ -24,7 +26,7 @@ const decodeEntities = (text) =>
  * `plain` treats everything outside the maths as literal text (so "a < b" or a
  * stray tag in a pasted question is shown, not interpreted) and keeps line breaks.
  */
-export function renderMathToHtml(content, { plain = false } = {}) {
+function renderMathToHtml(content, { plain = false } = {}) {
   if (!content) return '';
   const source = String(content);
   let html = '';

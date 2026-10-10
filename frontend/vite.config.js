@@ -9,24 +9,16 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks(id) {
-          if (id.includes('node_modules')) {
-            if (id.includes('react') || id.includes('react-dom') || id.includes('react-router-dom')) {
-              return 'vendor-react';
-            }
-            if (id.includes('recharts')) {
-              return 'vendor-charts';
-            }
-            if (id.includes('@tiptap') || id.includes('prosemirror')) {
-              return 'vendor-editor';
-            }
-            if (id.includes('katex')) {
-              return 'vendor-katex';
-            }
-            if (id.includes('lucide-react')) {
-              return 'vendor-icons';
-            }
-            return 'vendor';
+          if (!id.includes('node_modules')) return undefined;
+          // Most specific first: "lucide-react" and "@tiptap/react" also contain "react".
+          if (id.includes('lucide-react')) return 'vendor-icons';
+          if (id.includes('@tiptap') || id.includes('prosemirror')) return 'vendor-editor';
+          if (id.includes('recharts') || id.includes('d3-') || id.includes('victory-vendor')) return 'vendor-charts';
+          if (id.includes('katex')) return 'vendor-katex';
+          if (/[\\/]node_modules[\\/](react|react-dom|react-router|react-router-dom|scheduler)[\\/]/.test(id)) {
+            return 'vendor-react';
           }
+          return 'vendor';
         },
       },
     },

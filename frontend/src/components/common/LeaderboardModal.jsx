@@ -1,48 +1,46 @@
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import Modal from './Modal';
 import { api } from '../../api/client';
 import {
   Trophy,
-  Medal,
-  Award,
   Crown,
   Users,
-  Clock,
-  CheckCircle2,
   AlertCircle,
   RefreshCw,
-  Sparkles,
+  Sparkles
 } from 'lucide-react';
-import StatusBadge from './StatusBadge';
 
 export default function LeaderboardModal({ isOpen, onClose, examId, examTitle }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  const loadLeaderboard = async () => {
+  // Only the answer for the exam currently shown may land (a slow reply for a
+  // previously opened exam is ignored).
+  const latestRequest = useRef(0);
+  const loadLeaderboard = useCallback(async () => {
     if (!examId) return;
+    const requestId = ++latestRequest.current;
     try {
       setLoading(true);
       setError('');
       const res = await api.getExamLeaderboard(examId);
-      setData(res);
+      if (requestId === latestRequest.current) setData(res);
     } catch (err) {
-      setError(err.message || 'Failed to load leaderboard.');
+      if (requestId === latestRequest.current) setError(err.message || 'Failed to load leaderboard.');
     } finally {
-      setLoading(false);
+      if (requestId === latestRequest.current) setLoading(false);
     }
-  };
+  }, [examId]);
 
   useEffect(() => {
     if (isOpen && examId) {
       loadLeaderboard();
     }
-  }, [isOpen, examId]);
+  }, [isOpen, examId, loadLeaderboard]);
 
   const leaderboard = data?.leaderboard || [];
   const topThree = leaderboard.slice(0, 3);
-  const remaining = leaderboard.slice(3);
 
   return (
     <Modal
@@ -267,7 +265,7 @@ export default function LeaderboardModal({ isOpen, onClose, examId, examTitle })
                             month: 'short',
                             day: 'numeric',
                             hour: '2-digit',
-                            minute: '2-digit',
+                            minute: '2-digit'
                           })}
                         </td>
                       </tr>

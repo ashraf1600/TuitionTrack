@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useEffectEvent, useMemo } from 'react';
 import { notify } from '../utils/toast';
 import { useNavigate } from 'react-router-dom';
 import Navbar from '../components/common/Navbar';
@@ -12,15 +12,16 @@ import ExamAuthoringModal from '../components/tutor/ExamAuthoringModal';
 import ExamManager from '../components/tutor/ExamManager';
 import TuitionBatchesModal from '../components/tutor/TuitionBatchesModal';
 import HomeworkManager from '../components/tutor/HomeworkManager';
-import { useAuth } from '../context/AuthContext';
+import { useAuth } from '../context/auth';
 import { api } from '../api/client';
 import { confirmAction } from '../components/common/ConfirmDialog';
+import { ErrorState } from '../components/common/States';
+import { useNow } from '../hooks/useNow';
 
 // Sat-first canonical week order shared with TuitionWorkspace (Sat -> Fri for BD context).
 // Keep this single source consistent everywhere weekly routines are rendered/sorted.
 const DAYS_ORDER = ['Saturday', 'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
 const normId = (s) => String(s?.student_id ?? s?.id ?? s ?? '');
-const isNotFoundError = (err) => /404|not found/i.test(err?.message || '');
 const timeToMinutes = (t) => {
   const m = String(t || '18:00').match(/(\d{1,2}):(\d{2})/);
   if (!m) return 18 * 60;
@@ -30,31 +31,26 @@ import {
   FileText,
   Plus,
   Calendar,
-  Award,
   Users,
   Clock,
-  ExternalLink,
   ChevronRight,
   RefreshCw,
-  CheckCircle2,
   Layers,
-  Trophy,
   BookOpen,
   DollarSign,
   Edit2,
   Trash2,
-  Eye,
-  EyeOff,
   Sparkles,
   UserPlus,
   CalendarDays,
-  Copy,
+  Copy
 } from 'lucide-react';
 
 export default function TutorDashboard() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState('batches'); // 'batches' | 'homework' | 'attendance' | 'exams'
+  const todayName = new Date(useNow(60_000)).toLocaleDateString('en-US', { weekday: 'long' });
 
   // Data states
   const [analytics, setAnalytics] = useState(null);
@@ -69,7 +65,6 @@ export default function TutorDashboard() {
   // Loading states
   const [loadingAnalytics, setLoadingAnalytics] = useState(true);
   const [loadingStudents, setLoadingStudents] = useState(true);
-  const [loadingUnassigned, setLoadingUnassigned] = useState(false);
   const [loadingBatches, setLoadingBatches] = useState(false);
   const [loadingExams, setLoadingExams] = useState(false);
 
@@ -80,6 +75,18 @@ export default function TutorDashboard() {
   const [selectedBatchToEdit, setSelectedBatchToEdit] = useState(null);
   const [initialBatchForExam, setInitialBatchForExam] = useState('');
   const [refreshing, setRefreshing] = useState(false);
+  // Which sections failed to load, so the page says so instead of showing empty lists.
+  const [loadErrors, setLoadErrors] = useState({});
+  const recordLoad = (section, err) => {
+    setLoadErrors((prev) => {
+      if (!err && !(section in prev)) return prev;
+      const next = { ...prev };
+      if (err) next[section] = err.message || 'Could not load.';
+      else delete next[section];
+      return next;
+    });
+    return !err;
+  };
 
   // 1. Load Analytics
   const loadAnalytics = async () => {
@@ -87,8 +94,9 @@ export default function TutorDashboard() {
       setLoadingAnalytics(true);
       const data = await api.getWalletAnalytics();
       setAnalytics(data);
+      return recordLoad('wallet', null);
     } catch (err) {
-      console.error('Failed to load wallet analytics:', err);
+      return recordLoad('wallet', err);
     } finally {
       setLoadingAnalytics(false);
     }
@@ -97,16 +105,15 @@ export default function TutorDashboard() {
   const refreshAll = async () => {
     setRefreshing(true);
     try {
-      await Promise.all([
+      const results = await Promise.all([
         loadAnalytics(),
         loadStudents(),
         loadUnassignedStudents(),
         loadTuitions(),
         loadExams(),
       ]);
-      notify.success('Dashboard data refreshed.');
-    } catch {
-      // errors handled inside individual functions
+      if (results.every(Boolean)) notify.success('Dashboard data refreshed.');
+      else notify.error('Some sections could not be loaded.');
     } finally {
       setRefreshing(false);
     }
@@ -123,8 +130,9 @@ export default function TutorDashboard() {
       if (list.length > 0 && !selectedStudentId) {
         setSelectedStudentId(normId(list[0]));
       }
+      return recordLoad('students', null);
     } catch (err) {
-      console.error('Failed to load students:', err);
+      return recordLoad('students', err);
     } finally {
       setLoadingStudents(false);
     }
@@ -133,14 +141,12 @@ export default function TutorDashboard() {
   // 3. Load Unassigned Prospective Students
   const loadUnassignedStudents = async () => {
     try {
-      setLoadingUnassigned(true);
       const data = await api.getUnassignedStudents();
       const list = Array.isArray(data) ? data : data.results || [];
       setUnassignedStudents(list);
+      return recordLoad('requests', null);
     } catch (err) {
-      console.error('Failed to load unassigned students:', err);
-    } finally {
-      setLoadingUnassigned(false);
+      return recordLoad('requests', err);
     }
   };
 
@@ -148,20 +154,13 @@ export default function TutorDashboard() {
   const loadTuitions = async () => {
     try {
       setLoadingBatches(true);
-      let list = [];
-      try {
-        const tData = await api.getTuitions();
-        list = Array.isArray(tData) ? tData : tData.results || [];
-      } catch (_) {}
-
-      if (list.length === 0) {
-        const bData = await api.getBatches();
-        list = Array.isArray(bData) ? bData : bData.results || [];
-      }
+      const tData = await api.getTuitions();
+      const list = Array.isArray(tData) ? tData : tData.results || [];
       setBatches(list);
       setTuitions(list);
+      return recordLoad('tuitions', null);
     } catch (err) {
-      console.error('Failed to load tuition batches:', err);
+      return recordLoad('tuitions', err);
     } finally {
       setLoadingBatches(false);
     }
@@ -176,19 +175,25 @@ export default function TutorDashboard() {
       const data = await api.getExams();
       const list = Array.isArray(data) ? data : data.results || [];
       setExams(list);
+      return recordLoad('exams', null);
     } catch (err) {
-      console.error('Failed to load exams:', err);
+      return recordLoad('exams', err);
     } finally {
       setLoadingExams(false);
     }
   };
 
-  useEffect(() => {
+  // First load of every section. An effect event: it runs once on mount and
+  // always uses the current loaders.
+  const loadEverything = useEffectEvent(() => {
     loadAnalytics();
     loadStudents();
     loadUnassignedStudents();
     loadTuitions();
     loadExams();
+  });
+  useEffect(() => {
+    loadEverything();
   }, []);
 
   // Actions
@@ -223,7 +228,7 @@ export default function TutorDashboard() {
       title: 'Delete tuition group?',
       message: 'Its students and exams are removed from it. What it has already earned stays in your lifetime earnings.',
       confirmLabel: 'Delete group',
-      danger: true,
+      danger: true
     });
     if (!ok) return;
     try {
@@ -277,7 +282,7 @@ export default function TutorDashboard() {
             startTime: slot.start_time || slot.time || '18:00',
             endTime: slot.end_time || '19:30',
             studentCount: t.student_count || t.enrollment_count || t.enrollments?.length || 0,
-            fee: t.tuition_fee || t.monthly_fee || 0,
+            fee: t.tuition_fee || t.monthly_fee || 0
           });
         }
       });
@@ -295,6 +300,12 @@ export default function TutorDashboard() {
       <Navbar />
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-3.5 sm:px-6 lg:px-8 py-5 sm:py-8 space-y-6 sm:space-y-8">
+        {Object.keys(loadErrors).length > 0 && (
+          <ErrorState
+            message={`Could not load ${Object.keys(loadErrors).join(', ')}: ${Object.values(loadErrors)[0]}`}
+            onRetry={refreshAll}
+          />
+        )}
         {/* Page header & quick actions */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-4 sm:p-6 rounded-2xl bg-gradient-to-r from-slate-900 via-indigo-950/30 to-slate-900 border border-slate-800 shadow-xl">
           <div>
@@ -772,7 +783,7 @@ export default function TutorDashboard() {
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
                 {DAYS_ORDER.map((day) => {
                   const daySlots = weeklyScheduleByDay[day] || [];
-                  const isToday = new Date().toLocaleDateString('en-US', { weekday: 'long' }) === day;
+                  const isToday = todayName === day;
                   return (
                     <div
                       key={day}

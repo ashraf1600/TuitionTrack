@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { AlertCircle, Loader2, Copy, Check } from 'lucide-react';
 import Modal from './Modal';
 import PasswordField from './PasswordField';
-import { useAuth } from '../../context/AuthContext';
+import { useAuth } from '../../context/auth';
 import { api } from '../../api/client';
 import { notify } from '../../utils/toast';
 

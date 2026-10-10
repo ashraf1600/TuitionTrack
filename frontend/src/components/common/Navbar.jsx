@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { useAuth } from '../../context/AuthContext';
+import { useAuth } from '../../context/auth';
 import { GraduationCap, LogOut } from 'lucide-react';
 import NotificationBell from './NotificationBell';
 import AccountModal from './AccountModal';

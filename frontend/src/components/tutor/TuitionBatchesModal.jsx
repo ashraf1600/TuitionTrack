@@ -11,19 +11,13 @@ import {
   Clock,
   Check,
   AlertCircle,
-  Sparkles,
   UserPlus,
   Search,
   X,
-  BookOpen,
-  DollarSign,
-  Key,
 } from 'lucide-react';
 
 // Canonical Sat-first week order (matches TutorDashboard + TuitionWorkspace).
 const DAYS_OF_WEEK = ['Saturday', 'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
-
-const isNotFoundError = (err) => /404|not found/i.test(err?.message || '');
 
 // Strong 12-char generated password using crypto RNG (letters+digits+symbols).
 function generateTempPassword(length = 12) {
@@ -42,7 +36,7 @@ export default function TuitionBatchesModal({
   onClose,
   allStudents = [],
   batchToEdit = null,
-  onBatchSaved,
+  onBatchSaved
 }) {
   const [name, setName] = useState('');
   const [subject, setSubject] = useState('');
@@ -96,7 +90,7 @@ export default function TuitionBatchesModal({
       setWeeklyRoutine(loadedRoutine.map(r => ({
         day: r.day,
         start_time: r.start_time || r.time || '18:00',
-        end_time: r.end_time || '19:30',
+        end_time: r.end_time || '19:30'
       })));
     } else {
       setName('');
@@ -171,7 +165,7 @@ export default function TuitionBatchesModal({
         email: newStudentEmail.trim() || `${newStudentUsername.trim().toLowerCase()}@tuitiontrack.local`,
         password: tempPassword,
         phone: newStudentPhone.trim(),
-        grade_level: newStudentGrade.trim(),
+        grade_level: newStudentGrade.trim()
       });
 
       const newId = res.student.student_id || res.student.id;
@@ -182,7 +176,7 @@ export default function TuitionBatchesModal({
         full_name: `${newStudentFirst} ${newStudentLast}`.trim(),
         email: res.student.email,
         phone: newStudentPhone,
-        profile: { grade_level: newStudentGrade },
+        profile: { grade_level: newStudentGrade }
       };
 
       setStudentsList((prev) => [newStudentObj, ...prev]);
@@ -197,7 +191,7 @@ export default function TuitionBatchesModal({
       setShowAddStudentForm(false);
       setCreatedCredentials({
         student: newStudentObj,
-        tempPassword,
+        tempPassword
       });
       setCredentialsModalOpen(true);
     } catch (err) {
@@ -221,7 +215,7 @@ export default function TuitionBatchesModal({
       const normalizedRoutine = weeklyRoutine.map(r => ({
         day: r.day,
         start_time: r.start_time || r.time || '18:00',
-        end_time: r.end_time || '19:30',
+        end_time: r.end_time || '19:30'
       }));
 
       const payload = {
@@ -231,7 +225,7 @@ export default function TuitionBatchesModal({
         cycle_length: parseInt(cycleLength, 10) || 12,
         total_fee: parseFloat(monthlyFee) || 0,
         student_ids: selectedStudentIds.map((id) => String(id)).filter(Boolean),
-        routine: normalizedRoutine,
+        routine: normalizedRoutine
       };
 
       if (batchToEdit) {
@@ -614,12 +608,14 @@ export default function TuitionBatchesModal({
       </form>
     </Modal>
 
-    <StudentCredentialsModal
-      isOpen={credentialsModalOpen}
-      onClose={() => setCredentialsModalOpen(false)}
-      student={createdCredentials?.student}
-      tempPassword={createdCredentials?.tempPassword}
-    />
+    {credentialsModalOpen && createdCredentials?.student && (
+      <StudentCredentialsModal
+        isOpen
+        onClose={() => setCredentialsModalOpen(false)}
+        student={createdCredentials.student}
+        tempPassword={createdCredentials.tempPassword}
+      />
+    )}
   </>
   );
 }

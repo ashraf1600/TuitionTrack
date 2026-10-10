@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
+import { useAuth } from '../context/auth';
 import { api } from '../api/client';
 import {
   GraduationCap, Lock, User, Mail, Phone, ArrowRight, AlertCircle, Search, Eye, EyeOff,

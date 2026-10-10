@@ -1,4 +1,5 @@
 import typography from '@tailwindcss/typography';
+import colors from 'tailwindcss/colors';
 
 /** @type {import('tailwindcss').Config} */
 export default {
@@ -34,6 +35,21 @@ export default {
         // ── Canonical semantic palette (use these, not one-off hues) ──
         // success → emerald | warning → amber | danger → rose | info → sky
         // brand   → indigo  | assignments follow brand (indigo), NOT purple
+        success: colors.emerald,
+        warning: colors.amber,
+        danger: colors.rose,
+        info: colors.sky,
+        // Dark console surfaces, darkest to lightest.
+        surface: {
+          base: colors.slate[950],
+          raised: colors.slate[900],
+          overlay: colors.slate[800],
+          border: colors.slate[700],
+        },
+      },
+      borderRadius: {
+        // Cards and dialogs share one corner size.
+        card: '1rem',
       },
     },
   },

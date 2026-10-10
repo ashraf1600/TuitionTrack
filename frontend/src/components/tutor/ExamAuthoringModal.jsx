@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useEffect, useEffectEvent, useState } from 'react';
 import { notify } from '../../utils/toast';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
@@ -7,7 +7,8 @@ import { Image } from '@tiptap/extension-image';
 import Modal from '../common/Modal';
 import { api } from '../../api/client';
 import { parseWrittenQuestions } from '../../utils/mcqParser';
-import McqBuilder, { questionProblems } from './McqBuilder';
+import McqBuilder from './McqBuilder';
+import { questionProblems } from '../../utils/mcqRules';
 import { htmlWithLatex, pasteWithLatex } from '../../utils/clipboard';
 import {
   Bold,
@@ -23,17 +24,13 @@ import {
   Calendar,
   Send,
   Eye,
-  CheckCircle2,
   Plus,
   Trash2,
   FileText,
   ClipboardPaste,
-  Users,
-  User,
-  Settings,
   KeyRound,
   Upload,
-  Clock,
+  Clock
 } from 'lucide-react';
 import MathRenderer from '../common/MathRenderer';
 
@@ -86,12 +83,9 @@ export default function ExamAuthoringModal({
   // The written paper as HTML, kept in step with the editor for the live preview.
   const [writtenHtml, setWrittenHtml] = useState('');
 
-  // Dates
-  const now = new Date();
-  const defaultStart = formatLocalInputDateTime(new Date(now.getTime() + 10 * 60 * 1000));
-  const defaultEnd = formatLocalInputDateTime(new Date(now.getTime() + 70 * 60 * 1000));
-  const [startTime, setStartTime] = useState(defaultStart);
-  const [endTime, setEndTime] = useState(defaultEnd);
+  // Dates: a new exam starts in 10 minutes and runs for an hour (reset on every open).
+  const [startTime, setStartTime] = useState(() => formatLocalInputDateTime(new Date(Date.now() + 10 * 60 * 1000)));
+  const [endTime, setEndTime] = useState(() => formatLocalInputDateTime(new Date(Date.now() + 70 * 60 * 1000)));
 
   // MCQ questions state (empty by default - never ship sample content)
   const [mcqList, setMcqList] = useState([]);
@@ -110,6 +104,33 @@ export default function ExamAuthoringModal({
   const [uploadingImage, setUploadingImage] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  // TipTap Editor instance for CQ (clean empty content by default)
+  const editor = useEditor({
+    extensions: [
+      StarterKit,
+      Table.configure({
+        resizable: true
+      }),
+      TableRow,
+      TableHeader,
+      TableCell,
+      Image.configure({
+        inline: true,
+        allowBase64: true
+      }),
+    ],
+    content: '',
+    editorProps: {
+      attributes: {
+        class: 'prose prose-invert max-w-none focus:outline-none min-h-[180px] p-4 text-slate-100'
+      },
+      // Text copied from a ChatGPT page carries each formula as drawn symbols plus hidden
+      // LaTeX; keep only the LaTeX so it is typeset again instead of pasted twice as garble.
+      transformPastedHTML: (html) => htmlWithLatex(html)
+    },
+    onTransaction: ({ editor: current }) => setWrittenHtml(current.getHTML())
+  });
 
   // Load an existing exam into the form (edit mode)
   const loadExamIntoForm = (exam) => {
@@ -179,48 +200,44 @@ export default function ExamAuthoringModal({
     }
   };
 
-  // Sync category, target, and reset state whenever modal opens
-  useEffect(() => {
-    if (isOpen) {
-      if (examToEdit?.id) {
-        loadExamIntoForm(examToEdit);
-      } else {
-        resetForm();
-      }
-      loadBatches();
-    }
-  }, [isOpen, initialCategory, initialStudentId, initialBatchId, examToEdit?.id]);
-
-  const loadBatches = async () => {
+  // Tuition groups for the target picker. Keeps a group already chosen.
+  const loadBatches = useCallback(async () => {
     try {
       setLoadingBatches(true);
-      let list = [];
-      try {
-        const resTuitions = await api.getTuitions();
-        list = Array.isArray(resTuitions) ? resTuitions : resTuitions.results || [];
-      } catch (_) {
-        const res = await api.getBatches();
-        list = Array.isArray(res) ? res : res.results || [];
-      }
+      const resTuitions = await api.getTuitions();
+      const list = Array.isArray(resTuitions) ? resTuitions : resTuitions.results || [];
       setBatches(list);
-      if (list.length > 0 && !batchId) {
-        setBatchId(list[0].id);
-      }
+      if (list.length > 0) setBatchId((current) => current || list[0].id);
     } catch (err) {
-      console.error('Failed to load tuition batches:', err);
+      notify.error(`Could not load your tuition groups: ${err.message}`);
     } finally {
       setLoadingBatches(false);
     }
-  };
+  }, []);
+
+  // Fill (edit) or reset (new) the form each time the modal opens. An effect event
+  // reads the latest props without making every prop change re-run the reset.
+  const initializeForm = useEffectEvent(() => {
+    if (examToEdit?.id) {
+      loadExamIntoForm(examToEdit);
+    } else {
+      resetForm();
+    }
+    loadBatches();
+  });
+
+  useEffect(() => {
+    if (isOpen) initializeForm();
+  }, [isOpen, initialCategory, initialStudentId, initialBatchId, examToEdit?.id]);
 
   useEffect(() => {
     if (initialStudentId) {
       setStudentId(initialStudentId);
       if (!initialBatchId) setTargetType('student');
-    } else if (students.length > 0 && !studentId) {
-      setStudentId(students[0].id || students[0].student_id);
+    } else if (students.length > 0) {
+      setStudentId((current) => current || students[0].id || students[0].student_id);
     }
-  }, [initialStudentId, students]);
+  }, [initialStudentId, initialBatchId, students]);
 
   useEffect(() => {
     if (initialBatchId) {
@@ -229,32 +246,6 @@ export default function ExamAuthoringModal({
     }
   }, [initialBatchId]);
 
-  // TipTap Editor instance for CQ (clean empty content by default)
-  const editor = useEditor({
-    extensions: [
-      StarterKit,
-      Table.configure({
-        resizable: true,
-      }),
-      TableRow,
-      TableHeader,
-      TableCell,
-      Image.configure({
-        inline: true,
-        allowBase64: true,
-      }),
-    ],
-    content: '',
-    editorProps: {
-      attributes: {
-        class: 'prose prose-invert max-w-none focus:outline-none min-h-[180px] p-4 text-slate-100',
-      },
-      // Text copied from a ChatGPT page carries each formula as drawn symbols plus hidden
-      // LaTeX; keep only the LaTeX so it is typeset again instead of pasted twice as garble.
-      transformPastedHTML: (html) => htmlWithLatex(html),
-    },
-    onTransaction: ({ editor: current }) => setWrittenHtml(current.getHTML()),
-  });
 
   // LaTeX Formula prompt
   const insertFormula = () => {
@@ -337,10 +328,10 @@ export default function ExamAuthoringModal({
 
   // The editor mounts a moment after the modal opens; fill it once it exists.
   useEffect(() => {
-    if (isOpen && editor && examToEdit?.id && examToEdit.exam_type !== 'MCQ') {
-      editor.commands.setContent(examToEdit.content_html || '');
+    if (isOpen && editor && examToEdit?.id && examToEdit?.exam_type !== 'MCQ') {
+      editor.commands.setContent(examToEdit?.content_html || '');
     }
-  }, [editor, isOpen, examToEdit?.id]);
+  }, [editor, isOpen, examToEdit?.id, examToEdit?.exam_type, examToEdit?.content_html]);
 
   // Handle Form Submit. `publish` false saves a draft students cannot see.
   const handleSubmit = async (e, publish = true) => {
@@ -448,7 +439,7 @@ export default function ExamAuthoringModal({
         negative_marks_per_wrong: examType !== 'CQ' ? parseFloat(negativeMarks) || 0 : 0,
         is_published: publish,
         result_publish_mode: resultsMode === 'CLOSE' || resultsMode === 'TIME' ? 'SCHEDULED' : resultsMode,
-        publish_time: resultsMode === 'TIME' ? new Date(resultsAt).toISOString() : null,
+        publish_time: resultsMode === 'TIME' ? new Date(resultsAt).toISOString() : null
       };
 
       if (isEditing) {
@@ -612,7 +603,9 @@ export default function ExamAuthoringModal({
                   onChange={(e) => setBatchId(e.target.value)}
                   className="w-full px-2.5 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-100 text-xs focus:outline-none focus:border-indigo-500"
                 >
-                  {batches.length === 0 ? (
+                  {loadingBatches && batches.length === 0 ? (
+                    <option value="">Loading groups…</option>
+                  ) : batches.length === 0 ? (
                     <option value="">Create a tuition group first</option>
                   ) : (
                     batches.map((b) => (
@@ -1089,7 +1082,7 @@ export default function ExamAuthoringModal({
                   label: 'As soon as each student submits',
                   hint: targetType === 'batch'
                     ? 'Marks and correct answers appear the moment they hand in. In a group, someone who finishes early could pass the answers on.'
-                    : 'Marks and correct answers appear the moment they hand in.',
+                    : 'Marks and correct answers appear the moment they hand in.'
                 },
                 { value: 'CLOSE', label: 'When the exam closes', hint: 'After the deadline and any late-work time, when nobody can still be answering.' },
                 { value: 'TIME', label: 'At a time I choose', hint: 'Results come out automatically at the date and time you set.' },

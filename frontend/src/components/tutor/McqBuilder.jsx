@@ -17,10 +17,10 @@ import {
 import { api, getMediaUrl } from '../../api/client';
 import { notify } from '../../utils/toast';
 import { parseQuestions } from '../../utils/mcqParser';
+import { LETTERS, correctIndex, questionProblems } from '../../utils/mcqRules';
 import { pasteWithLatex } from '../../utils/clipboard';
 import MathRenderer from '../common/MathRenderer';
 
-const LETTERS = ['A', 'B', 'C', 'D', 'E'];
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 const SAFE_IMAGE = /^(\/media\/|https?:\/\/)/i;
 
@@ -50,29 +50,7 @@ const blankQuestion = (extra = {}) => ({
   ...extra,
 });
 
-const correctIndex = (q) => {
-  if (typeof q.correct_answer === 'number') return q.correct_answer;
-  if (typeof q.correct_answer === 'string' && q.correct_answer.trim()) {
-    const value = q.correct_answer.trim().toUpperCase();
-    if (LETTERS.includes(value)) return LETTERS.indexOf(value);
-    if (/^\d+$/.test(value)) return Number(value);
-  }
-  return null;
-};
 
-/** What still stops this question from being published, in the tutor's words. */
-export function questionProblems(q) {
-  const problems = [];
-  const options = q.options || [];
-  if (!String(q.question || '').trim() && !q.image_url) problems.push('Add the question text or a picture');
-  if (options.filter((o) => String(o).trim()).length < 2) problems.push('Add at least two options');
-  else if (options.some((o) => !String(o).trim())) problems.push('Fill in or remove the empty option');
-  const correct = correctIndex(q);
-  if (correct === null || correct >= options.length || !String(options[correct] ?? '').trim()) {
-    problems.push('Choose the correct answer');
-  }
-  return problems;
-}
 
 async function uploadImage(file) {
   if (!file.type.startsWith('image/')) throw new Error('Please choose an image file (PNG, JPG or WebP).');

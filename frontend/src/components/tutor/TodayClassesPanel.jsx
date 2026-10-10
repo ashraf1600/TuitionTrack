@@ -3,6 +3,7 @@ import { CalendarCheck, Check, Clock, Loader2, AlertTriangle, X } from 'lucide-r
 import { api } from '../../api/client';
 import { notify } from '../../utils/toast';
 import { toDateInputValue, dateInputToIso } from '../../utils/dates';
+import { useNow } from '../../hooks/useNow';
 
 const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const LOOKBACK_DAYS = 7;
@@ -38,9 +39,12 @@ export default function TodayClassesPanel({ tuitions = [], onChanged }) {
   const [busy, setBusy] = useState(null);
   const [dismissed, setDismissed] = useState(readDismissed);
 
+  // The calendar day, from a clock that ticks: the panel moves on to the next day by itself.
+  const todayKey = toDateInputValue(new Date(useNow(60_000)));
+
   const { today, missed } = useMemo(() => {
-    const now = new Date();
-    const todayKey = toDateInputValue(now);
+    const [y, m, d] = todayKey.split('-').map(Number);
+    const now = new Date(y, m - 1, d);
     const todayRows = [];
     const missedRows = [];
 
@@ -85,7 +89,7 @@ export default function TodayClassesPanel({ tuitions = [], onChanged }) {
     todayRows.sort((a, b) => a.time.localeCompare(b.time));
     missedRows.sort((a, b) => b.dayKey.localeCompare(a.dayKey));
     return { today: todayRows.map((r) => ({ ...r, isToday: r.dayKey === todayKey })), missed: missedRows };
-  }, [tuitions]);
+  }, [tuitions, todayKey]);
 
   const visibleMissed = missed.filter((r) => !dismissed.has(r.key));
   if (today.length === 0 && visibleMissed.length === 0) return null;
@@ -126,7 +130,7 @@ export default function TodayClassesPanel({ tuitions = [], onChanged }) {
         <div>
           <h3 className="font-bold text-slate-100">Today's classes</h3>
           <p className="text-xs text-slate-400">
-            {new Date().toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })} · from your weekly routines
+            {new Date(`${todayKey}T00:00`).toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })} · from your weekly routines
           </p>
         </div>
       </header>

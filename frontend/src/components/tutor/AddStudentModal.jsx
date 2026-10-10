@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import Modal from '../common/Modal';
 import { api } from '../../api/client';
 import StudentCredentialsModal from './StudentCredentialsModal';
-import { UserPlus, AlertCircle, CheckCircle2, Key, Sparkles, Eye, EyeOff } from 'lucide-react';
+import { UserPlus, AlertCircle, CheckCircle2, Sparkles, Eye, EyeOff } from 'lucide-react';
 
 function generateRandomPassword(length = 12) {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789!@#$%&*';
@@ -132,7 +132,7 @@ export default function AddStudentModal({
       if (formData.tuition_id && res?.student?.id) {
         try {
           await api.enrollInTuition(formData.tuition_id, res.student.id);
-        } catch (_) {
+        } catch  {
           // Handled or already enrolled
         }
       }
@@ -411,12 +411,14 @@ export default function AddStudentModal({
       </form>
     </Modal>
 
-    <StudentCredentialsModal
-      isOpen={credentialsModalOpen}
-      onClose={handleCloseCredentials}
-      student={createdStudentCreds?.student}
-      tempPassword={createdStudentCreds?.tempPassword}
-    />
+    {credentialsModalOpen && createdStudentCreds?.student && (
+      <StudentCredentialsModal
+        isOpen
+        onClose={handleCloseCredentials}
+        student={createdStudentCreds.student}
+        tempPassword={createdStudentCreds.tempPassword}
+      />
+    )}
   </>
   );
 }

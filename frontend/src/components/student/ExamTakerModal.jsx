@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useEffectEvent, useMemo, useRef } from 'react';
 import Modal from '../common/Modal';
 import MathRenderer from '../common/MathRenderer';
 import QuestionImage from '../common/QuestionImage';
@@ -7,22 +7,18 @@ import { api } from '../../api/client';
 import {
   Clock,
   Camera,
-  Upload,
   AlertCircle,
-  CheckCircle2,
   Send,
   X,
   FileText,
-  AlertTriangle,
-  HelpCircle,
-  Sparkles,
+  Sparkles
 } from 'lucide-react';
 
 export default function ExamTakerModal({
   isOpen,
   onClose,
   exam,
-  onExamSubmitted,
+  onExamSubmitted
 }) {
   const [mcqAnswers, setMcqAnswers] = useState({});
   const [textAnswers, setTextAnswers] = useState({});
@@ -37,8 +33,6 @@ export default function ExamTakerModal({
   const [textAnswer, setTextAnswer] = useState('');
   const [serverOffsetMs, setServerOffsetMs] = useState(0);
   const [submitFailed, setSubmitFailed] = useState(false);
-
-  const autoSubmitRef = useRef(null);
   const autoSubmittedRef = useRef(false);
   const autoAttemptsRef = useRef(0);
   const submittingRef = useRef(false);
@@ -46,14 +40,16 @@ export default function ExamTakerModal({
 
   // Drafts are per exam AND per user so a shared browser never leaks answers
   // between accounts.
-  const draftKey = () => {
+  const draftKey = useMemo(() => {
     let who = 'anon';
     try {
       const u = JSON.parse(localStorage.getItem('user_data') || '{}');
       who = u.username || u.id || 'anon';
-    } catch {}
+    } catch {
+      // unreadable profile: fall back to a generic key
+    }
     return `exam_draft_${exam?.id}_${who}`;
-  };
+  }, [exam?.id]);
 
   // Restore draft answers from localStorage if available
   useEffect(() => {
@@ -65,9 +61,8 @@ export default function ExamTakerModal({
       autoAttemptsRef.current = 0;
       api.fetchServerOffset().then(setServerOffsetMs).catch(() => setServerOffsetMs(0));
 
-      const storageKey = draftKey();
       try {
-        const saved = localStorage.getItem(storageKey);
+        const saved = localStorage.getItem(draftKey);
         if (saved) {
           const parsed = JSON.parse(saved);
           if (parsed.mcqAnswers) setMcqAnswers(parsed.mcqAnswers);
@@ -80,32 +75,40 @@ export default function ExamTakerModal({
           setImageUrls([]);
           setTextAnswer('');
         }
-      } catch (_) {
+      } catch  {
         setMcqAnswers({});
         setTextAnswers({});
         setImageUrls([]);
         setTextAnswer('');
       }
     }
-  }, [exam?.id]);
+  }, [exam?.id, draftKey]);
 
   // Persist in-progress answers so closing modal does not lose answers.
   // When everything is empty the stale draft is removed so deleted work
   // cannot resurrect on reopen.
   useEffect(() => {
     if (!exam?.id) return;
-    const storageKey = draftKey();
-    if (Object.keys(mcqAnswers).length > 0 || Object.keys(textAnswers).length > 0 || imageUrls.length > 0 || textAnswer) {
-      localStorage.setItem(storageKey, JSON.stringify({ mcqAnswers, textAnswers, imageUrls, textAnswer }));
-    } else {
-      localStorage.removeItem(storageKey);
+    try {
+      if (Object.keys(mcqAnswers).length > 0 || Object.keys(textAnswers).length > 0 || imageUrls.length > 0 || textAnswer) {
+        localStorage.setItem(draftKey, JSON.stringify({ mcqAnswers, textAnswers, imageUrls, textAnswer }));
+      } else {
+        localStorage.removeItem(draftKey);
+      }
+    } catch {
+      // Storage full or blocked (private mode): the exam still works, only the draft is not kept.
     }
-  }, [exam?.id, mcqAnswers, textAnswers, imageUrls, textAnswer]);
+  }, [exam?.id, draftKey, mcqAnswers, textAnswers, imageUrls, textAnswer]);
 
   // Keep the mutable uploading flag in sync for the auto-submit path.
   useEffect(() => {
     uploadingRef.current = uploading;
   }, [uploading]);
+
+  // Auto-submit whatever has been answered so far. Only the countdown effect calls
+  // it, and that effect only runs while there is an exam, so doSubmit (defined
+  // after the early return below) always exists by then.
+  const autoSubmit = useEffectEvent(() => doSubmit(true));
 
   // Live countdown (server-clock corrected).
   // The on-time deadline is the student's own (timed exams) or the exam end time.
@@ -156,10 +159,10 @@ export default function ExamTakerModal({
         setTimeLeft(fmt(graceEnd - now));
         // Auto-send once; on failure the flag is reset so the next tick
         // retries (capped) instead of stranding the answers.
-        if (!autoSubmittedRef.current && autoSubmitRef.current && autoAttemptsRef.current < 8) {
+        if (!autoSubmittedRef.current && autoAttemptsRef.current < 8) {
           autoSubmittedRef.current = true;
           autoAttemptsRef.current += 1;
-          autoSubmitRef.current(true);
+          autoSubmit();
         }
         return;
       }
@@ -182,7 +185,7 @@ export default function ExamTakerModal({
   const handleSelectMCQ = (qId, optionIndex) => {
     setMcqAnswers((prev) => ({
       ...prev,
-      [qId]: optionIndex,
+      [qId]: optionIndex
     }));
   };
 
@@ -243,18 +246,20 @@ export default function ExamTakerModal({
     try {
       const answersData = {
         ...textAnswers,
-        ...mcqAnswers,
+        ...mcqAnswers
       };
 
       const response = await api.submitExam(exam.id, {
         answers_data: answersData,
         text_answer: textAnswer.trim(),
         image_urls: imageUrls,
-        uploaded_images: imageUrls,
+        uploaded_images: imageUrls
       });
 
-      if (exam?.id) {
-        localStorage.removeItem(draftKey());
+      try {
+        localStorage.removeItem(draftKey);
+      } catch {
+        // the submission went through; a leftover draft is harmless
       }
       setSubmitFailed(false);
       onExamSubmitted(response, exam);
@@ -272,10 +277,6 @@ export default function ExamTakerModal({
       setSubmitting(false);
     }
   };
-
-  // Auto-submit whatever has been answered so far. Assigned directly rather than in
-  // an effect: this sits below the `!exam` early return, where a hook is not allowed.
-  autoSubmitRef.current = (isAuto) => doSubmit(isAuto);
 
   // Written section exists when the paper has real text content (not just
   // empty editor HTML like <p></p> or <p><br></p>).
@@ -321,7 +322,7 @@ export default function ExamTakerModal({
       message: blankCount > 0
         ? `${summaryBits.join(' · ')}. ${blankCount} MCQ${blankCount === 1 ? ' is' : 's are'} still blank — turn in anyway?`
         : `${summaryBits.join(' · ')}. Once turned in, answers cannot be changed.`,
-      confirmLabel: isAssignment ? 'Turn in' : 'Turn in exam',
+      confirmLabel: isAssignment ? 'Turn in' : 'Turn in exam'
     });
     if (!ok) return;
 
