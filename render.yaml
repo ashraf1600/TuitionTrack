@@ -58,6 +58,14 @@ services:
       - key: FRONTEND_URL
         value: https://tuitiontrack-web.onrender.com
 
+      # ── App updates: the newest APK version and where to download it ──
+      # Bump APP_LATEST_VERSION after you publish a new TuitionTrack.apk; the app
+      # then offers the download to everyone on an older version.
+      - key: APP_LATEST_VERSION
+        value: "1.1.0"
+      - key: APP_DOWNLOAD_URL
+        value: https://github.com/ashraf1600/TuitionTrack/releases/latest/download/TuitionTrack.apk
+
       # ── Email: Default logs to console. Real SMTP credentials can be added later in Dashboard ──
       - key: EMAIL_BACKEND
         value: django.core.mail.backends.console.EmailBackend

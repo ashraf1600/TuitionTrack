@@ -187,6 +187,13 @@ LANGUAGE_CODE = 'en-us'
 TIME_ZONE = 'UTC'
 # Zone used when a time is written out for people (emails). Storage stays UTC.
 DISPLAY_TIME_ZONE = os.getenv('DISPLAY_TIME_ZONE', 'Asia/Dhaka')
+
+# ─── Mobile app updates ───────────────────────────────────────────────────────
+# The app is installed from an APK file, so it cannot update itself from a store.
+# It reads these from /api/v1/meta/ and offers the download when it is older.
+APP_LATEST_VERSION = os.getenv('APP_LATEST_VERSION', '').strip()
+APP_DOWNLOAD_URL = os.getenv('APP_DOWNLOAD_URL', '').strip()
+APP_RELEASE_NOTES = os.getenv('APP_RELEASE_NOTES', '').strip()
 # Where the React app is served; used to build links in emails (password reset).
 FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:5173')
 USE_I18N = True

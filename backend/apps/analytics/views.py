@@ -193,6 +193,28 @@ class NotificationsView(APIView):
                         'Start the next cycle when you are ready.', cycle.updated_at, f'/tuitions/{cycle.tuition_id}',
                     )
 
+            # Finished cycles not marked paid yet.
+            for cycle in AttendanceCycle.objects.filter(
+                tuition__tutor=user, status=AttendanceCycle.Status.ARCHIVED,
+                payment_status=AttendanceCycle.Payment.PENDING,
+            ).select_related('tuition').order_by('-updated_at')[:20]:
+                add(
+                    f'unpaid-{cycle.id}', 'payment',
+                    f'{cycle.tuition.title}: payment pending for cycle #{cycle.cycle_number}',
+                    'Mark it paid when you receive the money.', cycle.updated_at, f'/tuitions/{cycle.tuition_id}',
+                )
+
+            # Homework handed in and waiting to be checked.
+            from apps.students.models import Homework
+            for hw in Homework.objects.filter(
+                tutor=user, is_evaluated=False, submitted_at__isnull=False, submitted_at__gte=now - timedelta(days=14),
+            ).select_related('student').order_by('-submitted_at')[:20]:
+                who = (hw.student.get_full_name() or hw.student.username) if hw.student_id else 'A student'
+                add(
+                    f'handed-in-{hw.id}-{int(hw.submitted_at.timestamp())}', 'homework',
+                    f'{who} handed in homework', hw.title, hw.submitted_at, '/tutor',
+                )
+
         elif user.role == 'STUDENT':
             from django.db.models import Q
             exams = Exam.objects.filter(is_published=True).filter(
@@ -228,28 +250,55 @@ class NotificationsView(APIView):
                     '', req.responded_at, '/student',
                 )
 
-            # Completed billing cycle → payment due. Derived from the ACTIVE
-            # cycle, so it clears itself as soon as the tutor starts the next one.
-            from apps.cycles.models import Cycle as LegacyCycle
+            # Finished cycles waiting for payment, and payments just recorded.
+            # A reminder only: classes and everything else go on as usual.
             from apps.students.models import TuitionEnrollment
-            seen_cycle_ids = set()
-            for enr in TuitionEnrollment.objects.filter(
-                student=user, is_active=True
-            ).select_related('tuition', 'tuition__tutor').prefetch_related('tuition__cycles'):
-                tuition = enr.tuition
-                cycle = tuition.active_cycle
-                if not cycle or not cycle.is_complete or cycle.id in seen_cycle_ids:
+            tuition_ids = list(TuitionEnrollment.objects.filter(student=user, is_active=True).values_list('tuition_id', flat=True))
+            for cycle in AttendanceCycle.objects.filter(
+                tuition_id__in=tuition_ids, status=AttendanceCycle.Status.ARCHIVED,
+            ).select_related('tuition', 'tuition__tutor'):
+                tutor = cycle.tuition.tutor
+                link = f'/student?tutor={tutor.id}'
+                if cycle.payment_status == AttendanceCycle.Payment.PENDING:
+                    # No amount: the cycle's fee is the whole group's total, not what one student owes.
+                    add(
+                        f'pay-{cycle.id}', 'payment',
+                        f'{cycle.tuition.title}: payment pending for cycle #{cycle.cycle_number}',
+                        'Classes go on as usual.', cycle.updated_at, link,
+                    )
+                elif cycle.paid_at and cycle.paid_at >= recent:
+                    add(
+                        f'paid-{cycle.id}', 'payment',
+                        f'Payment received for cycle #{cycle.cycle_number}',
+                        cycle.tuition.title, cycle.paid_at, link,
+                    )
+            # Older cycles that completed before automatic roll-over and are still current.
+            from apps.cycles.models import Cycle as LegacyCycle
+            for cycle in AttendanceCycle.objects.filter(
+                tuition_id__in=tuition_ids, status=AttendanceCycle.Status.ACTIVE,
+            ).select_related('tuition', 'tuition__tutor'):
+                if cycle.is_complete and cycle.payment_status == AttendanceCycle.Payment.PENDING:
+                    add(
+                        f'cycle-due-{cycle.id}', 'payment',
+                        f'{cycle.tuition.title}: cycle #{cycle.cycle_number} complete — payment due',
+                        'Classes go on as usual.', cycle.updated_at, f'/student?tutor={cycle.tuition.tutor_id}',
+                    )
+
+            # Homework: newly set, due within a day, and just checked.
+            from apps.students.services import student_homework
+            for hw in student_homework(user).filter(
+                Q(created_at__gte=recent) | Q(evaluated_at__gte=recent) | Q(due_date__lte=now + timedelta(hours=24), due_date__gte=now)
+            ).order_by('-created_at')[:40]:
+                if hw.is_evaluated:
+                    if hw.evaluated_at and hw.evaluated_at >= recent:
+                        add(f'hw-checked-{hw.id}', 'homework', f'Homework checked: {hw.title}', hw.tutor_feedback[:120], hw.evaluated_at, '/student')
                     continue
-                seen_cycle_ids.add(cycle.id)
-                tutor = tuition.tutor
-                tutor_name = f'{(tutor.first_name or "").strip() or tutor.username} Sir'
-                # No amount here: the cycle's fee is the whole group's total, which
-                # is the tutor's business and is not what one student owes.
-                add(
-                    f'cycle-due-{cycle.id}', 'cycle',
-                    f'{tuition.title}: cycle #{cycle.cycle_number} complete — payment due',
-                    f'Pay {tutor_name} for this cycle.', cycle.updated_at, f'/student?tutor={tutor.id}',
-                )
+                if hw.submitted_at:
+                    continue
+                if now <= hw.due_date <= now + timedelta(hours=24):
+                    add(f'hw-due-{hw.id}', 'homework', f'Homework due soon: {hw.title}', 'due', hw.due_date, '/student')
+                elif hw.created_at >= now - timedelta(days=7):
+                    add(f'hw-new-{hw.id}', 'homework', f'New homework: {hw.title}', 'due', hw.due_date, '/student')
 
             # Legacy 1-on-1 billing (students with no tuition group).
             for cycle in LegacyCycle.objects.filter(

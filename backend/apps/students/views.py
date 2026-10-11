@@ -373,6 +373,7 @@ class TuitionViewSet(viewsets.ModelViewSet):
             'cycle': detail['active_cycle'],
             'wallet_summary': detail['wallet_summary'],
             'completed_cycle_number': cycle.cycle_number if next_cycle else None,
+            'completed_cycle_id': str(cycle.id) if next_cycle else None,
         }, status=status.HTTP_200_OK)
 
 
