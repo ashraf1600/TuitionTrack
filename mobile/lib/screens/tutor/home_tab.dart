@@ -7,6 +7,7 @@ import '../../core/repo.dart';
 import '../../widgets/charts.dart';
 import '../../widgets/theme.dart';
 import '../../widgets/ui.dart';
+import '../common/payments_screen.dart';
 import 'tuition_screen.dart';
 
 class _HomeData {
@@ -124,6 +125,29 @@ class _WalletStrip extends StatelessWidget {
           ),
           const SizedBox(height: 10),
           ProgressLine(value: share, height: 5, label: 'Share of the current cycles already earned'),
+          if (wallet.integer('unpaid_cycles') > 0) ...[
+            const SizedBox(height: 10),
+            InkWell(
+              borderRadius: BorderRadius.circular(8),
+              onTap: () => Navigator.push(context, MaterialPageRoute<void>(builder: (_) => const PaymentsScreen())),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Row(
+                  children: [
+                    Icon(Icons.warning_amber_rounded, size: 16, color: tone(context, AppColors.warning)),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        '${taka(wallet.number('unpaid_total'))} to collect · ${wallet.integer('unpaid_cycles')} unpaid cycle${wallet.integer('unpaid_cycles') == 1 ? '' : 's'}',
+                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: tone(context, AppColors.warning)),
+                      ),
+                    ),
+                    Icon(Icons.chevron_right, size: 16, color: tone(context, AppColors.warning)),
+                  ],
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -383,6 +407,13 @@ class _TuitionCard extends StatelessWidget {
           Row(
             children: [
               Text('Cycle $cycleNo', style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant)),
+              if (tuition.maps('pending_payments').isNotEmpty) ...[
+                const SizedBox(width: 6),
+                Tooltip(
+                  message: 'Payment pending',
+                  child: Icon(Icons.warning_amber_rounded, size: 14, color: tone(context, AppColors.warning)),
+                ),
+              ],
               const Spacer(),
               Text('$done/$total',
                   style: TextStyle(

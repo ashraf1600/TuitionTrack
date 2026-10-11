@@ -71,6 +71,10 @@ export default function SharedCycleBoard({
   const save = async (classNo, isDone, dateIso = null, topic = '') => {
     setError('');
     const res = await api.toggleAttendanceClass(cycle.id, classNo, isDone, dateIso, topic);
+    // The last class closes the cycle and the server starts the next one straight away.
+    if (res.completed_cycle) {
+      notify.success(`Cycle #${res.completed_cycle.cycle_number} is complete and cycle #${res.cycle.cycle_number} has started. Mark it paid in the app when you receive the money.`);
+    }
     onCycleChange?.(res.cycle || res);
   };
 

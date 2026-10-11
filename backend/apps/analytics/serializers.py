@@ -45,6 +45,9 @@ class WalletAnalyticsSerializer(serializers.Serializer):
     total_earned = serializers.FloatField()
     total_pending = serializers.FloatField()
     lifetime_archived_earnings = serializers.FloatField()
+    # Finished cycles not marked paid yet, and what they come to.
+    unpaid_cycles = serializers.IntegerField()
+    unpaid_total = serializers.FloatField()
     chart_data = ChartItemSerializer(many=True)
     tuition_breakdowns = TuitionBreakdownSerializer(many=True)
     # Legacy 1-on-1 cycles that predate tuition groups.

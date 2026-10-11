@@ -74,6 +74,10 @@ class WalletAnalyticsView(APIView):
             + sum((Decimal(c.earned_amount) for c in legacy_archived), zero)
         )
 
+        # Finished cycles the tutor has not marked paid yet (cash still to collect).
+        unpaid = [c for c in group_archived if c.payment_status == AttendanceCycle.Payment.PENDING]
+        unpaid_total = float(sum((c.earned_revenue for c in unpaid), zero))
+
         students_per_tuition = {}
         for tuition_id in TuitionEnrollment.objects.filter(
             tuition__tutor=tutor, is_active=True, student__is_active=True
@@ -119,6 +123,8 @@ class WalletAnalyticsView(APIView):
             'total_earned': round(total_earned, 2),
             'total_pending': round(total_pending, 2),
             'lifetime_archived_earnings': round(lifetime_archived, 2),
+            'unpaid_cycles': len(unpaid),
+            'unpaid_total': round(unpaid_total, 2),
             'chart_data': [
                 {'name': 'Earned', 'value': round(total_earned, 2), 'color': '#10B981'},
                 {'name': 'Pending', 'value': round(total_pending, 2), 'color': '#6366F1'},

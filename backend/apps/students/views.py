@@ -359,15 +359,20 @@ class TuitionViewSet(viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
 
         cycle = AttendanceCycle.ensure_active(tuition)
-        cycle, error = toggle_shared_class(cycle.id, serializer.validated_data)
+        cycle, error, next_cycle = toggle_shared_class(cycle.id, serializer.validated_data)
         if error:
             return Response({'error': error}, status=status.HTTP_400_BAD_REQUEST)
 
         detail = self._detail(tuition)
+        message = f'Class #{serializer.validated_data["resolved_class_no"]} updated for the whole group.'
+        if next_cycle:
+            message = (f'Cycle #{cycle.cycle_number} is complete. Cycle #{next_cycle.cycle_number} has started; '
+                       f'cycle #{cycle.cycle_number} shows as payment pending until you mark it paid.')
         return Response({
-            'message': f'Class #{serializer.validated_data["resolved_class_no"]} updated for the whole group.',
+            'message': message,
             'cycle': detail['active_cycle'],
             'wallet_summary': detail['wallet_summary'],
+            'completed_cycle_number': cycle.cycle_number if next_cycle else None,
         }, status=status.HTTP_200_OK)
 
 
@@ -610,6 +615,24 @@ class TutorCodeConnectView(APIView):
         )
 
 
+def _my_tutor_ids(student):
+    """
+    Every tutor a student belongs to: accepted connection requests, the tutor
+    who created the account, and tutors whose tuition the student is in (a
+    tutor can add a student straight into a tuition without any request).
+    """
+    from .models import ConnectionRequest, TuitionEnrollment
+    ids = set(ConnectionRequest.objects.filter(
+        student=student, status=ConnectionRequest.Status.ACCEPTED,
+    ).values_list("tutor_id", flat=True))
+    ids |= set(TuitionEnrollment.objects.filter(
+        student=student, is_active=True,
+    ).values_list("tuition__tutor_id", flat=True))
+    if student.tutor_id:
+        ids.add(student.tutor_id)
+    return ids
+
+
 class ConnectedTutorsView(APIView):
     """
     GET /api/v1/my-tutors/
@@ -619,7 +642,6 @@ class ConnectedTutorsView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        from .models import ConnectionRequest
         from .serializers import ConnectedTutorSerializer
 
         if request.user.role != "STUDENT":
@@ -628,14 +650,9 @@ class ConnectedTutorsView(APIView):
                 status=status.HTTP_403_FORBIDDEN,
             )
 
-        accepted_tutor_ids = ConnectionRequest.objects.filter(
-            student=request.user,
-            status=ConnectionRequest.Status.ACCEPTED,
-        ).values_list("tutor_id", flat=True)
-
         tutors = User.objects.filter(
-            id__in=accepted_tutor_ids, is_active=True
-        ).prefetch_related("tuitions")
+            id__in=_my_tutor_ids(request.user), role="TUTOR", is_active=True
+        ).prefetch_related("tuitions").order_by("first_name", "username")
 
         serializer = ConnectedTutorSerializer(
             tutors, many=True, context={"request": request}
@@ -651,19 +668,14 @@ class TutorDetailForStudentView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request, tutor_id):
-        from .models import ConnectionRequest, WeeklyRoutine, ClassSchedule
+        from .models import WeeklyRoutine, ClassSchedule
         from .serializers import ConnectedTutorSerializer, HomeworkSerializer
 
         if request.user.role != "STUDENT":
             return Response({"error": "Students only."}, status=status.HTTP_403_FORBIDDEN)
 
-        # Verify the student is actually connected to this tutor.
-        connection = ConnectionRequest.objects.filter(
-            student=request.user,
-            tutor_id=tutor_id,
-            status=ConnectionRequest.Status.ACCEPTED,
-        ).first()
-        if not connection:
+        # Verify the student actually belongs to this tutor.
+        if tutor_id not in _my_tutor_ids(request.user):
             return Response(
                 {"error": "You are not connected to this tutor."},
                 status=status.HTTP_404_NOT_FOUND,

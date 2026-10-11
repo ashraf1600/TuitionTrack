@@ -133,6 +133,9 @@ class StudentCycleSerializer(serializers.ModelSerializer):
             'is_complete',
             'status',
             'classes_data',
+            # Students see whether a cycle is paid (and when), never the amount.
+            'payment_status',
+            'paid_at',
             'created_at',
             'updated_at',
         ]
@@ -147,7 +150,7 @@ class AttendanceCycleSerializer(StudentCycleSerializer):
     Tutor view of the shared cycle: everything a student sees plus the wallet
     figures. earned_revenue = (total_fee / total_classes) * completed_classes.
     """
-    MONEY_FIELDS = ('total_fee', 'tuition_fee', 'per_class_rate', 'earned_revenue', 'pending_balance')
+    MONEY_FIELDS = ('total_fee', 'tuition_fee', 'per_class_rate', 'earned_revenue', 'pending_balance', 'payment_note')
 
     total_fee = serializers.ReadOnlyField()
     # Old name for total_fee, kept so existing clients keep working.
@@ -165,6 +168,7 @@ class AttendanceCycleSerializer(StudentCycleSerializer):
             'earned_revenue',
             'pending_balance',
             'student_count',
+            'payment_note',
         ]
         read_only_fields = fields
 

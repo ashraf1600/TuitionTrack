@@ -9,6 +9,7 @@ import '../../widgets/charts.dart';
 import '../../widgets/theme.dart';
 import '../../widgets/ui.dart';
 import '../common/cycle_progress.dart';
+import '../common/payments_screen.dart';
 import 'exam_editor_screen.dart';
 import 'exams_view.dart';
 import 'tuition_form_screen.dart';
@@ -73,6 +74,21 @@ class _TuitionScreenState extends State<TuitionScreen> {
             appBar: AppBar(
               title: Text(tuition.str('title'), overflow: TextOverflow.ellipsis),
               actions: [
+                IconButton(
+                  tooltip: 'Payments',
+                  icon: Badge(
+                    isLabelVisible: tuition.maps('pending_payments').isNotEmpty,
+                    label: Text('${tuition.maps('pending_payments').length}'),
+                    child: const Icon(Icons.receipt_long_outlined),
+                  ),
+                  onPressed: () async {
+                    await Navigator.push(
+                      context,
+                      MaterialPageRoute<void>(builder: (_) => PaymentsScreen(tuitionId: widget.tuitionId)),
+                    );
+                    await reload();
+                  },
+                ),
                 PopupMenuButton<String>(
                   tooltip: 'Tuition options',
                   onSelected: (value) => value == 'edit' ? _edit(tuition) : _delete(tuition),
@@ -207,13 +223,56 @@ class _ClassesTab extends StatelessWidget {
       return;
     }
     final done = action == 'done';
-    final ok = await attemptSave(
+    Json result = const {};
+    final ok = await attempt(context, () async {
+      result = await repo.markClass(tuition.str('id'), classNo, done,
+          date: done ? date : null, topic: done ? topicText : '', tuitionTitle: tuition.str('title'));
+    });
+    if (!ok || !context.mounted) return;
+    final finished = result['completed_cycle_number'];
+    showToast(
       context,
-      () => repo.markClass(tuition.str('id'), classNo, done,
-          date: done ? date : null, topic: done ? topicText : '', tuitionTitle: tuition.str('title')),
-      success: done ? 'Class $classNo marked done for the whole tuition.' : 'Class $classNo unmarked.',
+      result['queued'] == true
+          ? 'Saved on this phone. It will be sent when you are back online.'
+          : finished is num
+              ? 'Cycle #$finished is complete and cycle #${finished.toInt() + 1} has started. Mark #$finished paid when you receive the money.'
+              : done
+                  ? 'Class $classNo marked done for the whole tuition.'
+                  : 'Class $classNo unmarked.',
     );
-    if (ok) await reload();
+    await reload();
+  }
+
+  Future<void> _markPaid(BuildContext context, Json pending) async {
+    final repo = context.read<Repo>();
+    final n = pending.integer('cycle_number');
+    final ok = await confirm(
+      context,
+      title: 'Mark cycle #$n as paid?',
+      message: 'Record that ${pending.numberOrNull('amount') == null ? 'the fee' : taka(pending.number('amount'))} was received. '
+          'Students stop seeing "payment pending" for this cycle.',
+      confirmLabel: 'Mark paid',
+    );
+    if (!ok || !context.mounted) return;
+    if (await attempt(context, () => repo.setCyclePayment(pending.str('cycle_id'), true), success: 'Cycle #$n marked as paid.')) {
+      await reload();
+    }
+  }
+
+  Future<void> _reopen(BuildContext context, Json previous) async {
+    final repo = context.read<Repo>();
+    final n = previous.integer('cycle_number');
+    final ok = await confirm(
+      context,
+      title: 'Reopen cycle #$n?',
+      message: 'Use this if the last class of cycle #$n was marked by mistake. The new, still empty cycle is removed '
+          'and cycle #$n becomes current again, so you can unmark that class.',
+      confirmLabel: 'Reopen',
+    );
+    if (!ok || !context.mounted) return;
+    if (await attempt(context, () => repo.reopenCycle(previous.str('id')), success: 'Cycle #$n is open again.')) {
+      await reload();
+    }
   }
 
   /// Open a homework composer pre-filled with the class topic + date.
@@ -440,9 +499,22 @@ class _ClassesTab extends StatelessWidget {
     final done = cycle.integer('completed_classes');
     final total = cycle.integer('total_classes');
 
+    final pendingPayments = tuition.maps('pending_payments');
+    final previous = history.where((c) => c.integer('cycle_number') == cycle.integer('cycle_number') - 1).firstOrNull;
     return PageBody(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 96),
       children: [
+        // Unpaid finished cycles: a reminder with a one-tap fix. Nothing is blocked.
+        for (final p in pendingPayments) ...[
+          Banner2(
+            'Payment pending for cycle #${p.integer('cycle_number')}'
+            '${p.numberOrNull('amount') == null ? '' : ' · ${taka(p.number('amount'))}'}',
+            color: AppColors.warning,
+            icon: Icons.warning_amber_rounded,
+            action: TextButton(onPressed: () => _markPaid(context, p), child: const Text('Mark paid')),
+          ),
+          gap8,
+        ],
         // The headline: how far this cycle has got.
         AppCard(
           child: Column(
@@ -484,13 +556,19 @@ class _ClassesTab extends StatelessWidget {
                   label: Text('Mark class ${classNoOf(next)} done'),
                 ),
               ],
+              if (done == 0 && previous != null)
+                TextButton.icon(
+                  onPressed: () => _reopen(context, previous),
+                  icon: const Icon(Icons.undo_rounded, size: 18),
+                  label: Text('Last class of cycle #${previous.integer('cycle_number')} was a mistake? Reopen it'),
+                ),
             ],
           ),
         ),
         if (cycle.flag('is_complete')) ...[
           gap12,
           const Banner2(
-            'All classes of this cycle are done. Start the next cycle when you are ready.',
+            'All classes of this cycle are done. Start the next cycle to keep tracking classes.',
             color: AppColors.success,
             icon: Icons.celebration_outlined,
           ),

@@ -130,6 +130,13 @@ class Repo {
   }
   Future<List<Json>> cycles(String tuitionId) => api.list('/attendance-cycles/', query: {'tuition_id': tuitionId});
   Future<Json> resetCycle(String cycleId) async => _map(await api.post('/attendance-cycles/$cycleId/reset/'));
+
+  /// Tutor: record that a cycle was paid in cash (or undo it).
+  Future<Json> setCyclePayment(String cycleId, bool paid, {String? note}) async =>
+      _map(await api.post('/attendance-cycles/$cycleId/payment/', {'paid': paid, 'note': ?note}));
+
+  /// Tutor: undo an automatic roll-over while the new cycle is still empty.
+  Future<Json> reopenCycle(String cycleId) async => _map(await api.post('/attendance-cycles/$cycleId/reopen/'));
   Future<Json> wallet() async => _map(await api.get('/analytics/wallet/'));
 
   // ── Connection requests ────────────────────────────────────────────────────

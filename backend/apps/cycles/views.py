@@ -201,8 +201,12 @@ class CycleViewSet(TenantScopedViewSet):
 def toggle_shared_class(cycle_id, validated_data):
     """
     Mark one class of a shared cycle complete / incomplete under a row lock.
-    Returns (cycle, error_message). Because the cycle belongs to the tuition,
-    this single write is what every student in the group sees.
+    Returns (cycle, error_message, next_cycle). Because the cycle belongs to
+    the tuition, this single write is what every student in the group sees.
+
+    Marking the last class archives the cycle and starts the next one in the
+    same transaction (next_cycle), so tracking never stops — whether or not the
+    finished cycle has been paid for.
     """
     import time
     from django.db.utils import OperationalError
@@ -213,7 +217,7 @@ def toggle_shared_class(cycle_id, validated_data):
             with transaction.atomic():
                 cycle = AttendanceCycle.objects.select_for_update().get(id=cycle_id)
                 if cycle.status != AttendanceCycle.Status.ACTIVE:
-                    return cycle, 'Cannot change attendance on an archived cycle.'
+                    return cycle, 'Cannot change attendance on an archived cycle.', None
                 try:
                     cycle.mark_class(
                         validated_data['resolved_class_no'],
@@ -222,9 +226,10 @@ def toggle_shared_class(cycle_id, validated_data):
                         topic=validated_data.get('topic', ''),
                     )
                 except ValueError as exc:
-                    return cycle, str(exc)
+                    return cycle, str(exc), None
                 cycle.save(update_fields=['classes_data', 'updated_at'])
-                return cycle, None
+                next_cycle = cycle.roll_over() if validated_data['completed'] else None
+                return cycle, None, next_cycle
         except OperationalError as exc:
             # SQLite has no row locks; retry briefly when the database is busy.
             if 'locked' in str(exc).lower() and attempt < 4:
@@ -320,15 +325,79 @@ class AttendanceCycleViewSet(viewsets.ReadOnlyModelViewSet):
         serializer = ToggleClassSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        cycle, error = toggle_shared_class(cycle.id, serializer.validated_data)
+        cycle, error, next_cycle = toggle_shared_class(cycle.id, serializer.validated_data)
         if error:
             return Response({'error': error}, status=status.HTTP_400_BAD_REQUEST)
 
         class_no = serializer.validated_data['resolved_class_no']
         completed = serializer.validated_data['completed']
+        message = f'Class #{class_no} marked as {"completed" if completed else "incomplete"}.'
+        if next_cycle:
+            message += f' Cycle #{cycle.cycle_number} is complete; cycle #{next_cycle.cycle_number} has started.'
         return Response({
-            'message': f'Class #{class_no} marked as {"completed" if completed else "incomplete"}.',
-            'cycle': AttendanceCycleSerializer(cycle, context={'request': request}).data
+            'message': message,
+            # The cycle to keep tracking in: the new one after a roll-over.
+            'cycle': AttendanceCycleSerializer(next_cycle or cycle, context={'request': request}).data,
+            'completed_cycle': AttendanceCycleSerializer(cycle, context={'request': request}).data if next_cycle else None,
+        }, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated, IsTutor])
+    def payment(self, request, pk=None):
+        """
+        POST /api/v1/attendance-cycles/<id>/payment/   {paid: true|false, note?}
+        The tutor records that this cycle was paid (cash) — or undoes it.
+        Students then stop (or start) seeing "payment pending" for it.
+        """
+        from .models import AttendanceCycle
+        from .serializers import AttendanceCycleSerializer
+
+        paid = request.data.get('paid')
+        if not isinstance(paid, bool):
+            return Response({'paid': ['Send true or false.']}, status=status.HTTP_400_BAD_REQUEST)
+        note = request.data.get('note')
+        if note is not None and not isinstance(note, str):
+            return Response({'note': ['Must be text.']}, status=status.HTTP_400_BAD_REQUEST)
+        with transaction.atomic():
+            cycle = AttendanceCycle.objects.select_for_update().get(id=self.get_object().id)
+            cycle.set_payment(paid, note.strip() if isinstance(note, str) else None)
+        return Response({
+            'message': f'Cycle #{cycle.cycle_number} marked as {"paid" if paid else "not paid"}.',
+            'cycle': AttendanceCycleSerializer(cycle, context={'request': request}).data,
+        }, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated, IsTutor])
+    def reopen(self, request, pk=None):
+        """
+        POST /api/v1/attendance-cycles/<id>/reopen/
+        Undo an automatic roll-over made by mistake: the latest archived cycle
+        becomes current again, and the cycle that replaced it is removed — only
+        while that new cycle has no class marked yet. Nothing recorded is lost.
+        """
+        from .models import AttendanceCycle
+        from .serializers import AttendanceCycleSerializer
+
+        with transaction.atomic():
+            cycle = AttendanceCycle.objects.select_for_update().get(id=self.get_object().id)
+            if cycle.status != AttendanceCycle.Status.ARCHIVED or not cycle.tuition_id:
+                return Response({'error': 'Only a finished cycle can be reopened.'}, status=status.HTTP_400_BAD_REQUEST)
+            later = list(
+                AttendanceCycle.objects.select_for_update()
+                .filter(tuition_id=cycle.tuition_id, cycle_number__gt=cycle.cycle_number)
+            )
+            if len(later) > 1 or any(c.status != AttendanceCycle.Status.ACTIVE for c in later):
+                return Response({'error': 'Only the most recent finished cycle can be reopened.'}, status=status.HTTP_400_BAD_REQUEST)
+            if later and later[0].completed_classes > 0:
+                return Response(
+                    {'error': f'Cycle #{later[0].cycle_number} already has classes marked, so cycle #{cycle.cycle_number} cannot be reopened.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            for empty in later:
+                empty.delete()
+            cycle.status = AttendanceCycle.Status.ACTIVE
+            cycle.save(update_fields=['status', 'updated_at'])
+        return Response({
+            'message': f'Cycle #{cycle.cycle_number} is open again.',
+            'cycle': AttendanceCycleSerializer(cycle, context={'request': request}).data,
         }, status=status.HTTP_200_OK)
 
     @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated, IsTutor])
