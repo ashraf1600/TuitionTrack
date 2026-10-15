@@ -41,8 +41,8 @@ class ProgressRing extends StatelessWidget {
               value: value,
               strokeWidth: thickness,
               strokeCap: StrokeCap.round,
-              color: color,
-              backgroundColor: scheme.surfaceContainerHighest,
+              color: tone(context, color),
+              backgroundColor: context.tt.chartTrack,
             ),
             Center(
               child: Padding(
@@ -54,7 +54,7 @@ class ProgressRing extends StatelessWidget {
                     children: [
                       Text.rich(
                         TextSpan(children: [
-                          TextSpan(text: '$done', style: TextStyle(fontWeight: FontWeight.w800, color: scheme.onSurface)),
+                          TextSpan(text: '$done', style: TextStyle(fontWeight: FontWeight.w700, color: scheme.onSurface)),
                           TextSpan(text: '/$total', style: TextStyle(fontWeight: FontWeight.w600, color: scheme.onSurfaceVariant)),
                         ]),
                         style: TextStyle(fontSize: size * 0.24),
@@ -88,8 +88,8 @@ class ProgressLine extends StatelessWidget {
       child: LinearProgressIndicator(
         value: value.isNaN ? 0 : value.clamp(0.0, 1.0),
         minHeight: height,
-        color: color,
-        backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
+        color: tone(context, color),
+        backgroundColor: context.tt.chartTrack,
         semanticsLabel: label,
       ),
     );

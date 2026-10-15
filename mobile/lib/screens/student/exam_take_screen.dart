@@ -338,11 +338,11 @@ class _ExamTakeScreenState extends State<ExamTakeScreen> {
                                   child: IconButton.filled(
                                     tooltip: tr('Remove page {p0}', {'p0': i + 1}),
                                     style: IconButton.styleFrom(
-                                      backgroundColor: const Color(0xFFBE123C),
+                                      backgroundColor: context.tt.danger,
                                       minimumSize: const Size(28, 28),
                                       padding: EdgeInsets.zero,
                                     ),
-                                    icon: const Icon(Icons.close, size: 16, color: Colors.white),
+                                    icon: Icon(Icons.close, size: 16, color: context.tt.background),
                                     onPressed: () {
                                       setState(() => _images.removeAt(i));
                                       _saveDraft();
@@ -357,10 +357,14 @@ class _ExamTakeScreenState extends State<ExamTakeScreen> {
                   ],
                   gap24,
                   FilledButton.icon(
-                    style: FilledButton.styleFrom(backgroundColor: const Color(0xFF059669), minimumSize: const Size.fromHeight(52)),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: context.tt.success,
+                      foregroundColor: context.tt.background,
+                      minimumSize: const Size.fromHeight(52),
+                    ),
                     onPressed: (_submitting || _uploading || _phase == _Phase.over) ? null : () => _submit(),
                     icon: _submitting
-                        ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                        ? SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: context.tt.background))
                         : const Icon(Icons.send),
                     label: Text(_submitting ? tr('Sending…') : (_isAssignment ? tr('Turn in assignment') : tr('Turn in exam'))),
                   ),
@@ -430,10 +434,10 @@ class _ExamTakeScreenState extends State<ExamTakeScreen> {
                         children: [
                           CircleAvatar(
                             radius: 12,
-                            backgroundColor: chosen == i ? AppColors.primary : Theme.of(context).colorScheme.outline,
+                            backgroundColor: chosen == i ? context.tt.primary : context.tt.cardRaised,
                             child: Text(
                               i < _letters.length ? _letters[i] : '${i + 1}',
-                              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Colors.white),
+                              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: chosen == i ? context.tt.onPrimary : context.tt.textSecondary),
                             ),
                           ),
                           const SizedBox(width: 12),

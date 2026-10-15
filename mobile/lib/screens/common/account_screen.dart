@@ -308,11 +308,11 @@ class _Header extends StatelessWidget {
                     child: Container(
                       padding: const EdgeInsets.all(5),
                       decoration: BoxDecoration(
-                        color: AppColors.primary,
+                        color: context.tt.primary,
                         shape: BoxShape.circle,
                         border: Border.all(color: Theme.of(context).scaffoldBackgroundColor, width: 2),
                       ),
-                      child: const Icon(Icons.photo_camera, size: 13, color: Colors.white),
+                      child: Icon(Icons.photo_camera, size: 13, color: context.tt.onPrimary),
                     ),
                   ),
               ],

@@ -785,7 +785,7 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> {
                 child: FilledButton.icon(
                   onPressed: _saving ? null : () => _save(true),
                   icon: _saving
-                      ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                      ? SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: context.tt.onPrimary))
                       : const Icon(Icons.send, size: 18),
                   label: Text(_wasPublished ? tr('Save changes') : tr('Publish')),
                 ),
@@ -823,7 +823,8 @@ class _Step extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final accent = done && !open ? AppColors.chartEarned : AppColors.primary;
+    final tt = context.tt;
+    final accent = done && !open ? tt.success : tt.primary;
     return Material(
       color: open ? scheme.surface : scheme.surface.withValues(alpha: 0.6),
       borderRadius: BorderRadius.circular(16),
@@ -847,9 +848,9 @@ class _Step extends StatelessWidget {
                       border: Border.all(color: open || done ? accent : scheme.outlineVariant),
                     ),
                     child: done && !open
-                        ? const Icon(Icons.check, size: 15, color: Colors.white)
+                        ? Icon(Icons.check, size: 15, color: tt.onPrimary)
                         : Text('$number',
-                            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: open ? Colors.white : scheme.onSurfaceVariant)),
+                            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: open ? tt.onPrimary : scheme.onSurfaceVariant)),
                   ),
                   const SizedBox(width: 12),
                   Expanded(

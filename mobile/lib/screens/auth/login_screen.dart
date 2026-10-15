@@ -358,7 +358,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       FilledButton(
                         onPressed: _busy ? null : _submit,
                         child: _busy
-                            ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                            ? SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: context.tt.onPrimary))
                             : Text(registering ? tr('Create account') : tr('Sign in')),
                       ),
                       if (!registering)

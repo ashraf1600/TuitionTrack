@@ -11,6 +11,7 @@ import '../core/i18n.dart';
 import '../core/json.dart';
 import '../core/repo.dart';
 import '../core/session.dart';
+import '../theme/tt_theme.dart';
 import 'ui.dart';
 
 /// Where the app can be downloaded, as the server announces it (empty when unknown).
@@ -95,10 +96,10 @@ Future<List<int>> _receiptImage(String title, List<(String, String)> rows) async
   final recorder = ui.PictureRecorder();
   final canvas = Canvas(recorder, Rect.fromLTWH(0, 0, width, height));
 
-  canvas.drawRect(Rect.fromLTWH(0, 0, width, height), Paint()..color = Colors.white);
-  canvas.drawRect(const Rect.fromLTWH(0, 0, width, 14), Paint()..color = const Color(0xFF059669));
+  canvas.drawRect(Rect.fromLTWH(0, 0, width, height), Paint()..color = TtColors.lCard);
+  canvas.drawRect(const Rect.fromLTWH(0, 0, width, 14), Paint()..color = TtColors.lChartEarned);
 
-  void text(String value, double x, double y, {double size = 30, FontWeight weight = FontWeight.w400, Color color = const Color(0xFF0F172A), double maxWidth = width - pad * 2, TextAlign align = TextAlign.left}) {
+  void text(String value, double x, double y, {double size = 30, FontWeight weight = FontWeight.w400, Color color = TtColors.lTextPrimary, double maxWidth = width - pad * 2, TextAlign align = TextAlign.left}) {
     final painter = TextPainter(
       text: TextSpan(text: value, style: TextStyle(fontSize: size, fontWeight: weight, color: color)),
       textDirection: TextDirection.ltr,
@@ -110,23 +111,23 @@ Future<List<int>> _receiptImage(String title, List<(String, String)> rows) async
     painter.paint(canvas, Offset(dx, y));
   }
 
-  text('TuitionTrack', pad, pad, size: 28, weight: FontWeight.w700, color: const Color(0xFF4F46E5));
+  text('TuitionTrack', pad, pad, size: 28, weight: FontWeight.w700, color: TtColors.lPrimary);
   text(title, pad, pad + 44, size: 44, weight: FontWeight.w800);
-  final paidPaint = Paint()..color = const Color(0xFFD1FAE5);
+  final paidPaint = Paint()..color = TtColors.lSuccessCont;
   canvas.drawRRect(RRect.fromRectAndRadius(Rect.fromLTWH(width - pad - 170, pad + 44, 170, 56), const Radius.circular(28)), paidPaint);
-  text(tr('PAID'), width - pad - 170, pad + 54, size: 28, weight: FontWeight.w800, color: const Color(0xFF047857), maxWidth: 170, align: TextAlign.center);
+  text(tr('PAID'), width - pad - 170, pad + 54, size: 28, weight: FontWeight.w800, color: TtColors.lOnSuccessCont, maxWidth: 170, align: TextAlign.center);
 
   var y = pad + 150;
   final line = Paint()
-    ..color = const Color(0xFFE2E8F0)
+    ..color = TtColors.lBorder
     ..strokeWidth = 2;
   for (final (label, value) in rows) {
     canvas.drawLine(Offset(pad, y - 14), Offset(width - pad, y - 14), line);
-    text(label, pad, y, size: 28, color: const Color(0xFF64748B), maxWidth: 330);
+    text(label, pad, y, size: 28, color: TtColors.lTextSecond, maxWidth: 330);
     text(value, pad + 340, y, size: 30, weight: FontWeight.w700, maxWidth: width - pad * 2 - 340, align: TextAlign.right);
     y += rowHeight;
   }
-  text(tr('Sent from the TuitionTrack app'), pad, height - pad - 10, size: 22, color: const Color(0xFF94A3B8));
+  text(tr('Sent from the TuitionTrack app'), pad, height - pad - 10, size: 22, color: TtColors.lTextTertiary);
 
   final image = await recorder.endRecording().toImage(width.toInt(), height.toInt());
   final bytes = await image.toByteData(format: ui.ImageByteFormat.png);

@@ -171,8 +171,8 @@ class _TuitionTrackAppState extends State<TuitionTrackApp> with WidgetsBindingOb
         builder: (context, _) => MaterialApp(
           title: 'TuitionTrack',
           debugShowCheckedModeBanner: false,
-          theme: buildLightTheme(),
-          darkTheme: buildTheme(),
+          theme: ttTheme(isDark: false, isBangla: widget.session.language == 'bn'),
+          darkTheme: ttTheme(isDark: true, isBangla: widget.session.language == 'bn'),
           themeMode: widget.session.themeMode,
           navigatorKey: _navigator,
           scaffoldMessengerKey: rootMessengerKey,

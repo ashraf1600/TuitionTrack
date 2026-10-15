@@ -63,9 +63,10 @@ class _Row extends StatelessWidget {
   Widget build(BuildContext context) {
     final rank = row.integer('rank');
     final missed = row.str('status') == 'MISSED';
-    final medal = switch (rank) { 1 => const Color(0xFFFBBF24), 2 => const Color(0xFFCBD5E1), 3 => const Color(0xFFD97706), _ => null };
+    final tt = context.tt;
+    final medal = switch (rank) { 1 => tt.warning, 2 => tt.textSecondary, 3 => TtColors.bronze, _ => null };
     return Container(
-      color: mine ? AppColors.primary.withValues(alpha: 0.12) : null,
+      color: mine ? tt.primaryContainer : null,
       child: ListTile(
         leading: CircleAvatar(
           backgroundColor: (medal ?? Theme.of(context).colorScheme.surfaceContainerHighest).withValues(alpha: medal == null ? 1 : 0.2),
