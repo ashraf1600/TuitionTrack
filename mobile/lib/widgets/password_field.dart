@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../core/i18n.dart';
+import 'ui.dart';
 
 /// A password box with a show/hide button.
 class PasswordField extends StatefulWidget {
@@ -12,6 +13,7 @@ class PasswordField extends StatefulWidget {
     this.validator,
     this.onSubmitted,
     this.isNew = false,
+    this.labelAbove = false,
   });
 
   final TextEditingController controller;
@@ -23,6 +25,9 @@ class PasswordField extends StatefulWidget {
   /// True for a password being chosen (so password managers offer to save it).
   final bool isNew;
 
+  /// Shows [label] as a small label above the box instead of inside it.
+  final bool labelAbove;
+
   @override
   State<PasswordField> createState() => _PasswordFieldState();
 }
@@ -32,7 +37,7 @@ class _PasswordFieldState extends State<PasswordField> {
 
   @override
   Widget build(BuildContext context) {
-    return TextFormField(
+    final field = TextFormField(
       controller: widget.controller,
       obscureText: _hidden,
       autocorrect: false,
@@ -41,7 +46,7 @@ class _PasswordFieldState extends State<PasswordField> {
       validator: widget.validator,
       onFieldSubmitted: widget.onSubmitted,
       decoration: InputDecoration(
-        labelText: widget.label,
+        labelText: widget.labelAbove ? null : widget.label,
         helperText: widget.helper,
         prefixIcon: const Icon(Icons.lock_outline),
         suffixIcon: IconButton(
@@ -50,6 +55,11 @@ class _PasswordFieldState extends State<PasswordField> {
           onPressed: () => setState(() => _hidden = !_hidden),
         ),
       ),
+    );
+    if (!widget.labelAbove) return field;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [FieldLabel(widget.label), field],
     );
   }
 }

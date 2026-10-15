@@ -21,14 +21,7 @@ class ConnectByCodeCard extends StatefulWidget {
 class _ConnectByCodeCardState extends State<ConnectByCodeCard> {
   final _code = TextEditingController();
   final _focus = FocusNode();
-  bool _focused = false;
   bool _busy = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _focus.addListener(() => setState(() => _focused = _focus.hasFocus));
-  }
 
   @override
   void dispose() {
@@ -66,52 +59,36 @@ class _ConnectByCodeCardState extends State<ConnectByCodeCard> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(tr('Connect with invite code'), style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+          Text(tr('Connect with invite code'), style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: context.tt.textPrimary)),
           const SizedBox(height: 4),
-          Text(tr('Ask your tutor for their invite code.'), style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13)),
-          gap12,
-          AnimatedContainer(
-            duration: const Duration(milliseconds: 220),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(16),
-              boxShadow: [
-                BoxShadow(
-                  color: (_focused ? AppColors.primary : Theme.of(context).colorScheme.onSurfaceVariant).withValues(alpha: 0.25),
-                  blurRadius: _focused ? 18 : 8,
-                ),
-              ],
+          Text(tr('Ask your tutor for their invite code.'), style: TextStyle(color: context.tt.textSecondary, fontSize: 14, height: 1.5)),
+          gap16,
+          FieldLabel(tr('Invite code')),
+          TextField(
+            controller: _code,
+            focusNode: _focus,
+            maxLength: 8,
+            textCapitalization: TextCapitalization.characters,
+            inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[A-Za-z0-9]'))],
+            style: TextStyle(fontFamily: 'monospace', fontSize: 20, fontWeight: FontWeight.w600, letterSpacing: 2.8, color: context.tt.textPrimary),
+            decoration: InputDecoration(
+              counterText: '',
+              hintText: tr('e.g. KX7Q2M'),
+              hintStyle: TextStyle(fontFamily: 'monospace', fontSize: 20, letterSpacing: 2.8, color: context.tt.textTertiary),
+              prefixIcon: Icon(Icons.key_rounded, color: context.tt.textTertiary),
+              fillColor: context.tt.isDark ? context.tt.background : context.tt.cardRaised,
             ),
-            child: TextField(
-              controller: _code,
-              focusNode: _focus,
-              maxLength: 8,
-              textCapitalization: TextCapitalization.characters,
-              inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[A-Za-z0-9]'))],
-              decoration: InputDecoration(
-                counterText: '',
-                hintText: tr('e.g. KX7Q2M'),
-                prefixIcon: Icon(Icons.key_rounded),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.all(Radius.circular(16)),
-                  borderSide: BorderSide.none,
-                ),
-                filled: true,
-              ),
-              onSubmitted: (_) => _send(),
-            ),
+            onSubmitted: (_) => _send(),
           ),
-          gap12,
+          gap16,
           SizedBox(
-            height: 50,
+            height: 52,
             child: _busy
-                ? Center(child: SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2.5)))
+                ? const Center(child: SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2.5)))
                 : FilledButton.icon(
                     onPressed: _send,
-                    icon: Icon(Icons.send),
+                    icon: const Icon(Icons.send_rounded, size: 18),
                     label: Text(tr('Send Request')),
-                    style: FilledButton.styleFrom(
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                    ),
                   ),
           ),
         ],
@@ -140,8 +117,8 @@ class PendingConnectionView extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(tr('Pending Connection'), style: TextStyle(fontWeight: FontWeight.w700)),
-                Text(tr('Waiting for {p0} to accept.', {'p0': tutorName}), style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13)),
+                Text(tr('Pending Connection'), style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+                Text(tr('Waiting for {p0} to accept.', {'p0': tutorName}), style: TextStyle(color: context.tt.textSecondary, fontSize: 13)),
               ],
             ),
           ),

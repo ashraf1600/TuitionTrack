@@ -36,7 +36,7 @@ class ConnectScreen extends StatelessWidget {
                 gap8,
               ],
               ConnectByCodeCard(onSent: reload),
-              gap8,
+              gap16,
               _TutorConnect(connections: connections, tuitions: tuitions, reload: reload),
             ],
           );
@@ -69,7 +69,6 @@ class _TutorConnect extends StatelessWidget {
       children: [
         SectionTitle(
           tr('My tutors'),
-          icon: Icons.handshake_outlined,
           trailing: TextButton.icon(onPressed: () => _find(context), icon: const Icon(Icons.search, size: 18), label: Text(tr('Find a tutor'))),
         ),
         // A tutor who added this student straight into a group never received a request from them.
@@ -80,7 +79,11 @@ class _TutorConnect extends StatelessWidget {
           AppCard(
             padding: EdgeInsets.zero,
             child: ListTile(
-              leading: const CircleAvatar(child: Icon(Icons.person)),
+              leading: CircleAvatar(
+                radius: 20,
+                backgroundColor: context.tt.primaryContainer,
+                child: Icon(Icons.person_outline_rounded, color: context.tt.onPrimaryContainer),
+              ),
               title: Text(name),
               subtitle: Padding(
                 padding: EdgeInsets.only(top: 4),
@@ -91,10 +94,13 @@ class _TutorConnect extends StatelessWidget {
           gap8,
         ],
         if (connections.isEmpty && tuitions.isEmpty)
-          EmptyState(
-            icon: Icons.person_search_outlined,
-            title: tr('No tutor yet'),
-            message: tr('Find your tutor and send a request. They decide whether to accept.'),
+          AppCard(
+            padding: EdgeInsets.zero,
+            child: EmptyState(
+              icon: Icons.person_search_outlined,
+              title: tr('No tutor yet'),
+              message: tr('Find your tutor and send a request. They decide whether to accept.'),
+            ),
           )
         else if (connections.isNotEmpty)
           AppCard(
@@ -102,7 +108,7 @@ class _TutorConnect extends StatelessWidget {
             child: Column(
               children: [
                 for (var i = 0; i < connections.length; i++) ...[
-                  if (i > 0) const Divider(),
+                  if (i > 0) Divider(height: 1, indent: 16, endIndent: 16, color: context.tt.border),
                   Builder(builder: (context) {
                     final c = connections[i];
                     final status = c.str('status');
@@ -112,7 +118,11 @@ class _TutorConnect extends StatelessWidget {
                       _ => (tr('Waiting for the tutor'), AppColors.warning),
                     };
                     return ListTile(
-                      leading: const CircleAvatar(child: Icon(Icons.person)),
+                      leading: CircleAvatar(
+                radius: 20,
+                backgroundColor: context.tt.primaryContainer,
+                child: Icon(Icons.person_outline_rounded, color: context.tt.onPrimaryContainer),
+              ),
                       title: Text(c.str('tutor_name')),
                       subtitle: Padding(
                         padding: const EdgeInsets.only(top: 4),
@@ -274,7 +284,11 @@ class _FindTutorSheetState extends State<_FindTutorSheet> {
                                   return ListTile(
                                     contentPadding: EdgeInsets.zero,
                                     enabled: !blocked,
-                                    leading: const CircleAvatar(child: Icon(Icons.person)),
+                                    leading: CircleAvatar(
+                radius: 20,
+                backgroundColor: context.tt.primaryContainer,
+                child: Icon(Icons.person_outline_rounded, color: context.tt.onPrimaryContainer),
+              ),
                                     title: Text(tutor.str('name')),
                                     subtitle: Text([
                                       '@${tutor.str('username')}',

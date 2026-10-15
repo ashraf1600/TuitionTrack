@@ -186,9 +186,20 @@ class _LoginScreenState extends State<LoginScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      const Icon(Icons.school_rounded, size: 52, color: AppColors.primarySoft),
-                      gap8,
-                      Text(tr('TuitionTrack'), textAlign: TextAlign.center, style: TextStyle(fontSize: 26, fontWeight: FontWeight.w800)),
+                      Center(
+                        child: Container(
+                          width: 60,
+                          height: 60,
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(color: context.tt.primaryContainer, borderRadius: BorderRadius.circular(18)),
+                          child: Icon(Icons.school_outlined, size: 30, color: context.tt.onPrimaryContainer),
+                        ),
+                      ),
+                      gap16,
+                      Text(tr('TuitionTrack'),
+                          textAlign: TextAlign.center,
+                          style: TextStyle(fontSize: 30, height: 1.15, fontWeight: FontWeight.w700, letterSpacing: -0.6, color: context.tt.textPrimary)),
+                      const SizedBox(height: 4),
                       Text(
                         switch (_mode) {
                           _Mode.signIn => tr('Sign in to continue'),
@@ -196,23 +207,22 @@ class _LoginScreenState extends State<LoginScreen> {
                           _Mode.student => tr('Create your student account'),
                         },
                         textAlign: TextAlign.center,
-                        style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
+                        style: TextStyle(fontSize: 15, color: context.tt.textSecondary),
                       ),
-                      gap24,
-                      SegmentedButton<_Mode>(
-                        segments: [
-                          ButtonSegment(value: _Mode.signIn, label: Text(tr('Sign in'))),
-                          ButtonSegment(value: _Mode.tutor, label: Text(tr('New tutor'))),
-                          ButtonSegment(value: _Mode.student, label: Text(tr('New student'))),
+                      const SizedBox(height: 32),
+                      PillToggle<_Mode>(
+                        options: [
+                          (_Mode.signIn, tr('Sign in'), null),
+                          (_Mode.tutor, tr('New tutor'), null),
+                          (_Mode.student, tr('New student'), null),
                         ],
-                        selected: {_mode},
-                        showSelectedIcon: false,
-                        onSelectionChanged: (value) => setState(() {
-                          _mode = value.first;
+                        selected: _mode,
+                        onChanged: (mode) => setState(() {
+                          _mode = mode;
                           _error = null;
                         }),
                       ),
-                      gap16,
+                      gap24,
                       if (session.notice != null) ...[Banner2(session.notice!, color: AppColors.warning), gap12],
                       if (_error != null) ...[Banner2(_error!, color: AppColors.danger, icon: Icons.error_outline), gap12],
                       if (registering) ...[
@@ -238,21 +248,20 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                         gap12,
                       ],
+                      FieldLabel(registering ? tr('Choose a username') : tr('Username or email')),
                       TextFormField(
                         controller: _ctl('username'),
                         autocorrect: false,
                         autofillHints: const [AutofillHints.username],
                         textInputAction: TextInputAction.next,
-                        decoration: InputDecoration(
-                          labelText: registering ? tr('Choose a username') : tr('Username or email'),
-                          prefixIcon: const Icon(Icons.person_outline),
-                        ),
+                        decoration: const InputDecoration(prefixIcon: Icon(Icons.person_outline_rounded)),
                         validator: _required,
                       ),
-                      gap12,
+                      gap16,
                       PasswordField(
                         controller: _ctl('password'),
                         label: tr('Password'),
+                        labelAbove: true,
                         isNew: registering,
                         helper: registering ? tr('At least 8 characters. Avoid common words and your own name.') : null,
                         onSubmitted: registering ? null : (_) => _submit(),
@@ -354,21 +363,29 @@ class _LoginScreenState extends State<LoginScreen> {
                           ),
                         ),
                       ],
-                      gap16,
+                      gap24,
                       FilledButton(
+                        style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(54), textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
                         onPressed: _busy ? null : _submit,
                         child: _busy
                             ? SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: context.tt.onPrimary))
                             : Text(registering ? tr('Create account') : tr('Sign in')),
                       ),
-                      if (!registering)
+                      if (!registering) ...[
+                        gap8,
                         TextButton(onPressed: _forgotPassword, child: Text(tr('Forgot your password?'))),
-                      gap12,
+                      ],
+                      const SizedBox(height: 32),
+                      // The server, as a quiet footer (tap to change it).
                       TextButton.icon(
                         onPressed: _changeServer,
                         icon: const Icon(Icons.dns_outlined, size: 16),
-                        label: Text(tr('Server: {p0}', {'p0': Raw(session.api.baseUrl)}), overflow: TextOverflow.ellipsis),
-                        style: TextButton.styleFrom(foregroundColor: Theme.of(context).colorScheme.onSurfaceVariant, textStyle: const TextStyle(fontSize: 12)),
+                        label: Text(tr('Server: {p0}', {'p0': Raw(session.api.baseUrl.replaceFirst(RegExp(r'^https?://'), ''))}),
+                            overflow: TextOverflow.ellipsis),
+                        style: TextButton.styleFrom(
+                          foregroundColor: context.tt.textTertiary,
+                          textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+                        ),
                       ),
                     ],
                   ),
