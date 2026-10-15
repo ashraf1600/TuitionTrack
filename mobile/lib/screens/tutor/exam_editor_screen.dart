@@ -504,20 +504,12 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> {
     if (picked != null) onPicked(picked);
   }
 
+  /// Choices as a 44 dp tonal segmented control.
   Widget _chips<T>(List<(T, String)> options, T selected, ValueChanged<T> onSelect) {
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      children: [
-        for (final (value, label) in options)
-          ChoiceChip(
-            label: Text(label),
-            selected: value == selected,
-            showCheckmark: false,
-            visualDensity: VisualDensity.compact,
-            onSelected: (_) => setState(() => onSelect(value)),
-          ),
-      ],
+    return PillToggle<T>(
+      options: [for (final (value, label) in options) (value, label, null)],
+      selected: selected,
+      onChanged: (value) => setState(() => onSelect(value)),
     );
   }
 
@@ -526,24 +518,24 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        FlatGroup(children: [
-          FlatField(
-            controller: _title,
-            hint: tr('Title, e.g. Chapter 3 quiz — Polynomials'),
-            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-            onChanged: (_) => setState(() {}),
-          ),
-        ]),
-        gap12,
+        _Label(tr('Title')),
+        TextField(
+          controller: _title,
+          textCapitalization: TextCapitalization.sentences,
+          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+          decoration: InputDecoration(hintText: tr('Title, e.g. Chapter 3 quiz — Polynomials')),
+          onChanged: (_) => setState(() {}),
+        ),
+        gap16,
         _Label(tr('Type'), info: tr('Timed exam: open between a start and an end time, with an optional time limit per student.\n\nAssignment: homework with a deadline and no stopwatch.')),
         _chips<String>([('EXAM', tr('Timed exam')), ('ASSIGNMENT', tr('Assignment'))], _category, (v) => _category = v),
-        gap12,
+        gap16,
         _Label(tr('Questions'), info: tr('MCQ: multiple choice, marked automatically.\n\nWritten: creative questions you mark yourself.\n\nBoth: a mix of the two.')),
         _chips<String>([('HYBRID', tr('Both')), ('MCQ', tr('MCQ only')), ('CQ', tr('Written only'))], _type, (v) => _type = v),
-        gap12,
+        gap16,
         _Label(tr('For')),
         _chips<bool>([(true, tr('A tuition')), (false, tr('One student'))], _forGroup, (v) => _forGroup = v),
-        gap8,
+        gap12,
         FlatGroup(children: [
           PickerRow(
             leading: InitialAvatar(_targetName, radius: 14, icon: _forGroup ? Icons.class_outlined : null),
@@ -552,7 +544,7 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> {
             onTap: (_forGroup ? _tuitions.isEmpty : _students.isEmpty) ? null : _chooseTarget,
           ),
           PickerRow(
-            leading: Icon(Icons.play_circle_outline, size: 22, color: tone(context, AppColors.primarySoft)),
+            leading: Icon(Icons.play_circle_outline, size: 22, color: context.tt.textTertiary),
             label: tr('Opens'),
             value: fmtDateTime(_start),
             onTap: () => _pickInto(tr('Opens'), _start, (value) => setState(() {
@@ -562,7 +554,7 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> {
                 })),
           ),
           PickerRow(
-            leading: Icon(Icons.flag_outlined, size: 22, color: tone(context, AppColors.primarySoft)),
+            leading: Icon(Icons.flag_outlined, size: 22, color: context.tt.textTertiary),
             label: isExam ? tr('Closes') : tr('Deadline'),
             value: fmtDateTime(_end),
             onTap: () => _pickInto(isExam ? tr('Closes') : tr('Deadline'), _end, (value) => setState(() => _end = value)),
@@ -587,7 +579,7 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> {
       children: [
         FlatGroup(children: [
           PickerRow(
-            leading: Icon(Icons.schedule_send_outlined, size: 22, color: tone(context, AppColors.primarySoft)),
+            leading: Icon(Icons.schedule_send_outlined, size: 22, color: context.tt.textTertiary),
             label: tr('Late work until'),
             value: _lateUntil == null ? tr('Not accepted') : fmtDateTime(_lateUntil),
             onTap: () => _pickInto(tr('Accept late work until'), _lateUntil, (value) => setState(() => _lateUntil = value)),
@@ -645,7 +637,7 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> {
           gap8,
           FlatGroup(children: [
             PickerRow(
-              leading: Icon(Icons.event_available_outlined, size: 22, color: tone(context, AppColors.primarySoft)),
+              leading: Icon(Icons.event_available_outlined, size: 22, color: context.tt.textTertiary),
               label: tr('Publish at'),
               value: _resultsAt == null ? tr('Choose') : fmtDateTime(_resultsAt),
               onTap: () => _pickInto(tr('Publish results at'), _resultsAt, (value) => setState(() => _resultsAt = value)),
@@ -697,7 +689,7 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> {
       if (_lateUntil != null) tr('late work until {p0}', {'p0': fmtShortDate(_lateUntil)}),
       tr('grace {p0} min', {'p0': _grace.text.trim().isEmpty ? '0' : _grace.text.trim()}),
       if (_type != 'CQ' && (num.tryParse(_negative.text.trim()) ?? 0) > 0) tr('negative marking'),
-      if (_type != 'CQ' && _shuffle) 'shuffled',
+      if (_type != 'CQ' && _shuffle) tr('shuffled'),
     ];
     return parts.join(' · ');
   }
@@ -709,7 +701,7 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> {
     final last = index == 3;
     return Padding(
       key: _sectionKeys[index],
-      padding: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.only(bottom: 12),
       child: _Step(
         number: index + 1,
         title: title,
@@ -723,17 +715,21 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> {
           children: [
             body,
             if (!last) ...[
-              gap12,
-              Align(
-                alignment: Alignment.centerRight,
-                child: FilledButton.tonalIcon(
-                  onPressed: () {
-                    FocusScope.of(context).unfocus();
-                    setState(() => _open = index + 1);
-                    _reveal(index + 1);
-                  },
-                  icon: const Icon(Icons.arrow_downward, size: 18),
-                  label: Text(tr('Continue')),
+              gap16,
+              FilledButton.tonal(
+                style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(52)),
+                onPressed: () {
+                  FocusScope.of(context).unfocus();
+                  setState(() => _open = index + 1);
+                  _reveal(index + 1);
+                },
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(tr('Continue')),
+                    const SizedBox(width: 8),
+                    const Icon(Icons.arrow_downward_rounded, size: 18),
+                  ],
                 ),
               ),
             ],
@@ -747,6 +743,8 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> {
   Widget build(BuildContext context) {
     final noun = _category == 'ASSIGNMENT' ? 'assignment' : 'exam';
     final hasQuestions = (_type != 'CQ' && _mcq.isNotEmpty) || (_type != 'MCQ' && (_keepPaper || _written.text.trim().isNotEmpty));
+    // Publishing needs a title and a question; until then the button shows it is not ready.
+    final canPublish = _wasPublished || (_title.text.trim().isNotEmpty && hasQuestions);
     return Scaffold(
       appBar: AppBar(
         title: Text(_editing
@@ -770,20 +768,39 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> {
           _step(1, tr('Questions'), _questionsSummary, _questionsSection(), done: hasQuestions),
           _step(2, tr('Extra rules'), _rulesSummary, _rulesSection(), optional: true),
           _step(3, tr('Results & solution'), _resultsSummary, _resultsSection(), done: true),
+          if (!canPublish)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(4, 4, 4, 0),
+              child: Text(tr('Add a title and at least one question before you publish.'),
+                  style: TextStyle(fontSize: 14, height: 1.5, color: context.tt.textSecondary)),
+            ),
         ],
       ),
-      bottomNavigationBar: SafeArea(
+      bottomNavigationBar: Container(
+        color: context.tt.surface,
+        child: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
           child: Row(
             children: [
               if (!_wasPublished) ...[
-                Expanded(child: OutlinedButton(onPressed: _saving ? null : () => _save(false), child: Text(tr('Save draft')))),
+                Expanded(
+                  child: FilledButton(
+                    style: FilledButton.styleFrom(
+                      minimumSize: const Size.fromHeight(52),
+                      backgroundColor: context.tt.cardRaised,
+                      foregroundColor: context.tt.textPrimary,
+                    ),
+                    onPressed: _saving ? null : () => _save(false),
+                    child: Text(tr('Save draft')),
+                  ),
+                ),
                 const SizedBox(width: 12),
               ],
               Expanded(
                 child: FilledButton.icon(
-                  onPressed: _saving ? null : () => _save(true),
+                  style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(52)),
+                  onPressed: _saving || !canPublish ? null : () => _save(true),
                   icon: _saving
                       ? SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: context.tt.onPrimary))
                       : const Icon(Icons.send, size: 18),
@@ -792,6 +809,7 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> {
               ),
             ],
           ),
+        ),
         ),
       ),
     );
@@ -822,11 +840,17 @@ class _Step extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     final tt = context.tt;
-    final accent = done && !open ? tt.success : tt.primary;
+    // Badge: open = primary with its number; finished = green check; otherwise a quiet number.
+    final Color badgeFill = open ? tt.primary : (done ? tt.successContainer : tt.cardRaised);
+    final Widget badge = done && !open
+        ? Icon(Icons.check_rounded, size: 18, color: tt.success)
+        : Text(localDigits('$number'),
+            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: open ? tt.onPrimary : tt.textSecondary));
+    // An unfinished required step says so in the warning colour.
+    final summaryColor = !done && !optional ? tt.warning : tt.textSecondary;
     return Material(
-      color: open ? scheme.surface : scheme.surface.withValues(alpha: 0.6),
+      color: tt.card,
       borderRadius: BorderRadius.circular(16),
       clipBehavior: Clip.antiAlias,
       child: Column(
@@ -834,46 +858,51 @@ class _Step extends StatelessWidget {
         children: [
           InkWell(
             onTap: onToggle,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
-              child: Row(
-                children: [
-                  Container(
-                    width: 26,
-                    height: 26,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: open || done ? accent : Colors.transparent,
-                      shape: BoxShape.circle,
-                      border: Border.all(color: open || done ? accent : scheme.outlineVariant),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(minHeight: 64),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 32,
+                      height: 32,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(color: badgeFill, shape: BoxShape.circle),
+                      child: badge,
                     ),
-                    child: done && !open
-                        ? Icon(Icons.check, size: 15, color: tt.onPrimary)
-                        : Text('$number',
-                            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: open ? tt.onPrimary : scheme.onSurfaceVariant)),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Text(title, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
-                            if (optional) Text(tr('  optional'), style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
-                          ],
-                        ),
-                        if (!open && summary.isNotEmpty)
-                          Text(summary, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
-                      ],
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text.rich(
+                            TextSpan(children: [
+                              TextSpan(text: title),
+                              if (optional)
+                                TextSpan(
+                                  text: ' · ${tr('  optional').trim()}',
+                                  style: TextStyle(fontWeight: FontWeight.w400, color: tt.textTertiary),
+                                ),
+                            ]),
+                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: tt.textPrimary),
+                          ),
+                          if (!open && summary.isNotEmpty)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 2),
+                              child: Text(summary,
+                                  maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 13, color: summaryColor)),
+                            ),
+                        ],
+                      ),
                     ),
-                  ),
-                  AnimatedRotation(
-                    turns: open ? 0.5 : 0,
-                    duration: const Duration(milliseconds: 200),
-                    child: Icon(Icons.expand_more, color: scheme.onSurfaceVariant),
-                  ),
-                ],
+                    AnimatedRotation(
+                      turns: open ? 0.5 : 0,
+                      duration: const Duration(milliseconds: 200),
+                      child: Icon(Icons.expand_more_rounded, color: tt.textTertiary),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -882,7 +911,7 @@ class _Step extends StatelessWidget {
             curve: Curves.easeOut,
             alignment: Alignment.topCenter,
             child: open
-                ? Padding(padding: const EdgeInsets.fromLTRB(14, 0, 14, 14), child: child)
+                ? Padding(padding: const EdgeInsets.fromLTRB(16, 4, 16, 16), child: child)
                 : const SizedBox(width: double.infinity),
           ),
         ],
@@ -904,7 +933,7 @@ class _Label extends StatelessWidget {
       padding: const EdgeInsets.only(left: 2, bottom: 4),
       child: Row(
         children: [
-          Text(text, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Theme.of(context).colorScheme.onSurfaceVariant)),
+          Text(text, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: context.tt.textSecondary)),
           if (info != null) InfoTip(info!, title: text) else const SizedBox(height: 36),
           const Spacer(),
           if (trailing != null) trailing!,

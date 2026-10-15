@@ -117,33 +117,25 @@ class _HomeworkTabState extends State<HomeworkTab> {
         }).toList();
         return PageBody(
           children: [
-            Row(
-              children: [
-                Expanded(
-                  child: SegmentedButton<String>(
-                    segments: [
-                      for (final f in const ['all', 'pending', 'evaluated'])
-                        ButtonSegment(
-                          value: f,
-                          label: Text('${tr(_filterLabels[f]!)} (${localDigits('${counts[f] ?? 0}')})'),
-                        ),
-                    ],
-                    selected: {_filter},
-                    onSelectionChanged: (s) => setState(() => _filter = s.first),
-                  ),
-                ),
+            PillToggle<String>(
+              options: [
+                for (final f in const ['all', 'pending', 'evaluated'])
+                  (f, '${tr(_filterLabels[f]!)} ${localDigits('${counts[f] ?? 0}')}', null),
               ],
+              selected: _filter,
+              onChanged: (f) => setState(() => _filter = f),
             ),
             gap12,
-            FilledButton.icon(
+            FilledButton.tonalIcon(
+              style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(52)),
               onPressed: () {
                 HapticFeedback.lightImpact();
                 _create(data);
               },
-              icon: const Icon(Icons.add),
+              icon: const Icon(Icons.add_rounded),
               label: Text(tr('Assign homework')),
             ),
-            gap12,
+            gap8,
             if (filtered.isEmpty)
               EmptyState(
                 icon: Icons.assignment_outlined,
@@ -153,9 +145,11 @@ class _HomeworkTabState extends State<HomeworkTab> {
                     : (_filter == 'pending' ? tr('No pending homework right now.') : tr('No evaluated homework right now.')),
               )
             else
-              for (final hw in filtered) ...[
+              for (final (i, hw) in filtered.indexed) ...[
                 _TutorHomeworkRow(
                   hw: hw,
+                  // Work for the same student (or tuition) sits under one header.
+                  showHeader: i == 0 || _targetOf(filtered[i - 1]) != _targetOf(hw),
                   onChanged: () async {
                     await _key.currentState?.reload();
                   },
@@ -171,60 +165,73 @@ class _HomeworkTabState extends State<HomeworkTab> {
   }
 }
 
+String _targetOf(HomeworkItem hw) => hw.studentName.isNotEmpty ? hw.studentName : hw.tuitionTitle;
+
 class _TutorHomeworkRow extends StatelessWidget {
-  const _TutorHomeworkRow({required this.hw, required this.onChanged, required this.onDelete, this.onSplit});
+  const _TutorHomeworkRow({required this.hw, required this.onChanged, required this.onDelete, this.onSplit, this.showHeader = true});
   final HomeworkItem hw;
   final Future<void> Function() onChanged;
   final VoidCallback onDelete;
   final VoidCallback? onSplit;
+  final bool showHeader;
 
   @override
   Widget build(BuildContext context) {
-    final target = hw.studentName.isNotEmpty ? hw.studentName : hw.tuitionTitle;
+    final tt = context.tt;
+    final target = _targetOf(hw);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (target.isNotEmpty)
+        if (target.isNotEmpty && showHeader)
           Padding(
-            padding: const EdgeInsets.only(left: 4, bottom: 4),
+            padding: const EdgeInsets.fromLTRB(4, 12, 4, 8),
             child: Row(
               children: [
-                Icon(hw.studentName.isNotEmpty ? Icons.person_outline : Icons.class_outlined,
-                    size: 14, color: tone(context, AppColors.primarySoft)),
-                const SizedBox(width: 4),
+                CircleAvatar(
+                  radius: 12,
+                  backgroundColor: tt.primaryContainer,
+                  child: hw.studentName.isNotEmpty
+                      ? Text(target.characters.first.toUpperCase(),
+                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tt.onPrimaryContainer))
+                      : Icon(Icons.groups_outlined, size: 14, color: tt.onPrimaryContainer),
+                ),
+                const SizedBox(width: 8),
                 Expanded(
                   child: Text(target,
-                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tone(context, AppColors.primarySoft)),
-                      overflow: TextOverflow.ellipsis),
+                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: tt.textSecondary), overflow: TextOverflow.ellipsis),
                 ),
                 if (hw.isSharedGroupTask)
-                  Text(tr('shared'), style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurfaceVariant)),
+                  Text(tr('shared'), style: TextStyle(fontSize: 12, color: tt.textTertiary)),
               ],
             ),
           ),
-        HomeworkCard(hw: hw, isTutor: true, onChanged: onChanged),
-        if (!hw.isPending)
-          Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              if (onSplit != null)
-                TextButton.icon(
+        HomeworkCard(
+          hw: hw,
+          isTutor: true,
+          onChanged: onChanged,
+          trailing: hw.isPending
+              ? null
+              : IconButton(
+                  tooltip: tr('Delete homework'),
+                  visualDensity: VisualDensity.compact,
+                  icon: Icon(Icons.delete_outline_rounded, size: 20, color: tt.textTertiary),
                   onPressed: () {
                     HapticFeedback.lightImpact();
-                    onSplit!();
+                    onDelete();
                   },
-                  icon: const Icon(Icons.call_split_outlined, size: 16),
-                  label: Text(tr('Split per student')),
                 ),
-              IconButton(
-                tooltip: tr('Delete homework'),
-                icon: const Icon(Icons.delete_outline, size: 20),
-                onPressed: () {
-                  HapticFeedback.lightImpact();
-                  onDelete();
-                },
-              ),
-            ],
+        ),
+        if (!hw.isPending && onSplit != null)
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton.icon(
+              onPressed: () {
+                HapticFeedback.lightImpact();
+                onSplit!();
+              },
+              icon: const Icon(Icons.call_split_outlined, size: 16),
+              label: Text(tr('Split per student')),
+            ),
           ),
       ],
     );

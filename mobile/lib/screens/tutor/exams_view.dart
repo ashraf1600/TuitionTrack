@@ -5,6 +5,7 @@ import '../../core/format.dart';
 import '../../core/i18n.dart';
 import '../../core/json.dart';
 import '../../core/repo.dart';
+import '../../widgets/charts.dart';
 import '../../widgets/theme.dart';
 import '../../widgets/ui.dart';
 import '../common/leaderboard_screen.dart';
@@ -38,7 +39,16 @@ class ExamsView extends StatelessWidget {
         Widget group(String title, List<Json> items) => Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                SectionTitle('$title (${items.length})'),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(2, 16, 2, 12),
+                  child: Text.rich(
+                    TextSpan(children: [
+                      TextSpan(text: title),
+                      TextSpan(text: ' · ${localDigits('${items.length}')}', style: TextStyle(fontWeight: FontWeight.w500, color: context.tt.textTertiary)),
+                    ]),
+                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: context.tt.textPrimary),
+                  ),
+                ),
                 for (final exam in items) ...[_ExamCard(exam: exam, tuitions: data.tuitions, reload: reload), gap12],
               ],
             );
@@ -186,102 +196,146 @@ class _ExamCard extends StatelessWidget {
     final assigned = exam.numberOrNull('assigned_count')?.toInt();
     final toGrade = submitted - graded;
 
+    final tt = context.tt;
+    final start = exam.date('start_time');
+    final end = exam.date('end_time');
+    final sameDay = start != null && end != null && dayKey(start) == dayKey(end);
+    final window = sameDay ? '${fmtDateTime(start)}  →  ${fmtTime(end)}' : '${fmtDateTime(start)}  →  ${fmtDateTime(end)}';
+    final menu = PopupMenuButton<String>(
+      tooltip: tr('More options'),
+      icon: Icon(Icons.more_vert_rounded, color: tt.textTertiary),
+      style: IconButton.styleFrom(minimumSize: const Size(44, 44)),
+      onSelected: (value) => switch (value) {
+        'edit' => _edit(context),
+        'copy' => _copy(context),
+        'board' => Navigator.push(
+            context,
+            MaterialPageRoute<void>(builder: (_) => LeaderboardScreen(examId: _id, title: exam.str('title'))),
+          ),
+        _ => _delete(context),
+      },
+      itemBuilder: (_) => [
+        PopupMenuItem(value: 'edit', child: Text(tr('Edit'))),
+        PopupMenuItem(value: 'copy', child: Text(tr('Copy (reuse)'))),
+        if (published) PopupMenuItem(value: 'board', child: Text(tr('Leaderboard'))),
+        PopupMenuItem(value: 'delete', child: Text(tr('Delete'), style: TextStyle(color: tt.danger))),
+      ],
+    );
+
     return AppCard(
+      padding: const EdgeInsets.fromLTRB(16, 12, 8, 16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            children: [
-              Pill(isAssignment ? tr('Assignment') : tr('Exam'), color: isAssignment ? AppColors.purple : AppColors.primarySoft),
-              Pill(statusLabel, color: statusColor),
-              if (exam.integer('duration_minutes') > 0 && !isAssignment) Pill(tr('{p0} min', {'p0': exam.integer('duration_minutes')}), icon: Icons.timer_outlined),
-              if (toGrade > 0) Pill(tr('{p0} to grade', {'p0': toGrade}), color: AppColors.warning, icon: Icons.rate_review_outlined),
-            ],
-          ),
-          gap8,
-          Text(exam.str('title'), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
-          Text(
-            [
-              exam.str('student_name'),
-              tr('{n} marks', {'n': trimNumber(exam.number('total_marks'))}),
-              if (exam.integer('mcq_count') > 0) tr('{n} MCQ', {'n': exam.integer('mcq_count')}),
-            ].join(' · '),
-            style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
-          ),
-          SizedBox(height: 4),
-          Text(
-            '${fmtDateTime(exam.date('start_time'))}  →  ${fmtDateTime(exam.date('end_time'))}',
-            style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
-          ),
-          if (published)
-            Padding(
-              padding: const EdgeInsets.only(top: 4),
-              child: Text(
-                tr('{p0}{p1} submitted · {p2} graded', {'p0': submitted, 'p1': assigned != null ? tr(' of {n}', {'n': assigned}) : '', 'p2': graded}),
-                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-              ),
-            ),
-          gap12,
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Expanded(
-                child: published
-                    ? FilledButton.tonalIcon(
-                        onPressed: () async {
-                          await Navigator.push(context, MaterialPageRoute<void>(builder: (_) => SubmissionsScreen(examId: _id, title: exam.str('title'))));
-                          await reload();
-                        },
-                        icon: const Icon(Icons.fact_check_outlined, size: 18),
-                        label: Text(tr('Submissions')),
-                      )
-                    : BusyButton(
-                        icon: Icons.send,
-                        label: tr('Publish'),
-                        onPressed: () async {
-                          if (await attempt(context, () => repo.updateExam(_id, {'is_published': true}), success: tr('Published. Students have been notified.'))) {
-                            await reload();
-                          }
-                        },
-                      ),
-              ),
-              if (published) ...[
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Tooltip(
-                    message: resultsHint,
-                    child: OutlinedButton.icon(
-                      onPressed: () => _toggleResults(context),
-                      icon: Icon(
-                        exam.flag('results_released') ? Icons.visibility : Icons.visibility_off_outlined,
-                        size: 18,
-                        color: exam.flag('results_released') ? AppColors.success : null,
-                      ),
-                      label: Text(resultsLabel, overflow: TextOverflow.ellipsis),
-                    ),
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      Pill(isAssignment ? tr('Assignment') : tr('Exam'), color: isAssignment ? AppColors.purple : AppColors.primarySoft),
+                      Pill(statusLabel, color: statusColor),
+                      if (exam.integer('duration_minutes') > 0 && !isAssignment)
+                        Pill(tr('{p0} min', {'p0': exam.integer('duration_minutes')}), icon: Icons.timer_outlined),
+                      if (toGrade > 0) Pill(tr('{p0} to grade', {'p0': toGrade}), color: AppColors.warning, icon: Icons.rate_review_outlined),
+                    ],
                   ),
                 ),
-              ],
-              PopupMenuButton<String>(
-                tooltip: tr('More options'),
-                onSelected: (value) => switch (value) {
-                  'edit' => _edit(context),
-                  'copy' => _copy(context),
-                  'board' => Navigator.push(
-                      context,
-                      MaterialPageRoute<void>(builder: (_) => LeaderboardScreen(examId: _id, title: exam.str('title'))),
-                    ),
-                  _ => _delete(context),
-                },
-                itemBuilder: (_) => [
-                  PopupMenuItem(value: 'edit', child: Text(tr('Edit'))),
-                  PopupMenuItem(value: 'copy', child: Text(tr('Copy (reuse)'))),
-                  if (published) PopupMenuItem(value: 'board', child: Text(tr('Leaderboard'))),
-                  PopupMenuItem(value: 'delete', child: Text(tr('Delete'), style: TextStyle(color: AppColors.danger))),
-                ],
               ),
+              menu,
             ],
+          ),
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const SizedBox(height: 12),
+                Text(exam.str('title'), style: TextStyle(fontSize: 17, height: 1.3, fontWeight: FontWeight.w600, color: tt.textPrimary)),
+                const SizedBox(height: 4),
+                Text(
+                  [
+                    exam.str('student_name'),
+                    tr('{n} marks', {'n': trimNumber(exam.number('total_marks'))}),
+                    if (exam.integer('mcq_count') > 0) tr('{n} MCQ', {'n': exam.integer('mcq_count')}),
+                  ].where((part) => part.isNotEmpty).join(' · '),
+                  style: TextStyle(color: tt.textSecondary, fontSize: 13, height: 1.4),
+                ),
+                const SizedBox(height: 12),
+                Divider(height: 1, color: tt.border),
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  child: Row(
+                    children: [
+                      Icon(Icons.calendar_today_outlined, size: 18, color: tt.textTertiary),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(window, style: TextStyle(color: tt.textSecondary, fontSize: 14, fontFeatures: tabular)),
+                      ),
+                    ],
+                  ),
+                ),
+                Divider(height: 1, color: tt.border),
+                if (published) ...[
+                  const SizedBox(height: 12),
+                  Text(
+                    tr('{p0}{p1} submitted · {p2} graded', {'p0': submitted, 'p1': assigned != null ? tr(' of {n}', {'n': assigned}) : '', 'p2': graded}),
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: tt.textPrimary),
+                  ),
+                  const SizedBox(height: 8),
+                  ProgressLine(
+                    value: submitted <= 0 ? 0 : graded / submitted,
+                    height: 6,
+                    label: tr('{p0}{p1} submitted · {p2} graded', {'p0': submitted, 'p1': assigned != null ? tr(' of {n}', {'n': assigned}) : '', 'p2': graded}),
+                  ),
+                ],
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(
+                      child: published
+                          ? FilledButton.icon(
+                              onPressed: () async {
+                                await Navigator.push(context, MaterialPageRoute<void>(builder: (_) => SubmissionsScreen(examId: _id, title: exam.str('title'))));
+                                await reload();
+                              },
+                              icon: const Icon(Icons.fact_check_outlined, size: 18),
+                              label: Text(tr('Submissions'), overflow: TextOverflow.ellipsis),
+                            )
+                          : BusyButton(
+                              icon: Icons.send,
+                              label: tr('Publish'),
+                              onPressed: () async {
+                                if (await attempt(context, () => repo.updateExam(_id, {'is_published': true}), success: tr('Published. Students have been notified.'))) {
+                                  await reload();
+                                }
+                              },
+                            ),
+                    ),
+                    if (published) ...[
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Tooltip(
+                          message: resultsHint,
+                          child: FilledButton.tonalIcon(
+                            onPressed: () => _toggleResults(context),
+                            icon: Icon(
+                              exam.flag('results_released') ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+                              size: 18,
+                            ),
+                            label: Text(resultsLabel, overflow: TextOverflow.ellipsis),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ],
+            ),
           ),
         ],
       ),
