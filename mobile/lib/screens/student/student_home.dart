@@ -232,7 +232,7 @@ class _Flashcard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             // A thin accent along the top makes each card read as a card in a deck.
-            Container(height: 4, color: pendingCycles.isEmpty ? AppColors.chartPending : AppColors.warning),
+            Container(height: 4, color: pendingCycles.isEmpty ? context.tt.primary : context.tt.warning),
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
               child: Column(
@@ -242,7 +242,7 @@ class _Flashcard extends StatelessWidget {
                     children: [
                       CircleAvatar(
                         radius: 22,
-                        backgroundColor: AppColors.primary.withValues(alpha: 0.2),
+                        backgroundColor: context.tt.primaryContainer,
                         child: ClipOval(
                           child: SizedBox.square(
                             dimension: 44,
@@ -375,7 +375,7 @@ class _PaymentPendingChip extends StatelessWidget {
     final ink = tone(context, AppColors.warning);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(color: AppColors.warning.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(12)),
+      decoration: BoxDecoration(color: context.tt.warningContainer, borderRadius: BorderRadius.circular(12)),
       child: Row(
         children: [
           Icon(Icons.warning_amber_rounded, size: 18, color: ink),

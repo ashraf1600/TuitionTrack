@@ -649,7 +649,7 @@ class _ClassesTab extends StatelessWidget {
                   if (i > 0) const Divider(indent: 64),
                   ListTile(
                     leading: CircleAvatar(
-                      backgroundColor: AppColors.chartEarned.withValues(alpha: 0.15),
+                      backgroundColor: context.tt.successContainer,
                       child: Text('${classNoOf(doneClasses[i])}',
                           style: TextStyle(fontWeight: FontWeight.w800, color: tone(context, AppColors.success))),
                     ),
@@ -723,11 +723,11 @@ class _ClassTile extends StatelessWidget {
     final done = entry.flag('completed');
     final no = classNoOf(entry);
     final Color fill = done
-        ? AppColors.chartEarned.withValues(alpha: 0.16)
+        ? context.tt.successContainer
         : isNext
-            ? AppColors.chartPending.withValues(alpha: 0.14)
+            ? context.tt.primaryContainer
             : scheme.surfaceContainerHighest;
-    final Color edge = done ? AppColors.chartEarned : (isNext ? AppColors.chartPending : scheme.outline);
+    final Color edge = done ? context.tt.chartEarned : (isNext ? context.tt.primary : scheme.outline);
     return Tooltip(
       message: done ? tr('Class {p0} · {p1}', {'p0': no, 'p1': fmtShortDate(entry.date('date'))}) : (isNext ? tr('Class {p0} · next', {'p0': no}) : tr('Class {p0} · not yet', {'p0': no})),
       child: Semantics(

@@ -249,7 +249,7 @@ class _ExamTakeScreenState extends State<ExamTakeScreen> {
               liveRegion: _left.inSeconds % 60 == 0,
               child: Container(
                 width: double.infinity,
-                color: timerColor.withValues(alpha: 0.12),
+                color: tonalContainer(context, timerColor),
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                 child: Row(
                   children: [
@@ -395,8 +395,8 @@ class _ExamTakeScreenState extends State<ExamTakeScreen> {
             children: [
               CircleAvatar(
                 radius: 13,
-                backgroundColor: AppColors.primary.withValues(alpha: 0.25),
-                child: Text('${index + 1}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: AppColors.primarySoft)),
+                backgroundColor: context.tt.primaryContainer,
+                child: Text(localDigits('${index + 1}'), style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: context.tt.onPrimaryContainer)),
               ),
               const SizedBox(width: 10),
               Expanded(
@@ -417,10 +417,10 @@ class _ExamTakeScreenState extends State<ExamTakeScreen> {
                 inMutuallyExclusiveGroup: true,
                 checked: chosen == i,
                 child: Material(
-                  color: chosen == i ? AppColors.primary.withValues(alpha: 0.2) : Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+                  color: chosen == i ? context.tt.primaryContainer : context.tt.cardRaised,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
-                    side: BorderSide(color: chosen == i ? AppColors.primary : Theme.of(context).colorScheme.outline),
+                    side: BorderSide(color: chosen == i ? context.tt.primary : Colors.transparent),
                   ),
                   clipBehavior: Clip.antiAlias,
                   child: InkWell(

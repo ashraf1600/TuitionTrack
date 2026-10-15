@@ -62,8 +62,8 @@ class CycleProgress extends StatelessWidget {
                   height: 30,
                   alignment: Alignment.center,
                   decoration: BoxDecoration(
-                    color: c.flag('completed') ? AppColors.chartEarned.withValues(alpha: 0.16) : scheme.surfaceContainerHighest,
-                    border: Border.all(color: c.flag('completed') ? AppColors.chartEarned : scheme.outline),
+                    color: c.flag('completed') ? context.tt.successContainer : scheme.surfaceContainerHighest,
+                    border: Border.all(color: c.flag('completed') ? tone(context, AppColors.chartEarned) : scheme.outline),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: c.flag('completed')

@@ -175,8 +175,8 @@ class _QuestionCard extends StatelessWidget {
                 padding: const EdgeInsets.only(top: 4),
                 child: CircleAvatar(
                   radius: 13,
-                  backgroundColor: AppColors.primary.withValues(alpha: 0.25),
-                  child: Text('${index + 1}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: AppColors.primarySoft)),
+                  backgroundColor: context.tt.primaryContainer,
+                  child: Text(localDigits('${index + 1}'), style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: context.tt.onPrimaryContainer)),
                 ),
               ),
               SizedBox(width: 10),
@@ -221,10 +221,10 @@ class _QuestionCard extends StatelessWidget {
                 checked: correct == i,
                 label: tr('Option {p0}{p1}', {'p0': _letters[i], 'p1': correct == i ? tr(', correct answer') : ''}),
                 child: Material(
-                  color: correct == i ? AppColors.success.withValues(alpha: 0.14) : Colors.transparent,
+                  color: correct == i ? context.tt.successContainer : Colors.transparent,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(10),
-                    side: BorderSide(color: correct == i ? AppColors.success.withValues(alpha: 0.6) : Theme.of(context).colorScheme.outline),
+                    side: BorderSide(color: correct == i ? context.tt.success : Theme.of(context).colorScheme.outline),
                   ),
                   clipBehavior: Clip.antiAlias,
                   child: InkWell(
