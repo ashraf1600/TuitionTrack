@@ -7,7 +7,6 @@ import 'package:provider/provider.dart';
 import '../../core/api.dart';
 import '../../core/connect.dart';
 import '../../core/i18n.dart';
-import '../../core/json.dart';
 import '../../core/repo.dart';
 import '../../widgets/media.dart';
 import '../../widgets/theme.dart';

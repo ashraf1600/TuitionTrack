@@ -9,7 +9,8 @@ import '../../core/repo.dart';
 import '../../widgets/theme.dart';
 import '../../widgets/ui.dart';
 
-const _days = [tr('Saturday'), tr('Sunday'), tr('Monday'), tr('Tuesday'), tr('Wednesday'), tr('Thursday'), tr('Friday')];
+// Sent to the server as is; shown through dayLabel() in the app language.
+const _days = ['Saturday', 'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
 
 int _minutes(String time) {
   final parts = time.split(':');
@@ -76,7 +77,7 @@ class _TuitionFormScreenState extends State<TuitionFormScreen> {
                 DropdownButtonFormField<String>(
                   initialValue: day,
                   decoration: InputDecoration(labelText: tr('Day')),
-                  items: [for (final d in _days) DropdownMenuItem(value: d, child: Text(d))],
+                  items: [for (final d in _days) DropdownMenuItem(value: d, child: Text(dayLabel(d, short: false)))],
                   onChanged: (value) => setSheet(() => day = value ?? day),
                 ),
                 gap12,
@@ -125,7 +126,7 @@ class _TuitionFormScreenState extends State<TuitionFormScreen> {
     final clash = _routine.any((other) =>
         other['day'] == slot['day'] && s < _minutes(other.str('end_time', '23:59')) && _minutes(other.str('start_time')) < e);
     if (clash) {
-      showToast(context, tr('That time overlaps another class on {p0}.', {'p0': slot['day']}), error: true);
+      showToast(context, tr('That time overlaps another class on {p0}.', {'p0': dayLabel('${slot['day']}', short: false)}), error: true);
       return;
     }
     setState(() {
@@ -237,10 +238,10 @@ class _TuitionFormScreenState extends State<TuitionFormScreen> {
                       ListTile(
                         dense: true,
                         leading: const Icon(Icons.schedule),
-                        title: Text(_routine[i].str('day')),
+                        title: Text(dayLabel(_routine[i].str('day'), short: false)),
                         subtitle: Text('${to12h(_routine[i].str('start_time'))} – ${to12h(_routine[i].str('end_time'))}'),
                         trailing: IconButton(
-                          tooltip: tr('Remove {p0}', {'p0': _routine[i].str('day')}),
+                          tooltip: tr('Remove {p0}', {'p0': dayLabel(_routine[i].str('day'), short: false)}),
                           icon: const Icon(Icons.delete_outline),
                           onPressed: () => setState(() => _routine.removeAt(i)),
                         ),

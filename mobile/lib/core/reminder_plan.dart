@@ -13,7 +13,7 @@ class PlannedReminder {
     this.markAction = false,
   });
 
-  /// Stable name, e.g. "after:<tuition>:2026-10-11T18:00" (the id is derived from it).
+  /// Stable name, e.g. `after:t1:2026-10-11T18:00` (the id is derived from it).
   final String key;
   final DateTime at;
   final String title;

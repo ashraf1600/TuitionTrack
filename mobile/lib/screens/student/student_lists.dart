@@ -21,7 +21,7 @@ import 'homework_card.dart';
 
 /// A student's exams and assignments, grouped into To do, Upcoming and Done.
 class StudentExamsList extends StatelessWidget {
-  const StudentExamsList({required this.exams, required this.reload});
+  const StudentExamsList({super.key, required this.exams, required this.reload});
   final List<Json> exams;
   final Future<void> Function() reload;
 
@@ -64,7 +64,7 @@ class StudentExamsList extends StatelessWidget {
 }
 
 class StudentExamCard extends StatelessWidget {
-  const StudentExamCard({required this.exam, required this.reload});
+  const StudentExamCard({super.key, required this.exam, required this.reload});
   final Json exam;
   final Future<void> Function() reload;
 
@@ -227,7 +227,7 @@ class StudentExamCard extends StatelessWidget {
 
 /// Student homework dashboard: pending + done, ordered by due date.
 class StudentHomeworkList extends StatelessWidget {
-  const StudentHomeworkList({required this.items, required this.reload});
+  const StudentHomeworkList({super.key, required this.items, required this.reload});
   final List<HomeworkItem> items;
   final Future<void> Function() reload;
 
