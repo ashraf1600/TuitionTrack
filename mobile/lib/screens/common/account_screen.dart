@@ -213,6 +213,7 @@ class _AccountScreenState extends State<AccountScreen> {
               photoBusy: _photoBusy,
               onPhoto: session.isTutor ? () => _photo(user.str('profile_picture_url').isNotEmpty) : null,
             ),
+            if (session.isTutor && user.str('tutor_code').isNotEmpty) ...[gap16, _InviteBlock(code: user.str('tutor_code'))],
             gap16,
             FlatGroup(children: [
               _FieldRow(
@@ -245,7 +246,7 @@ class _AccountScreenState extends State<AccountScreen> {
             FlatGroup(children: [
               _ActionRow(icon: Icons.lock_outline, label: tr('Change password'), onTap: _changePassword),
               _ActionRow(icon: Icons.devices_other_outlined, label: tr('Sign out on all devices'), onTap: _signOutEverywhere),
-              _ActionRow(icon: Icons.logout, label: tr('Sign out'), danger: true, onTap: () => session.logout()),
+              _ActionRow(icon: Icons.logout_rounded, label: tr('Sign out'), danger: true, onTap: () => session.logout()),
             ]),
             if (dirty) ...[
               gap12,
@@ -274,9 +275,8 @@ class _Header extends StatelessWidget {
     final photo = context.read<Session>().api.mediaUrl(user.str('profile_picture_url'));
     final initial = Text(
       name.isEmpty ? '?' : name.characters.first.toUpperCase(),
-      style: TextStyle(fontSize: 26, fontWeight: FontWeight.w800, color: tone(context, AppColors.primarySoft)),
+      style: TextStyle(fontSize: 28, fontWeight: FontWeight.w600, color: context.tt.onPrimaryContainer),
     );
-    final code = user.str('tutor_code');
     return Row(
       children: [
         Semantics(
@@ -288,11 +288,11 @@ class _Header extends StatelessWidget {
               clipBehavior: Clip.none,
               children: [
                 CircleAvatar(
-                  radius: 34,
-                  backgroundColor: AppColors.primary.withValues(alpha: 0.22),
+                  radius: 36,
+                  backgroundColor: context.tt.primaryContainer,
                   child: ClipOval(
                     child: SizedBox.square(
-                      dimension: 68,
+                      dimension: 72,
                       child: photoBusy
                           ? const Padding(padding: EdgeInsets.all(22), child: CircularProgressIndicator(strokeWidth: 2))
                           : photo.isEmpty
@@ -303,16 +303,18 @@ class _Header extends StatelessWidget {
                 ),
                 if (onPhoto != null)
                   Positioned(
-                    right: -2,
-                    bottom: -2,
+                    right: -4,
+                    bottom: -4,
                     child: Container(
-                      padding: const EdgeInsets.all(5),
+                      width: 28,
+                      height: 28,
+                      alignment: Alignment.center,
                       decoration: BoxDecoration(
                         color: context.tt.primary,
                         shape: BoxShape.circle,
                         border: Border.all(color: Theme.of(context).scaffoldBackgroundColor, width: 2),
                       ),
-                      child: Icon(Icons.photo_camera, size: 13, color: context.tt.onPrimary),
+                      child: Icon(Icons.photo_camera_outlined, size: 15, color: context.tt.onPrimary),
                     ),
                   ),
               ],
@@ -324,46 +326,76 @@ class _Header extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w800)),
-              Text('@${user.str('username')} · ${isTutor ? tr('Tutor') : tr('Student')}', style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant)),
-              if (isTutor && code.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(top: 6),
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(8),
-                    onTap: () async {
-                      HapticFeedback.lightImpact();
-                      await Clipboard.setData(ClipboardData(text: code));
-                      if (context.mounted) showToast(context, tr('Invite code copied. Students enter it to connect with you.'));
-                    },
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 2),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(tr('Invite code '), style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
-                          Text(code,
-                              style: TextStyle(
-                                  fontSize: 14, fontWeight: FontWeight.w800, letterSpacing: 2, color: tone(context, AppColors.primarySoft))),
-                          const SizedBox(width: 6),
-                          Icon(Icons.copy_rounded, size: 15, color: scheme.onSurfaceVariant),
-                          const SizedBox(width: 4),
-                          IconButton(
-                            tooltip: tr('Share invite code'),
-                            visualDensity: VisualDensity.compact,
-                            iconSize: 18,
-                            icon: Icon(Icons.share_rounded, color: tone(context, AppColors.primarySoft)),
-                            onPressed: () => shareInviteCode(context, code),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
+              Text(name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700, letterSpacing: -0.2)),
+              const SizedBox(height: 2),
+              Text('@${user.str('username')} · ${isTutor ? tr('Tutor') : tr('Student')}',
+                  maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 14, color: scheme.onSurfaceVariant)),
             ],
           ),
         ),
       ],
+    );
+  }
+}
+
+/// The tutor's invite code on its own tonal block, with 44 dp copy and share buttons.
+class _InviteBlock extends StatelessWidget {
+  const _InviteBlock({required this.code});
+  final String code;
+
+  @override
+  Widget build(BuildContext context) {
+    final tt = context.tt;
+    final buttonStyle = IconButton.styleFrom(
+      minimumSize: const Size(44, 44),
+      backgroundColor: tt.isDark ? tt.cardRaised : tt.primaryContainer,
+      foregroundColor: tt.onPrimaryContainer,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+    );
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
+      decoration: BoxDecoration(color: tt.card, borderRadius: BorderRadius.circular(16), boxShadow: tt.cardShadow),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(tr('Invite code').toUpperCase(),
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, letterSpacing: 0.72, color: tt.textTertiary)),
+                const SizedBox(height: 4),
+                SelectableText(
+                  code,
+                  style: TextStyle(
+                    fontFamily: 'monospace',
+                    fontSize: 20,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 2.8,
+                    color: tt.onPrimaryContainer,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            tooltip: tr('Copy {p0}', {'p0': tr('Invite code')}),
+            style: buttonStyle,
+            icon: const Icon(Icons.copy_rounded, size: 20),
+            onPressed: () async {
+              HapticFeedback.lightImpact();
+              await Clipboard.setData(ClipboardData(text: code));
+              if (context.mounted) showToast(context, tr('Invite code copied. Students enter it to connect with you.'));
+            },
+          ),
+          const SizedBox(width: 8),
+          IconButton(
+            tooltip: tr('Share invite code'),
+            style: buttonStyle,
+            icon: const Icon(Icons.share_outlined, size: 20),
+            onPressed: () => shareInviteCode(context, code),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -386,32 +418,31 @@ class _FieldRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    final tt = context.tt;
     const none = InputBorder.none;
+    // A labelled row: a small label above the value, like a settings list.
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 2, 12, 2),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          SizedBox(width: 104, child: Text(label, style: TextStyle(fontSize: 14, color: scheme.onSurfaceVariant))),
-          Expanded(
-            child: TextFormField(
-              controller: controller,
-              keyboardType: type,
-              textCapitalization: capitalization,
-              validator: validator,
-              style: const TextStyle(fontSize: 15),
-              decoration: InputDecoration(
-                hintText: hint,
-                filled: false,
-                isDense: true,
-                contentPadding: const EdgeInsets.symmetric(vertical: 14),
-                border: none,
-                enabledBorder: none,
-                focusedBorder: none,
-                errorBorder: none,
-                focusedErrorBorder: none,
-              ),
+          Text(label, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: tt.textSecondary)),
+          TextFormField(
+            controller: controller,
+            keyboardType: type,
+            textCapitalization: capitalization,
+            validator: validator,
+            style: TextStyle(fontSize: 16, color: tt.textPrimary),
+            decoration: InputDecoration(
+              hintText: hint,
+              filled: false,
+              isDense: true,
+              contentPadding: const EdgeInsets.only(top: 4, bottom: 8),
+              border: none,
+              enabledBorder: none,
+              focusedBorder: none,
+              errorBorder: none,
+              focusedErrorBorder: none,
             ),
           ),
         ],
@@ -429,14 +460,13 @@ class _ActionRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final color = danger ? tone(context, AppColors.danger) : scheme.onSurface;
+    final tt = context.tt;
+    final color = danger ? tt.danger : tt.textPrimary;
     return ListTile(
-      dense: true,
-      visualDensity: VisualDensity.compact,
-      leading: Icon(icon, size: 20, color: danger ? color : scheme.onSurfaceVariant),
-      title: Text(label, style: TextStyle(fontSize: 15, color: color)),
-      trailing: danger ? null : Icon(Icons.chevron_right, size: 20, color: scheme.onSurfaceVariant),
+      minTileHeight: 56,
+      leading: Icon(icon, size: 20, color: danger ? color : tt.textTertiary),
+      title: Text(label, style: TextStyle(fontSize: 15, fontWeight: FontWeight.w500, color: color)),
+      trailing: danger ? null : Icon(Icons.chevron_right_rounded, size: 20, color: tt.textTertiary),
       onTap: onTap,
     );
   }

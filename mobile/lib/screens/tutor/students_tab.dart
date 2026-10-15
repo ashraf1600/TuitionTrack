@@ -108,11 +108,8 @@ class _StudentsTabState extends State<StudentsTab> {
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 96),
           children: [
             if (data.students.length > 5) ...[
-              TextField(
-                decoration: InputDecoration(labelText: tr('Search students'), prefixIcon: Icon(Icons.search)),
-                onChanged: (value) => setState(() => _search = value.trim()),
-              ),
-              gap12,
+              _SearchField(hint: tr('Search students'), onChanged: (value) => setState(() => _search = value.trim())),
+              gap16,
             ],
             if (data.students.isEmpty)
               EmptyState(
@@ -123,17 +120,26 @@ class _StudentsTabState extends State<StudentsTab> {
             else if (students.isEmpty)
               Text(tr('No students match that search.'), style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant))
             else
-              for (final student in students) ...[
-                _StudentCard(
-                  student: student,
-                  groups: groupsOf[student.str('id')] ?? const [],
-                  pendingRequest: pendingIds.contains(student.str('id')),
-                  unassigned: unassignedIds.contains(student.str('id')),
-                  tuitions: data.tuitions,
-                  reload: reload,
+              // One card, students separated by hairlines.
+              Container(
+                clipBehavior: Clip.antiAlias,
+                decoration: BoxDecoration(color: context.tt.card, borderRadius: BorderRadius.circular(16), boxShadow: context.tt.cardShadow),
+                child: Column(
+                  children: [
+                    for (final (i, student) in students.indexed) ...[
+                      if (i > 0) Divider(height: 1, indent: 16, endIndent: 16, color: context.tt.border),
+                      _StudentCard(
+                        student: student,
+                        groups: groupsOf[student.str('id')] ?? const [],
+                        pendingRequest: pendingIds.contains(student.str('id')),
+                        unassigned: unassignedIds.contains(student.str('id')),
+                        tuitions: data.tuitions,
+                        reload: reload,
+                      ),
+                    ],
+                  ],
                 ),
-                gap8,
-              ],
+              ),
           ],
         );
       },
@@ -172,14 +178,14 @@ class _StudentCard extends StatelessWidget {
             child: ListView(
               shrinkWrap: true,
               children: [
-                ListTile(title: Text('Add $name to which tuition?', style: const TextStyle(fontWeight: FontWeight.w700))),
-                if (tuitions.isEmpty) ListTile(title: Text('Create a tuition first.', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant))),
+                ListTile(title: Text(tr('Add {p0} to which tuition?', {'p0': name}), style: const TextStyle(fontWeight: FontWeight.w700))),
+                if (tuitions.isEmpty) ListTile(title: Text(tr('Create a tuition first.'), style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant))),
                 for (final t in tuitions)
                   ListTile(
                     leading: Icon(Icons.groups_outlined),
                     title: Text(t.str('title')),
                     enabled: !groups.contains(t.str('title')),
-                    subtitle: groups.contains(t.str('title')) ? Text('Already in this tuition') : null,
+                    subtitle: groups.contains(t.str('title')) ? Text(tr('Already in this tuition')) : null,
                     onTap: () => Navigator.pop(context, t.str('id')),
                   ),
               ],
@@ -187,13 +193,13 @@ class _StudentCard extends StatelessWidget {
           ),
         );
         if (tuitionId == null || !context.mounted) return;
-        if (await attempt(context, () => repo.enroll(tuitionId, [id]), success: '$name added to the tuition.')) await reload();
+        if (await attempt(context, () => repo.enroll(tuitionId, [id]), success: tr('{name} added to the tuition.', {'name': name}))) await reload();
       case 'reset':
         final ok = await confirm(
           context,
-          title: 'Reset $name\'s password?',
-          message: 'A new temporary password is created and shown to you once. The current password stops working and $name is signed out everywhere.',
-          confirmLabel: 'Reset password',
+          title: tr('Reset the password of {name}?', {'name': name}),
+          message: tr('A new temporary password is created and shown to you once. The current password stops working and {name} is signed out everywhere.', {'name': name}),
+          confirmLabel: tr('Reset password'),
         );
         if (!ok || !context.mounted) return;
         Json? result;
@@ -206,74 +212,117 @@ class _StudentCard extends StatelessWidget {
         final active = student.flag('is_active');
         final ok = await confirm(
           context,
-          title: active ? 'Deactivate $name?' : 'Reactivate $name?',
+          title: active ? tr('Deactivate {name}?', {'name': name}) : tr('Reactivate {name}?', {'name': name}),
           message: active
-              ? '$name will not be able to sign in and is taken off your active lists. Their history is kept and you can reactivate them at any time.'
-              : '$name will be able to sign in again.',
-          confirmLabel: active ? 'Deactivate' : 'Reactivate',
+              ? tr('{name} will not be able to sign in and is taken off your active lists. Their history is kept and you can reactivate them at any time.', {'name': name})
+              : tr('{name} will be able to sign in again.', {'name': name}),
+          confirmLabel: active ? tr('Deactivate') : tr('Reactivate'),
           danger: active,
         );
         if (!ok || !context.mounted) return;
-        if (await attempt(context, () => repo.toggleStudentActive(id), success: active ? '$name deactivated.' : '$name reactivated.')) await reload();
+        if (await attempt(context, () => repo.toggleStudentActive(id), success: active ? tr('{name} deactivated.', {'name': name}) : tr('{name} reactivated.', {'name': name}))) await reload();
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final tt = context.tt;
     final profile = student.obj('profile') ?? {};
     final active = student.flag('is_active');
-    return AppCard(
-      padding: const EdgeInsets.fromLTRB(14, 10, 4, 10),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.only(top: 4),
-            child: CircleAvatar(child: Text(student.str('full_name', '?').characters.first.toUpperCase())),
-          ),
-          SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(student.str('full_name'), style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15, color: active ? Theme.of(context).colorScheme.onSurface : Theme.of(context).colorScheme.outlineVariant)),
-                Text(
-                  [
-                    '@${student.str('username')}',
-                    if (profile.str('grade_level').isNotEmpty) profile.str('grade_level'),
-                    if (student.str('phone').isNotEmpty) student.str('phone'),
-                  ].join(' · '),
-                  style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
-                ),
-                const SizedBox(height: 6),
-                Wrap(
-                  spacing: 6,
-                  runSpacing: 6,
-                  children: [
-                    for (final group in groups) Pill(group, color: AppColors.primarySoft, icon: Icons.class_outlined),
-                    if (pendingRequest)
-                      Pill(tr('Asked to join — answer on Overview'), color: AppColors.warning)
-                    else if (groups.isEmpty && unassigned && active)
-                      Pill(tr('Not in a tuition'), color: AppColors.warning),
-                    if (student.flag('must_change_password')) Pill(tr('Temporary password'), color: AppColors.warning, icon: Icons.key),
-                    if (!active) Pill(tr('Deactivated'), color: AppColors.danger),
-                  ],
-                ),
-              ],
+    final name = student.str('full_name', '?');
+    return ConstrainedBox(
+      constraints: const BoxConstraints(minHeight: 76),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 4, 12),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            CircleAvatar(
+              radius: 20,
+              backgroundColor: tt.primaryContainer,
+              child: Text(name.characters.first.toUpperCase(),
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: tt.onPrimaryContainer)),
             ),
-          ),
-          if (!pendingRequest)
-            PopupMenuButton<String>(
-              tooltip: tr('Options for {p0}', {'p0': student.str('full_name')}),
-              onSelected: (value) => _action(context, value),
-              itemBuilder: (_) => [
-                PopupMenuItem(value: 'edit', child: Text(tr('Edit details'))),
-                if (active) PopupMenuItem(value: 'group', child: Text(tr('Add to a tuition'))),
-                PopupMenuItem(value: 'reset', child: Text(tr('Reset password'))),
-                PopupMenuItem(value: 'toggle', child: Text(active ? tr('Deactivate') : tr('Reactivate'))),
-              ],
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15, color: active ? tt.textPrimary : tt.textTertiary)),
+                  const SizedBox(height: 2),
+                  Text(
+                    [
+                      '@${student.str('username')}',
+                      if (profile.str('grade_level').isNotEmpty) profile.str('grade_level'),
+                      if (student.str('phone').isNotEmpty) student.str('phone'),
+                    ].join(' · '),
+                    style: TextStyle(color: tt.textSecondary, fontSize: 12, height: 1.4),
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: [
+                      for (final group in groups) Pill(group, color: AppColors.primarySoft),
+                      if (pendingRequest)
+                        Pill(tr('Asked to join — answer on Overview'), color: AppColors.warning, icon: Icons.person_add_alt_1_outlined)
+                      else if (groups.isEmpty && unassigned && active)
+                        Pill(tr('Not in a tuition'), color: AppColors.warning, icon: Icons.error_outline_rounded),
+                      if (student.flag('must_change_password')) Pill(tr('Temporary password'), color: AppColors.warning, icon: Icons.key),
+                      if (!active) Pill(tr('Deactivated'), color: AppColors.danger, icon: Icons.block_rounded),
+                    ],
+                  ),
+                ],
+              ),
             ),
-        ],
+            if (!pendingRequest)
+              PopupMenuButton<String>(
+                tooltip: tr('Options for {p0}', {'p0': name}),
+                icon: Icon(Icons.more_vert_rounded, color: tt.textTertiary),
+                style: IconButton.styleFrom(minimumSize: const Size(44, 44)),
+                onSelected: (value) => _action(context, value),
+                itemBuilder: (_) => [
+                  PopupMenuItem(value: 'edit', child: Text(tr('Edit details'))),
+                  if (active) PopupMenuItem(value: 'group', child: Text(tr('Add to a tuition'))),
+                  PopupMenuItem(value: 'reset', child: Text(tr('Reset password'))),
+                  PopupMenuItem(value: 'toggle', child: Text(active ? tr('Deactivate') : tr('Reactivate'))),
+                ],
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// A 48 dp search box on the card colour.
+class _SearchField extends StatelessWidget {
+  const _SearchField({required this.hint, required this.onChanged});
+  final String hint;
+  final ValueChanged<String> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final tt = context.tt;
+    final border = OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none);
+    return SizedBox(
+      height: 48,
+      child: TextField(
+        onChanged: onChanged,
+        textAlignVertical: TextAlignVertical.center,
+        decoration: InputDecoration(
+          hintText: hint,
+          prefixIcon: Icon(Icons.search_rounded, color: tt.textTertiary),
+          filled: true,
+          fillColor: tt.card,
+          contentPadding: EdgeInsets.zero,
+          border: border,
+          enabledBorder: border,
+          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: tt.primary, width: 1.5)),
+        ),
       ),
     );
   }

@@ -321,7 +321,7 @@ class SectionTitle extends StatelessWidget {
 
 /// The tonal container behind an accent: the token container for success,
 /// warning, danger and primary, a light tint of anything else.
-Color _container(BuildContext context, Color accent) {
+Color tonalContainer(BuildContext context, Color accent) {
   final tt = context.tt;
   if (accent == AppColors.success || accent == AppColors.chartEarned) return tt.successContainer;
   if (accent == AppColors.warning) return tt.warningContainer;
@@ -344,7 +344,7 @@ class Pill extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        color: _container(context, color),
+        color: tonalContainer(context, color),
         borderRadius: BorderRadius.circular(8),
       ),
       child: Row(
@@ -373,7 +373,7 @@ class Banner2 extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: _container(context, color),
+        color: tonalContainer(context, color),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Row(
@@ -629,25 +629,29 @@ class PickerRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    final tt = context.tt;
     return InkWell(
       onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
-        child: Row(
-          children: [
-            if (leading != null) ...[leading!, const SizedBox(width: 12)],
-            Text(label, style: TextStyle(fontSize: 14, color: scheme.onSurfaceVariant)),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(value,
-                  textAlign: TextAlign.right,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
-            ),
-            trailing ?? Icon(Icons.chevron_right, size: 20, color: scheme.onSurfaceVariant),
-          ],
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 56),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 12, 8),
+          child: Row(
+            children: [
+              if (leading != null) ...[leading!, const SizedBox(width: 12)],
+              Text(label, style: TextStyle(fontSize: 15, color: tt.textSecondary)),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(value,
+                    textAlign: TextAlign.right,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, fontFeatures: tabular, color: tt.textPrimary)),
+              ),
+              const SizedBox(width: 4),
+              trailing ?? Icon(Icons.chevron_right_rounded, size: 20, color: tt.textTertiary),
+            ],
+          ),
         ),
       ),
     );
@@ -667,7 +671,7 @@ class InfoTip extends StatelessWidget {
       visualDensity: VisualDensity.compact,
       iconSize: 18,
       constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-      icon: Icon(Icons.info_outline, color: Theme.of(context).colorScheme.onSurfaceVariant),
+      icon: Icon(Icons.info_outline_rounded, color: context.tt.textTertiary),
       onPressed: () => showModalBottomSheet<void>(
         context: context,
         builder: (context) => SafeArea(
@@ -830,6 +834,83 @@ class _SkeletonBoxState extends State<SkeletonBox> with SingleTickerProviderStat
           decoration: BoxDecoration(color: base, borderRadius: BorderRadius.circular(widget.radius)),
         ),
       ),
+    );
+  }
+}
+
+/// A tonal segmented control: one 44 dp pill per option inside a soft track,
+/// the selected one filled with the primary container.
+class PillToggle<T> extends StatelessWidget {
+  const PillToggle({super.key, required this.options, required this.selected, required this.onChanged});
+
+  /// (value, label, optional icon)
+  final List<(T, String, IconData?)> options;
+  final T selected;
+  final ValueChanged<T> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final tt = context.tt;
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(color: tt.isDark ? tt.card : tt.background, borderRadius: BorderRadius.circular(14)),
+      child: Row(
+        children: [
+          for (final (value, label, icon) in options)
+            Expanded(
+              child: Semantics(
+                button: true,
+                selected: value == selected,
+                child: Material(
+                  color: value == selected ? tt.primaryContainer : Colors.transparent,
+                  borderRadius: BorderRadius.circular(10),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(10),
+                    onTap: value == selected ? null : () => onChanged(value),
+                    child: SizedBox(
+                      height: 44,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          if (icon != null) ...[
+                            Icon(icon, size: 18, color: value == selected ? tt.onPrimaryContainer : tt.textSecondary),
+                            const SizedBox(width: 8),
+                          ],
+                          Flexible(
+                            child: Text(
+                              label,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: value == selected ? FontWeight.w600 : FontWeight.w500,
+                                color: value == selected ? tt.onPrimaryContainer : tt.textSecondary,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A small label above a form field (instead of relying on placeholder text).
+class FieldLabel extends StatelessWidget {
+  const FieldLabel(this.text, {super.key});
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 2, bottom: 8),
+      child: Text(text, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: context.tt.textSecondary)),
     );
   }
 }
