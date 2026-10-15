@@ -311,52 +311,64 @@ class _WalletStrip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     final earned = wallet.number('total_earned');
     final pending = wallet.number('total_pending');
     final total = earned + pending;
     final share = total <= 0 ? 0.0 : earned / total;
+    final tt = context.tt;
     return AppCard(
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          Text(tr('Earned in current cycles'), style: TextStyle(fontSize: 13, height: 1.4, color: tt.textSecondary)),
+          const SizedBox(height: 4),
           Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
+            crossAxisAlignment: CrossAxisAlignment.baseline,
+            textBaseline: TextBaseline.alphabetic,
             children: [
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(tr('Earned in current cycles'), style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
-                    const SizedBox(height: 2),
-                    Text(taka(earned), style: TextStyle(fontSize: 26, fontWeight: FontWeight.w800, color: tone(context, AppColors.success))),
-                  ],
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    taka(earned),
+                    style: TextStyle(
+                      fontSize: 30,
+                      height: 1.15,
+                      letterSpacing: -0.6,
+                      fontWeight: FontWeight.w700,
+                      fontFeatures: tabular,
+                      color: tt.success,
+                    ),
+                  ),
                 ),
               ),
-              Text(tr('of {p0}', {'p0': taka(total)}), style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
+              const SizedBox(width: 8),
+              Text(tr('of {p0}', {'p0': taka(total)}),
+                  style: TextStyle(fontSize: 13, fontFeatures: tabular, color: tt.textTertiary)),
             ],
           ),
-          const SizedBox(height: 10),
-          ProgressLine(value: share, height: 5, label: tr('Share of the current cycles already earned')),
+          const SizedBox(height: 12),
+          ProgressLine(value: share, height: 8, label: tr('Share of the current cycles already earned')),
           if (wallet.integer('unpaid_cycles') > 0) ...[
-            const SizedBox(height: 10),
+            const SizedBox(height: 8),
             InkWell(
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(12),
               onTap: () => Navigator.push(context, MaterialPageRoute<void>(builder: (_) => const PaymentsScreen())),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 4),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(minHeight: 44),
                 child: Row(
                   children: [
-                    Icon(Icons.warning_amber_rounded, size: 16, color: tone(context, AppColors.warning)),
-                    const SizedBox(width: 6),
+                    Icon(Icons.warning_amber_rounded, size: 18, color: tt.warning),
+                    const SizedBox(width: 8),
                     Expanded(
                       child: Text(
                         tr('{p0} to collect · {p1} unpaid cycle{p2}', {'p0': taka(wallet.number('unpaid_total')), 'p1': wallet.integer('unpaid_cycles'), 'p2': wallet.integer('unpaid_cycles') == 1 ? '' : 's'}),
-                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: tone(context, AppColors.warning)),
+                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: tt.warning),
                       ),
                     ),
-                    Icon(Icons.chevron_right, size: 16, color: tone(context, AppColors.warning)),
+                    Icon(Icons.chevron_right_rounded, size: 20, color: tt.warning),
                   ],
                 ),
               ),
@@ -809,7 +821,7 @@ class _TuitionGrid extends StatelessWidget {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        const spacing = 10.0;
+        const spacing = 12.0;
         final columns = constraints.maxWidth >= 560 ? 3 : 2;
         final width = (constraints.maxWidth - spacing * (columns - 1)) / columns;
         return Wrap(
@@ -836,46 +848,70 @@ class _TuitionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    final tt = context.tt;
     final cycle = tuition.obj('active_cycle');
     final done = cycle?.integer('completed_classes') ?? 0;
     final total = cycle?.integer('total_classes') ?? tuition.integer('cycle_length');
     final cycleNo = cycle?.integer('cycle_number') ?? 1;
-    final complete = total > 0 && done >= total;
+    final students = tuition.integer('enrolled_count');
+    final due = tuition.maps('pending_payments').isNotEmpty;
     return AppCard(
       onTap: onTap,
       onLongPress: onLongPress,
-      padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            height: 38,
-            child: Text(tuition.str('title'),
-                maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, height: 1.3)),
-          ),
-          const SizedBox(height: 6),
-          Row(
-            children: [
-              Text(tr('Cycle {p0}', {'p0': cycleNo}), style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant)),
-              if (tuition.maps('pending_payments').isNotEmpty) ...[
-                const SizedBox(width: 6),
-                Tooltip(
-                  message: tr('Payment pending'),
-                  child: Icon(Icons.warning_amber_rounded, size: 14, color: tone(context, AppColors.warning)),
-                ),
-              ],
-              const Spacer(),
-              Text('$done/$total',
-                  style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w800,
-                      color: complete ? tone(context, AppColors.success) : scheme.onSurface)),
-            ],
-          ),
-          const SizedBox(height: 6),
-          ProgressLine(value: total == 0 ? 0.0 : done / total, height: 4, label: tr('{p0} of {p1} classes done', {'p0': done, 'p1': total})),
-        ],
+      padding: const EdgeInsets.fromLTRB(16, 16, 12, 16),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(minHeight: isBangla ? 116 : 104),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(tuition.str('title'),
+                      maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: tt.textPrimary)),
+                  const SizedBox(height: 4),
+                  Text(
+                    '${tr('{p0} student{p1}', {'p0': students, 'p1': students == 1 ? '' : 's'})} · ${tr('Cycle {p0}', {'p0': cycleNo})}',
+                    style: TextStyle(fontSize: 12, height: 1.4, color: tt.textSecondary),
+                  ),
+                  if (due) ...[
+                    const SizedBox(height: 8),
+                    _DueChip(tt: tt),
+                  ],
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            ProgressRing(done: done, total: total, size: 52, thickness: 4),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Amber "Due" badge: a cycle of this tuition waits for payment. Word + dot, never colour alone.
+class _DueChip extends StatelessWidget {
+  const _DueChip({required this.tt});
+  final TtTokens tt;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      label: tr('Payment pending'),
+      excludeSemantics: true,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(color: tt.warningContainer, borderRadius: BorderRadius.circular(8)),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(width: 6, height: 6, decoration: BoxDecoration(color: tt.warning, shape: BoxShape.circle)),
+            const SizedBox(width: 6),
+            Text(tr('@payment_due'), style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tt.onWarningContainer)),
+          ],
+        ),
       ),
     );
   }

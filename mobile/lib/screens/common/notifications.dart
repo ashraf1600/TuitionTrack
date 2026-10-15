@@ -68,7 +68,13 @@ class _NotificationBellState extends State<NotificationBell> with WidgetsBinding
     final unseen = _items.where((n) => !seen.contains(n.str('id'))).length;
     return IconButton(
       tooltip: unseen == 0 ? tr('Notifications') : tr('{p0} new notifications', {'p0': unseen}),
-      icon: Badge(isLabelVisible: unseen > 0, label: Text('$unseen'), child: Icon(Icons.notifications_outlined)),
+      icon: Badge(
+        isLabelVisible: unseen > 0,
+        backgroundColor: context.tt.warning,
+        textColor: context.tt.background,
+        label: Text(localDigits('$unseen')),
+        child: Icon(Icons.notifications_outlined, color: context.tt.textSecondary),
+      ),
       onPressed: () async {
         await Navigator.push(context, MaterialPageRoute<void>(builder: (_) => NotificationsScreen(items: _items)));
         if (mounted) {
@@ -140,7 +146,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                 ].join(' · ');
                 final isNew = !_wasSeen.contains(item.str('id'));
                 return ListTile(
-                  leading: CircleAvatar(backgroundColor: color.withValues(alpha: 0.15), child: Icon(icon, color: color)),
+                  leading: CircleAvatar(backgroundColor: tonalContainer(context, color), child: Icon(icon, color: tone(context, color))),
                   title: Text(item.str('title'), style: TextStyle(fontWeight: isNew ? FontWeight.w700 : FontWeight.w500)),
                   subtitle: detail.isEmpty ? null : Text(detail, style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant)),
                   trailing: isNew ? const Icon(Icons.circle, size: 10, color: AppColors.primary) : null,
@@ -159,11 +165,11 @@ List<Widget> homeActions(BuildContext context) {
     IconButton(
       tooltip: tr('My account'),
       icon: CircleAvatar(
-        radius: 15,
-        backgroundColor: AppColors.primary.withValues(alpha: 0.3),
+        radius: 16,
+        backgroundColor: context.tt.primaryContainer,
         child: Text(
           session.displayName.isEmpty ? '?' : session.displayName[0].toUpperCase(),
-          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppColors.primarySoft),
+          style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: context.tt.onPrimaryContainer),
         ),
       ),
       onPressed: () => Navigator.push(context, MaterialPageRoute<void>(builder: (_) => const AccountScreen())),

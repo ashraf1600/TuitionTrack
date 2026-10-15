@@ -54,8 +54,8 @@ class ProgressRing extends StatelessWidget {
                     children: [
                       Text.rich(
                         TextSpan(children: [
-                          TextSpan(text: '$done', style: TextStyle(fontWeight: FontWeight.w700, color: scheme.onSurface)),
-                          TextSpan(text: '/$total', style: TextStyle(fontWeight: FontWeight.w600, color: scheme.onSurfaceVariant)),
+                          TextSpan(text: localDigits('$done'), style: TextStyle(fontWeight: FontWeight.w700, color: scheme.onSurface)),
+                          TextSpan(text: localDigits('/$total'), style: TextStyle(fontWeight: FontWeight.w600, color: scheme.onSurfaceVariant)),
                         ]),
                         style: TextStyle(fontSize: size * 0.24),
                       ),

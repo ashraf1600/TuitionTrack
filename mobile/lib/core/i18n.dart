@@ -15,13 +15,19 @@ bool get isBangla => _language == 'bn';
 void setAppLanguage(String code) => _language = code == 'bn' ? 'bn' : 'en';
 
 String tr(String text, [Map<String, Object?> args = const {}]) {
-  var out = isBangla ? (bnStrings[text] ?? text) : text;
+  var out = isBangla ? (bnStrings[text] ?? text) : (_enStrings[text] ?? text);
   args.forEach((key, value) {
     final filled = value is Raw ? value.text : localDigits('${value ?? ''}');
     out = out.replaceAll('{$key}', filled);
   });
   return out;
 }
+
+/// English for keys that are not English text: "@…" names a word that means
+/// different things in different places (Bangla needs a different word each).
+const _enStrings = {
+  '@payment_due': 'Due',
+};
 
 /// A [tr] argument inserted exactly as it is: digits are not turned into
 /// Bangla digits (codes, passwords, links and addresses people copy or type).
