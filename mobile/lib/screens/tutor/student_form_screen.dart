@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/api.dart';
+import '../../core/i18n.dart';
 import '../../core/json.dart';
 import '../../core/repo.dart';
 import '../../widgets/theme.dart';
@@ -93,7 +94,7 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
           'profile': {for (final f in ['grade_level', 'institution', 'address', 'parent_name', 'parent_phone', 'notes']) f: _v(f)},
         });
         if (!mounted) return;
-        showToast(context, 'Student updated.');
+        showToast(context, tr('Student updated.'));
         Navigator.pop(context, true);
       } else {
         final password = _c['password']!.text;
@@ -131,30 +132,30 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
     );
   }
 
-  String? _required(String? value) => (value == null || value.trim().isEmpty) ? 'Required' : null;
+  String? _required(String? value) => (value == null || value.trim().isEmpty) ? tr('Required') : null;
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(_editing ? 'Edit student' : 'Add a student')),
+      appBar: AppBar(title: Text(_editing ? tr('Edit student') : tr('Add a student'))),
       body: Form(
         key: _form,
         child: PageBody(
           children: [
             if (_error != null) ...[Banner2(_error!, color: AppColors.danger, icon: Icons.error_outline), gap12],
-            _field('first_name', 'First name', validator: _required),
-            _field('last_name', 'Last name'),
+            _field('first_name', tr('First name'), validator: _required),
+            _field('last_name', tr('Last name')),
             if (!_editing) ...[
               _field(
                 'username',
-                'Username',
+                tr('Username'),
                 words: false,
                 validator: (v) {
                   final value = (v ?? '').trim();
-                  if (value.isEmpty) return 'Required';
-                  return RegExp(r'^[\w.@+-]+$').hasMatch(value) ? null : 'Use letters, numbers and . _ - only (no spaces)';
+                  if (value.isEmpty) return tr('Required');
+                  return RegExp(r'^[\w.@+-]+$').hasMatch(value) ? null : tr('Use letters, numbers and . _ - only (no spaces)');
                 },
-                helper: 'The student signs in with this.',
+                helper: tr('The student signs in with this.'),
               ),
               Padding(
                 padding: const EdgeInsets.only(bottom: 12),
@@ -162,46 +163,46 @@ class _StudentFormScreenState extends State<StudentFormScreen> {
                   controller: _c['password'],
                   autocorrect: false,
                   decoration: InputDecoration(
-                    labelText: 'Temporary password',
-                    helperText: 'The student must choose their own password at first sign-in.',
+                    labelText: tr('Temporary password'),
+                    helperText: tr('The student must choose their own password at first sign-in.'),
                     suffixIcon: IconButton(
-                      tooltip: 'Make another password',
+                      tooltip: tr('Make another password'),
                       icon: const Icon(Icons.refresh),
                       onPressed: () => setState(() => _c['password']!.text = _temporaryPassword()),
                     ),
                   ),
-                  validator: (v) => (v == null || v.length < 8) ? 'Use at least 8 characters' : null,
+                  validator: (v) => (v == null || v.length < 8) ? tr('Use at least 8 characters') : null,
                 ),
               ),
             ],
-            _field('email', 'Email (optional)', type: TextInputType.emailAddress, words: false, validator: (value) {
+            _field('email', tr('Email (optional)'), type: TextInputType.emailAddress, words: false, validator: (value) {
               final text = (value ?? '').trim();
               if (text.isEmpty) return null;
-              return RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(text) ? null : 'Enter a valid email address';
+              return RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(text) ? null : tr('Enter a valid email address');
             }),
-            _field('phone', 'Phone (optional)', type: TextInputType.phone),
-            _field('grade_level', 'Class / grade'),
-            _field('institution', 'School / college'),
-            _field('address', 'Address'),
-            _field('parent_name', 'Guardian name'),
-            _field('parent_phone', 'Guardian phone', type: TextInputType.phone),
-            _field('notes', 'Private notes (only you see these)', maxLines: 2, words: false),
+            _field('phone', tr('Phone (optional)'), type: TextInputType.phone),
+            _field('grade_level', tr('Class / grade')),
+            _field('institution', tr('School / college')),
+            _field('address', tr('Address')),
+            _field('parent_name', tr('Guardian name')),
+            _field('parent_phone', tr('Guardian phone'), type: TextInputType.phone),
+            _field('notes', tr('Private notes (only you see these)'), maxLines: 2, words: false),
             if (!_editing && _tuitions.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.only(bottom: 12),
                 child: DropdownButtonFormField<String?>(
                   initialValue: _tuitionId,
                   isExpanded: true,
-                  decoration: const InputDecoration(labelText: 'Add to a tuition now (optional)'),
+                  decoration: InputDecoration(labelText: tr('Add to a tuition now (optional)')),
                   items: [
-                    const DropdownMenuItem<String?>(value: null, child: Text('Not yet')),
+                    DropdownMenuItem<String?>(value: null, child: Text(tr('Not yet'))),
                     for (final t in _tuitions) DropdownMenuItem<String?>(value: t.str('id'), child: Text(t.str('title'), overflow: TextOverflow.ellipsis)),
                   ],
                   onChanged: (value) => setState(() => _tuitionId = value),
                 ),
               ),
             gap12,
-            BusyButton(onPressed: _save, label: _editing ? 'Save changes' : 'Create student', icon: Icons.check),
+            BusyButton(onPressed: _save, label: _editing ? tr('Save changes') : tr('Create student'), icon: Icons.check),
           ],
         ),
       ),

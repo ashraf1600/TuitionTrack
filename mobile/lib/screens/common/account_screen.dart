@@ -4,10 +4,12 @@ import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/api.dart';
+import '../../core/i18n.dart';
 import '../../core/json.dart';
 import '../../core/repo.dart';
 import '../../core/session.dart';
 import '../../widgets/password_field.dart';
+import '../../widgets/share.dart';
 import '../../widgets/theme.dart';
 import '../../widgets/ui.dart';
 
@@ -92,7 +94,7 @@ class _AccountScreenState extends State<AccountScreen> {
     final ok = await attempt(context, () async {
       await repo.updateMe(changes);
       await session.refreshUser();
-    }, success: 'Saved.');
+    }, success: tr('Saved.'));
     if (!mounted) return;
     if (ok) _fill(session.user ?? {});
     setState(() => _saving = false);
@@ -105,12 +107,12 @@ class _AccountScreenState extends State<AccountScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            ListTile(leading: const Icon(Icons.photo_camera_outlined), title: const Text('Take a photo'), onTap: () => Navigator.pop(context, 'camera')),
-            ListTile(leading: const Icon(Icons.photo_library_outlined), title: const Text('Choose from gallery'), onTap: () => Navigator.pop(context, 'gallery')),
+            ListTile(leading: const Icon(Icons.photo_camera_outlined), title: Text(tr('Take a photo')), onTap: () => Navigator.pop(context, 'camera')),
+            ListTile(leading: const Icon(Icons.photo_library_outlined), title: Text(tr('Choose from gallery')), onTap: () => Navigator.pop(context, 'gallery')),
             if (hasPhoto)
               ListTile(
                 leading: Icon(Icons.delete_outline, color: tone(context, AppColors.danger)),
-                title: Text('Remove photo', style: TextStyle(color: tone(context, AppColors.danger))),
+                title: Text(tr('Remove photo'), style: TextStyle(color: tone(context, AppColors.danger))),
                 onTap: () => Navigator.pop(context, 'remove'),
               ),
           ],
@@ -125,7 +127,7 @@ class _AccountScreenState extends State<AccountScreen> {
       await attempt(context, () async {
         await repo.removeProfilePhoto();
         await session.refreshUser();
-      }, success: 'Photo removed.');
+      }, success: tr('Photo removed.'));
       if (mounted) setState(() => _photoBusy = false);
       return;
     }
@@ -140,7 +142,7 @@ class _AccountScreenState extends State<AccountScreen> {
         imageQuality: 85,
       );
     } catch (_) {
-      if (mounted) showToast(context, 'Could not open the camera or gallery. Check the app permissions.', error: true);
+      if (mounted) showToast(context, tr('Could not open the camera or gallery. Check the app permissions.'), error: true);
       return;
     }
     final picked = file;
@@ -152,7 +154,7 @@ class _AccountScreenState extends State<AccountScreen> {
       if (!RegExp(r'\.(png|jpe?g|webp)$').hasMatch(name)) name = '$name.jpg';
       await repo.setProfilePhoto(bytes, name);
       await session.refreshUser();
-    }, success: 'Photo updated. Your students see it next to your name.');
+    }, success: tr('Photo updated. Your students see it next to your name.'));
     if (mounted) setState(() => _photoBusy = false);
   }
 
@@ -162,16 +164,16 @@ class _AccountScreenState extends State<AccountScreen> {
       isScrollControlled: true,
       builder: (context) => _ChangePasswordSheet(),
     );
-    if (changed == true && mounted) showToast(context, 'Password changed. Other devices have been signed out.');
+    if (changed == true && mounted) showToast(context, tr('Password changed. Other devices have been signed out.'));
   }
 
   Future<void> _signOutEverywhere() async {
     final session = context.read<Session>();
     final ok = await confirm(
       context,
-      title: 'Sign out on all devices?',
-      message: 'Every phone and browser signed in to this account, including this one, will be signed out.',
-      confirmLabel: 'Sign out everywhere',
+      title: tr('Sign out on all devices?'),
+      message: tr('Every phone and browser signed in to this account, including this one, will be signed out.'),
+      confirmLabel: tr('Sign out everywhere'),
       danger: true,
     );
     if (!ok || !mounted) return;
@@ -189,13 +191,13 @@ class _AccountScreenState extends State<AccountScreen> {
     final dirty = _dirty;
     return Scaffold(
       appBar: AppBar(
-        title: const Text('My account'),
+        title: Text(tr('My account')),
         actions: [
           Padding(
             padding: const EdgeInsets.only(right: 8),
             child: _saving
                 ? const Padding(padding: EdgeInsets.all(14), child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)))
-                : TextButton(onPressed: dirty ? _save : null, child: const Text('Save', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16))),
+                : TextButton(onPressed: dirty ? _save : null, child: Text(tr('Save'), style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16))),
           ),
         ],
       ),
@@ -214,40 +216,40 @@ class _AccountScreenState extends State<AccountScreen> {
             gap16,
             FlatGroup(children: [
               _FieldRow(
-                label: 'Full name',
+                label: tr('Full name'),
                 controller: _c['full_name']!,
                 capitalization: TextCapitalization.words,
-                validator: (v) => (v == null || v.trim().isEmpty) ? 'Required' : null,
+                validator: (v) => (v == null || v.trim().isEmpty) ? tr('Required') : null,
               ),
               _FieldRow(
-                label: 'Email',
+                label: tr('Email'),
                 controller: _c['email']!,
                 type: TextInputType.emailAddress,
-                hint: 'Optional',
+                hint: tr('Optional'),
                 validator: (value) {
                   final text = (value ?? '').trim();
                   if (text.isEmpty) return null;
-                  return RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(text) ? null : 'Enter a valid email address';
+                  return RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(text) ? null : tr('Enter a valid email address');
                 },
               ),
-              _FieldRow(label: 'Phone', controller: _c['phone']!, type: TextInputType.phone, hint: 'Optional'),
+              _FieldRow(label: tr('Phone'), controller: _c['phone']!, type: TextInputType.phone, hint: tr('Optional')),
               if (session.isStudent) ...[
-                _FieldRow(label: 'Class', controller: _c['grade_level']!, hint: 'e.g. Class 10'),
-                _FieldRow(label: 'School', controller: _c['institution']!, capitalization: TextCapitalization.words),
-                _FieldRow(label: 'Address', controller: _c['address']!, capitalization: TextCapitalization.words),
-                _FieldRow(label: 'Guardian', controller: _c['parent_name']!, capitalization: TextCapitalization.words),
-                _FieldRow(label: 'Guardian phone', controller: _c['parent_phone']!, type: TextInputType.phone),
+                _FieldRow(label: tr('Class'), controller: _c['grade_level']!, hint: tr('e.g. Class 10')),
+                _FieldRow(label: tr('School'), controller: _c['institution']!, capitalization: TextCapitalization.words),
+                _FieldRow(label: tr('Address'), controller: _c['address']!, capitalization: TextCapitalization.words),
+                _FieldRow(label: tr('Guardian'), controller: _c['parent_name']!, capitalization: TextCapitalization.words),
+                _FieldRow(label: tr('Guardian phone'), controller: _c['parent_phone']!, type: TextInputType.phone),
               ],
             ]),
             gap16,
             FlatGroup(children: [
-              _ActionRow(icon: Icons.lock_outline, label: 'Change password', onTap: _changePassword),
-              _ActionRow(icon: Icons.devices_other_outlined, label: 'Sign out on all devices', onTap: _signOutEverywhere),
-              _ActionRow(icon: Icons.logout, label: 'Sign out', danger: true, onTap: () => session.logout()),
+              _ActionRow(icon: Icons.lock_outline, label: tr('Change password'), onTap: _changePassword),
+              _ActionRow(icon: Icons.devices_other_outlined, label: tr('Sign out on all devices'), onTap: _signOutEverywhere),
+              _ActionRow(icon: Icons.logout, label: tr('Sign out'), danger: true, onTap: () => session.logout()),
             ]),
             if (dirty) ...[
               gap12,
-              Text('You have unsaved changes. Tap Save at the top.',
+              Text(tr('You have unsaved changes. Tap Save at the top.'),
                   textAlign: TextAlign.center, style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
             ],
           ],
@@ -279,7 +281,7 @@ class _Header extends StatelessWidget {
       children: [
         Semantics(
           button: onPhoto != null,
-          label: onPhoto == null ? 'Profile picture' : 'Change profile photo',
+          label: onPhoto == null ? tr('Profile picture') : tr('Change profile photo'),
           child: GestureDetector(
             onTap: photoBusy ? null : onPhoto,
             child: Stack(
@@ -323,7 +325,7 @@ class _Header extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w800)),
-              Text('@${user.str('username')} · ${isTutor ? 'Tutor' : 'Student'}', style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant)),
+              Text('@${user.str('username')} · ${isTutor ? tr('Tutor') : tr('Student')}', style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant)),
               if (isTutor && code.isNotEmpty)
                 Padding(
                   padding: const EdgeInsets.only(top: 6),
@@ -332,19 +334,27 @@ class _Header extends StatelessWidget {
                     onTap: () async {
                       HapticFeedback.lightImpact();
                       await Clipboard.setData(ClipboardData(text: code));
-                      if (context.mounted) showToast(context, 'Invite code copied. Students enter it to connect with you.');
+                      if (context.mounted) showToast(context, tr('Invite code copied. Students enter it to connect with you.'));
                     },
                     child: Padding(
                       padding: const EdgeInsets.symmetric(vertical: 2),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Text('Invite code ', style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
+                          Text(tr('Invite code '), style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
                           Text(code,
                               style: TextStyle(
                                   fontSize: 14, fontWeight: FontWeight.w800, letterSpacing: 2, color: tone(context, AppColors.primarySoft))),
                           const SizedBox(width: 6),
                           Icon(Icons.copy_rounded, size: 15, color: scheme.onSurfaceVariant),
+                          const SizedBox(width: 4),
+                          IconButton(
+                            tooltip: tr('Share invite code'),
+                            visualDensity: VisualDensity.compact,
+                            iconSize: 18,
+                            icon: Icon(Icons.share_rounded, color: tone(context, AppColors.primarySoft)),
+                            onPressed: () => shareInviteCode(context, code),
+                          ),
                         ],
                       ),
                     ),
@@ -476,27 +486,27 @@ class _ChangePasswordSheetState extends State<_ChangePasswordSheet> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const Text('Change password', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
+              Text(tr('Change password'), style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
               gap12,
               if (_error != null) ...[Banner2(_error!, color: AppColors.danger, icon: Icons.error_outline), gap12],
-              PasswordField(controller: _current, label: 'Current password', validator: (v) => (v == null || v.isEmpty) ? 'Required' : null),
+              PasswordField(controller: _current, label: tr('Current password'), validator: (v) => (v == null || v.isEmpty) ? tr('Required') : null),
               gap12,
               PasswordField(
                 controller: _next,
-                label: 'New password',
+                label: tr('New password'),
                 isNew: true,
-                helper: 'At least 8 characters. Avoid common words and your own name.',
-                validator: (v) => (v == null || v.length < 8) ? 'Use at least 8 characters' : null,
+                helper: tr('At least 8 characters. Avoid common words and your own name.'),
+                validator: (v) => (v == null || v.length < 8) ? tr('Use at least 8 characters') : null,
               ),
               gap12,
               PasswordField(
                 controller: _repeat,
-                label: 'Repeat the new password',
+                label: tr('Repeat the new password'),
                 isNew: true,
-                validator: (v) => v != _next.text ? 'The two passwords are different' : null,
+                validator: (v) => v != _next.text ? tr('The two passwords are different') : null,
               ),
               gap16,
-              BusyButton(onPressed: _save, label: 'Change password'),
+              BusyButton(onPressed: _save, label: tr('Change password')),
             ],
           ),
         ),

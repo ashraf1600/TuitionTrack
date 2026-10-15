@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/api.dart';
+import '../../core/i18n.dart';
 import '../../core/json.dart';
 import '../../core/repo.dart';
 import '../../core/session.dart';
@@ -93,30 +94,29 @@ class _LoginScreenState extends State<LoginScreen> {
     final identifier = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Reset your password'),
+        title: Text(tr('Reset your password')),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Enter your username or email. If the account has an email address, a reset link is sent to it. '
-              'Students without an email can ask their tutor for a new temporary password.',
+              tr('Enter your username or email. If the account has an email address, a reset link is sent to it. Students without an email can ask their tutor for a new temporary password.'),
               style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
             ),
             gap12,
-            TextField(controller: controller, autofocus: true, decoration: const InputDecoration(labelText: 'Username or email')),
+            TextField(controller: controller, autofocus: true, decoration: InputDecoration(labelText: tr('Username or email'))),
           ],
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(context, controller.text.trim()), child: const Text('Send link')),
+          TextButton(onPressed: () => Navigator.pop(context), child: Text(tr('Cancel'))),
+          FilledButton(onPressed: () => Navigator.pop(context, controller.text.trim()), child: Text(tr('Send link'))),
         ],
       ),
     );
     if (identifier == null || identifier.isEmpty || !mounted) return;
     await attempt(context, () async {
       final message = await repo.requestPasswordReset(identifier);
-      if (mounted) showToast(context, message.isEmpty ? 'If that account has an email, a reset link has been sent.' : message);
+      if (mounted) showToast(context, message.isEmpty ? tr('If that account has an email, a reset link has been sent.') : message);
     });
   }
 
@@ -126,14 +126,13 @@ class _LoginScreenState extends State<LoginScreen> {
     final url = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Server address'),
+        title: Text(tr('Server address')),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'The address of your TuitionTrack server, for example https://tuitiontrack.example.com or '
-              'http://192.168.0.10:8000 on your own network.',
+              tr('The address of your TuitionTrack server, for example https://tuitiontrack.example.com or http://192.168.0.10:8000 on your own network.'),
               style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
             ),
             gap12,
@@ -142,13 +141,13 @@ class _LoginScreenState extends State<LoginScreen> {
               autofocus: true,
               keyboardType: TextInputType.url,
               autocorrect: false,
-              decoration: const InputDecoration(labelText: 'Server address'),
+              decoration: InputDecoration(labelText: tr('Server address')),
             ),
           ],
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(context, controller.text.trim()), child: const Text('Save')),
+          TextButton(onPressed: () => Navigator.pop(context), child: Text(tr('Cancel'))),
+          FilledButton(onPressed: () => Navigator.pop(context, controller.text.trim()), child: Text(tr('Save'))),
         ],
       ),
     );
@@ -156,7 +155,7 @@ class _LoginScreenState extends State<LoginScreen> {
     await session.setServer(url);
     if (!mounted) return;
     final repo = context.read<Repo>();
-    await attempt(context, () async => repo.meta(), success: 'Connected to the server.');
+    await attempt(context, () async => repo.meta(), success: tr('Connected to the server.'));
   }
 
   Future<void> _pickTutor() async {
@@ -168,7 +167,7 @@ class _LoginScreenState extends State<LoginScreen> {
     if (picked != null && mounted) setState(() => _tutor = picked);
   }
 
-  String? _required(String? value) => (value == null || value.trim().isEmpty) ? 'Required' : null;
+  String? _required(String? value) => (value == null || value.trim().isEmpty) ? tr('Required') : null;
 
   @override
   Widget build(BuildContext context) {
@@ -189,22 +188,22 @@ class _LoginScreenState extends State<LoginScreen> {
                     children: [
                       const Icon(Icons.school_rounded, size: 52, color: AppColors.primarySoft),
                       gap8,
-                      const Text('TuitionTrack', textAlign: TextAlign.center, style: TextStyle(fontSize: 26, fontWeight: FontWeight.w800)),
+                      Text(tr('TuitionTrack'), textAlign: TextAlign.center, style: TextStyle(fontSize: 26, fontWeight: FontWeight.w800)),
                       Text(
                         switch (_mode) {
-                          _Mode.signIn => 'Sign in to continue',
-                          _Mode.tutor => 'Create your tutor account',
-                          _Mode.student => 'Create your student account',
+                          _Mode.signIn => tr('Sign in to continue'),
+                          _Mode.tutor => tr('Create your tutor account'),
+                          _Mode.student => tr('Create your student account'),
                         },
                         textAlign: TextAlign.center,
                         style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
                       ),
                       gap24,
                       SegmentedButton<_Mode>(
-                        segments: const [
-                          ButtonSegment(value: _Mode.signIn, label: Text('Sign in')),
-                          ButtonSegment(value: _Mode.tutor, label: Text('New tutor')),
-                          ButtonSegment(value: _Mode.student, label: Text('New student')),
+                        segments: [
+                          ButtonSegment(value: _Mode.signIn, label: Text(tr('Sign in'))),
+                          ButtonSegment(value: _Mode.tutor, label: Text(tr('New tutor'))),
+                          ButtonSegment(value: _Mode.student, label: Text(tr('New student'))),
                         ],
                         selected: {_mode},
                         showSelectedIcon: false,
@@ -223,7 +222,7 @@ class _LoginScreenState extends State<LoginScreen> {
                               child: TextFormField(
                                 controller: _ctl('first_name'),
                                 textCapitalization: TextCapitalization.words,
-                                decoration: const InputDecoration(labelText: 'First name'),
+                                decoration: InputDecoration(labelText: tr('First name')),
                                 validator: _required,
                               ),
                             ),
@@ -232,7 +231,7 @@ class _LoginScreenState extends State<LoginScreen> {
                               child: TextFormField(
                                 controller: _ctl('last_name'),
                                 textCapitalization: TextCapitalization.words,
-                                decoration: const InputDecoration(labelText: 'Last name'),
+                                decoration: InputDecoration(labelText: tr('Last name')),
                               ),
                             ),
                           ],
@@ -245,7 +244,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         autofillHints: const [AutofillHints.username],
                         textInputAction: TextInputAction.next,
                         decoration: InputDecoration(
-                          labelText: registering ? 'Choose a username' : 'Username or email',
+                          labelText: registering ? tr('Choose a username') : tr('Username or email'),
                           prefixIcon: const Icon(Icons.person_outline),
                         ),
                         validator: _required,
@@ -253,13 +252,13 @@ class _LoginScreenState extends State<LoginScreen> {
                       gap12,
                       PasswordField(
                         controller: _ctl('password'),
-                        label: 'Password',
+                        label: tr('Password'),
                         isNew: registering,
-                        helper: registering ? 'At least 8 characters. Avoid common words and your own name.' : null,
+                        helper: registering ? tr('At least 8 characters. Avoid common words and your own name.') : null,
                         onSubmitted: registering ? null : (_) => _submit(),
                         validator: (value) {
-                          if (value == null || value.isEmpty) return 'Required';
-                          if (registering && value.length < 8) return 'Use at least 8 characters';
+                          if (value == null || value.isEmpty) return tr('Required');
+                          if (registering && value.length < 8) return tr('Use at least 8 characters');
                           return null;
                         },
                       ),
@@ -267,9 +266,9 @@ class _LoginScreenState extends State<LoginScreen> {
                         gap12,
                         PasswordField(
                           controller: _ctl('password_confirm'),
-                          label: 'Repeat the password',
+                          label: tr('Repeat the password'),
                           isNew: true,
-                          validator: (value) => value != _ctl('password').text ? 'The two passwords are different' : null,
+                          validator: (value) => value != _ctl('password').text ? tr('The two passwords are different') : null,
                         ),
                         gap12,
                         TextFormField(
@@ -277,43 +276,43 @@ class _LoginScreenState extends State<LoginScreen> {
                           keyboardType: TextInputType.emailAddress,
                           autocorrect: false,
                           decoration: InputDecoration(
-                            labelText: _mode == _Mode.tutor ? 'Email' : 'Email (optional)',
-                            helperText: 'Used to reset your password if you forget it.',
+                            labelText: _mode == _Mode.tutor ? tr('Email') : tr('Email (optional)'),
+                            helperText: tr('Used to reset your password if you forget it.'),
                           ),
                           validator: (value) {
                             final text = (value ?? '').trim();
                             if (text.isEmpty) return null;
-                            return RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(text) ? null : 'Enter a valid email address';
+                            return RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(text) ? null : tr('Enter a valid email address');
                           },
                         ),
                         gap12,
                         TextFormField(
                           controller: _ctl('phone'),
                           keyboardType: TextInputType.phone,
-                          decoration: const InputDecoration(labelText: 'Phone (optional)'),
+                          decoration: InputDecoration(labelText: tr('Phone (optional)')),
                         ),
                       ],
                       if (_mode == _Mode.student) ...[
                         gap12,
                         Row(
                           children: [
-                            Expanded(child: TextFormField(controller: _ctl('grade_level'), decoration: const InputDecoration(labelText: 'Class / grade'))),
+                            Expanded(child: TextFormField(controller: _ctl('grade_level'), decoration: InputDecoration(labelText: tr('Class / grade')))),
                             const SizedBox(width: 12),
-                            Expanded(child: TextFormField(controller: _ctl('institution'), decoration: const InputDecoration(labelText: 'School / college'))),
+                            Expanded(child: TextFormField(controller: _ctl('institution'), decoration: InputDecoration(labelText: tr('School / college')))),
                           ],
                         ),
                         gap12,
-                        TextFormField(controller: _ctl('address'), decoration: const InputDecoration(labelText: 'Address (optional)')),
+                        TextFormField(controller: _ctl('address'), decoration: InputDecoration(labelText: tr('Address (optional)'))),
                         gap12,
                         Row(
                           children: [
-                            Expanded(child: TextFormField(controller: _ctl('parent_name'), decoration: const InputDecoration(labelText: 'Guardian name'))),
+                            Expanded(child: TextFormField(controller: _ctl('parent_name'), decoration: InputDecoration(labelText: tr('Guardian name')))),
                             const SizedBox(width: 12),
                             Expanded(
                               child: TextFormField(
                                 controller: _ctl('parent_phone'),
                                 keyboardType: TextInputType.phone,
-                                decoration: const InputDecoration(labelText: 'Guardian phone'),
+                                decoration: InputDecoration(labelText: tr('Guardian phone')),
                               ),
                             ),
                           ],
@@ -324,14 +323,14 @@ class _LoginScreenState extends State<LoginScreen> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Text('Your tutor (optional)', style: TextStyle(fontWeight: FontWeight.w700)),
+                              Text(tr('Your tutor (optional)'), style: TextStyle(fontWeight: FontWeight.w700)),
                               Text(
-                                'Pick your tutor now to send them a request, or do it later from the app.',
+                                tr('Pick your tutor now to send them a request, or do it later from the app.'),
                                 style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
                               ),
                               gap8,
                               if (_tutor == null)
-                                OutlinedButton.icon(onPressed: _pickTutor, icon: const Icon(Icons.search), label: const Text('Find my tutor'))
+                                OutlinedButton.icon(onPressed: _pickTutor, icon: const Icon(Icons.search), label: Text(tr('Find my tutor')))
                               else ...[
                                 ListTile(
                                   contentPadding: EdgeInsets.zero,
@@ -339,7 +338,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                   title: Text(_tutor!.str('name')),
                                   subtitle: Text('@${_tutor!.str('username')}'),
                                   trailing: IconButton(
-                                    tooltip: 'Remove',
+                                    tooltip: tr('Remove'),
                                     icon: const Icon(Icons.close),
                                     onPressed: () => setState(() => _tutor = null),
                                   ),
@@ -348,7 +347,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                   controller: _ctl('message'),
                                   maxLength: 500,
                                   maxLines: 2,
-                                  decoration: const InputDecoration(labelText: 'Message to the tutor (optional)'),
+                                  decoration: InputDecoration(labelText: tr('Message to the tutor (optional)')),
                                 ),
                               ],
                             ],
@@ -360,15 +359,15 @@ class _LoginScreenState extends State<LoginScreen> {
                         onPressed: _busy ? null : _submit,
                         child: _busy
                             ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                            : Text(registering ? 'Create account' : 'Sign in'),
+                            : Text(registering ? tr('Create account') : tr('Sign in')),
                       ),
                       if (!registering)
-                        TextButton(onPressed: _forgotPassword, child: const Text('Forgot your password?')),
+                        TextButton(onPressed: _forgotPassword, child: Text(tr('Forgot your password?'))),
                       gap12,
                       TextButton.icon(
                         onPressed: _changeServer,
                         icon: const Icon(Icons.dns_outlined, size: 16),
-                        label: Text('Server: ${session.api.baseUrl}', overflow: TextOverflow.ellipsis),
+                        label: Text(tr('Server: {p0}', {'p0': Raw(session.api.baseUrl)}), overflow: TextOverflow.ellipsis),
                         style: TextButton.styleFrom(foregroundColor: Theme.of(context).colorScheme.onSurfaceVariant, textStyle: const TextStyle(fontSize: 12)),
                       ),
                     ],
@@ -428,11 +427,11 @@ class _TutorPickerState extends State<_TutorPicker> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Text('Find your tutor', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
+            Text(tr('Find your tutor'), style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
             gap12,
             TextField(
               autofocus: true,
-              decoration: const InputDecoration(labelText: 'Search by name, username or subject', prefixIcon: Icon(Icons.search)),
+              decoration: InputDecoration(labelText: tr('Search by name, username or subject'), prefixIcon: Icon(Icons.search)),
               onChanged: (value) {
                 _debounce?.cancel();
                 _debounce = Timer(const Duration(milliseconds: 350), () {
@@ -449,7 +448,7 @@ class _TutorPickerState extends State<_TutorPicker> {
                   : _tutors == null
                       ? const Center(child: CircularProgressIndicator())
                       : _tutors!.isEmpty
-                          ? Center(child: Text('No tutors match that search.', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant)))
+                          ? Center(child: Text(tr('No tutors match that search.'), style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant)))
                           : ListView.separated(
                               itemCount: _tutors!.length,
                               separatorBuilder: (_, _) => const Divider(),

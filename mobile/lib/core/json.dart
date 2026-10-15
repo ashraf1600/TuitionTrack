@@ -1,4 +1,5 @@
 import 'api.dart';
+import 'i18n.dart';
 
 export 'api.dart' show Json;
 
@@ -102,5 +103,5 @@ String taka(num? value) {
     if (i > 0 && (digits.length - i) % 3 == 0) out.write(',');
     out.write(digits[i]);
   }
-  return '${amount < 0 ? '-' : ''}৳$out';
+  return localDigits('${amount < 0 ? '-' : ''}৳$out');
 }

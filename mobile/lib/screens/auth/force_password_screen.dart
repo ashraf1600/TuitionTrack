@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/api.dart';
+import '../../core/i18n.dart';
 import '../../core/session.dart';
 import '../../widgets/password_field.dart';
 import '../../widgets/theme.dart';
@@ -46,8 +47,8 @@ class _ForcePasswordScreenState extends State<ForcePasswordScreen> {
     final session = context.watch<Session>();
     return Scaffold(
       appBar: AppBar(
-        title: Text('Choose your password'),
-        actions: [TextButton(onPressed: session.logout, child: Text('Sign out'))],
+        title: Text(tr('Choose your password')),
+        actions: [TextButton(onPressed: session.logout, child: Text(tr('Sign out')))],
       ),
       body: SafeArea(
         child: Center(
@@ -63,8 +64,7 @@ class _ForcePasswordScreenState extends State<ForcePasswordScreen> {
                     Icon(Icons.key_rounded, size: 44, color: AppColors.warning),
                     gap12,
                     Text(
-                      'Hello ${session.displayName}. Your account has a temporary password. '
-                      'Choose your own before you continue — only you will know it.',
+                      tr('Hello {p0}. Your account has a temporary password. Choose your own before you continue — only you will know it.', {'p0': session.displayName}),
                       textAlign: TextAlign.center,
                       style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
                     ),
@@ -72,26 +72,26 @@ class _ForcePasswordScreenState extends State<ForcePasswordScreen> {
                     if (_error != null) ...[Banner2(_error!, color: AppColors.danger, icon: Icons.error_outline), gap12],
                     PasswordField(
                       controller: _current,
-                      label: 'Temporary password',
-                      validator: (value) => (value == null || value.isEmpty) ? 'Required' : null,
+                      label: tr('Temporary password'),
+                      validator: (value) => (value == null || value.isEmpty) ? tr('Required') : null,
                     ),
                     gap12,
                     PasswordField(
                       controller: _next,
-                      label: 'New password',
+                      label: tr('New password'),
                       isNew: true,
-                      helper: 'At least 8 characters. Avoid common words and your own name.',
-                      validator: (value) => (value == null || value.length < 8) ? 'Use at least 8 characters' : null,
+                      helper: tr('At least 8 characters. Avoid common words and your own name.'),
+                      validator: (value) => (value == null || value.length < 8) ? tr('Use at least 8 characters') : null,
                     ),
                     gap12,
                     PasswordField(
                       controller: _repeat,
-                      label: 'Repeat the new password',
+                      label: tr('Repeat the new password'),
                       isNew: true,
-                      validator: (value) => value != _next.text ? 'The two passwords are different' : null,
+                      validator: (value) => value != _next.text ? tr('The two passwords are different') : null,
                     ),
                     gap16,
-                    BusyButton(onPressed: _save, label: 'Save and continue', icon: Icons.check),
+                    BusyButton(onPressed: _save, label: tr('Save and continue'), icon: Icons.check),
                   ],
                 ),
               ),

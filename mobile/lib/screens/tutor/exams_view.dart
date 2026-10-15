@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/format.dart';
+import '../../core/i18n.dart';
 import '../../core/json.dart';
 import '../../core/repo.dart';
 import '../../widgets/theme.dart';
@@ -46,18 +47,18 @@ class ExamsView extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(16, 4, 16, 96),
           children: [
             if (data.exams.isEmpty)
-              const Padding(
+              Padding(
                 padding: EdgeInsets.only(top: 12),
                 child: EmptyState(
                   icon: Icons.assignment_outlined,
-                  title: 'No exams or assignments yet',
-                  message: 'Tap “New exam” to set one. You can paste questions straight from ChatGPT, type them, or use pictures.',
+                  title: tr('No exams or assignments yet'),
+                  message: tr('Tap “New exam” to set one. You can paste questions straight from ChatGPT, type them, or use pictures.'),
                 ),
               )
             else ...[
-              if (drafts.isNotEmpty) group('Drafts', drafts),
-              if (live.isNotEmpty) group('Scheduled and running', live),
-              if (finished.isNotEmpty) group('Finished', finished),
+              if (drafts.isNotEmpty) group(tr('Drafts'), drafts),
+              if (live.isNotEmpty) group(tr('Scheduled and running'), live),
+              if (finished.isNotEmpty) group(tr('Finished'), finished),
             ],
           ],
         );
@@ -75,19 +76,19 @@ class _ExamCard extends StatelessWidget {
   String get _id => exam.str('id');
 
   (String, Color) get _status => switch (exam.str('dynamic_status')) {
-        'Draft' => ('Draft', AppColors.faint),
-        'Scheduled' => ('Scheduled', AppColors.primarySoft),
-        'Running' => ('Open now', AppColors.success),
-        'Late' => ('Late work open', AppColors.warning),
-        'Submitted' => ('Submitted', AppColors.success),
-        'Delayed' => ('Submitted late', AppColors.warning),
-        'Missed' => ('Not submitted', AppColors.danger),
-        _ => ('Closed', AppColors.faint),
+        'Draft' => (tr('Draft'), AppColors.faint),
+        'Scheduled' => (tr('Scheduled'), AppColors.primarySoft),
+        'Running' => (tr('Open now'), AppColors.success),
+        'Late' => (tr('Late work open'), AppColors.warning),
+        'Submitted' => (tr('Submitted'), AppColors.success),
+        'Delayed' => (tr('Submitted late'), AppColors.warning),
+        'Missed' => (tr('Not submitted'), AppColors.danger),
+        _ => (tr('Closed'), AppColors.faint),
       };
 
   /// What the results button says and does next, following the exam's publication rule.
   (String, String) get _results {
-    if (exam.flag('results_released')) return ('Results out', 'Students who submitted can see marks and answers. Tap to hide them.');
+    if (exam.flag('results_released')) return (tr('Results out'), tr('Students who submitted can see marks and answers. Tap to hide them.'));
     switch (exam.str('result_publish_mode')) {
       case 'IMMEDIATE':
         return ('Results on submit', 'Each student sees their result as soon as they submit. Tap to publish for everyone now.');
@@ -98,7 +99,7 @@ class _ExamCard extends StatelessWidget {
           'Results come out automatically then. Tap to publish them now.',
         );
     }
-    return ('Publish results', 'Marks and answers are hidden from students. Tap to publish them.');
+    return (tr('Publish results'), tr('Marks and answers are hidden from students. Tap to publish them.'));
   }
 
   Future<void> _edit(BuildContext context) async {
@@ -115,15 +116,15 @@ class _ExamCard extends StatelessWidget {
     final out = exam.flag('results_released');
     final ok = await confirm(
       context,
-      title: out ? 'Hide the results?' : 'Publish the results now?',
+      title: out ? tr('Hide the results?') : tr('Publish the results now?'),
       message: out
-          ? 'Students will see "Results pending" for "${exam.str('title')}" until you publish again.'
-          : 'Every student who submitted "${exam.str('title')}" will see their marks, the correct answers and your solutions.',
-      confirmLabel: out ? 'Hide results' : 'Publish results',
+          ? tr('Students will see "Results pending" for "{p0}" until you publish again.', {'p0': exam.str('title')})
+          : tr('Every student who submitted "{p0}" will see their marks, the correct answers and your solutions.', {'p0': exam.str('title')}),
+      confirmLabel: out ? tr('Hide results') : tr('Publish results'),
       danger: out,
     );
     if (!ok || !context.mounted) return;
-    if (await attempt(context, () => repo.publishResults(_id, !out), success: out ? 'Results hidden from students.' : 'Results published.')) {
+    if (await attempt(context, () => repo.publishResults(_id, !out), success: out ? tr('Results hidden from students.') : tr('Results published.'))) {
       await reload();
     }
   }
@@ -136,15 +137,15 @@ class _ExamCard extends StatelessWidget {
         child: ListView(
           shrinkWrap: true,
           children: [
-            const ListTile(
-              title: Text('Copy this exam', style: TextStyle(fontWeight: FontWeight.w700)),
-              subtitle: Text('The copy is a draft dated one week from today. Check the dates, then publish.'),
+            ListTile(
+              title: Text(tr('Copy this exam'), style: TextStyle(fontWeight: FontWeight.w700)),
+              subtitle: Text(tr('The copy is a draft dated one week from today. Check the dates, then publish.')),
             ),
-            ListTile(leading: const Icon(Icons.copy_outlined), title: const Text('For the same students'), onTap: () => Navigator.pop(context, '')),
+            ListTile(leading: const Icon(Icons.copy_outlined), title: Text(tr('For the same students')), onTap: () => Navigator.pop(context, '')),
             for (final t in tuitions.where((t) => t.str('id') != exam.str('tuition_id')))
               ListTile(
                 leading: Icon(Icons.groups_outlined),
-                title: Text('For ${t.str('title')}'),
+                title: Text(tr('For {p0}', {'p0': t.str('title')})),
                 onTap: () => Navigator.pop(context, t.str('id')),
               ),
           ],
@@ -152,7 +153,7 @@ class _ExamCard extends StatelessWidget {
       ),
     );
     if (target == null || !context.mounted) return;
-    if (await attempt(context, () => repo.duplicateExam(_id, tuitionId: target.isEmpty ? null : target), success: 'Copied as a draft.')) {
+    if (await attempt(context, () => repo.duplicateExam(_id, tuitionId: target.isEmpty ? null : target), success: tr('Copied as a draft.'))) {
       await reload();
     }
   }
@@ -162,15 +163,15 @@ class _ExamCard extends StatelessWidget {
     final count = exam.integer('submissions_count');
     final ok = await confirm(
       context,
-      title: 'Delete "${exam.str('title')}"?',
+      title: tr('Delete "{p0}"?', {'p0': exam.str('title')}),
       message: count > 0
-          ? '$count student submission${count == 1 ? '' : 's'} and their marks will be deleted too. This cannot be undone.'
-          : 'This cannot be undone.',
-      confirmLabel: 'Delete',
+          ? tr('{p0} student submission{p1} and their marks will be deleted too. This cannot be undone.', {'p0': count, 'p1': count == 1 ? '' : 's'})
+          : tr('This cannot be undone.'),
+      confirmLabel: tr('Delete'),
       danger: true,
     );
     if (!ok || !context.mounted) return;
-    if (await attempt(context, () => repo.deleteExam(_id), success: 'Deleted.')) await reload();
+    if (await attempt(context, () => repo.deleteExam(_id), success: tr('Deleted.'))) await reload();
   }
 
   @override
@@ -193,10 +194,10 @@ class _ExamCard extends StatelessWidget {
             spacing: 6,
             runSpacing: 6,
             children: [
-              Pill(isAssignment ? 'Assignment' : 'Exam', color: isAssignment ? AppColors.purple : AppColors.primarySoft),
+              Pill(isAssignment ? tr('Assignment') : tr('Exam'), color: isAssignment ? AppColors.purple : AppColors.primarySoft),
               Pill(statusLabel, color: statusColor),
-              if (exam.integer('duration_minutes') > 0 && !isAssignment) Pill('${exam.integer('duration_minutes')} min', icon: Icons.timer_outlined),
-              if (toGrade > 0) Pill('$toGrade to grade', color: AppColors.warning, icon: Icons.rate_review_outlined),
+              if (exam.integer('duration_minutes') > 0 && !isAssignment) Pill(tr('{p0} min', {'p0': exam.integer('duration_minutes')}), icon: Icons.timer_outlined),
+              if (toGrade > 0) Pill(tr('{p0} to grade', {'p0': toGrade}), color: AppColors.warning, icon: Icons.rate_review_outlined),
             ],
           ),
           gap8,
@@ -204,8 +205,8 @@ class _ExamCard extends StatelessWidget {
           Text(
             [
               exam.str('student_name'),
-              '${trimNumber(exam.number('total_marks'))} marks',
-              if (exam.integer('mcq_count') > 0) '${exam.integer('mcq_count')} MCQ',
+              tr('{n} marks', {'n': trimNumber(exam.number('total_marks'))}),
+              if (exam.integer('mcq_count') > 0) tr('{n} MCQ', {'n': exam.integer('mcq_count')}),
             ].join(' · '),
             style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
           ),
@@ -218,7 +219,7 @@ class _ExamCard extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.only(top: 4),
               child: Text(
-                '$submitted${assigned != null ? ' of $assigned' : ''} submitted · $graded graded',
+                tr('{p0}{p1} submitted · {p2} graded', {'p0': submitted, 'p1': assigned != null ? tr(' of {n}', {'n': assigned}) : '', 'p2': graded}),
                 style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
               ),
             ),
@@ -233,13 +234,13 @@ class _ExamCard extends StatelessWidget {
                           await reload();
                         },
                         icon: const Icon(Icons.fact_check_outlined, size: 18),
-                        label: const Text('Submissions'),
+                        label: Text(tr('Submissions')),
                       )
                     : BusyButton(
                         icon: Icons.send,
-                        label: 'Publish',
+                        label: tr('Publish'),
                         onPressed: () async {
-                          if (await attempt(context, () => repo.updateExam(_id, {'is_published': true}), success: 'Published. Students have been notified.')) {
+                          if (await attempt(context, () => repo.updateExam(_id, {'is_published': true}), success: tr('Published. Students have been notified.'))) {
                             await reload();
                           }
                         },
@@ -263,7 +264,7 @@ class _ExamCard extends StatelessWidget {
                 ),
               ],
               PopupMenuButton<String>(
-                tooltip: 'More options',
+                tooltip: tr('More options'),
                 onSelected: (value) => switch (value) {
                   'edit' => _edit(context),
                   'copy' => _copy(context),
@@ -274,10 +275,10 @@ class _ExamCard extends StatelessWidget {
                   _ => _delete(context),
                 },
                 itemBuilder: (_) => [
-                  const PopupMenuItem(value: 'edit', child: Text('Edit')),
-                  const PopupMenuItem(value: 'copy', child: Text('Copy (reuse)')),
-                  if (published) const PopupMenuItem(value: 'board', child: Text('Leaderboard')),
-                  const PopupMenuItem(value: 'delete', child: Text('Delete', style: TextStyle(color: AppColors.danger))),
+                  PopupMenuItem(value: 'edit', child: Text(tr('Edit'))),
+                  PopupMenuItem(value: 'copy', child: Text(tr('Copy (reuse)'))),
+                  if (published) PopupMenuItem(value: 'board', child: Text(tr('Leaderboard'))),
+                  PopupMenuItem(value: 'delete', child: Text(tr('Delete'), style: TextStyle(color: AppColors.danger))),
                 ],
               ),
             ],

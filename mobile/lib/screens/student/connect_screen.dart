@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/api.dart';
+import '../../core/i18n.dart';
 import '../../core/json.dart';
 import '../../core/repo.dart';
 import '../../widgets/theme.dart';
@@ -19,7 +20,7 @@ class ConnectScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final repo = context.read<Repo>();
     return Scaffold(
-      appBar: AppBar(title: const Text('Connect to a tutor')),
+      appBar: AppBar(title: Text(tr('Connect to a tutor'))),
       body: Loader<(List<Json>, List<Json>)>(
         load: () async {
           final results = await Future.wait([repo.connections(), repo.tuitions()]);
@@ -67,9 +68,9 @@ class _TutorConnect extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         SectionTitle(
-          'My tutors',
+          tr('My tutors'),
           icon: Icons.handshake_outlined,
-          trailing: TextButton.icon(onPressed: () => _find(context), icon: const Icon(Icons.search, size: 18), label: const Text('Find a tutor')),
+          trailing: TextButton.icon(onPressed: () => _find(context), icon: const Icon(Icons.search, size: 18), label: Text(tr('Find a tutor'))),
         ),
         // A tutor who added this student straight into a group never received a request from them.
         for (final name in {
@@ -81,19 +82,19 @@ class _TutorConnect extends StatelessWidget {
             child: ListTile(
               leading: const CircleAvatar(child: Icon(Icons.person)),
               title: Text(name),
-              subtitle: const Padding(
+              subtitle: Padding(
                 padding: EdgeInsets.only(top: 4),
-                child: Align(alignment: Alignment.centerLeft, child: Pill('Your tutor', color: AppColors.success)),
+                child: Align(alignment: Alignment.centerLeft, child: Pill(tr('Your tutor'), color: AppColors.success)),
               ),
             ),
           ),
           gap8,
         ],
         if (connections.isEmpty && tuitions.isEmpty)
-          const EmptyState(
+          EmptyState(
             icon: Icons.person_search_outlined,
-            title: 'No tutor yet',
-            message: 'Find your tutor and send a request. They decide whether to accept.',
+            title: tr('No tutor yet'),
+            message: tr('Find your tutor and send a request. They decide whether to accept.'),
           )
         else if (connections.isNotEmpty)
           AppCard(
@@ -106,9 +107,9 @@ class _TutorConnect extends StatelessWidget {
                     final c = connections[i];
                     final status = c.str('status');
                     final (label, color) = switch (status) {
-                      'ACCEPTED' => ('Connected', AppColors.success),
-                      'REJECTED' => ('Declined', AppColors.danger),
-                      _ => ('Waiting for the tutor', AppColors.warning),
+                      'ACCEPTED' => (tr('Connected'), AppColors.success),
+                      'REJECTED' => (tr('Declined'), AppColors.danger),
+                      _ => (tr('Waiting for the tutor'), AppColors.warning),
                     };
                     return ListTile(
                       leading: const CircleAvatar(child: Icon(Icons.person)),
@@ -122,26 +123,26 @@ class _TutorConnect extends StatelessWidget {
                               onPressed: () async {
                                 final ok = await confirm(
                                   context,
-                                  title: 'Withdraw this request?',
-                                  message: 'Your request to ${c.str('tutor_name')} will be removed.',
-                                  confirmLabel: 'Withdraw',
+                                  title: tr('Withdraw this request?'),
+                                  message: tr('Your request to {p0} will be removed.', {'p0': c.str('tutor_name')}),
+                                  confirmLabel: tr('Withdraw'),
                                   danger: true,
                                 );
                                 if (!ok || !context.mounted) return;
-                                if (await attempt(context, () => repo.withdrawConnection(c.str('id')), success: 'Request withdrawn.')) {
+                                if (await attempt(context, () => repo.withdrawConnection(c.str('id')), success: tr('Request withdrawn.'))) {
                                   await reload();
                                 }
                               },
-                              child: const Text('Withdraw'),
+                              child: Text(tr('Withdraw')),
                             )
                           : status == 'REJECTED'
                               ? TextButton(
                                   onPressed: () async {
-                                    if (await attempt(context, () => repo.sendConnection(c.str('tutor_id'), ''), success: 'Request sent again.')) {
+                                    if (await attempt(context, () => repo.sendConnection(c.str('tutor_id'), ''), success: tr('Request sent again.'))) {
                                       await reload();
                                     }
                                   },
-                                  child: const Text('Ask again'),
+                                  child: Text(tr('Ask again')),
                                 )
                               : null,
                     );
@@ -211,41 +212,41 @@ class _FindTutorSheetState extends State<_FindTutorSheet> {
             ? Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Text('Send a request to ${_picked!.str('name')}', style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
+                  Text(tr('Send a request to {p0}', {'p0': _picked!.str('name')}), style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
                   gap12,
                   TextField(
                     controller: _message,
                     maxLength: 500,
                     maxLines: 3,
                     autofocus: true,
-                    decoration: const InputDecoration(
-                      labelText: 'Message (optional)',
-                      hintText: 'e.g. Class 10, I need help with algebra.',
+                    decoration: InputDecoration(
+                      labelText: tr('Message (optional)'),
+                      hintText: tr('e.g. Class 10, I need help with algebra.'),
                     ),
                   ),
                   gap12,
                   BusyButton(
-                    label: 'Send request',
+                    label: tr('Send request'),
                     icon: Icons.send,
                     onPressed: () async {
                       final ok = await attempt(
                         context,
                         () => repo.sendConnection(_picked!.str('id'), _message.text.trim()),
-                        success: 'Request sent. Your tutor will see it.',
+                        success: tr('Request sent. Your tutor will see it.'),
                       );
                       if (ok && context.mounted) Navigator.pop(context, true);
                     },
                   ),
-                  TextButton(onPressed: () => setState(() => _picked = null), child: const Text('Choose a different tutor')),
+                  TextButton(onPressed: () => setState(() => _picked = null), child: Text(tr('Choose a different tutor'))),
                 ],
               )
             : Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  const Text('Find a tutor', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
+                  Text(tr('Find a tutor'), style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
                   gap12,
                   TextField(
-                    decoration: const InputDecoration(labelText: 'Search by name, username or subject', prefixIcon: Icon(Icons.search)),
+                    decoration: InputDecoration(labelText: tr('Search by name, username or subject'), prefixIcon: Icon(Icons.search)),
                     onChanged: (value) {
                       // Debounce: one request per pause, not per keystroke.
                       _debounce?.cancel();
@@ -261,7 +262,7 @@ class _FindTutorSheetState extends State<_FindTutorSheet> {
                     child: _tutors == null
                         ? const Center(child: CircularProgressIndicator())
                         : _tutors!.isEmpty
-                            ? Center(child: Text('No tutors match that search.', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant)))
+                            ? Center(child: Text(tr('No tutors match that search.'), style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant)))
                             : ListView.separated(
                                 itemCount: _tutors!.length,
                                 separatorBuilder: (_, _) => const Divider(),
@@ -278,8 +279,8 @@ class _FindTutorSheetState extends State<_FindTutorSheet> {
                                     subtitle: Text([
                                       '@${tutor.str('username')}',
                                       if (subjects.isNotEmpty) subjects.join(', '),
-                                      if (status == 'PENDING') 'request sent',
-                                      if (status == 'ACCEPTED') 'already connected',
+                                      if (status == 'PENDING') tr('request sent'),
+                                      if (status == 'ACCEPTED') tr('already connected'),
                                     ].join(' · ')),
                                     trailing: blocked ? null : const Icon(Icons.chevron_right),
                                     onTap: blocked ? null : () => setState(() => _picked = tutor),

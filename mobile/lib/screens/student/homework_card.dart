@@ -4,7 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import '../../core/api.dart';
 import '../../core/connect.dart';
+import '../../core/i18n.dart';
+import '../../core/json.dart';
 import '../../core/repo.dart';
 import '../../widgets/media.dart';
 import '../../widgets/theme.dart';
@@ -68,9 +71,9 @@ class _HomeworkCardState extends State<HomeworkCard> {
         showDialog(
           context: context,
           builder: (_) => AlertDialog(
-            title: const Text('Hurry!'),
-            content: Text('Homework "${widget.hw.title}" is due in less than 2 hours!'),
-            actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('OK'))],
+            title: Text(tr('Hurry!')),
+            content: Text(tr('Homework "{p0}" is due in less than 2 hours!', {'p0': widget.hw.title})),
+            actions: [TextButton(onPressed: () => Navigator.pop(context), child: Text(tr('OK')))],
           ),
         );
       });
@@ -78,12 +81,12 @@ class _HomeworkCardState extends State<HomeworkCard> {
   }
 
   String get _countdown {
-    if (_left.isNegative) return 'Overdue';
+    if (_left.isNegative) return tr('Overdue');
     final h = _left.inHours;
     final m = _left.inMinutes % 60;
     final s = _left.inSeconds % 60;
     String two(int v) => v.toString().padLeft(2, '0');
-    return '${two(h)}h : ${two(m)}m : ${two(s)}s left';
+    return tr('{p0}h : {p1}m : {p2}s left', {'p0': two(h), 'p1': two(m), 'p2': two(s)});
   }
 
   Future<void> _submit() async {
@@ -92,24 +95,41 @@ class _HomeworkCardState extends State<HomeworkCard> {
     setState(() => _busy = true);
     try {
       final ok = await attemptSave(context, () => repo.submitHomework(widget.hw.id, _url.text.trim()),
-          success: 'Submission recorded.');
+          success: tr('Submission recorded.'));
       if (ok) await widget.onChanged();
     } finally {
       if (mounted) setState(() => _busy = false);
     }
   }
 
+  /// Marks the homework checked at once, with Undo instead of a confirmation.
   Future<void> _markDone() async {
     HapticFeedback.lightImpact();
     final repo = context.read<Repo>();
-    final ok = await confirm(context,
-        title: 'Mark as done?', message: 'The student will see this homework as checked and can no longer change what they handed in.');
-    if (!ok || !mounted) return;
+    final messenger = ScaffoldMessenger.maybeOf(context);
     setState(() => _busy = true);
     try {
-      final done = await attemptSave(context, () => repo.evaluateHomework(widget.hw.id, evaluated: true),
-          success: 'Marked as done.');
-      if (done) await widget.onChanged();
+      Json result = const {};
+      final done = await attempt(context, () async {
+        result = await repo.evaluateHomework(widget.hw.id, evaluated: true);
+      });
+      if (!done || !mounted) return;
+      final onChanged = widget.onChanged;
+      final id = widget.hw.id;
+      showToast(
+        context,
+        result['queued'] == true ? tr('Saved on this phone. It will be sent when you are back online.') : tr('Marked as done.'),
+        actionLabel: tr('Undo'),
+        onAction: () async {
+          try {
+            await repo.evaluateHomework(id, evaluated: false);
+          } on ApiException catch (error) {
+            showToastOn(messenger, error.message, error: true);
+          }
+          await onChanged();
+        },
+      );
+      await onChanged();
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -129,12 +149,12 @@ class _HomeworkCardState extends State<HomeworkCard> {
               margin: const EdgeInsets.only(bottom: 10),
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(color: AppColors.danger.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(12)),
-              child: const Row(
+              child: Row(
                 children: [
                   Icon(Icons.alarm, color: AppColors.danger, size: 18),
                   SizedBox(width: 8),
                   Expanded(
-                    child: Text('Hurry! Homework due in less than 2 hours!',
+                    child: Text(tr('Hurry! Homework due in less than 2 hours!'),
                         style: TextStyle(color: AppColors.danger, fontWeight: FontWeight.w700, fontSize: 13)),
                   ),
                 ],
@@ -160,11 +180,11 @@ class _HomeworkCardState extends State<HomeworkCard> {
           ),
           gap8,
           if (hw.isPending)
-            const Pill('Waiting to sync', color: AppColors.primarySoft, icon: Icons.cloud_upload_outlined)
+            Pill(tr('Waiting to sync'), color: AppColors.primarySoft, icon: Icons.cloud_upload_outlined)
           else
-            Pill(hw.isEvaluated ? 'Marked as Done' : 'Pending Tutor Review',
+            Pill(hw.isEvaluated ? tr('Marked as Done') : tr('Pending Tutor Review'),
                 color: hw.isEvaluated ? AppColors.success : AppColors.warning, icon: hw.isEvaluated ? Icons.verified : Icons.hourglass_empty),
-          if (hw.feedback.isNotEmpty) ...[gap8, Text('Feedback: ${hw.feedback}', style: const TextStyle(fontSize: 13))],
+          if (hw.feedback.isNotEmpty) ...[gap8, Text(tr('Feedback: {p0}', {'p0': hw.feedback}), style: const TextStyle(fontSize: 13))],
           // What the student handed in, for the tutor to review (and for the student to check).
           if (hw.submittedUrl.isNotEmpty || hw.submissionFileUrl.isNotEmpty) ...[
             gap8,
@@ -176,23 +196,23 @@ class _HomeworkCardState extends State<HomeworkCard> {
                   OutlinedButton.icon(
                     onPressed: () => openExternal(context, hw.submittedUrl),
                     icon: const Icon(Icons.link, size: 16),
-                    label: const Text('Open submitted link'),
+                    label: Text(tr('Open submitted link')),
                   ),
                 if (hw.submissionFileUrl.isNotEmpty)
                   OutlinedButton.icon(
                     onPressed: () => openExternal(context, hw.submissionFileUrl),
                     icon: const Icon(Icons.attach_file, size: 16),
-                    label: const Text('Open submitted file'),
+                    label: Text(tr('Open submitted file')),
                   ),
               ],
             ),
           ] else if (widget.isTutor && hw.isSubmitted) ...[
             gap8,
-            const Text('Marked as submitted (no link or file).', style: TextStyle(fontSize: 12, color: AppColors.muted)),
+            Text(tr('Marked as submitted (no link or file).'), style: TextStyle(fontSize: 12, color: AppColors.muted)),
           ],
           gap12,
           if (hw.isPending)
-            Text('Assigned on this phone while offline. It reaches your students once you are back online.',
+            Text(tr('Assigned on this phone while offline. It reaches your students once you are back online.'),
                 style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant))
           else if (!widget.isTutor) ...[
             // Checked work is closed: the server refuses changes after the tutor marks it done.
@@ -200,9 +220,9 @@ class _HomeworkCardState extends State<HomeworkCard> {
               TextField(
                 controller: _url,
                 keyboardType: TextInputType.url,
-                decoration: const InputDecoration(
-                  labelText: 'Submission link (optional)',
-                  hintText: 'https://docs.google.com/...',
+                decoration: InputDecoration(
+                  labelText: tr('Submission link (optional)'),
+                  hintText: tr('https://docs.google.com/...'),
                   prefixIcon: Icon(Icons.link),
                 ),
               ),
@@ -210,7 +230,7 @@ class _HomeworkCardState extends State<HomeworkCard> {
               SizedBox(
                 width: double.infinity,
                 child: BusyButton(
-                  label: _busy ? 'Submitting...' : (hw.isSubmitted ? 'Update submission' : 'Submit homework'),
+                  label: _busy ? tr('Submitting...') : (hw.isSubmitted ? tr('Update submission') : tr('Submit homework')),
                   icon: Icons.upload,
                   onPressed: _busy
                       ? null
@@ -225,7 +245,7 @@ class _HomeworkCardState extends State<HomeworkCard> {
             SizedBox(
               width: double.infinity,
               child: BusyButton(
-                label: hw.isEvaluated ? 'Evaluated ✓' : 'Mark as Done',
+                label: hw.isEvaluated ? tr('Evaluated ✓') : tr('Mark as Done'),
                 icon: Icons.verified,
                 color: AppColors.successDeep,
                 onPressed: (hw.isEvaluated || _busy)

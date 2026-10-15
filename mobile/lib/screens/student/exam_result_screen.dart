@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/format.dart';
+import '../../core/i18n.dart';
 import '../../core/json.dart';
 import '../../core/repo.dart';
 import '../../core/session.dart';
@@ -58,13 +59,13 @@ class _AnswerSheets extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        SectionTitle('Your answer sheets (${safe.length})'),
+        SectionTitle(tr('Your answer sheets ({p0})', {'p0': safe.length})),
         Wrap(
           spacing: 10,
           runSpacing: 10,
           children: [
             for (var i = 0; i < safe.length; i++)
-              SizedBox(width: 100, child: ServerImage(safe[i], height: 100, fit: BoxFit.cover, label: 'Page ${i + 1}')),
+              SizedBox(width: 100, child: ServerImage(safe[i], height: 100, fit: BoxFit.cover, label: tr('Page {p0}', {'p0': i + 1}))),
           ],
         ),
       ],
@@ -85,10 +86,10 @@ class _Pending extends StatelessWidget {
     final questions = exam.maps('mcq_data');
     final publishAt = status.date('publish_at');
     final message = status.str('mode') == 'SCHEDULED' && publishAt != null
-        ? 'Results will be published on ${fmtDateTime(publishAt)}.'
+        ? tr('Results will be published on {p0}.', {'p0': fmtDateTime(publishAt)})
         : status.str('mode') == 'IMMEDIATE'
-            ? 'Your result is being prepared.'
-            : 'Your tutor has not published the results yet.';
+            ? tr('Your result is being prepared.')
+            : tr('Your tutor has not published the results yet.');
     final submittedAt = submission.date('submitted_at') ?? status.date('submitted_at');
 
     return PageBody(
@@ -104,13 +105,12 @@ class _Pending extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Results pending', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+                    Text(tr('Results pending'), style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
                     SizedBox(height: 2),
                     Text(message),
                     SizedBox(height: 6),
                     Text(
-                      'Your answers are safely handed in${submittedAt != null ? ' (${fmtDateTime(submittedAt)})' : ''}. '
-                      'Your marks and the correct answers will appear here when results are out.',
+                      tr('Your answers are safely handed in{p0}. Your marks and the correct answers will appear here when results are out.', {'p0': submittedAt != null ? ' (${fmtDateTime(submittedAt)})' : ''}),
                       style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
                     ),
                   ],
@@ -120,7 +120,7 @@ class _Pending extends StatelessWidget {
           ),
         ),
         if (questions.isNotEmpty) ...[
-          const SectionTitle('What you answered'),
+          SectionTitle(tr('What you answered')),
           for (var i = 0; i < questions.length; i++) ...[
             Builder(builder: (context) {
               final q = questions[i];
@@ -136,9 +136,9 @@ class _Pending extends StatelessWidget {
                     if (q.str('image_url').isNotEmpty) ...[gap8, ServerImage(q.str('image_url'), height: 160)],
                     gap8,
                     if (chosen == null || chosen < 0 || chosen >= options.length)
-                      Text('Your answer: left blank', style: TextStyle(color: Theme.of(context).colorScheme.outlineVariant, fontSize: 13))
+                      Text(tr('Your answer: left blank'), style: TextStyle(color: Theme.of(context).colorScheme.outlineVariant, fontSize: 13))
                     else
-                      MathText('Your answer: ${_letters[chosen]}. ${options[chosen]}', style: TextStyle(color: AppColors.primarySoft, fontSize: 13)),
+                      MathText(tr('Your answer: {p0}. {p1}', {'p0': _letters[chosen], 'p1': options[chosen]}), style: TextStyle(color: AppColors.primarySoft, fontSize: 13)),
                   ],
                 ),
               );
@@ -147,7 +147,7 @@ class _Pending extends StatelessWidget {
           ],
         ],
         if (submission.str('text_answer').isNotEmpty) ...[
-          SectionTitle('Your typed answer'),
+          SectionTitle(tr('Your typed answer')),
           AppCard(child: SelectableText(submission.str('text_answer'))),
         ],
         _AnswerSheets(submission.strings('image_urls')),
@@ -191,9 +191,9 @@ class _Released extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(awaiting ? 'Your score so far' : 'Your score', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 12, fontWeight: FontWeight.w600)),
+                        Text(awaiting ? tr('Your score so far') : tr('Your score'), style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 12, fontWeight: FontWeight.w600)),
                         if (obtained == null)
-                          Text('Awaiting marking', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: AppColors.primarySoft))
+                          Text(tr('Awaiting marking'), style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: AppColors.primarySoft))
                         else
                           Text.rich(
                             TextSpan(children: [
@@ -217,13 +217,13 @@ class _Released extends StatelessWidget {
                 spacing: 8,
                 runSpacing: 6,
                 children: [
-                  if (questions.isNotEmpty) Pill('MCQ ${trimNumber(result.number('mcq_score'))} / ${trimNumber(result.number('mcq_total'))}', color: AppColors.primarySoft),
+                  if (questions.isNotEmpty) Pill(tr('MCQ {p0} / {p1}', {'p0': trimNumber(result.number('mcq_score')), 'p1': trimNumber(result.number('mcq_total'))}), color: AppColors.primarySoft),
                   if (written != null)
                     Pill(
-                      awaiting ? 'Written: awaiting marking' : 'Written ${trimNumber(result.numberOrNull('cq_score') ?? 0)}',
+                      awaiting ? tr('Written: awaiting marking') : tr('Written {p0}', {'p0': trimNumber(result.numberOrNull('cq_score') ?? 0)}),
                       color: awaiting ? AppColors.warning : AppColors.success,
                     ),
-                  if (result.str('status') == 'DELAYED') Pill('Handed in late', color: AppColors.warning),
+                  if (result.str('status') == 'DELAYED') Pill(tr('Handed in late'), color: AppColors.warning),
                 ],
               ),
               gap12,
@@ -231,7 +231,7 @@ class _Released extends StatelessWidget {
                 children: [
                   Expanded(
                     child: Text(
-                      result.date('submitted_at') == null ? '' : 'Submitted ${fmtDateTime(result.date('submitted_at'))}',
+                      result.date('submitted_at') == null ? '' : tr('Submitted {p0}', {'p0': fmtDateTime(result.date('submitted_at'))}),
                       style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 12),
                     ),
                   ),
@@ -241,7 +241,7 @@ class _Released extends StatelessWidget {
                       MaterialPageRoute<void>(builder: (_) => LeaderboardScreen(examId: examId, title: title)),
                     ),
                     icon: const Icon(Icons.emoji_events_outlined, color: AppColors.warning, size: 18),
-                    label: Text('Leaderboard'),
+                    label: Text(tr('Leaderboard')),
                   ),
                 ],
               ),
@@ -249,25 +249,25 @@ class _Released extends StatelessWidget {
           ),
         ),
         if (result.str('tutor_feedback').isNotEmpty) ...[
-          SectionTitle('Feedback from your tutor', icon: Icons.chat_bubble_outline),
+          SectionTitle(tr('Feedback from your tutor'), icon: Icons.chat_bubble_outline),
           AppCard(child: Text(result.str('tutor_feedback'), style: const TextStyle(height: 1.4))),
         ],
         if (questions.isNotEmpty) ...[
-          SectionTitle('Multiple choice — question by question'),
+          SectionTitle(tr('Multiple choice — question by question')),
           Wrap(
             spacing: 8,
             runSpacing: 6,
             children: [
-              Pill('${summary.integer('correct')} correct', color: AppColors.success),
-              Pill('${summary.integer('wrong')} wrong', color: AppColors.danger),
-              Pill('${summary.integer('skipped')} blank'),
+              Pill(tr('{p0} correct', {'p0': summary.integer('correct')}), color: AppColors.success),
+              Pill(tr('{p0} wrong', {'p0': summary.integer('wrong')}), color: AppColors.danger),
+              Pill(tr('{p0} blank', {'p0': summary.integer('skipped')})),
             ],
           ),
           if (negative > 0)
             Padding(
               padding: const EdgeInsets.only(top: 8),
               child: Text(
-                'Each wrong answer lost ${trimNumber(negative)} mark(s). Blank answers lost nothing.',
+                tr('Each wrong answer lost {p0} mark(s). Blank answers lost nothing.', {'p0': trimNumber(negative)}),
                 style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
               ),
             ),
@@ -275,9 +275,9 @@ class _Released extends StatelessWidget {
           for (var i = 0; i < questions.length; i++) ...[_ReviewQuestion(q: questions[i], index: i), gap12],
         ],
         if (written != null) ...[
-          const SectionTitle('Written part'),
+          SectionTitle(tr('Written part')),
           if (awaiting) ...[
-            const Banner2('Your tutor has not marked the written part yet, so the score above does not include it.', color: AppColors.warning),
+            Banner2(tr('Your tutor has not marked the written part yet, so the score above does not include it.'), color: AppColors.warning),
             gap12,
           ],
           if (hasBreakdown)
@@ -300,13 +300,13 @@ class _Released extends StatelessWidget {
               ),
             ),
           if (written.str('text_answer').isNotEmpty) ...[
-            const SectionTitle('Your typed answer'),
+            SectionTitle(tr('Your typed answer')),
             AppCard(child: SelectableText(written.str('text_answer'))),
           ],
           _AnswerSheets(written.strings('image_urls')),
         ],
         if (result.str('solution_html').isNotEmpty || isSafeMedia(result.str('solution_media_url'))) ...[
-          const SectionTitle('Model solution', icon: Icons.menu_book_outlined),
+          SectionTitle(tr('Model solution'), icon: Icons.menu_book_outlined),
           AppCard(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -314,7 +314,7 @@ class _Released extends StatelessWidget {
                 if (result.str('solution_html').isNotEmpty) HtmlMath(_solutionHtml(result.str('solution_html')), baseUrl: api.baseUrl),
                 if (isSafeMedia(result.str('solution_media_url'))) ...[
                   gap12,
-                  ServerImage(result.str('solution_media_url'), label: 'solution sheet'),
+                  ServerImage(result.str('solution_media_url'), label: tr('solution sheet')),
                 ],
               ],
             ),
@@ -351,11 +351,11 @@ class _ReviewQuestion extends StatelessWidget {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(icon, color: color, size: 22, semanticLabel: switch (outcome) { 'correct' => 'Correct', 'wrong' => 'Wrong', _ => 'Not answered' }),
+              Icon(icon, color: color, size: 22, semanticLabel: switch (outcome) { 'correct' => tr('Correct'), 'wrong' => tr('Wrong'), _ => tr('Not answered') }),
               SizedBox(width: 10),
               Expanded(
                 child: q.str('question').isEmpty
-                    ? Text('Question ${index + 1}', style: TextStyle(fontWeight: FontWeight.w600))
+                    ? Text(tr('Question {p0}', {'p0': index + 1}), style: TextStyle(fontWeight: FontWeight.w600))
                     : MathText('${index + 1}. ${q.str('question')}', style: TextStyle(fontWeight: FontWeight.w600, height: 1.4)),
               ),
               SizedBox(width: 8),
@@ -365,7 +365,7 @@ class _ReviewQuestion extends StatelessWidget {
               ),
             ],
           ),
-          if (q.str('image_url').isNotEmpty) ...[gap8, ServerImage(q.str('image_url'), label: 'Question ${index + 1} picture')],
+          if (q.str('image_url').isNotEmpty) ...[gap8, ServerImage(q.str('image_url'), label: tr('Question {p0} picture', {'p0': index + 1}))],
           gap12,
           for (var i = 0; i < options.length; i++)
             Builder(builder: (context) {
@@ -391,18 +391,18 @@ class _ReviewQuestion extends StatelessWidget {
                     if (isCorrect)
                       Padding(
                         padding: const EdgeInsets.only(left: 8),
-                        child: Text(isChosen ? 'Your answer · correct' : 'Correct answer', style: TextStyle(color: AppColors.success, fontSize: 11, fontWeight: FontWeight.w700)),
+                        child: Text(isChosen ? tr('Your answer · correct') : tr('Correct answer'), style: TextStyle(color: AppColors.success, fontSize: 11, fontWeight: FontWeight.w700)),
                       )
                     else if (isChosen)
                       Padding(
                         padding: EdgeInsets.only(left: 8),
-                        child: Text('Your answer', style: TextStyle(color: AppColors.danger, fontSize: 11, fontWeight: FontWeight.w700)),
+                        child: Text(tr('Your answer'), style: TextStyle(color: AppColors.danger, fontSize: 11, fontWeight: FontWeight.w700)),
                       ),
                   ],
                 ),
               );
             }),
-          if (outcome == 'skipped') Text('You left this one blank.', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13)),
+          if (outcome == 'skipped') Text(tr('You left this one blank.'), style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13)),
           if (q.str('explanation').isNotEmpty) ...[
             gap8,
             Row(
@@ -410,7 +410,7 @@ class _ReviewQuestion extends StatelessWidget {
               children: [
                 Icon(Icons.lightbulb_outline, size: 16, color: AppColors.primarySoft),
                 SizedBox(width: 6),
-                Expanded(child: MathText('Explanation: ${q.str('explanation')}', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13, height: 1.4))),
+                Expanded(child: MathText(tr('Explanation: {p0}', {'p0': q.str('explanation')}), style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13, height: 1.4))),
               ],
             ),
           ],

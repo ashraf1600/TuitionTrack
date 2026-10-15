@@ -6,6 +6,8 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 
+import 'i18n.dart';
+
 /// Offline support.
 ///
 ///  * [ResponseCache] keeps the last answer of every GET the app made, on the
@@ -228,7 +230,7 @@ class PendingChange {
       path: path,
       body: body is Map ? Map<String, dynamic>.from(deepCopy(body) as Map) : <String, dynamic>{},
       extra: extra is Map ? Map<String, dynamic>.from(deepCopy(extra) as Map) : <String, dynamic>{},
-      label: '${json['label'] ?? 'A change'}',
+      label: '${json['label'] ?? tr('A change')}',
       createdAt: DateTime.tryParse('${json['created_at']}'),
     );
   }

@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../core/i18n.dart';
 import '../../core/session.dart';
-import '../common/notifications.dart';
 import '../../widgets/app_drawer.dart';
 import '../../widgets/offline_banner.dart';
+import '../../widgets/update_banner.dart';
+import '../common/notifications.dart';
 import 'exam_editor_screen.dart';
 import 'exams_view.dart';
 import 'home_tab.dart';
@@ -50,26 +52,26 @@ class _TutorHomeState extends State<TutorHome> {
     };
     return Scaffold(
       appBar: AppBar(
-        title: Text(_tab == 0 ? 'Hello, ${session.displayName}' : _titles[_tab]),
+        title: Text(_tab == 0 ? tr('Hello, {p0}', {'p0': session.displayName}) : tr(_titles[_tab])),
         actions: homeActions(context),
       ),
       drawer: const AppDrawer(),
-      body: Column(children: [const OfflineBanner(), Expanded(child: body)]),
+      body: Column(children: [const OfflineBanner(), const UpdateBanner(), Expanded(child: body)]),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _create,
         icon: const Icon(Icons.add),
-        label: Text(switch (_tab) { 1 => 'Student', 2 => 'Homework', 3 => 'Exam', _ => 'Tuition' }),
+        label: Text(switch (_tab) { 1 => tr('Student'), 2 => tr('Homework'), 3 => tr('Exam'), _ => tr('Tuition') }),
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _tab,
         height: 64,
         labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
         onDestinationSelected: (index) => setState(() => _tab = index),
-        destinations: const [
-          NavigationDestination(icon: Icon(Icons.space_dashboard_outlined), selectedIcon: Icon(Icons.space_dashboard), label: 'Overview'),
-          NavigationDestination(icon: Icon(Icons.person_outline), selectedIcon: Icon(Icons.person), label: 'Students'),
-          NavigationDestination(icon: Icon(Icons.assignment_outlined), selectedIcon: Icon(Icons.assignment), label: 'Homework'),
-          NavigationDestination(icon: Icon(Icons.quiz_outlined), selectedIcon: Icon(Icons.quiz), label: 'Exams'),
+        destinations: [
+          NavigationDestination(icon: Icon(Icons.space_dashboard_outlined), selectedIcon: Icon(Icons.space_dashboard), label: tr('Overview')),
+          NavigationDestination(icon: Icon(Icons.person_outline), selectedIcon: Icon(Icons.person), label: tr('Students')),
+          NavigationDestination(icon: Icon(Icons.assignment_outlined), selectedIcon: Icon(Icons.assignment), label: tr('Homework')),
+          NavigationDestination(icon: Icon(Icons.quiz_outlined), selectedIcon: Icon(Icons.quiz), label: tr('Exams')),
         ],
       ),
     );

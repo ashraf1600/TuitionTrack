@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/connect.dart';
+import '../../core/i18n.dart';
 import '../../core/repo.dart';
 import '../../widgets/theme.dart';
 import '../../widgets/ui.dart';
@@ -40,7 +41,7 @@ class _ConnectByCodeCardState extends State<ConnectByCodeCard> {
     HapticFeedback.lightImpact();
     final code = normalizeInviteCode(_code.text);
     if (code == null) {
-      showToast(context, 'Enter the 4–8 character code from your tutor.', error: true);
+      showToast(context, tr('Enter the 4–8 character code from your tutor.'), error: true);
       return;
     }
     setState(() => _busy = true);
@@ -48,7 +49,7 @@ class _ConnectByCodeCardState extends State<ConnectByCodeCard> {
       final ok = await attempt(
         context,
         () => context.read<Repo>().connectByCode(code),
-        success: 'Request sent. Waiting for your tutor.',
+        success: tr('Request sent. Waiting for your tutor.'),
       );
       if (ok) {
         _code.clear();
@@ -65,9 +66,9 @@ class _ConnectByCodeCardState extends State<ConnectByCodeCard> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Text('Connect with invite code', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+          Text(tr('Connect with invite code'), style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
           const SizedBox(height: 4),
-          Text('Ask your tutor for their invite code.', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13)),
+          Text(tr('Ask your tutor for their invite code.'), style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13)),
           gap12,
           AnimatedContainer(
             duration: const Duration(milliseconds: 220),
@@ -86,9 +87,9 @@ class _ConnectByCodeCardState extends State<ConnectByCodeCard> {
               maxLength: 8,
               textCapitalization: TextCapitalization.characters,
               inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[A-Za-z0-9]'))],
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 counterText: '',
-                hintText: 'e.g. KX7Q2M',
+                hintText: tr('e.g. KX7Q2M'),
                 prefixIcon: Icon(Icons.key_rounded),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.all(Radius.circular(16)),
@@ -107,7 +108,7 @@ class _ConnectByCodeCardState extends State<ConnectByCodeCard> {
                 : FilledButton.icon(
                     onPressed: _send,
                     icon: Icon(Icons.send),
-                    label: Text('Send Request'),
+                    label: Text(tr('Send Request')),
                     style: FilledButton.styleFrom(
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                     ),
@@ -139,12 +140,12 @@ class PendingConnectionView extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Pending Connection', style: TextStyle(fontWeight: FontWeight.w700)),
-                Text('Waiting for $tutorName to accept.', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13)),
+                Text(tr('Pending Connection'), style: TextStyle(fontWeight: FontWeight.w700)),
+                Text(tr('Waiting for {p0} to accept.', {'p0': tutorName}), style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13)),
               ],
             ),
           ),
-          const Pill('PENDING', color: AppColors.warning, icon: Icons.hourglass_empty),
+          Pill(tr('PENDING'), color: AppColors.warning, icon: Icons.hourglass_empty),
         ],
       ),
     );

@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../../core/connect.dart' show HomeworkItem;
 import '../../core/format.dart';
+import '../../core/i18n.dart';
 import '../../core/json.dart';
 import '../../core/repo.dart';
 import '../../core/session.dart';
@@ -37,11 +38,11 @@ class StudentExamsList extends StatelessWidget {
     final done = exams.where((e) => !todo.contains(e) && !upcoming.contains(e)).toList();
 
     if (exams.isEmpty) {
-      return const PageBody(children: [
+      return PageBody(children: [
         EmptyState(
           icon: Icons.assignment_outlined,
-          title: 'No exams or assignments yet',
-          message: 'When your tutor sets one, it appears here.',
+          title: tr('No exams or assignments yet'),
+          message: tr('When your tutor sets one, it appears here.'),
         ),
       ]);
     }
@@ -54,9 +55,9 @@ class StudentExamsList extends StatelessWidget {
         );
     return PageBody(
       children: [
-        if (todo.isNotEmpty) group('To do', 'Open now', Icons.play_circle_outline, todo),
-        if (upcoming.isNotEmpty) group('Upcoming', 'Not open yet', Icons.schedule, upcoming),
-        if (done.isNotEmpty) group('Done', 'Turned in or finished', Icons.check_circle_outline, done),
+        if (todo.isNotEmpty) group(tr('To do'), tr('Open now'), Icons.play_circle_outline, todo),
+        if (upcoming.isNotEmpty) group(tr('Upcoming'), tr('Not open yet'), Icons.schedule, upcoming),
+        if (done.isNotEmpty) group(tr('Done'), tr('Turned in or finished'), Icons.check_circle_outline, done),
       ],
     );
   }
@@ -74,9 +75,9 @@ class StudentExamCard extends StatelessWidget {
     if (minutes > 0 && !isAssignment) {
       final ok = await confirm(
         context,
-        title: 'Start the timed exam?',
-        message: 'You get $minutes minutes from the moment you start, and the clock keeps running if you leave the app.',
-        confirmLabel: 'Start now',
+        title: tr('Start the timed exam?'),
+        message: tr('You get {p0} minutes from the moment you start, and the clock keeps running if you leave the app.', {'p0': minutes}),
+        confirmLabel: tr('Start now'),
       );
       if (!ok || !context.mounted) return;
     }
@@ -91,12 +92,12 @@ class StudentExamCard extends StatelessWidget {
     if (response == null || !context.mounted) return;
     final status = response.obj('result_status') ?? {};
     if (response.flag('results_released')) {
-      showToast(context, 'Submitted. Here is your result.');
+      showToast(context, tr('Submitted. Here is your result.'));
       _openResult(context);
     } else if (status.str('mode') == 'SCHEDULED' && status.date('publish_at') != null) {
-      showToast(context, 'Submitted. Results will be published on ${fmtDateTime(status.date('publish_at'))}.');
+      showToast(context, tr('Submitted. Results will be published on {p0}.', {'p0': fmtDateTime(status.date('publish_at'))}));
     } else {
-      showToast(context, 'Submitted. Your tutor will publish the results.');
+      showToast(context, tr('Submitted. Your tutor will publish the results.'));
     }
   }
 
@@ -128,10 +129,10 @@ class StudentExamCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              Pill(isAssignment ? 'Assignment' : 'Exam', color: AppColors.primarySoft),
-              if (minutes > 0 && !isAssignment) ...[SizedBox(width: 6), Pill('$minutes min', icon: Icons.timer_outlined)],
+              Pill(isAssignment ? tr('Assignment') : tr('Exam'), color: AppColors.primarySoft),
+              if (minutes > 0 && !isAssignment) ...[SizedBox(width: 6), Pill(tr('{p0} min', {'p0': minutes}), icon: Icons.timer_outlined)],
               Spacer(),
-              Text('${trimNumber(exam.number('total_marks'))} marks', style: TextStyle(fontWeight: FontWeight.w700, color: AppColors.success)),
+              Text(tr('{p0} marks', {'p0': trimNumber(exam.number('total_marks'))}), style: TextStyle(fontWeight: FontWeight.w700, color: AppColors.success)),
             ],
           ),
           gap8,
@@ -139,51 +140,51 @@ class StudentExamCard extends StatelessWidget {
           if (exam.str('batch_name').isNotEmpty) Text(exam.str('batch_name'), style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13)),
           gap8,
           if (upcoming)
-            Text('Opens ${relativeFromNow(start.difference(now))} · ${fmtDateTime(start)}', style: TextStyle(color: AppColors.primarySoft))
+            Text(tr('Opens {p0} · {p1}', {'p0': relativeFromNow(start.difference(now)), 'p1': fmtDateTime(start)}), style: TextStyle(color: AppColors.primarySoft))
           else
-            Text('${isAssignment ? 'Due' : 'Ends'} ${fmtDateTime(end)}', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13)),
-          if (open && !isLate) Text('Closes ${relativeFromNow(end.difference(now))}', style: TextStyle(color: AppColors.success, fontWeight: FontWeight.w600)),
+            Text('${isAssignment ? tr('Due') : tr('Ends')} ${fmtDateTime(end)}', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13)),
+          if (open && !isLate) Text(tr('Closes {p0}', {'p0': relativeFromNow(end.difference(now))}), style: TextStyle(color: AppColors.success, fontWeight: FontWeight.w600)),
           if (isLate)
             Text(
               lateEnd != null && lateEnd.isAfter(now)
-                  ? 'Deadline passed — late work accepted ${relativeFromNow(lateEnd.difference(now)).replaceFirst('in ', 'for ')}'
-                  : 'Deadline passed — hand in now',
+                  ? tr('Deadline passed — late work accepted {p0}', {'p0': relativeFromNow(lateEnd.difference(now)).replaceFirst('in ', 'for ')})
+                  : tr('Deadline passed — hand in now'),
               style: TextStyle(color: AppColors.warning, fontWeight: FontWeight.w600),
             ),
           if (!isAssignment && upcoming && negative > 0)
-            Text('Wrong MCQ answers lose ${trimNumber(negative)} mark(s).', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13)),
+            Text(tr('Wrong MCQ answers lose {p0} mark(s).', {'p0': trimNumber(negative)}), style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13)),
           Divider(height: 24),
           if (done) ...[
             Row(
               children: [
                 const Icon(Icons.check_circle, size: 18, color: AppColors.success),
                 const SizedBox(width: 6),
-                Text('Turned in${result?.str('status') == 'DELAYED' ? ' (late)' : ''}'),
+                Text(tr('Turned in{p0}', {'p0': result?.str('status') == 'DELAYED' ? tr(' (late)') : ''})),
                 const Spacer(),
                 if (released && result?.numberOrNull('obtained_marks') != null)
                   Text(
-                    '${trimNumber(result!.number('obtained_marks'))} / ${trimNumber(exam.number('total_marks'))}${result.flag('is_graded') ? '' : ' so far'}',
+                    '${trimNumber(result!.number('obtained_marks'))} / ${trimNumber(exam.number('total_marks'))}${result.flag('is_graded') ? '' : tr(' so far')}',
                     style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.success),
                   )
                 else
-                  Pill('Results pending', icon: Icons.hourglass_empty, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                  Pill(tr('Results pending'), icon: Icons.hourglass_empty, color: Theme.of(context).colorScheme.onSurfaceVariant),
               ],
             ),
             if (!released && exam.str('result_publish_mode') == 'SCHEDULED' && exam.date('results_release_time') != null)
               Padding(
                 padding: const EdgeInsets.only(top: 4),
-                child: Text('Results on ${fmtDateTime(exam.date('results_release_time'))}', style: TextStyle(color: Theme.of(context).colorScheme.outlineVariant, fontSize: 12)),
+                child: Text(tr('Results on {p0}', {'p0': fmtDateTime(exam.date('results_release_time'))}), style: TextStyle(color: Theme.of(context).colorScheme.outlineVariant, fontSize: 12)),
               ),
             gap12,
             Row(
               children: [
                 Expanded(
-                  child: OutlinedButton(onPressed: () => _openResult(context), child: Text(released ? 'View my result' : 'View my submission')),
+                  child: OutlinedButton(onPressed: () => _openResult(context), child: Text(released ? tr('View my result') : tr('View my submission'))),
                 ),
                 if (released) ...[
                   const SizedBox(width: 8),
                   IconButton.outlined(
-                    tooltip: 'Leaderboard',
+                    tooltip: tr('Leaderboard'),
                     icon: Icon(Icons.emoji_events_outlined, color: AppColors.warning),
                     onPressed: () => Navigator.push(
                       context,
@@ -201,19 +202,19 @@ class StudentExamCard extends StatelessWidget {
                 color: isLate ? AppColors.warningDeep : AppColors.successDeep,
                 icon: Icons.arrow_forward,
                 label: isLate
-                    ? 'Hand in late'
+                    ? tr('Hand in late')
                     : isAssignment
-                        ? 'Open assignment'
+                        ? tr('Open assignment')
                         : minutes > 0
-                            ? 'Start exam ($minutes min)'
-                            : 'Start exam',
+                            ? tr('Start exam ({p0} min)', {'p0': minutes})
+                            : tr('Start exam'),
               ),
             )
           else if (upcoming)
-            Text('Questions unlock when the ${isAssignment ? 'assignment' : 'exam'} opens.', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13))
+            Text(isAssignment ? tr('Questions unlock when the assignment opens.') : tr('Questions unlock when the exam opens.'), style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13))
           else if (missed)
             Text(
-              '${isAssignment ? 'The deadline has passed.' : 'This exam has ended.'} You did not turn it in.',
+              tr('{p0} You did not turn it in.', {'p0': isAssignment ? tr('The deadline has passed.') : tr('This exam has ended.')}),
               style: const TextStyle(color: AppColors.danger, fontSize: 13),
             ),
         ],
@@ -237,11 +238,11 @@ class StudentHomeworkList extends StatelessWidget {
         .where((h) => !h.isEvaluated && h.dueDate.difference(DateTime.now()).inHours <= 24)
         .length;
     if (items.isEmpty) {
-      return const PageBody(children: [
+      return PageBody(children: [
         EmptyState(
           icon: Icons.menu_book_outlined,
-          title: 'No homework yet',
-          message: 'When your tutor sets homework from class, it appears here with a due date.',
+          title: tr('No homework yet'),
+          message: tr('When your tutor sets homework from class, it appears here with a due date.'),
         ),
       ]);
     }
@@ -256,7 +257,7 @@ class StudentHomeworkList extends StatelessWidget {
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    '$pending pending${dueSoon > 0 ? ' · $dueSoon due within 24 hours' : ''} — newest deadline first.',
+                    tr('{p0} pending{p1} — newest deadline first.', {'p0': pending, 'p1': dueSoon > 0 ? tr(' · {p0} due within 24 hours', {'p0': dueSoon}) : ''}),
                     style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
                   ),
                 ),

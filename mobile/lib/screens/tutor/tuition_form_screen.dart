@@ -3,12 +3,13 @@ import 'package:provider/provider.dart';
 
 import '../../core/api.dart';
 import '../../core/format.dart';
+import '../../core/i18n.dart';
 import '../../core/json.dart';
 import '../../core/repo.dart';
 import '../../widgets/theme.dart';
 import '../../widgets/ui.dart';
 
-const _days = ['Saturday', 'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+const _days = [tr('Saturday'), tr('Sunday'), tr('Monday'), tr('Tuesday'), tr('Wednesday'), tr('Thursday'), tr('Friday')];
 
 int _minutes(String time) {
   final parts = time.split(':');
@@ -70,11 +71,11 @@ class _TuitionFormScreenState extends State<TuitionFormScreen> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const Text('Add a class day', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
+                Text(tr('Add a class day'), style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
                 gap12,
                 DropdownButtonFormField<String>(
                   initialValue: day,
-                  decoration: const InputDecoration(labelText: 'Day'),
+                  decoration: InputDecoration(labelText: tr('Day')),
                   items: [for (final d in _days) DropdownMenuItem(value: d, child: Text(d))],
                   onChanged: (value) => setSheet(() => day = value ?? day),
                 ),
@@ -84,20 +85,20 @@ class _TuitionFormScreenState extends State<TuitionFormScreen> {
                     Expanded(
                       child: OutlinedButton(
                         onPressed: () async {
-                          final picked = await showTimePicker(context: context, initialTime: start, helpText: 'Class starts');
+                          final picked = await showTimePicker(context: context, initialTime: start, helpText: tr('Class starts'));
                           if (picked != null) setSheet(() => start = picked);
                         },
-                        child: Text('Starts ${to12h(_hhmm(start))}'),
+                        child: Text(tr('Starts {p0}', {'p0': to12h(_hhmm(start))})),
                       ),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
                       child: OutlinedButton(
                         onPressed: () async {
-                          final picked = await showTimePicker(context: context, initialTime: end, helpText: 'Class ends');
+                          final picked = await showTimePicker(context: context, initialTime: end, helpText: tr('Class ends'));
                           if (picked != null) setSheet(() => end = picked);
                         },
-                        child: Text('Ends ${to12h(_hhmm(end))}'),
+                        child: Text(tr('Ends {p0}', {'p0': to12h(_hhmm(end))})),
                       ),
                     ),
                   ],
@@ -105,7 +106,7 @@ class _TuitionFormScreenState extends State<TuitionFormScreen> {
                 gap16,
                 FilledButton(
                   onPressed: () => Navigator.pop(context, {'day': day, 'start_time': _hhmm(start), 'end_time': _hhmm(end)}),
-                  child: const Text('Add'),
+                  child: Text(tr('Add')),
                 ),
               ],
             ),
@@ -117,14 +118,14 @@ class _TuitionFormScreenState extends State<TuitionFormScreen> {
     final s = _minutes(slot.str('start_time'));
     final e = _minutes(slot.str('end_time'));
     if (e <= s) {
-      showToast(context, 'The class must end after it starts.', error: true);
+      showToast(context, tr('The class must end after it starts.'), error: true);
       return;
     }
     // Two classes of the same group cannot overlap on a day.
     final clash = _routine.any((other) =>
         other['day'] == slot['day'] && s < _minutes(other.str('end_time', '23:59')) && _minutes(other.str('start_time')) < e);
     if (clash) {
-      showToast(context, 'That time overlaps another class on ${slot['day']}.', error: true);
+      showToast(context, tr('That time overlaps another class on {p0}.', {'p0': slot['day']}), error: true);
       return;
     }
     setState(() {
@@ -151,7 +152,7 @@ class _TuitionFormScreenState extends State<TuitionFormScreen> {
     try {
       _editing ? await repo.updateTuition(widget.tuition!.str('id'), form) : await repo.createTuition(form);
       if (!mounted) return;
-      showToast(context, _editing ? 'Tuition updated.' : 'Tuition created.');
+      showToast(context, _editing ? tr('Tuition updated.') : tr('Tuition created.'));
       Navigator.pop(context, true);
     } on ApiException catch (error) {
       if (mounted) setState(() => _error = error.message);
@@ -163,7 +164,7 @@ class _TuitionFormScreenState extends State<TuitionFormScreen> {
     final fee = num.tryParse(_fee.text.trim()) ?? 0;
     final length = int.tryParse(_length.text.trim()) ?? 0;
     return Scaffold(
-      appBar: AppBar(title: Text(_editing ? 'Edit tuition' : 'New tuition')),
+      appBar: AppBar(title: Text(_editing ? tr('Edit tuition') : tr('New tuition'))),
       body: Form(
         key: _form,
         child: PageBody(
@@ -172,13 +173,13 @@ class _TuitionFormScreenState extends State<TuitionFormScreen> {
             TextFormField(
               controller: _title,
               textCapitalization: TextCapitalization.words,
-              decoration: const InputDecoration(labelText: 'Tuition name', hintText: 'e.g. Class 10 Math Batch'),
-              validator: (v) => (v == null || v.trim().isEmpty) ? 'Give the tuition a name' : null,
+              decoration: InputDecoration(labelText: tr('Tuition name'), hintText: tr('e.g. Class 10 Math Batch')),
+              validator: (v) => (v == null || v.trim().isEmpty) ? tr('Give the tuition a name') : null,
             ),
             gap12,
-            TextFormField(controller: _subject, textCapitalization: TextCapitalization.words, decoration: const InputDecoration(labelText: 'Subject (optional)')),
+            TextFormField(controller: _subject, textCapitalization: TextCapitalization.words, decoration: InputDecoration(labelText: tr('Subject (optional)'))),
             gap12,
-            TextFormField(controller: _description, maxLines: 2, decoration: const InputDecoration(labelText: 'Description (optional)')),
+            TextFormField(controller: _description, maxLines: 2, decoration: InputDecoration(labelText: tr('Description (optional)'))),
             gap12,
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -187,12 +188,12 @@ class _TuitionFormScreenState extends State<TuitionFormScreen> {
                   child: TextFormField(
                     controller: _fee,
                     keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                    decoration: const InputDecoration(labelText: 'Fee per cycle (৳)', helperText: 'For the whole tuition'),
+                    decoration: InputDecoration(labelText: tr('Fee per cycle (৳)'), helperText: tr('For the whole tuition')),
                     onChanged: (_) => setState(() {}),
                     validator: (v) {
                       final value = num.tryParse((v ?? '').trim());
-                      if (value == null) return 'Enter an amount';
-                      return value < 0 ? 'Cannot be negative' : null;
+                      if (value == null) return tr('Enter an amount');
+                      return value < 0 ? tr('Cannot be negative') : null;
                     },
                   ),
                 ),
@@ -201,12 +202,12 @@ class _TuitionFormScreenState extends State<TuitionFormScreen> {
                   child: TextFormField(
                     controller: _length,
                     keyboardType: TextInputType.number,
-                    decoration: InputDecoration(labelText: 'Classes per cycle'),
+                    decoration: InputDecoration(labelText: tr('Classes per cycle')),
                     onChanged: (_) => setState(() {}),
                     validator: (v) {
                       final value = int.tryParse((v ?? '').trim());
-                      if (value == null || value < 1) return 'At least 1';
-                      return value > 500 ? 'At most 500' : null;
+                      if (value == null || value < 1) return tr('At least 1');
+                      return value > 500 ? tr('At most 500') : null;
                     },
                   ),
                 ),
@@ -215,17 +216,17 @@ class _TuitionFormScreenState extends State<TuitionFormScreen> {
             if (fee > 0 && length > 0) ...[
               gap8,
               Text(
-                'You earn ${taka(fee / length)} for each class you mark as done.',
+                tr('You earn {p0} for each class you mark as done.', {'p0': taka(fee / length)}),
                 style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
               ),
             ],
             SectionTitle(
-              'Weekly routine',
-              subtitle: 'Used to remind you to record each class.',
-              trailing: TextButton.icon(onPressed: _addSlot, icon: const Icon(Icons.add, size: 18), label: const Text('Add day')),
+              tr('Weekly routine'),
+              subtitle: tr('Used to remind you to record each class.'),
+              trailing: TextButton.icon(onPressed: _addSlot, icon: const Icon(Icons.add, size: 18), label: Text(tr('Add day'))),
             ),
             if (_routine.isEmpty)
-              Text('No class days added yet.', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant))
+              Text(tr('No class days added yet.'), style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant))
             else
               AppCard(
                 padding: EdgeInsets.zero,
@@ -239,7 +240,7 @@ class _TuitionFormScreenState extends State<TuitionFormScreen> {
                         title: Text(_routine[i].str('day')),
                         subtitle: Text('${to12h(_routine[i].str('start_time'))} – ${to12h(_routine[i].str('end_time'))}'),
                         trailing: IconButton(
-                          tooltip: 'Remove ${_routine[i].str('day')}',
+                          tooltip: tr('Remove {p0}', {'p0': _routine[i].str('day')}),
                           icon: const Icon(Icons.delete_outline),
                           onPressed: () => setState(() => _routine.removeAt(i)),
                         ),
@@ -249,7 +250,7 @@ class _TuitionFormScreenState extends State<TuitionFormScreen> {
                 ),
               ),
             gap24,
-            BusyButton(onPressed: _save, label: _editing ? 'Save changes' : 'Create tuition', icon: Icons.check),
+            BusyButton(onPressed: _save, label: _editing ? tr('Save changes') : tr('Create tuition'), icon: Icons.check),
           ],
         ),
       ),

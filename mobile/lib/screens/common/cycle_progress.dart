@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/format.dart';
+import '../../core/i18n.dart';
 import '../../core/json.dart';
 import '../../widgets/charts.dart';
 import '../../widgets/theme.dart';
@@ -41,8 +42,8 @@ class CycleProgress extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('$completed/$total classes done', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
-                  Text('Cycle #${cycle.integer('cycle_number')}', style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 13)),
+                  Text(tr('{p0}/{p1} classes done', {'p0': completed, 'p1': total}), style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+                  Text(tr('Cycle #{p0}', {'p0': cycle.integer('cycle_number')}), style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 13)),
                 ],
               ),
             ),
@@ -55,7 +56,7 @@ class CycleProgress extends StatelessWidget {
           children: [
             for (final c in classes)
               Tooltip(
-                message: c.flag('completed') ? 'Class ${classNoOf(c)} · ${fmtShortDate(c.date('date'))}' : 'Class ${classNoOf(c)} · not yet',
+                message: c.flag('completed') ? tr('Class {p0} · {p1}', {'p0': classNoOf(c), 'p1': fmtShortDate(c.date('date'))}) : tr('Class {p0} · not yet', {'p0': classNoOf(c)}),
                 child: Container(
                   width: 30,
                   height: 30,
@@ -74,20 +75,20 @@ class CycleProgress extends StatelessWidget {
         ),
         if (log.isNotEmpty) ...[
           const SizedBox(height: 12),
-          Text('Done classes', style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 12, fontWeight: FontWeight.w600)),
+          Text(tr('Done classes'), style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 12, fontWeight: FontWeight.w600)),
           for (final c in log)
             Padding(
               padding: const EdgeInsets.only(top: 4),
               child: Text(
-                'Class ${classNoOf(c)} · ${fmtDate(c.date('date'))}${c.str('topic').isNotEmpty ? ' · ${c.str('topic')}' : ''}',
+                tr('Class {p0} · {p1}{p2}', {'p0': classNoOf(c), 'p1': fmtDate(c.date('date')), 'p2': c.str('topic').isNotEmpty ? ' · ${c.str('topic')}' : ''}),
                 style: const TextStyle(fontSize: 13),
               ),
             ),
         ],
         if (cycle.flag('is_complete'))
-          const Padding(
+          Padding(
             padding: EdgeInsets.only(top: 10),
-            child: Text('This cycle is complete. Your tutor will start the next one.', style: TextStyle(fontSize: 13)),
+            child: Text(tr('This cycle is complete. Your tutor will start the next one.'), style: TextStyle(fontSize: 13)),
           ),
       ],
     );

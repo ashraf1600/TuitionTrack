@@ -1,8 +1,13 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/connect.dart' show HomeworkItem;
+import '../../core/i18n.dart';
 import '../../core/json.dart';
+import '../../core/reminder_plan.dart';
+import '../../core/reminders.dart';
 import '../../core/repo.dart';
 import '../../core/session.dart';
 import '../../widgets/app_drawer.dart';
@@ -10,6 +15,7 @@ import '../../widgets/charts.dart';
 import '../../widgets/offline_banner.dart';
 import '../../widgets/theme.dart';
 import '../../widgets/ui.dart';
+import '../../widgets/update_banner.dart';
 import '../common/notifications.dart';
 import 'connect_screen.dart';
 import 'student_lists.dart';
@@ -41,6 +47,7 @@ class _StudentHomeState extends State<StudentHome> {
 
   Future<_StudentData> _load() async {
     final repo = context.read<Repo>();
+    final settings = context.read<Session>().settings;
     final results = await Future.wait([
       repo.myTutors(),
       repo.tuitions(),
@@ -56,13 +63,15 @@ class _StudentHomeState extends State<StudentHome> {
         if (a.isEvaluated != b.isEvaluated) return a.isEvaluated ? 1 : -1;
         return a.dueDate.compareTo(b.dueDate);
       });
+    // Class and homework reminders for the coming week (they work offline).
+    unawaited(Reminders.instance.schedule(settings, studentReminders(results[1], results[4], DateTime.now())));
     return _StudentData(results[0], results[1], results[2], results[3], homework, results[4]);
   }
 
   String _title() => switch (_tab) {
-        1 => 'Exams & assignments',
-        2 => 'Homework',
-        _ => 'Hello, ${context.read<Session>().displayName}',
+        1 => tr('Exams & assignments'),
+        2 => tr('Homework'),
+        _ => tr('Hello, {p0}', {'p0': context.read<Session>().displayName}),
       };
 
   @override
@@ -73,6 +82,7 @@ class _StudentHomeState extends State<StudentHome> {
       body: Column(
         children: [
           const OfflineBanner(),
+          const UpdateBanner(),
           Expanded(
             child: Loader<_StudentData>(
               key: _loader,
@@ -92,10 +102,10 @@ class _StudentHomeState extends State<StudentHome> {
           setState(() => _tab = index);
           _loader.currentState?.reload(quiet: true);
         },
-        destinations: const [
-          NavigationDestination(icon: Icon(Icons.style_outlined), selectedIcon: Icon(Icons.style), label: 'Tutors'),
-          NavigationDestination(icon: Icon(Icons.assignment_outlined), selectedIcon: Icon(Icons.assignment), label: 'Exams'),
-          NavigationDestination(icon: Icon(Icons.menu_book_outlined), selectedIcon: Icon(Icons.menu_book), label: 'Homework'),
+        destinations: [
+          NavigationDestination(icon: Icon(Icons.style_outlined), selectedIcon: Icon(Icons.style), label: tr('Tutors')),
+          NavigationDestination(icon: Icon(Icons.assignment_outlined), selectedIcon: Icon(Icons.assignment), label: tr('Exams')),
+          NavigationDestination(icon: Icon(Icons.menu_book_outlined), selectedIcon: Icon(Icons.menu_book), label: tr('Homework')),
         ],
       ),
     );
@@ -124,23 +134,23 @@ class _TutorFlashcards extends StatelessWidget {
         if (pending.isNotEmpty) ...[
           Banner2(
             pending.length == 1
-                ? 'Your request to ${_name(pending.first)} is waiting for an answer.'
-                : '${pending.length} requests are waiting for an answer.',
+                ? tr('Your request to {p0} is waiting for an answer.', {'p0': _name(pending.first)})
+                : tr('{p0} requests are waiting for an answer.', {'p0': pending.length}),
             icon: Icons.hourglass_top_rounded,
             color: AppColors.warning,
-            action: TextButton(onPressed: () => _openConnect(context), child: const Text('View')),
+            action: TextButton(onPressed: () => _openConnect(context), child: Text(tr('View'))),
           ),
           gap12,
         ],
         if (tutors.isEmpty)
           EmptyState(
             icon: Icons.style_outlined,
-            title: 'No tutor yet',
-            message: 'Enter the invite code your tutor gave you. Their card appears here once they accept.',
+            title: tr('No tutor yet'),
+            message: tr('Enter the invite code your tutor gave you. Their card appears here once they accept.'),
             action: FilledButton.icon(
               onPressed: () => _openConnect(context),
               icon: const Icon(Icons.key_rounded),
-              label: const Text('Enter invite code'),
+              label: Text(tr('Enter invite code')),
             ),
           )
         else
@@ -205,6 +215,8 @@ class _Flashcard extends StatelessWidget {
       for (final t in tuitions)
         for (final p in t.maps('pending_payments')) p.integer('cycle_number'),
     ];
+    final now = DateTime.now();
+    final next = nextClass(tuitions, now);
     final main = tuitions.isEmpty ? null : tuitions.first;
     final cycle = main?.obj('active_cycle');
     final done = cycle?.integer('completed_classes') ?? 0;
@@ -249,7 +261,7 @@ class _Flashcard extends StatelessWidget {
                             Text(
                               [
                                 if (subjects.isNotEmpty) subjects.join(', '),
-                                if (tuitions.isNotEmpty) tuitions.map((t) => t.str('title')).join(' · ') else 'Not in a tuition yet',
+                                if (tuitions.isNotEmpty) tuitions.map((t) => t.str('title')).join(' · ') else tr('Not in a tuition yet'),
                               ].join(' — '),
                               maxLines: 2,
                               overflow: TextOverflow.ellipsis,
@@ -265,26 +277,46 @@ class _Flashcard extends StatelessWidget {
                     gap16,
                     Row(
                       children: [
-                        ProgressRing(done: done, total: total, size: 84, thickness: 9, caption: 'classes'),
+                        ProgressRing(done: done, total: total, size: 84, thickness: 9, caption: tr('classes')),
                         const SizedBox(width: 18),
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text('$done/$total classes done', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
+                              Text(tr('{p0}/{p1} classes done', {'p0': done, 'p1': total}), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
                               Text(
-                                'Cycle #${cycle?.integer('cycle_number') ?? 1}${tuitions.length > 1 ? ' · ${main.str('title')}' : ''}',
+                                tr('Cycle #{p0}{p1}', {'p0': cycle?.integer('cycle_number') ?? 1, 'p1': tuitions.length > 1 ? ' · ${main.str('title')}' : ''}),
                                 style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant),
                               ),
+                              if (next != null)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 4),
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.schedule_rounded, size: 14, color: tone(context, AppColors.primarySoft)),
+                                      const SizedBox(width: 4),
+                                      Flexible(
+                                        child: Text(
+                                          tuitions.length > 1
+                                              ? tr('Next: {when} · {title}', {'when': whenLabel(next.at, now), 'title': next.tuition.str('title')})
+                                              : tr('Next: {when}', {'when': whenLabel(next.at, now)}),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: tone(context, AppColors.primarySoft)),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
                               const SizedBox(height: 8),
                               Wrap(
                                 spacing: 6,
                                 runSpacing: 6,
                                 children: [
                                   if (openWork.exams > 0)
-                                    Pill('${openWork.exams} exam${openWork.exams == 1 ? '' : 's'} open', color: AppColors.success, icon: Icons.quiz_outlined),
+                                    Pill(tr('{p0} exam{p1} open', {'p0': openWork.exams, 'p1': openWork.exams == 1 ? '' : 's'}), color: AppColors.success, icon: Icons.quiz_outlined),
                                   if (openWork.homework > 0)
-                                    Pill('${openWork.homework} homework', color: AppColors.primarySoft, icon: Icons.menu_book_outlined),
+                                    Pill(tr('{p0} homework', {'p0': openWork.homework}), color: AppColors.primarySoft, icon: Icons.menu_book_outlined),
                                 ],
                               ),
                             ],
@@ -350,7 +382,7 @@ class _PaymentPendingChip extends StatelessWidget {
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              'Payment pending for cycle ${cycles.map((n) => '#$n').join(', ')}',
+              tr('Payment pending for cycle {p0}', {'p0': cycles.map((n) => '#$n').join(', ')}),
               style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: ink),
             ),
           ),

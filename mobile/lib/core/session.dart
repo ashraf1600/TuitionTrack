@@ -5,6 +5,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'api.dart';
+import 'i18n.dart';
 import 'json.dart';
 import 'offline.dart';
 
@@ -46,6 +47,10 @@ abstract class Settings {
   Future<void> setString(String key, String value);
   List<String> getList(String key);
   Future<void> setList(String key, List<String> value);
+
+  /// Re-reads values another part of the app may have written meanwhile
+  /// (the background check for notifications runs in its own isolate).
+  Future<void> refresh();
 }
 
 class PrefsSettings implements Settings {
@@ -60,6 +65,8 @@ class PrefsSettings implements Settings {
   List<String> getList(String key) => _prefs.getStringList(key) ?? const [];
   @override
   Future<void> setList(String key, List<String> value) => _prefs.setStringList(key, value);
+  @override
+  Future<void> refresh() => _prefs.reload();
 }
 
 class MemorySettings implements Settings {
@@ -72,6 +79,8 @@ class MemorySettings implements Settings {
   List<String> getList(String key) => (_data[key] as List<String>?) ?? const [];
   @override
   Future<void> setList(String key, List<String> value) async => _data[key] = value;
+  @override
+  Future<void> refresh() async {}
 }
 
 /// Who is signed in, and the API client everything else uses.
@@ -81,6 +90,19 @@ class Session extends ChangeNotifier {
     api.onSessionExpired = _expired;
     api.overlay = outbox.applyTo;
     api.onBackOnline = _backOnline;
+    // Before the first frame, so the app never flashes in the other language.
+    setAppLanguage(settings.getString(_languageKey) ?? 'en');
+  }
+
+  static const _languageKey = 'language'; // 'en' | 'bn'
+
+  /// The app language, 'en' or 'bn'.
+  String get language => appLanguage;
+
+  Future<void> setLanguage(String code) async {
+    setAppLanguage(code);
+    await settings.setString(_languageKey, appLanguage);
+    notifyListeners();
   }
 
   /// Changes made while offline, waiting to be sent.
@@ -158,7 +180,7 @@ class Session extends ChangeNotifier {
           sent++;
         } on ApiException catch (error) {
           if (error.isUnreachable || error.status == 401 || error.status == 429 || error.status >= 500) break;
-          await outbox.remove(change.id, failure: '${change.label} could not be saved: ${error.message}');
+          await outbox.remove(change.id, failure: tr('{change} could not be saved: {reason}', {'change': Raw(change.label), 'reason': Raw(error.message)}));
         }
       }
     } finally {
@@ -246,7 +268,7 @@ class Session extends ChangeNotifier {
   void _expired() {
     if (user == null) return;
     user = null;
-    notice = 'You have been signed out. Please sign in again.';
+    notice = tr('You have been signed out. Please sign in again.');
     notifyListeners();
   }
 }

@@ -5,7 +5,9 @@ import 'package:provider/provider.dart';
 
 import '../../core/api.dart';
 import '../../core/format.dart';
+import '../../core/i18n.dart';
 import '../../core/json.dart';
+import '../../core/reminders.dart';
 import '../../core/repo.dart';
 import '../../core/session.dart';
 import '../../widgets/theme.dart';
@@ -49,9 +51,12 @@ class _NotificationBellState extends State<NotificationBell> with WidgetsBinding
   }
 
   Future<void> _load() async {
+    final settings = context.read<Session>().settings;
     try {
       final items = await context.read<Repo>().notifications();
       if (mounted) setState(() => _items = items);
+      // New ones also go to the phone's notification shade.
+      await Reminders.instance.announce(settings, items);
     } on ApiException {
       // The bell is not worth an error message; it refreshes again shortly.
     }
@@ -62,7 +67,7 @@ class _NotificationBellState extends State<NotificationBell> with WidgetsBinding
     final seen = context.watch<Session>().settings.getList(_seenKey).toSet();
     final unseen = _items.where((n) => !seen.contains(n.str('id'))).length;
     return IconButton(
-      tooltip: unseen == 0 ? 'Notifications' : '$unseen new notifications',
+      tooltip: unseen == 0 ? tr('Notifications') : tr('{p0} new notifications', {'p0': unseen}),
       icon: Badge(isLabelVisible: unseen > 0, label: Text('$unseen'), child: Icon(Icons.notifications_outlined)),
       onPressed: () async {
         await Navigator.push(context, MaterialPageRoute<void>(builder: (_) => NotificationsScreen(items: _items)));
@@ -104,17 +109,19 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         'soon' => (Icons.schedule_outlined, AppColors.primarySoft),
         'result' => (Icons.emoji_events_outlined, AppColors.warning),
         'connection' => (Icons.handshake_outlined, AppColors.primarySoft),
+        'payment' => (Icons.payments_outlined, AppColors.warning),
+        'homework' => (Icons.menu_book_outlined, AppColors.primarySoft),
         _ => (Icons.notifications_outlined, AppColors.faint),
       };
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text('Notifications')),
+      appBar: AppBar(title: Text(tr('Notifications'))),
       body: widget.items.isEmpty
           ? Padding(
               padding: EdgeInsets.all(16),
-              child: EmptyState(icon: Icons.notifications_none, title: 'Nothing new', message: 'You are all caught up.'),
+              child: EmptyState(icon: Icons.notifications_none, title: tr('Nothing new'), message: tr('You are all caught up.')),
             )
           : ListView.separated(
               padding: const EdgeInsets.symmetric(vertical: 8),
@@ -150,7 +157,7 @@ List<Widget> homeActions(BuildContext context) {
   return [
     const NotificationBell(),
     IconButton(
-      tooltip: 'My account',
+      tooltip: tr('My account'),
       icon: CircleAvatar(
         radius: 15,
         backgroundColor: AppColors.primary.withValues(alpha: 0.3),

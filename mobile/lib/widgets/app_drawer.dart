@@ -3,12 +3,14 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../core/i18n.dart';
+import '../core/reminders.dart';
 import '../core/session.dart';
-import 'theme.dart';
-import 'ui.dart';
 import '../screens/common/account_screen.dart';
 import '../screens/common/payments_screen.dart';
 import '../screens/student/connect_screen.dart';
+import 'theme.dart';
+import 'ui.dart';
 
 /// Change this to the official Facebook page. Used by the drawer's follow link.
 const facebookPageUrl = 'https://www.facebook.com/tuitiontrack';
@@ -26,14 +28,13 @@ class AppDrawer extends StatelessWidget {
     final url = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Server address'),
+        title: Text(tr('Server address')),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'The address of your TuitionTrack server, for example https://tuitiontrack.example.com or '
-              'http://192.168.0.10:8000 on your own network.',
+            Text(
+              tr('The address of your TuitionTrack server, for example https://tuitiontrack.example.com or http://192.168.0.10:8000 on your own network.'),
               style: TextStyle(color: AppColors.muted, fontSize: 13),
             ),
             gap12,
@@ -42,27 +43,27 @@ class AppDrawer extends StatelessWidget {
               autofocus: true,
               keyboardType: TextInputType.url,
               autocorrect: false,
-              decoration: const InputDecoration(labelText: 'Server address'),
+              decoration: InputDecoration(labelText: tr('Server address')),
             ),
           ],
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(context, controller.text.trim()), child: const Text('Save')),
+          TextButton(onPressed: () => Navigator.pop(context), child: Text(tr('Cancel'))),
+          FilledButton(onPressed: () => Navigator.pop(context, controller.text.trim()), child: Text(tr('Save'))),
         ],
       ),
     );
     if (url == null || url.isEmpty || !context.mounted) return;
     await session.setServer(url);
     if (!context.mounted) return;
-    await attempt(context, () => context.read<Session>().api.get('/meta/'), success: 'Connected to the server.');
+    await attempt(context, () => context.read<Session>().api.get('/meta/'), success: tr('Connected to the server.'));
   }
 
   Future<void> _openFacebook(BuildContext context) async {
     HapticFeedback.lightImpact();
     final uri = Uri.tryParse(facebookPageUrl);
     if (uri == null || !await launchUrl(uri, mode: LaunchMode.externalApplication)) {
-      if (context.mounted) showToast(context, 'Could not open the Facebook page.', error: true);
+      if (context.mounted) showToast(context, tr('Could not open the Facebook page.'), error: true);
     }
   }
 
@@ -71,25 +72,24 @@ class AppDrawer extends StatelessWidget {
     showDialog<void>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Row(
+        title: Row(
           children: [
             Icon(Icons.school_rounded, color: AppColors.primarySoft),
             SizedBox(width: 10),
-            Text('About TuitionTrack'),
+            Text(tr('About TuitionTrack')),
           ],
         ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'TuitionTrack helps private tutors run tuitions, track classes and earnings, '
-              'set exams and homework — and helps students follow their classes, submit work and see results.',
+            Text(
+              tr('TuitionTrack helps private tutors run tuitions, track classes and earnings, set exams and homework — and helps students follow their classes, submit work and see results.'),
               style: TextStyle(fontSize: 13, height: 1.5),
             ),
             gap12,
-            Text('Version $appVersion', style: const TextStyle(color: AppColors.muted, fontSize: 12)),
-            const Text('Made for tutors, coaching centres and students.',
+            Text(tr('Version {p0}', {'p0': appVersion}), style: const TextStyle(color: AppColors.muted, fontSize: 12)),
+            Text(tr('Made for tutors, coaching centres and students.'),
                 style: TextStyle(color: AppColors.muted, fontSize: 12)),
           ],
         ),
@@ -99,9 +99,9 @@ class AppDrawer extends StatelessWidget {
               Navigator.pop(context);
               _openFacebook(context);
             },
-            child: const Text('Facebook page'),
+            child: Text(tr('Facebook page')),
           ),
-          FilledButton(onPressed: () => Navigator.pop(context), child: const Text('Close')),
+          FilledButton(onPressed: () => Navigator.pop(context), child: Text(tr('Close'))),
         ],
       ),
     );
@@ -127,23 +127,23 @@ class AppDrawer extends StatelessWidget {
                 children: [
                   const Icon(Icons.school_rounded, size: 40, color: AppColors.primarySoft),
                   gap8,
-                  const Text('TuitionTrack', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800)),
+                  Text(tr('TuitionTrack'), style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800)),
                   Text(
-                    '$name · ${session.isTutor ? 'Tutor' : 'Student'}',
+                    '$name · ${session.isTutor ? tr('Tutor') : tr('Student')}',
                     style: const TextStyle(color: AppColors.muted, fontSize: 13),
                   ),
                 ],
               ),
             ),
-            const Padding(
+            Padding(
               padding: EdgeInsets.fromLTRB(16, 8, 16, 4),
-              child: Text('APPEARANCE', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.muted)),
+              child: Text(tr('APPEARANCE'), style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.muted)),
             ),
             SegmentedButton<ThemeMode>(
               style: const ButtonStyle(visualDensity: VisualDensity.compact),
-              segments: const [
-                ButtonSegment(value: ThemeMode.dark, label: Text('Dark'), icon: Icon(Icons.dark_mode_outlined, size: 16)),
-                ButtonSegment(value: ThemeMode.light, label: Text('Light'), icon: Icon(Icons.light_mode_outlined, size: 16)),
+              segments: [
+                ButtonSegment(value: ThemeMode.dark, label: Text(tr('Dark')), icon: Icon(Icons.dark_mode_outlined, size: 16)),
+                ButtonSegment(value: ThemeMode.light, label: Text(tr('Light')), icon: Icon(Icons.light_mode_outlined, size: 16)),
               ],
               selected: {session.themeMode},
               showSelectedIcon: false,
@@ -152,13 +152,49 @@ class AppDrawer extends StatelessWidget {
                 session.setThemeMode(value.first);
               },
             ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+              child: Text(tr('LANGUAGE'), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.muted)),
+            ),
+            SegmentedButton<String>(
+              style: const ButtonStyle(visualDensity: VisualDensity.compact),
+              segments: [
+                ButtonSegment(value: 'en', label: Text(tr('English'))),
+                ButtonSegment(value: 'bn', label: Text('বাংলা')),
+              ],
+              selected: {session.language},
+              showSelectedIcon: false,
+              onSelectionChanged: (value) {
+                HapticFeedback.lightImpact();
+                session.setLanguage(value.first);
+              },
+            ),
+            if (Reminders.instance.available)
+              StatefulBuilder(
+                builder: (context, setLocal) => SwitchListTile(
+                  secondary: const Icon(Icons.notifications_active_outlined),
+                  title: Text(tr('Reminders')),
+                  subtitle: Text(
+                    session.isTutor ? tr('Before and after your classes') : tr('Before classes and homework deadlines'),
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                  value: Reminders.enabledIn(session.settings),
+                  onChanged: (on) async {
+                    HapticFeedback.lightImpact();
+                    await Reminders.instance.setEnabled(session.settings, on);
+                    // Screens set the reminders again when they next load.
+                    session.api.dataVersion.value++;
+                    setLocal(() {});
+                  },
+                ),
+              ),
             const Padding(
               padding: EdgeInsets.symmetric(horizontal: 16),
               child: Divider(),
             ),
             ListTile(
               leading: const Icon(Icons.manage_accounts_outlined),
-              title: const Text('My account'),
+              title: Text(tr('My account')),
               onTap: () {
                 HapticFeedback.lightImpact();
                 Navigator.pop(context);
@@ -168,8 +204,8 @@ class AppDrawer extends StatelessWidget {
             if (session.isStudent)
               ListTile(
                 leading: const Icon(Icons.key_rounded),
-                title: const Text('Connect to a tutor'),
-                subtitle: const Text('Invite code, requests, find a tutor', style: TextStyle(fontSize: 12)),
+                title: Text(tr('Connect to a tutor')),
+                subtitle: Text(tr('Invite code, requests, find a tutor'), style: TextStyle(fontSize: 12)),
                 onTap: () {
                   HapticFeedback.lightImpact();
                   Navigator.pop(context);
@@ -178,7 +214,7 @@ class AppDrawer extends StatelessWidget {
               ),
             ListTile(
               leading: const Icon(Icons.receipt_long_outlined),
-              title: Text(session.isTutor ? 'Payments' : 'Payment history'),
+              title: Text(session.isTutor ? tr('Payments') : tr('Payment history')),
               onTap: () {
                 HapticFeedback.lightImpact();
                 Navigator.pop(context);
@@ -187,7 +223,7 @@ class AppDrawer extends StatelessWidget {
             ),
             ListTile(
               leading: const Icon(Icons.dns_outlined),
-              title: const Text('Server address'),
+              title: Text(tr('Server address')),
               subtitle: Text(session.api.baseUrl, style: const TextStyle(fontSize: 12)),
               onTap: () {
                 HapticFeedback.lightImpact();
@@ -197,7 +233,7 @@ class AppDrawer extends StatelessWidget {
             ),
             ListTile(
               leading: const Icon(Icons.info_outline),
-              title: const Text('About TuitionTrack'),
+              title: Text(tr('About TuitionTrack')),
               onTap: () {
                 Navigator.pop(context);
                 _openAbout(context);
@@ -205,8 +241,8 @@ class AppDrawer extends StatelessWidget {
             ),
             ListTile(
               leading: const Icon(Icons.thumb_up_outlined),
-              title: const Text('Facebook page'),
-              subtitle: const Text('Follow us for updates', style: TextStyle(fontSize: 12)),
+              title: Text(tr('Facebook page')),
+              subtitle: Text(tr('Follow us for updates'), style: TextStyle(fontSize: 12)),
               onTap: () {
                 Navigator.pop(context);
                 _openFacebook(context);
@@ -215,18 +251,17 @@ class AppDrawer extends StatelessWidget {
             const Divider(),
             ListTile(
               leading: const Icon(Icons.logout, color: AppColors.danger),
-              title: const Text('Sign out', style: TextStyle(color: AppColors.danger)),
+              title: Text(tr('Sign out'), style: TextStyle(color: AppColors.danger)),
               onTap: () async {
                 HapticFeedback.lightImpact();
                 Navigator.pop(context);
                 final ok = await confirm(
                   context,
-                  title: 'Sign out?',
+                  title: tr('Sign out?'),
                   message: session.outbox.isEmpty
-                      ? 'You will need your username and password to sign back in.'
-                      : '${session.outbox.length} change${session.outbox.length == 1 ? ' made offline has' : 's made offline have'} not been sent yet. '
-                          'Signing out deletes ${session.outbox.length == 1 ? 'it' : 'them'} from this phone.',
-                  confirmLabel: 'Sign out',
+                      ? tr('You will need your username and password to sign back in.')
+                      : tr('{p0} change{p1} not been sent yet. Signing out deletes {p2} from this phone.', {'p0': session.outbox.length, 'p1': session.outbox.length == 1 ? tr(' made offline has') : tr('s made offline have'), 'p2': session.outbox.length == 1 ? tr('it') : tr('them')}),
+                  confirmLabel: tr('Sign out'),
                   danger: session.outbox.isNotEmpty,
                 );
                 if (ok) await session.logout();

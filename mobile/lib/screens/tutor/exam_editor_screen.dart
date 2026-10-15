@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../../core/api.dart';
 import '../../core/format.dart';
+import '../../core/i18n.dart';
 import '../../core/json.dart';
 import '../../core/mcq_parser.dart';
 import '../../core/repo.dart';
@@ -192,36 +193,36 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> {
 
   bool _validate(bool publish) {
     final total = num.tryParse(_totalMarks.text.trim());
-    if (_title.text.trim().isEmpty) return _fail('Give the exam a title.', 0);
-    if (_forGroup && _tuitionId == null) return _fail('Choose the tuition this is for.', 0);
-    if (!_forGroup && _studentId == null) return _fail('Choose the student this is for.', 0);
-    if (total == null || total <= 0) return _fail('Enter the total marks.', 0);
-    if (!_end.isAfter(_start)) return _fail('The end time must be after the start time.', 0);
-    if (!_editing && !_end.isAfter(DateTime.now())) return _fail('The end time is already in the past.', 0);
-    if (_lateUntil != null && !_lateUntil!.isAfter(_end)) return _fail('"Accept late work until" must be after the deadline.', 2);
+    if (_title.text.trim().isEmpty) return _fail(tr('Give the exam a title.'), 0);
+    if (_forGroup && _tuitionId == null) return _fail(tr('Choose the tuition this is for.'), 0);
+    if (!_forGroup && _studentId == null) return _fail(tr('Choose the student this is for.'), 0);
+    if (total == null || total <= 0) return _fail(tr('Enter the total marks.'), 0);
+    if (!_end.isAfter(_start)) return _fail(tr('The end time must be after the start time.'), 0);
+    if (!_editing && !_end.isAfter(DateTime.now())) return _fail(tr('The end time is already in the past.'), 0);
+    if (_lateUntil != null && !_lateUntil!.isAfter(_end)) return _fail(tr('"Accept late work until" must be after the deadline.'), 2);
     if (_type != 'MCQ' && _scheme.any((row) => (num.tryParse(row.marks.text.trim()) ?? 0) <= 0)) {
-      return _fail('Every written question in the marking scheme needs marks above 0.', 1);
+      return _fail(tr('Every written question in the marking scheme needs marks above 0.'), 1);
     }
     if (_mcqTotal + _writtenTotal > total) {
       return _fail(
-        'MCQ marks (${trimNumber(_mcqTotal)}) plus written marks (${trimNumber(_writtenTotal)}) come to more than the total of ${trimNumber(total)}.',
+        tr('MCQ marks ({p0}) plus written marks ({p1}) come to more than the total of {p2}.', {'p0': trimNumber(_mcqTotal), 'p1': trimNumber(_writtenTotal), 'p2': trimNumber(total)}),
         0,
       );
     }
-    if (publish && _type == 'MCQ' && _mcq.isEmpty) return _fail('Add at least one question, or change the type to written.', 1);
+    if (publish && _type == 'MCQ' && _mcq.isEmpty) return _fail(tr('Add at least one question, or change the type to written.'), 1);
     if (publish && _type != 'CQ') {
       final unfinished = _mcq.indexWhere((q) => questionProblems(q).isNotEmpty);
       if (unfinished != -1) {
         return _fail(
-          'Question ${unfinished + 1} is not ready: ${questionProblems(_mcq[unfinished]).first.toLowerCase()}. You can still save it as a draft.',
+          tr('Question {p0} is not ready: {p1}. You can still save it as a draft.', {'p0': unfinished + 1, 'p1': questionProblems(_mcq[unfinished]).first.toLowerCase()}),
           1,
         );
       }
     }
-    if (publish && _type == 'CQ' && !_keepPaper && _written.text.trim().isEmpty) return _fail('The written paper is empty.', 1);
+    if (publish && _type == 'CQ' && !_keepPaper && _written.text.trim().isEmpty) return _fail(tr('The written paper is empty.'), 1);
     if (_resultsMode == 'TIME') {
-      if (_resultsAt == null) return _fail('Choose the date and time when results should be published.', 3);
-      if (!_resultsAt!.isAfter(_start)) return _fail('Results cannot be published before the exam starts.', 3);
+      if (_resultsAt == null) return _fail(tr('Choose the date and time when results should be published.'), 3);
+      if (!_resultsAt!.isAfter(_start)) return _fail(tr('Results cannot be published before the exam starts.'), 3);
     }
     return true;
   }
@@ -267,8 +268,8 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> {
       showToast(
         context,
         _editing
-            ? (publish ? 'Changes saved.' : 'Saved as a draft — students cannot see it.')
-            : (publish ? 'Published. Students have been notified.' : 'Draft saved — publish it when you are ready.'),
+            ? (publish ? tr('Changes saved.') : tr('Saved as a draft — students cannot see it.'))
+            : (publish ? tr('Published. Students have been notified.') : tr('Draft saved — publish it when you are ready.')),
       );
       Navigator.pop(context, true);
     } on ApiException catch (error) {
@@ -286,15 +287,14 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> {
     final text = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('Paste written questions'),
+        title: Text(tr('Paste written questions')),
         content: SizedBox(
           width: 520,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                'Numbered questions are kept apart and maths stays as written. If every question ends with its marks — [10] or (5 marks) — '
-                'the marking scheme is filled in too.',
+                tr('Numbered questions are kept apart and maths stays as written. If every question ends with its marks — [10] or (5 marks) — the marking scheme is filled in too.'),
                 style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
               ),
               gap12,
@@ -304,21 +304,21 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> {
                 autofocus: true,
                 autocorrect: false,
                 style: TextStyle(fontFamily: 'monospace', fontSize: 13),
-                decoration: InputDecoration(hintText: '1. A particle moves with velocity \\(v(t) = 3t^2 - 4t\\). Find its acceleration at t = 2 s. [5]'),
+                decoration: InputDecoration(hintText: tr('1. A particle moves with velocity \\(v(t) = 3t^2 - 4t\\). Find its acceleration at t = 2 s. [5]')),
               ),
             ],
           ),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(context, controller.text), child: const Text('Add to the paper')),
+          TextButton(onPressed: () => Navigator.pop(context), child: Text(tr('Cancel'))),
+          FilledButton(onPressed: () => Navigator.pop(context, controller.text), child: Text(tr('Add to the paper'))),
         ],
       ),
     );
     if (text == null || !mounted) return;
     final items = parseWrittenQuestions(text);
     if (items.isEmpty) {
-      showToast(context, 'No questions found in that text.', error: true);
+      showToast(context, tr('No questions found in that text.'), error: true);
       return;
     }
     final blocks = items.map((q) => '${q.label}. ${q.text}${q.marks != null ? ' [${trimNumber(q.marks)}]' : ''}').join('\n\n');
@@ -328,7 +328,7 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> {
         _scheme.addAll(items.map((q) => _SchemeRow(label: q.label, marks: trimNumber(q.marks))));
       }
     });
-    showToast(context, 'Added ${items.length} written question${items.length == 1 ? '' : 's'}.');
+    showToast(context, tr('Added {p0} written question{p1}.', {'p0': items.length, 'p1': items.length == 1 ? '' : 's'}));
   }
 
   Widget _questionsSection() {
@@ -343,11 +343,10 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> {
         if (_type != 'CQ') McqBuilder(questions: _mcq, onChanged: (value) => setState(() => _mcq = value)),
         if (_type != 'MCQ') ...[
           gap8,
-          const _Label('Written questions', info: 'Students type their answer or upload photos of their handwriting.\n\nLeave a blank line between questions. Maths works as \$x^2\$, \\(x_1\\) or \$\$…\$\$.'),
+          _Label(tr('Written questions'), info: tr('Students type their answer or upload photos of their handwriting.\n\nLeave a blank line between questions. Maths works as \$x^2\$, \\(x_1\\) or \$\$…\$\$.')),
           if (_keepPaper) ...[
-            const Banner2(
-              'This paper was formatted on the website (tables, bold or lists). It is kept exactly as it is. '
-              'Rewriting it here keeps the text and pictures but drops that formatting.',
+            Banner2(
+              tr('This paper was formatted on the website (tables, bold or lists). It is kept exactly as it is. Rewriting it here keeps the text and pictures but drops that formatting.'),
             ),
             gap8,
             AppCard(child: HtmlMath(_originalHtml, baseUrl: api.baseUrl)),
@@ -355,14 +354,14 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> {
               onPressed: () async {
                 final ok = await confirm(
                   context,
-                  title: 'Rewrite the paper here?',
-                  message: 'The text and pictures are kept. Tables, bold text and lists become plain paragraphs.',
-                  confirmLabel: 'Rewrite',
+                  title: tr('Rewrite the paper here?'),
+                  message: tr('The text and pictures are kept. Tables, bold text and lists become plain paragraphs.'),
+                  confirmLabel: tr('Rewrite'),
                 );
                 if (ok && mounted) setState(() => _keepPaper = false);
               },
               icon: const Icon(Icons.edit_outlined),
-              label: const Text('Rewrite on this phone'),
+              label: Text(tr('Rewrite on this phone')),
             ),
           ] else ...[
             TextField(
@@ -370,8 +369,8 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> {
               maxLines: null,
               minLines: 6,
               textCapitalization: TextCapitalization.sentences,
-              decoration: const InputDecoration(
-                hintText: 'Q1. Prove that …\n\nQ2. Evaluate \$\$\\int_0^1 x^2\\,dx\$\$',
+              decoration: InputDecoration(
+                hintText: tr('Q1. Prove that …\n\nQ2. Evaluate \$\$\\int_0^1 x^2\\,dx\$\$'),
                 alignLabelWithHint: true,
               ),
             ),
@@ -380,7 +379,7 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> {
               spacing: 8,
               runSpacing: 8,
               children: [
-                OutlinedButton.icon(onPressed: _pasteWritten, icon: const Icon(Icons.content_paste, size: 18), label: const Text('Paste questions')),
+                OutlinedButton.icon(onPressed: _pasteWritten, icon: const Icon(Icons.content_paste, size: 18), label: Text(tr('Paste questions'))),
                 OutlinedButton.icon(
                   onPressed: () async {
                     final urls = await pickAndUpload(context);
@@ -388,7 +387,7 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> {
                     setState(() => _written.text = '${_written.text.trimRight()}\n\n${urls.map((u) => '[picture: $u]').join('\n\n')}\n\n'.trimLeft());
                   },
                   icon: const Icon(Icons.add_photo_alternate_outlined, size: 18),
-                  label: const Text('Add a picture'),
+                  label: Text(tr('Add a picture')),
                 ),
               ],
             ),
@@ -399,7 +398,7 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Students will see', style: TextStyle(color: Theme.of(context).colorScheme.outlineVariant, fontSize: 11, fontWeight: FontWeight.w600)),
+                    Text(tr('Students will see'), style: TextStyle(color: Theme.of(context).colorScheme.outlineVariant, fontSize: 11, fontWeight: FontWeight.w600)),
                     const SizedBox(height: 6),
                     HtmlMath(preview, baseUrl: api.baseUrl),
                   ],
@@ -409,12 +408,12 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> {
           ],
           gap12,
           _Label(
-            'Marks per written question',
-            info: 'Optional. List each question and its marks to mark them one by one. Leave it empty to give one overall written mark.',
+            tr('Marks per written question'),
+            info: tr('Optional. List each question and its marks to mark them one by one. Leave it empty to give one overall written mark.'),
             trailing: TextButton.icon(
-              onPressed: () => setState(() => _scheme.add(_SchemeRow(label: 'Q${_scheme.length + 1}'))),
+              onPressed: () => setState(() => _scheme.add(_SchemeRow(label: tr('Q{p0}', {'p0': _scheme.length + 1})))),
               icon: const Icon(Icons.add, size: 18),
-              label: const Text('Add'),
+              label: Text(tr('Add')),
             ),
           ),
           for (var i = 0; i < _scheme.length; i++)
@@ -427,7 +426,7 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> {
                     child: TextField(
                       controller: _scheme[i].label,
                       maxLength: 120,
-                      decoration: InputDecoration(labelText: 'Question ${i + 1}', hintText: 'e.g. Q1 (a)', counterText: ''),
+                      decoration: InputDecoration(labelText: tr('Question {p0}', {'p0': i + 1}), hintText: tr('e.g. Q1 (a)'), counterText: ''),
                     ),
                   ),
                   SizedBox(width: 10),
@@ -436,12 +435,12 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> {
                     child: TextField(
                       controller: _scheme[i].marks,
                       keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                      decoration: InputDecoration(labelText: 'Marks'),
+                      decoration: InputDecoration(labelText: tr('Marks')),
                       onChanged: (_) => setState(() {}),
                     ),
                   ),
                   IconButton(
-                    tooltip: 'Remove written question ${i + 1}',
+                    tooltip: tr('Remove written question {p0}', {'p0': i + 1}),
                     icon: Icon(Icons.delete_outline),
                     onPressed: () => setState(() => _scheme.removeAt(i).dispose()),
                   ),
@@ -451,8 +450,7 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> {
         ],
         gap12,
         Text(
-          'Marks set so far: ${trimNumber(_mcqTotal)} MCQ${_type != 'MCQ' && _scheme.isNotEmpty ? ' + ${trimNumber(_writtenTotal)} written' : ''}'
-          ' = ${trimNumber(allocated)} of ${trimNumber(total)} total.',
+          tr('Marks set so far: {p0} MCQ{p1} = {p2} of {p3} total.', {'p0': trimNumber(_mcqTotal), 'p1': _type != 'MCQ' && _scheme.isNotEmpty ? tr(' + {p0} written', {'p0': trimNumber(_writtenTotal)}) : '', 'p2': trimNumber(allocated), 'p3': trimNumber(total)}),
           style: TextStyle(color: allocated > total ? AppColors.danger : Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13, fontWeight: allocated > total ? FontWeight.w700 : null),
         ),
       ],
@@ -464,17 +462,17 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> {
   String get _targetName {
     if (_forGroup) {
       final t = _tuitions.where((t) => t.str('id') == _tuitionId).firstOrNull;
-      return t?.str('title') ?? (_tuitions.isEmpty ? 'No tuitions yet' : 'Choose');
+      return t?.str('title') ?? (_tuitions.isEmpty ? tr('No tuitions yet') : tr('Choose'));
     }
     final s = _students.where((s) => s.str('id') == _studentId).firstOrNull;
-    return s == null ? (_students.isEmpty ? 'No students yet' : 'Choose') : (s.str('full_name').isNotEmpty ? s.str('full_name') : '@${s.str('username')}');
+    return s == null ? (_students.isEmpty ? tr('No students yet') : tr('Choose')) : (s.str('full_name').isNotEmpty ? s.str('full_name') : '@${s.str('username')}');
   }
 
   Future<void> _chooseTarget() async {
     final picked = _forGroup
         ? await pickFromSheet(
             context,
-            title: 'Choose a tuition',
+            title: tr('Choose a tuition'),
             icon: Icons.class_outlined,
             selected: _tuitionId,
             options: [
@@ -484,7 +482,7 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> {
           )
         : await pickFromSheet(
             context,
-            title: 'Choose a student',
+            title: tr('Choose a student'),
             selected: _studentId,
             options: [
               for (final s in _students)
@@ -531,33 +529,33 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> {
         FlatGroup(children: [
           FlatField(
             controller: _title,
-            hint: 'Title, e.g. Chapter 3 quiz — Polynomials',
+            hint: tr('Title, e.g. Chapter 3 quiz — Polynomials'),
             style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
             onChanged: (_) => setState(() {}),
           ),
         ]),
         gap12,
-        const _Label('Type', info: 'Timed exam: open between a start and an end time, with an optional time limit per student.\n\nAssignment: homework with a deadline and no stopwatch.'),
-        _chips<String>(const [('EXAM', 'Timed exam'), ('ASSIGNMENT', 'Assignment')], _category, (v) => _category = v),
+        _Label(tr('Type'), info: tr('Timed exam: open between a start and an end time, with an optional time limit per student.\n\nAssignment: homework with a deadline and no stopwatch.')),
+        _chips<String>([('EXAM', tr('Timed exam')), ('ASSIGNMENT', tr('Assignment'))], _category, (v) => _category = v),
         gap12,
-        const _Label('Questions', info: 'MCQ: multiple choice, marked automatically.\n\nWritten: creative questions you mark yourself.\n\nBoth: a mix of the two.'),
-        _chips<String>(const [('HYBRID', 'Both'), ('MCQ', 'MCQ only'), ('CQ', 'Written only')], _type, (v) => _type = v),
+        _Label(tr('Questions'), info: tr('MCQ: multiple choice, marked automatically.\n\nWritten: creative questions you mark yourself.\n\nBoth: a mix of the two.')),
+        _chips<String>([('HYBRID', tr('Both')), ('MCQ', tr('MCQ only')), ('CQ', tr('Written only'))], _type, (v) => _type = v),
         gap12,
-        const _Label('For'),
-        _chips<bool>(const [(true, 'A tuition'), (false, 'One student')], _forGroup, (v) => _forGroup = v),
+        _Label(tr('For')),
+        _chips<bool>([(true, tr('A tuition')), (false, tr('One student'))], _forGroup, (v) => _forGroup = v),
         gap8,
         FlatGroup(children: [
           PickerRow(
             leading: InitialAvatar(_targetName, radius: 14, icon: _forGroup ? Icons.class_outlined : null),
-            label: _forGroup ? 'Tuition' : 'Student',
+            label: _forGroup ? tr('Tuition') : tr('Student'),
             value: _targetName,
             onTap: (_forGroup ? _tuitions.isEmpty : _students.isEmpty) ? null : _chooseTarget,
           ),
           PickerRow(
             leading: Icon(Icons.play_circle_outline, size: 22, color: tone(context, AppColors.primarySoft)),
-            label: 'Opens',
+            label: tr('Opens'),
             value: fmtDateTime(_start),
-            onTap: () => _pickInto('Opens', _start, (value) => setState(() {
+            onTap: () => _pickInto(tr('Opens'), _start, (value) => setState(() {
                   final length = _end.difference(_start);
                   _start = value;
                   if (!_end.isAfter(_start)) _end = _start.add(length.isNegative ? const Duration(hours: 1) : length);
@@ -565,18 +563,18 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> {
           ),
           PickerRow(
             leading: Icon(Icons.flag_outlined, size: 22, color: tone(context, AppColors.primarySoft)),
-            label: isExam ? 'Closes' : 'Deadline',
+            label: isExam ? tr('Closes') : tr('Deadline'),
             value: fmtDateTime(_end),
-            onTap: () => _pickInto(isExam ? 'Closes' : 'Deadline', _end, (value) => setState(() => _end = value)),
+            onTap: () => _pickInto(isExam ? tr('Closes') : tr('Deadline'), _end, (value) => setState(() => _end = value)),
           ),
-          _NumberRow(label: 'Total marks', controller: _totalMarks, onChanged: () => setState(() {})),
+          _NumberRow(label: tr('Total marks'), controller: _totalMarks, onChanged: () => setState(() {})),
           if (isExam)
             _NumberRow(
-              label: 'Time limit',
+              label: tr('Time limit'),
               controller: _duration,
-              hint: 'No limit',
+              hint: tr('No limit'),
               suffix: 'min',
-              info: "Each student's clock starts when they open the exam and never runs past the closing time. Leave empty for no limit.",
+              info: tr('Each student\'s clock starts when they open the exam and never runs past the closing time. Leave empty for no limit.'),
             ),
         ]),
       ],
@@ -590,36 +588,36 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> {
         FlatGroup(children: [
           PickerRow(
             leading: Icon(Icons.schedule_send_outlined, size: 22, color: tone(context, AppColors.primarySoft)),
-            label: 'Late work until',
-            value: _lateUntil == null ? 'Not accepted' : fmtDateTime(_lateUntil),
-            onTap: () => _pickInto('Accept late work until', _lateUntil, (value) => setState(() => _lateUntil = value)),
+            label: tr('Late work until'),
+            value: _lateUntil == null ? tr('Not accepted') : fmtDateTime(_lateUntil),
+            onTap: () => _pickInto(tr('Accept late work until'), _lateUntil, (value) => setState(() => _lateUntil = value)),
             trailing: _lateUntil == null
                 ? null
                 : IconButton(
-                    tooltip: 'Do not accept late work',
+                    tooltip: tr('Do not accept late work'),
                     visualDensity: VisualDensity.compact,
                     icon: const Icon(Icons.close, size: 18),
                     onPressed: () => setState(() => _lateUntil = null),
                   ),
           ),
           _NumberRow(
-            label: 'Grace period',
+            label: tr('Grace period'),
             controller: _grace,
             suffix: 'min',
-            info: 'Extra minutes after the end for answers that are still uploading.',
+            info: tr('Extra minutes after the end for answers that are still uploading.'),
           ),
           if (_type != 'CQ') ...[
             _NumberRow(
-              label: 'Minus per wrong MCQ',
+              label: tr('Minus per wrong MCQ'),
               controller: _negative,
               decimal: true,
-              info: '0 means no negative marking. Unanswered questions never lose marks.',
+              info: tr('0 means no negative marking. Unanswered questions never lose marks.'),
             ),
             SwitchListTile(
               dense: true,
               value: _shuffle,
               onChanged: (value) => setState(() => _shuffle = value),
-              title: const Text('Shuffle MCQ order', style: TextStyle(fontSize: 14)),
+              title: Text(tr('Shuffle MCQ order'), style: TextStyle(fontSize: 14)),
             ),
           ],
         ]),
@@ -639,43 +637,38 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         _Label(
-          'Students see results',
-          info: 'Until then a student who has submitted sees only “Results pending”: no marks, no correct answers, no solutions.\n\n'
-              'On submit: marks and answers appear the moment they hand in${_forGroup ? ' (someone who finishes early could pass the answers on)' : ''}.\n'
-              'When it closes: after the deadline and any late-work time.\n'
-              'At a set time: automatically at the date and time you choose.\n'
-              'When I publish: hidden until you press “Publish results”.'
-              '${_type != 'MCQ' ? '\n\nMCQs are marked automatically. A written part shows as “awaiting marking” until you mark it.' : ''}',
+          tr('Students see results'),
+          info: tr('Until then a student who has submitted sees only “Results pending”: no marks, no correct answers, no solutions.\n\nOn submit: marks and answers appear the moment they hand in{p0}.\nWhen it closes: after the deadline and any late-work time.\nAt a set time: automatically at the date and time you choose.\nWhen I publish: hidden until you press “Publish results”.{p1}', {'p0': _forGroup ? tr(' (someone who finishes early could pass the answers on)') : '', 'p1': _type != 'MCQ' ? tr('\n\nMCQs are marked automatically. A written part shows as “awaiting marking” until you mark it.') : ''}),
         ),
-        _chips<String>(_resultModes, _resultsMode, (v) => _resultsMode = v),
+        _chips<String>([for (final (value, label) in _resultModes) (value, tr(label))], _resultsMode, (v) => _resultsMode = v),
         if (_resultsMode == 'TIME') ...[
           gap8,
           FlatGroup(children: [
             PickerRow(
               leading: Icon(Icons.event_available_outlined, size: 22, color: tone(context, AppColors.primarySoft)),
-              label: 'Publish at',
-              value: _resultsAt == null ? 'Choose' : fmtDateTime(_resultsAt),
-              onTap: () => _pickInto('Publish results at', _resultsAt, (value) => setState(() => _resultsAt = value)),
+              label: tr('Publish at'),
+              value: _resultsAt == null ? tr('Choose') : fmtDateTime(_resultsAt),
+              onTap: () => _pickInto(tr('Publish results at'), _resultsAt, (value) => setState(() => _resultsAt = value)),
             ),
           ]),
         ],
         gap12,
-        const _Label('Model solution', info: 'Optional. Students can read it once results are out.'),
+        _Label(tr('Model solution'), info: tr('Optional. Students can read it once results are out.')),
         FlatGroup(children: [
-          FlatField(controller: _solution, hint: 'Worked solutions. Maths works as \$x^2\$ or \$\$…\$\$.', minLines: 3, maxLines: 10),
+          FlatField(controller: _solution, hint: tr('Worked solutions. Maths works as \$x^2\$ or \$\$…\$\$.'), minLines: 3, maxLines: 10),
           if (_solutionMedia.isNotEmpty) ...[
-            Padding(padding: const EdgeInsets.all(12), child: ServerImage(_solutionMedia, label: 'solution sheet', height: 140)),
+            Padding(padding: const EdgeInsets.all(12), child: ServerImage(_solutionMedia, label: tr('solution sheet'), height: 140)),
             ListTile(
               dense: true,
               leading: Icon(Icons.delete_outline, color: tone(context, AppColors.danger)),
-              title: Text('Remove the solution sheet', style: TextStyle(color: tone(context, AppColors.danger))),
+              title: Text(tr('Remove the solution sheet'), style: TextStyle(color: tone(context, AppColors.danger))),
               onTap: () => setState(() => _solutionMedia = ''),
             ),
           ] else
             ListTile(
               dense: true,
               leading: const Icon(Icons.upload_file_outlined),
-              title: const Text('Attach a photo of the solution sheet'),
+              title: Text(tr('Attach a photo of the solution sheet')),
               onTap: () async {
                 final urls = await pickAndUpload(context, multiple: false);
                 if (urls.isNotEmpty && mounted) setState(() => _solutionMedia = urls.first);
@@ -687,29 +680,29 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> {
   }
 
   String get _basicSummary {
-    final title = _title.text.trim().isEmpty ? 'No title yet' : _title.text.trim();
-    return '$title · ${_category == 'EXAM' ? 'Timed exam' : 'Assignment'} · $_targetName';
+    final title = _title.text.trim().isEmpty ? tr('No title yet') : _title.text.trim();
+    return '$title · ${_category == 'EXAM' ? tr('Timed exam') : tr('Assignment')} · $_targetName';
   }
 
   String get _questionsSummary {
     final parts = <String>[
-      if (_type != 'CQ') '${_mcq.length} MCQ',
-      if (_type != 'MCQ') _keepPaper || _written.text.trim().isNotEmpty ? 'written paper' : 'no written paper yet',
+      if (_type != 'CQ') tr('{n} MCQ', {'n': _mcq.length}),
+      if (_type != 'MCQ') _keepPaper || _written.text.trim().isNotEmpty ? tr('written paper') : tr('no written paper yet'),
     ];
-    return '${parts.join(' + ')} · ${trimNumber(_mcqTotal + _writtenTotal)} of ${_totalMarks.text.trim().isEmpty ? '?' : _totalMarks.text.trim()} marks';
+    return tr('{p0} · {p1} of {p2} marks', {'p0': parts.join(' + '), 'p1': trimNumber(_mcqTotal + _writtenTotal), 'p2': _totalMarks.text.trim().isEmpty ? '?' : _totalMarks.text.trim()});
   }
 
   String get _rulesSummary {
     final parts = <String>[
-      if (_lateUntil != null) 'late work until ${fmtShortDate(_lateUntil)}',
-      'grace ${_grace.text.trim().isEmpty ? '0' : _grace.text.trim()} min',
-      if (_type != 'CQ' && (num.tryParse(_negative.text.trim()) ?? 0) > 0) 'negative marking',
+      if (_lateUntil != null) tr('late work until {p0}', {'p0': fmtShortDate(_lateUntil)}),
+      tr('grace {p0} min', {'p0': _grace.text.trim().isEmpty ? '0' : _grace.text.trim()}),
+      if (_type != 'CQ' && (num.tryParse(_negative.text.trim()) ?? 0) > 0) tr('negative marking'),
       if (_type != 'CQ' && _shuffle) 'shuffled',
     ];
     return parts.join(' · ');
   }
 
-  String get _resultsSummary => _resultModes.firstWhere((m) => m.$1 == _resultsMode, orElse: () => _resultModes.last).$2;
+  String get _resultsSummary => tr(_resultModes.firstWhere((m) => m.$1 == _resultsMode, orElse: () => _resultModes.last).$2);
 
   Widget _step(int index, String title, String summary, Widget body, {bool done = false, bool optional = false}) {
     final open = _open == index;
@@ -740,7 +733,7 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> {
                     _reveal(index + 1);
                   },
                   icon: const Icon(Icons.arrow_downward, size: 18),
-                  label: const Text('Continue'),
+                  label: Text(tr('Continue')),
                 ),
               ),
             ],
@@ -755,7 +748,11 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> {
     final noun = _category == 'ASSIGNMENT' ? 'assignment' : 'exam';
     final hasQuestions = (_type != 'CQ' && _mcq.isNotEmpty) || (_type != 'MCQ' && (_keepPaper || _written.text.trim().isNotEmpty));
     return Scaffold(
-      appBar: AppBar(title: Text('${_editing ? 'Edit' : 'New'} $noun')),
+      appBar: AppBar(
+        title: Text(_editing
+            ? (noun == 'assignment' ? tr('Edit assignment') : tr('Edit exam'))
+            : (noun == 'assignment' ? tr('New assignment') : tr('New exam'))),
+      ),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
         children: [
@@ -768,11 +765,11 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> {
             ),
             gap12,
           ],
-          _step(0, 'Basic info', _basicSummary, _basicSection(),
+          _step(0, tr('Basic info'), _basicSummary, _basicSection(),
               done: _title.text.trim().isNotEmpty && (_forGroup ? _tuitionId != null : _studentId != null)),
-          _step(1, 'Questions', _questionsSummary, _questionsSection(), done: hasQuestions),
-          _step(2, 'Extra rules', _rulesSummary, _rulesSection(), optional: true),
-          _step(3, 'Results & solution', _resultsSummary, _resultsSection(), done: true),
+          _step(1, tr('Questions'), _questionsSummary, _questionsSection(), done: hasQuestions),
+          _step(2, tr('Extra rules'), _rulesSummary, _rulesSection(), optional: true),
+          _step(3, tr('Results & solution'), _resultsSummary, _resultsSection(), done: true),
         ],
       ),
       bottomNavigationBar: SafeArea(
@@ -781,7 +778,7 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> {
           child: Row(
             children: [
               if (!_wasPublished) ...[
-                Expanded(child: OutlinedButton(onPressed: _saving ? null : () => _save(false), child: const Text('Save draft'))),
+                Expanded(child: OutlinedButton(onPressed: _saving ? null : () => _save(false), child: Text(tr('Save draft')))),
                 const SizedBox(width: 12),
               ],
               Expanded(
@@ -790,7 +787,7 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> {
                   icon: _saving
                       ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
                       : const Icon(Icons.send, size: 18),
-                  label: Text(_wasPublished ? 'Save changes' : 'Publish'),
+                  label: Text(_wasPublished ? tr('Save changes') : tr('Publish')),
                 ),
               ),
             ],
@@ -862,7 +859,7 @@ class _Step extends StatelessWidget {
                         Row(
                           children: [
                             Text(title, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
-                            if (optional) Text('  optional', style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
+                            if (optional) Text(tr('  optional'), style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
                           ],
                         ),
                         if (!open && summary.isNotEmpty)

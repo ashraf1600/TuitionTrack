@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart' show ValueNotifier;
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
 
+import 'i18n.dart';
 import 'offline.dart';
 
 typedef Json = Map<String, dynamic>;
@@ -225,7 +226,7 @@ class ApiClient {
       final map = Map<String, dynamic>.from(data);
       final message = [map['message'], map['error'], map['detail']].whereType<String>().firstWhere(
             (m) => m.isNotEmpty,
-            orElse: () => 'The request could not be completed.',
+            orElse: () => tr('The request could not be completed.'),
           );
       throw ApiException(
         message,
@@ -235,7 +236,7 @@ class ApiClient {
       );
     }
     throw ApiException(
-      response.statusCode >= 500 ? 'Something went wrong on the server. Please try again.' : 'The request could not be completed.',
+      response.statusCode >= 500 ? tr('Something went wrong on the server. Please try again.') : tr('The request could not be completed.'),
       status: response.statusCode,
     );
   }
@@ -386,7 +387,7 @@ class ApiClient {
     final url = data is Map ? data['url'] : null;
     if (url is! String || !(url.startsWith('/media/') || url.startsWith('http://') || url.startsWith('https://'))) {
       throw ApiException(
-        'The upload did not return a media path; please try again.',
+        tr('The upload did not return a media path; please try again.'),
         code: 'upload_invalid_url',
       );
     }

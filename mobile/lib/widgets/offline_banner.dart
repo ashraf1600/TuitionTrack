@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../core/i18n.dart';
 import '../core/session.dart';
 import 'theme.dart';
 
@@ -20,7 +21,7 @@ class OfflineBanner extends StatelessWidget {
         builder: (context, _) {
           final waiting = session.outbox.length;
           final failures = session.outbox.failures;
-          final changes = '$waiting change${waiting == 1 ? '' : 's'}';
+          final changes = waiting == 1 ? tr('1 change') : tr('{n} changes', {'n': waiting});
           return AnimatedSize(
             duration: const Duration(milliseconds: 200),
             alignment: Alignment.topCenter,
@@ -32,26 +33,26 @@ class OfflineBanner extends StatelessWidget {
                   _Strip(
                     color: AppColors.danger,
                     icon: Icons.error_outline,
-                    message: failures.length == 1 ? failures.first : '${failures.length} changes could not be saved.',
+                    message: failures.length == 1 ? failures.first : tr('{p0} changes could not be saved.', {'p0': failures.length}),
                     action: TextButton(
                       onPressed: () async {
                         if (failures.length > 1) {
                           await showDialog<void>(
                             context: context,
                             builder: (context) => AlertDialog(
-                              title: const Text('Not saved'),
+                              title: Text(tr('Not saved')),
                               content: Column(
                                 mainAxisSize: MainAxisSize.min,
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [for (final f in failures) Padding(padding: const EdgeInsets.only(bottom: 8), child: Text(f))],
                               ),
-                              actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('OK'))],
+                              actions: [TextButton(onPressed: () => Navigator.pop(context), child: Text(tr('OK')))],
                             ),
                           );
                         }
                         session.outbox.clearFailures();
                       },
-                      child: Text(failures.length > 1 ? 'View' : 'Dismiss'),
+                      child: Text(failures.length > 1 ? tr('View') : tr('Dismiss')),
                     ),
                   ),
                 if (offline)
@@ -59,16 +60,16 @@ class OfflineBanner extends StatelessWidget {
                     color: AppColors.warning,
                     icon: Icons.cloud_off_outlined,
                     message: waiting == 0
-                        ? "You're offline. Showing what's saved on this phone."
-                        : "You're offline. $changes will be sent when you're back online.",
-                    action: TextButton(onPressed: session.api.checkConnection, child: const Text('Retry')),
+                        ? tr('You\'re offline. Showing what\'s saved on this phone.')
+                        : tr('You\'re offline. {p0} will be sent when you\'re back online.', {'p0': changes}),
+                    action: TextButton(onPressed: session.api.checkConnection, child: Text(tr('Retry'))),
                   )
                 else if (waiting > 0)
                   _Strip(
                     color: AppColors.primarySoft,
                     icon: Icons.cloud_upload_outlined,
-                    message: 'Sending $changes made offline…',
-                    action: TextButton(onPressed: session.syncPending, child: const Text('Send now')),
+                    message: tr('Sending {p0} made offline…', {'p0': changes}),
+                    action: TextButton(onPressed: session.syncPending, child: Text(tr('Send now'))),
                   ),
               ],
             ),

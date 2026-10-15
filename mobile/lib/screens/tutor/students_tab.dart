@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import '../../core/i18n.dart';
 import '../../core/json.dart';
 import '../../core/repo.dart';
 import '../../widgets/theme.dart';
@@ -22,28 +23,28 @@ Future<void> showCredentials(BuildContext context, {required String name, requir
     context: context,
     barrierDismissible: false,
     builder: (context) => AlertDialog(
-      title: Text('Sign-in details for $name'),
+      title: Text(tr('Sign-in details for {p0}', {'p0': name})),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Give these to the student now. The password is shown only this once; they will be asked to choose their own when they first sign in.',
+            tr('Give these to the student now. The password is shown only this once; they will be asked to choose their own when they first sign in.'),
             style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
           ),
           gap12,
-          for (final entry in {'Username': username, 'Temporary password': password}.entries)
+          for (final entry in {tr('Username'): username, tr('Temporary password'): password}.entries)
             ListTile(
               contentPadding: EdgeInsets.zero,
               dense: true,
               title: Text(entry.key, style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 12)),
               subtitle: SelectableText(entry.value, style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: Theme.of(context).colorScheme.onSurface)),
               trailing: IconButton(
-                tooltip: 'Copy ${entry.key.toLowerCase()}',
+                tooltip: tr('Copy {p0}', {'p0': entry.key.toLowerCase()}),
                 icon: const Icon(Icons.copy, size: 20),
                 onPressed: () async {
                   await Clipboard.setData(ClipboardData(text: entry.value));
-                  if (context.mounted) showToast(context, '${entry.key} copied.');
+                  if (context.mounted) showToast(context, tr('{p0} copied.', {'p0': entry.key}));
                 },
               ),
             ),
@@ -52,12 +53,12 @@ Future<void> showCredentials(BuildContext context, {required String name, requir
       actions: [
         TextButton(
           onPressed: () async {
-            await Clipboard.setData(ClipboardData(text: 'TuitionTrack sign-in\nUsername: $username\nTemporary password: $password'));
-            if (context.mounted) showToast(context, 'Both copied.');
+            await Clipboard.setData(ClipboardData(text: tr('TuitionTrack sign-in\nUsername: {p0}\nTemporary password: {p1}', {'p0': Raw(username), 'p1': Raw(password)})));
+            if (context.mounted) showToast(context, tr('Both copied.'));
           },
-          child: const Text('Copy both'),
+          child: Text(tr('Copy both')),
         ),
-        FilledButton(onPressed: () => Navigator.pop(context), child: const Text('Done')),
+        FilledButton(onPressed: () => Navigator.pop(context), child: Text(tr('Done'))),
       ],
     ),
   );
@@ -108,19 +109,19 @@ class _StudentsTabState extends State<StudentsTab> {
           children: [
             if (data.students.length > 5) ...[
               TextField(
-                decoration: InputDecoration(labelText: 'Search students', prefixIcon: Icon(Icons.search)),
+                decoration: InputDecoration(labelText: tr('Search students'), prefixIcon: Icon(Icons.search)),
                 onChanged: (value) => setState(() => _search = value.trim()),
               ),
               gap12,
             ],
             if (data.students.isEmpty)
-              const EmptyState(
+              EmptyState(
                 icon: Icons.person_outline,
-                title: 'No students yet',
-                message: 'Tap “Add student” to create an account for a student, or wait for students to send you a request.',
+                title: tr('No students yet'),
+                message: tr('Tap “Add student” to create an account for a student, or wait for students to send you a request.'),
               )
             else if (students.isEmpty)
-              Text('No students match that search.', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant))
+              Text(tr('No students match that search.'), style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant))
             else
               for (final student in students) ...[
                 _StudentCard(
@@ -251,11 +252,11 @@ class _StudentCard extends StatelessWidget {
                   children: [
                     for (final group in groups) Pill(group, color: AppColors.primarySoft, icon: Icons.class_outlined),
                     if (pendingRequest)
-                      const Pill('Asked to join — answer on Overview', color: AppColors.warning)
+                      Pill(tr('Asked to join — answer on Overview'), color: AppColors.warning)
                     else if (groups.isEmpty && unassigned && active)
-                      const Pill('Not in a tuition', color: AppColors.warning),
-                    if (student.flag('must_change_password')) const Pill('Temporary password', color: AppColors.warning, icon: Icons.key),
-                    if (!active) const Pill('Deactivated', color: AppColors.danger),
+                      Pill(tr('Not in a tuition'), color: AppColors.warning),
+                    if (student.flag('must_change_password')) Pill(tr('Temporary password'), color: AppColors.warning, icon: Icons.key),
+                    if (!active) Pill(tr('Deactivated'), color: AppColors.danger),
                   ],
                 ),
               ],
@@ -263,13 +264,13 @@ class _StudentCard extends StatelessWidget {
           ),
           if (!pendingRequest)
             PopupMenuButton<String>(
-              tooltip: 'Options for ${student.str('full_name')}',
+              tooltip: tr('Options for {p0}', {'p0': student.str('full_name')}),
               onSelected: (value) => _action(context, value),
               itemBuilder: (_) => [
-                const PopupMenuItem(value: 'edit', child: Text('Edit details')),
-                if (active) const PopupMenuItem(value: 'group', child: Text('Add to a tuition')),
-                const PopupMenuItem(value: 'reset', child: Text('Reset password')),
-                PopupMenuItem(value: 'toggle', child: Text(active ? 'Deactivate' : 'Reactivate')),
+                PopupMenuItem(value: 'edit', child: Text(tr('Edit details'))),
+                if (active) PopupMenuItem(value: 'group', child: Text(tr('Add to a tuition'))),
+                PopupMenuItem(value: 'reset', child: Text(tr('Reset password'))),
+                PopupMenuItem(value: 'toggle', child: Text(active ? tr('Deactivate') : tr('Reactivate'))),
               ],
             ),
         ],

@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../core/api.dart';
+import '../core/i18n.dart';
 import '../core/session.dart';
 import 'theme.dart';
 import 'ui.dart';
@@ -16,7 +17,7 @@ bool isSafeMedia(String url) => url.startsWith('/media/') || url.startsWith('htt
 Future<void> openExternal(BuildContext context, String url) async {
   final uri = Uri.tryParse(context.read<Session>().api.mediaUrl(url));
   if (uri == null || !await launchUrl(uri, mode: LaunchMode.externalApplication)) {
-    if (context.mounted) showToast(context, 'Could not open the file.', error: true);
+    if (context.mounted) showToast(context, tr('Could not open the file.'), error: true);
   }
 }
 
@@ -36,7 +37,7 @@ class ServerImage extends StatelessWidget {
       return OutlinedButton.icon(
         onPressed: () => openExternal(context, url),
         icon: const Icon(Icons.picture_as_pdf_outlined),
-        label: Text('Open $label (PDF)'),
+        label: Text(tr('Open {p0} (PDF)', {'p0': label})),
       );
     }
     return Semantics(
@@ -69,7 +70,7 @@ class ServerImage extends StatelessWidget {
                 height: 80,
                 color: AppColors.card,
                 alignment: Alignment.center,
-                child: const Text('Picture could not be loaded', style: TextStyle(color: AppColors.muted)),
+                child: Text(tr('Picture could not be loaded'), style: TextStyle(color: AppColors.muted)),
               ),
             ),
           ),
@@ -91,12 +92,12 @@ Future<List<String>> pickAndUpload(BuildContext context, {bool multiple = true})
         children: [
           ListTile(
             leading: const Icon(Icons.photo_camera_outlined),
-            title: const Text('Take a photo'),
+            title: Text(tr('Take a photo')),
             onTap: () => Navigator.pop(context, ImageSource.camera),
           ),
           ListTile(
             leading: const Icon(Icons.photo_library_outlined),
-            title: Text(multiple ? 'Choose pictures' : 'Choose a picture'),
+            title: Text(multiple ? tr('Choose pictures') : tr('Choose a picture')),
             onTap: () => Navigator.pop(context, ImageSource.gallery),
           ),
         ],
@@ -116,7 +117,7 @@ Future<List<String>> pickAndUpload(BuildContext context, {bool multiple = true})
       files = one == null ? [] : [one];
     }
   } catch (_) {
-    if (context.mounted) showToast(context, 'Could not open the camera or gallery. Check the app permissions.', error: true);
+    if (context.mounted) showToast(context, tr('Could not open the camera or gallery. Check the app permissions.'), error: true);
     return [];
   }
 
@@ -124,7 +125,7 @@ Future<List<String>> pickAndUpload(BuildContext context, {bool multiple = true})
   for (final file in files) {
     try {
       final bytes = await file.readAsBytes();
-      if (bytes.length > 10 * 1024 * 1024) throw ApiException('"${file.name}" is larger than 10 MB.');
+      if (bytes.length > 10 * 1024 * 1024) throw ApiException(tr('"{p0}" is larger than 10 MB.', {'p0': file.name}));
       var name = file.name.toLowerCase();
       if (!RegExp(r'\.(png|jpe?g|webp)$').hasMatch(name)) name = '$name.jpg';
       urls.add(await api.upload(bytes, name));

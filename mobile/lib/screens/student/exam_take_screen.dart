@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 
 import '../../core/api.dart';
 import '../../core/format.dart';
+import '../../core/i18n.dart';
 import '../../core/json.dart';
 import '../../core/repo.dart';
 import '../../core/session.dart';
@@ -151,29 +152,29 @@ class _ExamTakeScreenState extends State<ExamTakeScreen> {
     if (!auto) {
       setState(() => _error = null);
       if (_phase == _Phase.over) {
-        setState(() => _error = 'The submission time has ended.');
+        setState(() => _error = tr('The submission time has ended.'));
         return;
       }
       if (_mcqOnly && _answers.isEmpty) {
-        setState(() => _error = 'Choose an answer for at least one question.');
+        setState(() => _error = tr('Choose an answer for at least one question.'));
         return;
       }
       if (!_mcqOnly && !hasWritten && _answers.isEmpty) {
-        setState(() => _error = 'Answer the questions, type your answer, or add a photo of your written work.');
+        setState(() => _error = tr('Answer the questions, type your answer, or add a photo of your written work.'));
         return;
       }
       if (_hasPaper && !hasWritten) {
-        setState(() => _error = 'The written part needs an answer: type it or add a photo.');
+        setState(() => _error = tr('The written part needs an answer: type it or add a photo.'));
         return;
       }
       final unanswered = _questions.length - _answers.length;
       final ok = await confirm(
         context,
-        title: _isAssignment ? 'Turn in the assignment?' : 'Turn in the exam?',
+        title: _isAssignment ? tr('Turn in the assignment?') : tr('Turn in the exam?'),
         message: unanswered > 0
-            ? 'You have left $unanswered question${unanswered == 1 ? '' : 's'} blank. You cannot change your answers after turning in.'
-            : 'You cannot change your answers after turning in.',
-        confirmLabel: 'Turn in',
+            ? tr('You have left {p0} question{p1} blank. You cannot change your answers after turning in.', {'p0': unanswered, 'p1': unanswered == 1 ? '' : 's'})
+            : tr('You cannot change your answers after turning in.'),
+        confirmLabel: tr('Turn in'),
       );
       if (!ok || !mounted) return;
     }
@@ -193,14 +194,14 @@ class _ExamTakeScreenState extends State<ExamTakeScreen> {
       if (!mounted) return;
       setState(() {
         _submitting = false;
-        _error = auto ? 'Time is up, and your answers could not be sent: ${error.message} Tap "Turn in" to try again.' : error.message;
+        _error = auto ? tr('Time is up, and your answers could not be sent: {p0} Tap "Turn in" to try again.', {'p0': error.message}) : error.message;
       });
     } catch (_) {
       // Never leave the button stuck on "sending": the answers are still saved on the device.
       if (!mounted) return;
       setState(() {
         _submitting = false;
-        _error = 'Your answers could not be sent. They are saved on this phone; tap "Turn in" to try again.';
+        _error = tr('Your answers could not be sent. They are saved on this phone; tap "Turn in" to try again.');
       });
     }
   }
@@ -209,11 +210,11 @@ class _ExamTakeScreenState extends State<ExamTakeScreen> {
     if (_submitting) return false;
     return confirm(
       context,
-      title: 'Leave without turning in?',
+      title: tr('Leave without turning in?'),
       message: exam.flag('is_timed')
-          ? 'Your answers are saved on this phone, but the clock keeps running. Come back before the time ends.'
-          : 'Your answers are saved on this phone. Come back and turn in before the deadline.',
-      confirmLabel: 'Leave',
+          ? tr('Your answers are saved on this phone, but the clock keeps running. Come back before the time ends.')
+          : tr('Your answers are saved on this phone. Come back and turn in before the deadline.'),
+      confirmLabel: tr('Leave'),
     );
   }
 
@@ -223,14 +224,14 @@ class _ExamTakeScreenState extends State<ExamTakeScreen> {
     final warning = _phase == _Phase.late || _phase == _Phase.grace || _phase == _Phase.over;
     final timerColor = warning ? AppColors.warning : (_left.inSeconds <= 300 ? AppColors.danger : AppColors.primarySoft);
     final timerLabel = switch (_phase) {
-      _Phase.over => 'Time is up',
-      _Phase.late => 'Deadline passed — late work accepted for',
-      _Phase.grace => 'Time is up — sending your answers',
+      _Phase.over => tr('Time is up'),
+      _Phase.late => tr('Deadline passed — late work accepted for'),
+      _Phase.grace => tr('Time is up — sending your answers'),
       _Phase.onTime => exam.flag('is_timed')
-          ? 'Your time remaining'
+          ? tr('Your time remaining')
           : _isAssignment
-              ? 'Time until the deadline'
-              : 'Time remaining',
+              ? tr('Time until the deadline')
+              : tr('Time remaining'),
     };
 
     return PopScope(
@@ -274,9 +275,9 @@ class _ExamTakeScreenState extends State<ExamTakeScreen> {
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
-                        Text('${trimNumber(exam.number('total_marks'))} marks', style: const TextStyle(fontWeight: FontWeight.w700)),
+                        Text(tr('{p0} marks', {'p0': trimNumber(exam.number('total_marks'))}), style: const TextStyle(fontWeight: FontWeight.w700)),
                         if (_questions.isNotEmpty)
-                          Text('${_answers.length} of ${_questions.length} answered', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 12)),
+                          Text(tr('{p0} of {p1} answered', {'p0': _answers.length, 'p1': _questions.length}), style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 12)),
                       ],
                     ),
                   ],
@@ -289,28 +290,28 @@ class _ExamTakeScreenState extends State<ExamTakeScreen> {
                   if (_error != null) ...[Banner2(_error!, color: AppColors.danger, icon: Icons.error_outline), gap12],
                   if (exam.number('negative_marks_per_wrong') > 0 && _questions.isNotEmpty) ...[
                     Banner2(
-                      'Each wrong answer loses ${trimNumber(exam.number('negative_marks_per_wrong'))} mark(s). A blank answer loses nothing.',
+                      tr('Each wrong answer loses {p0} mark(s). A blank answer loses nothing.', {'p0': trimNumber(exam.number('negative_marks_per_wrong'))}),
                       color: AppColors.warning,
                     ),
                     gap12,
                   ],
                   if (_questions.isNotEmpty) ...[
-                    const SectionTitle('Multiple choice', subtitle: 'Tap an option to choose it. Tap it again to clear.'),
+                    SectionTitle(tr('Multiple choice'), subtitle: tr('Tap an option to choose it. Tap it again to clear.')),
                     for (var i = 0; i < _questions.length; i++) ...[_question(i, _questions[i]), gap12],
                   ],
                   if (_hasPaper) ...[
-                    const SectionTitle('Written questions'),
+                    SectionTitle(tr('Written questions')),
                     AppCard(child: HtmlMath(exam.str('content_html'), baseUrl: api.baseUrl)),
                     gap12,
                   ],
                   if (!_mcqOnly) ...[
-                    const SectionTitle('Your written answer', subtitle: 'Type it, add photos of your handwritten work, or both.'),
+                    SectionTitle(tr('Your written answer'), subtitle: tr('Type it, add photos of your handwritten work, or both.')),
                     TextField(
                       controller: _text,
                       maxLines: 6,
                       maxLength: 20000,
                       textCapitalization: TextCapitalization.sentences,
-                      decoration: const InputDecoration(hintText: 'Type your answer here', alignLabelWithHint: true),
+                      decoration: InputDecoration(hintText: tr('Type your answer here'), alignLabelWithHint: true),
                     ),
                     gap8,
                     OutlinedButton.icon(
@@ -318,7 +319,7 @@ class _ExamTakeScreenState extends State<ExamTakeScreen> {
                       icon: _uploading
                           ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
                           : const Icon(Icons.add_a_photo_outlined),
-                      label: Text(_uploading ? 'Uploading…' : 'Add photos of your answer'),
+                      label: Text(_uploading ? tr('Uploading…') : tr('Add photos of your answer')),
                     ),
                     if (_images.isNotEmpty) ...[
                       gap12,
@@ -330,12 +331,12 @@ class _ExamTakeScreenState extends State<ExamTakeScreen> {
                             Stack(
                               clipBehavior: Clip.none,
                               children: [
-                                SizedBox(width: 96, child: ServerImage(_images[i], height: 96, fit: BoxFit.cover, label: 'Page ${i + 1}')),
+                                SizedBox(width: 96, child: ServerImage(_images[i], height: 96, fit: BoxFit.cover, label: tr('Page {p0}', {'p0': i + 1}))),
                                 Positioned(
                                   top: -8,
                                   right: -8,
                                   child: IconButton.filled(
-                                    tooltip: 'Remove page ${i + 1}',
+                                    tooltip: tr('Remove page {p0}', {'p0': i + 1}),
                                     style: IconButton.styleFrom(
                                       backgroundColor: const Color(0xFFBE123C),
                                       minimumSize: const Size(28, 28),
@@ -361,12 +362,12 @@ class _ExamTakeScreenState extends State<ExamTakeScreen> {
                     icon: _submitting
                         ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
                         : const Icon(Icons.send),
-                    label: Text(_submitting ? 'Sending…' : (_isAssignment ? 'Turn in assignment' : 'Turn in exam')),
+                    label: Text(_submitting ? tr('Sending…') : (_isAssignment ? tr('Turn in assignment') : tr('Turn in exam'))),
                   ),
                   if (_phase == _Phase.over)
-                    const Padding(
+                    Padding(
                       padding: EdgeInsets.only(top: 8),
-                      child: Text('The submission time has ended.', textAlign: TextAlign.center, style: TextStyle(color: AppColors.danger)),
+                      child: Text(tr('The submission time has ended.'), textAlign: TextAlign.center, style: TextStyle(color: AppColors.danger)),
                     ),
                 ],
               ),
@@ -400,10 +401,10 @@ class _ExamTakeScreenState extends State<ExamTakeScreen> {
                     : MathText(q.str('question'), style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600, height: 1.4)),
               ),
               const SizedBox(width: 8),
-              Text('${trimNumber(q.number('points', 1))} mark${q.number('points', 1) == 1 ? '' : 's'}', style: const TextStyle(color: AppColors.success, fontSize: 12)),
+              Text(tr('{p0} mark{p1}', {'p0': trimNumber(q.number('points', 1)), 'p1': q.number('points', 1) == 1 ? '' : 's'}), style: const TextStyle(color: AppColors.success, fontSize: 12)),
             ],
           ),
-          if (q.str('image_url').isNotEmpty) ...[gap8, ServerImage(q.str('image_url'), label: 'Question ${index + 1} picture')],
+          if (q.str('image_url').isNotEmpty) ...[gap8, ServerImage(q.str('image_url'), label: tr('Question {p0} picture', {'p0': index + 1}))],
           gap12,
           for (var i = 0; i < options.length; i++)
             Padding(

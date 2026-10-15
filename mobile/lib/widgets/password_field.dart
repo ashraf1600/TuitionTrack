@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../core/i18n.dart';
+
 /// A password box with a show/hide button.
 class PasswordField extends StatefulWidget {
   const PasswordField({
@@ -43,7 +45,7 @@ class _PasswordFieldState extends State<PasswordField> {
         helperText: widget.helper,
         prefixIcon: const Icon(Icons.lock_outline),
         suffixIcon: IconButton(
-          tooltip: _hidden ? 'Show password' : 'Hide password',
+          tooltip: _hidden ? tr('Show password') : tr('Hide password'),
           icon: Icon(_hidden ? Icons.visibility_outlined : Icons.visibility_off_outlined),
           onPressed: () => setState(() => _hidden = !_hidden),
         ),

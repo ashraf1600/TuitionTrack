@@ -4,18 +4,29 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../core/api.dart';
+import '../core/i18n.dart';
 import '../core/repo.dart';
 import 'theme.dart';
 
-void showToast(BuildContext context, String message, {bool error = false}) {
-  final messenger = ScaffoldMessenger.maybeOf(context);
+/// A short message at the bottom. With [actionLabel] it offers one action
+/// (usually "Undo") and stays a little longer.
+void showToast(BuildContext context, String message, {bool error = false, String? actionLabel, VoidCallback? onAction}) {
+  showToastOn(ScaffoldMessenger.maybeOf(context), message, error: error, actionLabel: actionLabel, onAction: onAction);
+}
+
+/// [showToast] for code without a BuildContext (notification actions).
+void showToastOn(ScaffoldMessengerState? messenger, String message, {bool error = false, String? actionLabel, VoidCallback? onAction}) {
   if (messenger == null) return;
+  final hasAction = actionLabel != null && onAction != null;
   messenger
     ..hideCurrentSnackBar()
     ..showSnackBar(SnackBar(
       content: Text(message, style: const TextStyle(color: Colors.white)),
       backgroundColor: error ? const Color(0xFF9F1239) : const Color(0xFF065F46),
-      duration: Duration(seconds: error ? 5 : 3),
+      duration: Duration(seconds: error ? 5 : (hasAction ? 6 : 3)),
+      // Without this a snack bar with an action stays until tapped; an Undo should simply time out.
+      persist: false,
+      action: hasAction ? SnackBarAction(label: actionLabel, textColor: Colors.white, onPressed: onAction) : null,
     ));
 }
 
@@ -23,7 +34,7 @@ void showToast(BuildContext context, String message, {bool error = false}) {
 /// may be scrolled out of sight, a message says so too.
 bool checkForm(BuildContext context, GlobalKey<FormState> form) {
   if (form.currentState?.validate() ?? false) return true;
-  showToast(context, 'Some details are missing or not right. Check the fields marked in red.', error: true);
+  showToast(context, tr('Some details are missing or not right. Check the fields marked in red.'), error: true);
   return false;
 }
 
@@ -37,7 +48,7 @@ Future<bool> attemptSave(BuildContext context, Future<Map<String, dynamic>> Func
   });
   if (ok && context.mounted) {
     final queued = result?['queued'] == true;
-    showToast(context, queued ? 'Saved on this phone. It will be sent when you are back online.' : success);
+    showToast(context, queued ? tr('Saved on this phone. It will be sent when you are back online.') : success);
   }
   return ok;
 }
@@ -52,7 +63,7 @@ Future<bool> attempt(BuildContext context, Future<void> Function() action, {Stri
     if (context.mounted) showToast(context, error.message, error: true);
     return false;
   } catch (_) {
-    if (context.mounted) showToast(context, 'Something went wrong. Please try again.', error: true);
+    if (context.mounted) showToast(context, tr('Something went wrong. Please try again.'), error: true);
     return false;
   }
 }
@@ -70,7 +81,7 @@ Future<bool> confirm(
       title: Text(title),
       content: Text(message),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+        TextButton(onPressed: () => Navigator.pop(context, false), child: Text(tr('Cancel'))),
         FilledButton(
           style: danger ? FilledButton.styleFrom(backgroundColor: const Color(0xFFBE123C)) : null,
           onPressed: () => Navigator.pop(context, true),
@@ -157,9 +168,9 @@ class LoaderState<T> extends State<Loader<T>> {
     } catch (_) {
       if (!mounted) return;
       if (_loaded) {
-        if (!quiet) showToast(context, 'Could not refresh. Please try again.', error: true);
+        if (!quiet) showToast(context, tr('Could not refresh. Please try again.'), error: true);
       } else {
-        setState(() => _error = 'Something went wrong while loading. Please try again.');
+        setState(() => _error = tr('Something went wrong while loading. Please try again.'));
       }
     } finally {
       _slowTimer?.cancel();
@@ -176,22 +187,34 @@ class LoaderState<T> extends State<Loader<T>> {
           reload();
         });
       }
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(32),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const CircularProgressIndicator(),
-              if (_slow) ...[
-                const SizedBox(height: 16),
-                Text(
-                  'Connecting to the server…\nIt can take up to a minute to wake up.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
-                ),
-              ],
-            ],
+      // Grey shapes where the content will appear: the wait feels shorter than a spinner.
+      return Align(
+        alignment: Alignment.topCenter,
+        child: ClipRect(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 720),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (_slow) ...[
+                    Text(
+                      tr('Connecting to the server…\nIt can take up to a minute to wake up.'),
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+                  const SkeletonBox(height: 84),
+                  const SizedBox(height: 12),
+                  const SkeletonBox(height: 140),
+                  const SizedBox(height: 12),
+                  const SkeletonBox(height: 120),
+                ],
+              ),
+            ),
           ),
         ),
       );
@@ -220,7 +243,7 @@ class ErrorView extends StatelessWidget {
             const SizedBox(height: 12),
             Text(message, textAlign: TextAlign.center, style: TextStyle(color: scheme.onSurface)),
             const SizedBox(height: 16),
-            FilledButton.icon(onPressed: onRetry, icon: const Icon(Icons.refresh), label: const Text('Try again')),
+            FilledButton.icon(onPressed: onRetry, icon: const Icon(Icons.refresh), label: Text(tr('Try again'))),
           ],
         ),
       ),
@@ -354,10 +377,13 @@ class Banner2 extends StatelessWidget {
 }
 
 class AppCard extends StatelessWidget {
-  const AppCard({super.key, required this.child, this.padding = const EdgeInsets.all(16), this.onTap, this.borderColor});
+  const AppCard({super.key, required this.child, this.padding = const EdgeInsets.all(16), this.onTap, this.onLongPress, this.borderColor});
   final Widget child;
   final EdgeInsets padding;
   final VoidCallback? onTap;
+
+  /// Quick actions, e.g. a menu of shortcuts for this card.
+  final VoidCallback? onLongPress;
   final Color? borderColor;
 
   @override
@@ -372,7 +398,7 @@ class AppCard extends StatelessWidget {
       color: scheme.surface,
       shape: shape,
       clipBehavior: Clip.antiAlias,
-      child: InkWell(onTap: onTap, child: Padding(padding: padding, child: child)),
+      child: InkWell(onTap: onTap, onLongPress: onLongPress, child: Padding(padding: padding, child: child)),
     );
   }
 }
@@ -616,7 +642,7 @@ class InfoTip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return IconButton(
-      tooltip: 'More about this',
+      tooltip: tr('More about this'),
       visualDensity: VisualDensity.compact,
       iconSize: 18,
       constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
@@ -717,7 +743,7 @@ class _PickSheetState extends State<_PickSheet> {
                   child: TextField(
                     autofocus: false,
                     onChanged: (v) => setState(() => _query = v),
-                    decoration: const InputDecoration(hintText: 'Search', prefixIcon: Icon(Icons.search), isDense: true),
+                    decoration: InputDecoration(hintText: tr('Search'), prefixIcon: Icon(Icons.search), isDense: true),
                   ),
                 ),
               Flexible(
@@ -737,13 +763,50 @@ class _PickSheetState extends State<_PickSheet> {
                     if (shown.isEmpty)
                       Padding(
                         padding: const EdgeInsets.all(24),
-                        child: Text('Nothing matches.', textAlign: TextAlign.center, style: TextStyle(color: scheme.onSurfaceVariant)),
+                        child: Text(tr('Nothing matches.'), textAlign: TextAlign.center, style: TextStyle(color: scheme.onSurfaceVariant)),
                       ),
                   ],
                 ),
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+
+/// A softly pulsing grey block standing in for content that is still loading.
+class SkeletonBox extends StatefulWidget {
+  const SkeletonBox({super.key, required this.height, this.radius = 16});
+  final double height;
+  final double radius;
+
+  @override
+  State<SkeletonBox> createState() => _SkeletonBoxState();
+}
+
+class _SkeletonBoxState extends State<SkeletonBox> with SingleTickerProviderStateMixin {
+  late final AnimationController _pulse = AnimationController(vsync: this, duration: const Duration(milliseconds: 900))
+    ..repeat(reverse: true);
+
+  @override
+  void dispose() {
+    _pulse.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final base = Theme.of(context).colorScheme.surfaceContainerHighest;
+    return Semantics(
+      label: tr('Loading'),
+      child: FadeTransition(
+        opacity: Tween<double>(begin: 0.45, end: 1).animate(_pulse),
+        child: Container(
+          height: widget.height,
+          decoration: BoxDecoration(color: base, borderRadius: BorderRadius.circular(widget.radius)),
         ),
       ),
     );
