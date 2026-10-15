@@ -126,8 +126,8 @@ void main() {
       expect(whenLabel(DateTime(2026, 10, 11, 9, 15), _now), 'Tomorrow 9:15 AM');
       expect(whenLabel(DateTime(2026, 10, 14, 18), _now), 'Wed 6:00 PM');
       setAppLanguage('bn');
-      expect(whenLabel(DateTime(2026, 10, 11, 9, 15), _now), 'আগামীকাল ৯:১৫ AM');
-      expect(whenLabel(DateTime(2026, 10, 14, 18), _now), 'বুধ ৬:০০ PM');
+      expect(whenLabel(DateTime(2026, 10, 11, 9, 15), _now), 'আগামীকাল সকাল ৯:১৫');
+      expect(whenLabel(DateTime(2026, 10, 14, 18), _now), 'বুধ সন্ধ্যা ৬:০০');
     });
   });
 

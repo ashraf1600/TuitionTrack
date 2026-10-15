@@ -41,12 +41,24 @@ String countdown(Duration left) {
   return d > 0 ? '${d}d $hms' : hms;
 }
 
-/// "18:00" -> "6:00 PM".
+/// "18:00" -> "6:00 PM"; in Bangla "সন্ধ্যা ৬:০০" (the part of the day comes first).
 String to12h(String? time) {
   final match = RegExp(r'^(\d{1,2}):(\d{2})').firstMatch(time ?? '');
   if (match == null) return time ?? '';
   final h = int.parse(match[1]!);
-  return localDigits('${h % 12 == 0 ? 12 : h % 12}:${match[2]} ${h < 12 ? 'AM' : 'PM'}');
+  final clock = '${h % 12 == 0 ? 12 : h % 12}:${match[2]}';
+  if (isBangla) return '${_banglaDayPart(h)} ${localDigits(clock)}';
+  return '$clock ${h < 12 ? 'AM' : 'PM'}';
+}
+
+/// ভোর, সকাল, দুপুর, বিকাল, সন্ধ্যা, রাত — how Bangla speakers say the time of day.
+String _banglaDayPart(int hour) {
+  if (hour >= 4 && hour < 6) return 'ভোর';
+  if (hour >= 6 && hour < 12) return 'সকাল';
+  if (hour >= 12 && hour < 15) return 'দুপুর';
+  if (hour >= 15 && hour < 18) return 'বিকাল';
+  if (hour >= 18 && hour < 19) return 'সন্ধ্যা';
+  return 'রাত';
 }
 
 /// yyyy-MM-dd in local time; used to compare calendar days.

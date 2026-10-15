@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' show pi;
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -11,6 +12,7 @@ import '../../core/reminder_plan.dart';
 import '../../core/reminders.dart';
 import '../../core/repo.dart';
 import '../../core/session.dart';
+import '../../core/week_plan.dart';
 import '../../widgets/charts.dart';
 import '../../widgets/share.dart';
 import '../../widgets/theme.dart';
@@ -287,16 +289,15 @@ class _Heading extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    final tt = context.tt;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(2, 18, 2, 8),
+      padding: const EdgeInsets.fromLTRB(2, 24, 2, 12),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.baseline,
+        textBaseline: TextBaseline.alphabetic,
         children: [
-          Expanded(
-            child: Text(title.toUpperCase(),
-                style: TextStyle(fontSize: 12, letterSpacing: 0.8, fontWeight: FontWeight.w700, color: scheme.onSurfaceVariant)),
-          ),
-          if (trailing != null) Text(trailing!, style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
+          Expanded(child: Text(title, style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: tt.textPrimary))),
+          if (trailing != null) Text(trailing!, style: TextStyle(fontSize: 13, color: tt.textSecondary)),
         ],
       ),
     );
@@ -407,113 +408,58 @@ class _RequestsBanner extends StatelessWidget {
   }
 }
 
-class _Slot {
-  _Slot(this.tuition, this.slot);
-  final Json tuition;
-  final Json slot;
-  String get start => slotStart(slot);
-  String get end => '${slot['end_time'] ?? ''}';
-}
-
-/// The whole week without scrolling: a strip of seven days (a dot for a free
-/// day, the number of classes for a busy one), then one slim line per class,
-/// grouped by day, Saturday first. Today stands out.
-class _WeekAtAGlance extends StatelessWidget {
+/// "This week": a strip of the seven days (Saturday first), then the classes
+/// grouped by day. Today sits on a raised block, the next class is marked, and
+/// days already over are quieter. By default only today and what is still to
+/// come are listed; the rest of the week is one tap away.
+class _WeekAtAGlance extends StatefulWidget {
   const _WeekAtAGlance({required this.tuitions, required this.onOpen});
   final List<Json> tuitions;
   final Future<void> Function(String tuitionId) onOpen;
 
-  static const _order = ['Saturday', 'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+  @override
+  State<_WeekAtAGlance> createState() => _WeekAtAGlanceState();
+}
+
+class _WeekAtAGlanceState extends State<_WeekAtAGlance> {
+  bool _whole = false;
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final today = weekdayName(DateTime.now());
-    final byDay = {for (final d in _order) d: <_Slot>[]};
-    for (final tuition in tuitions) {
-      for (final slot in tuition.maps('routine')) {
-        final day = normalizeDay('${slot['day'] ?? slot['day_of_week'] ?? ''}');
-        if (day.isNotEmpty) byDay[day]!.add(_Slot(tuition, slot));
-      }
-    }
-    for (final slots in byDay.values) {
-      slots.sort((a, b) => minutesOf(a.start).compareTo(minutesOf(b.start)));
-    }
-    final busyDays = _order.where((d) => byDay[d]!.isNotEmpty).toList();
-    final accent = tone(context, AppColors.primarySoft);
+    final tt = context.tt;
+    final plan = buildWeekPlan(widget.tuitions, DateTime.now());
+    final days = plan.daysToShow(whole: _whole);
+    final hasPast = plan.pastDaysWithClasses.isNotEmpty;
+    // A busy week folds its past days into one row instead of listing them.
+    final foldPast = !_whole && plan.isBusy && hasPast;
 
-    return AppCard(
-      padding: const EdgeInsets.fromLTRB(12, 12, 12, 6),
+    return Container(
+      decoration: BoxDecoration(color: tt.card, borderRadius: BorderRadius.circular(20), boxShadow: tt.cardShadow),
+      padding: const EdgeInsets.fromLTRB(8, 16, 8, 8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Seven days in a row.
-          Row(
-            children: [
-              for (final day in _order)
-                Expanded(
-                  child: Semantics(
-                    label: '${dayLabel(day, short: false)}: ${byDay[day]!.isEmpty ? tr('no classes') : tr('{n} classes', {'n': byDay[day]!.length})}${day == today ? tr(', today') : ''}',
-                    excludeSemantics: true,
-                    child: Column(
-                      children: [
-                        Text(isBangla ? dayLabel(day) : day.substring(0, 2),
-                            style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: day == today ? FontWeight.w800 : FontWeight.w500,
-                                color: day == today ? accent : scheme.onSurfaceVariant)),
-                        const SizedBox(height: 4),
-                        SizedBox(
-                          height: 22,
-                          child: Center(
-                            child: byDay[day]!.isEmpty
-                                ? Container(
-                                    width: 5,
-                                    height: 5,
-                                    decoration: BoxDecoration(color: scheme.outlineVariant.withValues(alpha: 0.5), shape: BoxShape.circle),
-                                  )
-                                : Container(
-                                    width: 22,
-                                    height: 22,
-                                    alignment: Alignment.center,
-                                    decoration: BoxDecoration(
-                                      color: day == today ? AppColors.chartPending : AppColors.chartPending.withValues(alpha: 0.18),
-                                      shape: BoxShape.circle,
-                                    ),
-                                    child: Text('${byDay[day]!.length}',
-                                        style: TextStyle(
-                                            fontSize: 11,
-                                            fontWeight: FontWeight.w800,
-                                            color: day == today ? Colors.white : accent)),
-                                  ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-            ],
-          ),
-          if (busyDays.isEmpty)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(4, 12, 4, 8),
-              child: Text(
-                tuitions.isEmpty ? tr('Your class days appear here.') : tr('No class days set yet. Add them when you edit a tuition.'),
-                style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
-              ),
-            )
+          Padding(padding: const EdgeInsets.symmetric(horizontal: 8), child: _DayStrip(plan: plan)),
+          const SizedBox(height: 12),
+          Padding(padding: const EdgeInsets.symmetric(horizontal: 8), child: Divider(height: 1, color: tt.border)),
+          if (plan.isEmpty)
+            _WeekEmpty(hasTuitions: widget.tuitions.isNotEmpty)
           else ...[
             const SizedBox(height: 8),
-            Divider(height: 1, color: scheme.outline.withValues(alpha: 0.6)),
-            const SizedBox(height: 4),
-            for (final day in busyDays)
-              for (var i = 0; i < byDay[day]!.length; i++)
-                _SlotLine(
-                  day: i == 0 ? dayLabel(day) : '',
-                  isToday: day == today,
-                  slot: byDay[day]![i],
-                  onTap: () => onOpen(byDay[day]![i].tuition.str('id')),
+            if (foldPast)
+              _PastSummary(plan: plan, onTap: () => setState(() => _whole = true)),
+            for (final day in days)
+              _DayGroup(plan: plan, day: day, onOpen: widget.onOpen),
+            if (hasPast)
+              TextButton(
+                onPressed: () => setState(() => _whole = !_whole),
+                child: Text(
+                  _whole
+                      ? tr('Show today and upcoming only')
+                      : tr('Show whole week · {n} classes', {'n': plan.total}),
+                  textAlign: TextAlign.center,
                 ),
+              ),
           ],
         ],
       ),
@@ -521,46 +467,332 @@ class _WeekAtAGlance extends StatelessWidget {
   }
 }
 
-class _SlotLine extends StatelessWidget {
-  const _SlotLine({required this.day, required this.isToday, required this.slot, required this.onTap});
+/// Seven equal cells: day name, a marker, and a bar under today.
+class _DayStrip extends StatelessWidget {
+  const _DayStrip({required this.plan});
+  final WeekPlan plan;
+
+  @override
+  Widget build(BuildContext context) {
+    final tt = context.tt;
+    return Row(
+      children: [
+        for (final (i, day) in weekOrder.indexed) ...[
+          if (i > 0) const SizedBox(width: 2),
+          Expanded(child: _DayCell(day: day, count: plan.byDay[day]!.length, isToday: day == plan.today, isPast: plan.isPastDay(day), tt: tt)),
+        ],
+      ],
+    );
+  }
+}
+
+class _DayCell extends StatelessWidget {
+  const _DayCell({required this.day, required this.count, required this.isToday, required this.isPast, required this.tt});
   final String day;
+  final int count;
   final bool isToday;
-  final _Slot slot;
+  final bool isPast;
+  final TtTokens tt;
+
+  @override
+  Widget build(BuildContext context) {
+    final name = isBangla ? dayLabel(day) : day.substring(0, 2);
+    final countText = Text(
+      localDigits('$count'),
+      style: TextStyle(
+        fontSize: 13,
+        height: 1,
+        fontWeight: isToday ? FontWeight.w700 : FontWeight.w600,
+        fontFeatures: tabular,
+        color: isToday ? tt.onPrimary : (isPast ? tt.textTertiary : tt.onPrimaryContainer),
+      ),
+    );
+    final Widget marker;
+    if (isToday) {
+      marker = Container(
+        decoration: BoxDecoration(color: tt.primary, shape: BoxShape.circle),
+        alignment: Alignment.center,
+        child: countText,
+      );
+    } else if (count == 0) {
+      // A free day: dashed outline and a dash, so it never depends on colour.
+      marker = CustomPaint(
+        painter: _DashedCircle(tt.textTertiary),
+        child: Center(child: Text('–', style: TextStyle(fontSize: 13, height: 1, color: tt.textTertiary))),
+      );
+    } else {
+      marker = Container(
+        decoration: BoxDecoration(
+          color: isPast ? tt.pastDayFill : tt.primaryContainer,
+          shape: BoxShape.circle,
+          border: Border.all(color: isPast ? tt.border : tt.primary.withValues(alpha: 0.35)),
+        ),
+        alignment: Alignment.center,
+        child: countText,
+      );
+    }
+    return Semantics(
+      label: '${dayLabel(day, short: false)}: '
+          '${count == 0 ? tr('no classes') : tr('{n} classes', {'n': count})}'
+          '${isToday ? tr(', today') : ''}',
+      excludeSemantics: true,
+      child: Column(
+        children: [
+          Text(
+            name,
+            maxLines: 1,
+            overflow: TextOverflow.clip,
+            style: TextStyle(
+              fontSize: 12,
+              height: 1.4,
+              fontWeight: isToday ? FontWeight.w700 : FontWeight.w500,
+              color: isToday ? tt.primary : tt.textSecondary,
+            ),
+          ),
+          const SizedBox(height: 6),
+          SizedBox(width: 30, height: 30, child: marker),
+          const SizedBox(height: 6),
+          Container(
+            width: 16,
+            height: 3,
+            decoration: BoxDecoration(
+              color: isToday ? tt.primary : Colors.transparent,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DashedCircle extends CustomPainter {
+  _DashedCircle(this.color);
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    const dashes = 14;
+    const sweep = 2 * pi / dashes;
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1;
+    final rect = Rect.fromLTWH(0.5, 0.5, size.width - 1, size.height - 1);
+    for (var i = 0; i < dashes; i++) {
+      canvas.drawArc(rect, i * sweep, sweep * 0.55, false, paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_DashedCircle old) => old.color != color;
+}
+
+/// A busy week's past days in one row; tapping it shows them.
+class _PastSummary extends StatelessWidget {
+  const _PastSummary({required this.plan, required this.onTap});
+  final WeekPlan plan;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final accent = tone(context, AppColors.primarySoft);
-    final time = slot.end.isEmpty ? to12h(slot.start) : '${to12h(slot.start)} – ${to12h(slot.end)}';
+    final tt = context.tt;
+    final days = plan.pastDaysWithClasses;
+    final range = days.length == 1 ? dayLabel(days.first) : '${dayLabel(days.first)} – ${dayLabel(days.last)}';
     return InkWell(
-      borderRadius: BorderRadius.circular(10),
+      borderRadius: BorderRadius.circular(12),
       onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
-        decoration: isToday
-            ? BoxDecoration(color: AppColors.chartPending.withValues(alpha: 0.10), borderRadius: BorderRadius.circular(10))
-            : null,
-        child: Row(
-          children: [
-            SizedBox(
-              width: 34,
-              child: Text(day,
-                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: isToday ? accent : scheme.onSurfaceVariant)),
-            ),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-              decoration: BoxDecoration(color: scheme.surfaceContainerHighest, borderRadius: BorderRadius.circular(6)),
-              child: Text(time, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: scheme.onSurface)),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(slot.tuition.str('title'),
-                  maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-            ),
-            Icon(Icons.chevron_right, size: 16, color: scheme.onSurfaceVariant),
-          ],
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 48),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  tr('{days} · {n} classes done', {'days': range, 'n': plan.pastDayClasses}),
+                  style: TextStyle(fontSize: 14, color: tt.textSecondary, fontFeatures: tabular),
+                ),
+              ),
+              Icon(Icons.keyboard_arrow_down_rounded, size: 22, color: tt.textTertiary),
+            ],
+          ),
         ),
+      ),
+    );
+  }
+}
+
+/// One day's classes under its header; today's group sits on a raised block.
+class _DayGroup extends StatelessWidget {
+  const _DayGroup({required this.plan, required this.day, required this.onOpen});
+  final WeekPlan plan;
+  final String day;
+  final Future<void> Function(String tuitionId) onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    final tt = context.tt;
+    final isToday = day == plan.today;
+    final isPast = plan.isPastDay(day);
+    final header = isToday
+        ? tr('Today · {day}', {'day': dayLabel(day, short: !isBangla)})
+        : dayLabel(day, short: !isBangla);
+    final group = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 10, 12, 2),
+          child: Text(
+            header,
+            style: TextStyle(
+              fontSize: 13,
+              height: 1.4,
+              fontWeight: isToday ? FontWeight.w700 : FontWeight.w600,
+              color: isToday ? tt.primary : (isPast ? tt.textTertiary : tt.textSecondary),
+            ),
+          ),
+        ),
+        for (final c in plan.byDay[day]!) _ClassRow(item: c, onTap: () => onOpen(c.tuition.str('id'))),
+      ],
+    );
+    if (!isToday) return group;
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 4),
+      padding: const EdgeInsets.only(bottom: 4),
+      decoration: BoxDecoration(color: tt.cardRaised, borderRadius: BorderRadius.circular(12)),
+      child: group,
+    );
+  }
+}
+
+/// [ start / end ] [ dot ] [ tuition name ] [ Next ] [ > ] — the whole row opens the tuition.
+class _ClassRow extends StatelessWidget {
+  const _ClassRow({required this.item, required this.onTap});
+  final WeekClass item;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final tt = context.tt;
+    final ink = item.past ? tt.textSecondary : tt.textPrimary;
+    return InkWell(
+      borderRadius: BorderRadius.circular(12),
+      onTap: onTap,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(minHeight: isBangla ? 64 : 56),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
+          child: Row(
+            children: [
+              SizedBox(
+                width: isBangla ? 86 : 70,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(to12h(item.start),
+                        maxLines: 1,
+                        style: TextStyle(fontSize: 14, height: 1.3, fontWeight: FontWeight.w600, fontFeatures: tabular, color: ink)),
+                    if (item.end.isNotEmpty)
+                      Text(to12h(item.end),
+                          maxLines: 1,
+                          style: TextStyle(fontSize: 12, height: 1.3, fontFeatures: tabular, color: tt.textTertiary)),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              _Dot(item: item, tt: tt),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  item.tuition.str('title'),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w500, height: isBangla ? 1.55 : 1.45, color: ink),
+                ),
+              ),
+              if (item.isNext) ...[
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(color: tt.primaryContainer, borderRadius: BorderRadius.circular(8)),
+                  child: Text(tr('Next'),
+                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tt.onPrimaryContainer)),
+                ),
+              ],
+              const SizedBox(width: 4),
+              Icon(Icons.chevron_right_rounded, size: 22, color: tt.textTertiary),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Next class: filled primary with a ring. Other upcoming: hollow. Past: solid grey.
+class _Dot extends StatelessWidget {
+  const _Dot({required this.item, required this.tt});
+  final WeekClass item;
+  final TtTokens tt;
+
+  @override
+  Widget build(BuildContext context) {
+    if (item.isNext) {
+      // A 9 dp dot with a 3 dp ring around it: 15 dp in all, like the others' box.
+      return Container(
+        width: 9,
+        height: 9,
+        margin: const EdgeInsets.all(3),
+        decoration: BoxDecoration(
+          color: tt.primary,
+          shape: BoxShape.circle,
+          border: Border.all(color: tt.primaryContainer, width: 3, strokeAlign: BorderSide.strokeAlignOutside),
+        ),
+      );
+    }
+    return SizedBox(
+      width: 15,
+      height: 15,
+      child: Center(
+        child: Container(
+          width: 9,
+          height: 9,
+          decoration: BoxDecoration(
+            color: item.past ? tt.dotPast : Colors.transparent,
+            shape: BoxShape.circle,
+            border: item.past ? null : Border.all(color: tt.dotUpcoming, width: 2),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// No class days anywhere this week.
+class _WeekEmpty extends StatelessWidget {
+  const _WeekEmpty({required this.hasTuitions});
+  final bool hasTuitions;
+
+  @override
+  Widget build(BuildContext context) {
+    final tt = context.tt;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 32, 16, 24),
+      child: Column(
+        children: [
+          Icon(Icons.calendar_today_outlined, size: 32, color: tt.textTertiary),
+          const SizedBox(height: 12),
+          Text(tr('No classes this week'),
+              textAlign: TextAlign.center, style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: tt.textPrimary)),
+          const SizedBox(height: 4),
+          Text(
+            hasTuitions ? tr('No class days set yet. Add them when you edit a tuition.') : tr('Your class days appear here.'),
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 14, height: 1.5, color: tt.textSecondary),
+          ),
+        ],
       ),
     );
   }
