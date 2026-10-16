@@ -102,4 +102,64 @@ void main() {
       expect(tidyPastedText('5  3'), '5 × 3');
     });
   });
+  group('questions pasted from ChatGPT', () {
+    test('every formula without delimiters is found', () {
+      for (final input in [
+        'x^2+2x+1',
+        r'\frac{1}{x}',
+        r'3.0 \times 10^{8}',
+        r'9.11 \times 10^{-31}',
+        r'6.02 \times 10^{23}',
+        r'\log_2 8',
+        r'\sqrt{x^2+y^2}',
+        r'\begin{bmatrix}1&2\\3&4\end{bmatrix}',
+        r'a=2^3\times 2^{-2},\qquad b=\log_2 8',
+      ]) {
+        expect(formulasIn(input), [input], reason: input);
+      }
+    });
+
+    test('the CQ keeps its four formulas and its Bangla text', () {
+      expect(formulasIn(cq), [r'a=2^3\times 2^{-2},\qquad b=\log_2 8', r'a^m\times a^n=a^{m+n}', 'a', 'a^b+b^a']);
+      expect(wrapBareLatex(cq), cq);
+    });
+
+    test('doubled backslashes from JSON are made single; real row breaks stay', () {
+      expect(normalizeEscapes(r'\\(3.0 \\times 10^{8}\\) m/s'), r'\(3.0 \times 10^{8}\) m/s');
+      expect(normalizeEscapes(r'$\begin{bmatrix}1&2\\3&4\end{bmatrix}$'), r'$\begin{bmatrix}1&2\\3&4\end{bmatrix}$');
+      expect(normalizeEscapes(r'If a=2^3\\times 2^{-2}'), r'If a=2^3\times 2^{-2}');
+      expect(normalizeEscapes(r'Line one\nLine two'), 'Line one\nLine two');
+      expect(normalizeEscapes(r'$a \neq b$'), r'$a \neq b$');
+    });
+
+    test('code is never maths; plain questions are unchanged', () {
+      expect(formulasIn('Write `x_1 = a^2` in code'), isEmpty);
+      expect(splitCode('a `b` c').map((p) => p.code), [false, true, false]);
+      const plain = 'Which gas do plants take in? < 2 options > & more';
+      expect(wrapBareLatex(normalizeEscapes(plain)), plain);
+      expect(wrapBareLatex('সালোকসংশ্লেষণ কী?\nউত্তর লেখো। (১০)'), 'সালোকসংশ্লেষণ কী?\nউত্তর লেখো। (১০)');
+    });
+
+    test('option labels stay outside the formula', () {
+      expect(wrapBareLatex('A) x^2'), r'A) \(x^2\)');
+    });
+  });
+
 }
+
+// ── Questions pasted from ChatGPT (HSC/SSC maths, physics, chemistry) ────────
+// Same cases as the website's frontend/src/__tests__/renderMath.test.js.
+
+/// The formulas [wrapBareLatex] + [splitMath]-style matching would typeset.
+List<String> formulasIn(String text) =>
+    [for (final m in mathPattern.allMatches(wrapBareLatex(normalizeEscapes(text)))) (m[1] ?? m[2] ?? m[3] ?? m[4])!.trim()];
+
+const cq = r'''**প্রশ্ন ১। সূচক ও লগারিদম**
+**উদ্দীপক:**
+$$a=2^3\times 2^{-2},\qquad b=\log_2 8$$
+
+ক. সূচক কাকে বলে? (১)
+খ. $a^m\times a^n=a^{m+n}$ ব্যাখ্যা করো। (২)
+গ. $a$-এর মান নির্ণয় করো। (৩)
+ঘ. $a^b+b^a$-এর মান নির্ণয় করো। (৪)''';
+

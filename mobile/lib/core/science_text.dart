@@ -276,8 +276,9 @@ String prepareTex(String tex) {
       .replaceAll(RegExp(r'\\label\{[^}]*\}|\\tag\*?\{[^}]*\}|\\nonumber|\\notag'), '')
       .replaceAll(RegExp(r'\\begin\{(align|eqnarray)\*?\}'), r'\begin{aligned}')
       .replaceAll(RegExp(r'\\end\{(align|eqnarray)\*?\}'), r'\end{aligned}')
-      .replaceAll(RegExp(r'\\begin\{gather\*?\}'), r'\begin{gathered}')
-      .replaceAll(RegExp(r'\\end\{gather\*?\}'), r'\end{gathered}')
+      // The formula renderer has no gathered (commented out in flutter_math_fork): aligned lays the lines out the same way.
+      .replaceAll(RegExp(r'\\begin\{gather(?:ed)?\*?\}'), r'\begin{aligned}')
+      .replaceAll(RegExp(r'\\end\{gather(?:ed)?\*?\}'), r'\end{aligned}')
       .replaceAll(RegExp(r'\\(?:begin|end)\{(?:equation|displaymath|math)\*?\}'), '')
       .replaceAll(RegExp(r'\\lt(?![a-zA-Z])'), '<')
       .replaceAll(RegExp(r'\\gt(?![a-zA-Z])'), '>')
@@ -330,6 +331,70 @@ String texToPlain(String tex) {
   return out.trim();
 }
 
+// ── Escaped LaTeX (from JSON, an API or a programming tool) ──────────────────
+
+const _knownCommands =
+    'times|div|frac|dfrac|tfrac|sqrt|log|ln|lg|exp|sin|cos|tan|cot|sec|csc|lim|sum|prod|int|oint|quad|qquad|cdot|cdots|ldots|dots|pm|mp|'
+    'leq|geq|le|ge|neq|ne|approx|equiv|sim|propto|infty|partial|nabla|alpha|beta|gamma|delta|epsilon|varepsilon|zeta|eta|theta|lambda|mu|'
+    'nu|xi|pi|rho|sigma|tau|phi|varphi|chi|psi|omega|Gamma|Delta|Theta|Lambda|Xi|Pi|Sigma|Phi|Psi|Omega|begin|end|left|right|text|'
+    'mathrm|mathbf|mathbb|vec|hat|bar|overline|underline|circ|degree|angle|triangle|perp|parallel|rightarrow|leftarrow|Rightarrow|'
+    'leftrightarrow|rightleftharpoons|to|ce|pu|binom|displaystyle|therefore|because|in|notin|subset|cup|cap|forall|exists|boxed|cancel';
+
+// Two backslashes (not part of a longer run) right before a known command name.
+final _escapedCommand = RegExp('(?<!\\\\)\\\\\\\\(?=(?:$_knownCommands)(?![a-zA-Z]))');
+final _notNewlineCommands = RegExp(r'^(?:eq|e|u|abla|eg|i|ot|otin|ewline|exists|leq|geq|mid|parallel|subset|supset)(?![a-zA-Z])');
+
+/// LaTeX that arrives with its backslashes doubled — "\\times", "\\frac{1}{2}",
+/// "\\( … \\)" from JSON or code — made single again. Valid LaTeX is left as it
+/// is: a real row break (\\) is only touched when a known command follows it
+/// directly, and a literal "\n" only becomes a line break in text that has no
+/// real line breaks at all (a JSON-escaped block).
+String normalizeEscapes(String text) {
+  if (text.isEmpty || !text.contains(r'\')) return text;
+  var out = text;
+  if (!out.contains('\n') && out.contains(r'\n')) {
+    final source = out;
+    out = source.replaceAllMapped(RegExp(r'\\n'), (m) => _notNewlineCommands.hasMatch(source.substring(m.end)) ? m[0]! : '\n');
+  }
+  if (out.contains(r'\\')) {
+    out = out
+        .replaceAll(_escapedCommand, r'\')
+        .replaceAllMapped(RegExp(r'(?<!\\)\\\\\(([\s\S]+?)\\\\\)'), (m) => '\\(${m[1]}\\)')
+        .replaceAllMapped(RegExp(r'(?<!\\)\\\\\[([\s\S]+?)\\\\\]'), (m) {
+          final body = m[1]!;
+          // "\\[2pt]" is spacing after a row break, not a formula.
+          return RegExp(r'^\s*-?\d+(\.\d+)?\s*(pt|em|ex|mm|cm)\s*$').hasMatch(body) ? m[0]! : '\\[$body\\]';
+        });
+  }
+  return out;
+}
+
+/// A piece of text: either `code` (never maths) or ordinary text.
+class TextPart {
+  const TextPart(this.text, {this.code = false, this.block = false});
+  final String text;
+  final bool code;
+
+  /// A ``` fenced block rather than `inline code`.
+  final bool block;
+}
+
+/// Splits out `inline code` and ``` fenced blocks, which are never maths.
+List<TextPart> splitCode(String text) {
+  final parts = <TextPart>[];
+  var cursor = 0;
+  for (final match in RegExp(r'```[\s\S]*?```|`[^`\n]+`').allMatches(text)) {
+    if (match.start > cursor) parts.add(TextPart(text.substring(cursor, match.start)));
+    final whole = match[0]!;
+    final fenced = whole.startsWith('```');
+    final body = fenced ? whole.substring(3, whole.length - 3).replaceFirst(RegExp(r'^[a-z]*\n'), '') : whole.substring(1, whole.length - 1);
+    parts.add(TextPart(body, code: true, block: fenced));
+    cursor = match.end;
+  }
+  if (cursor < text.length) parts.add(TextPart(text.substring(cursor)));
+  return parts;
+}
+
 // ── LaTeX typed or pasted without $…$ around it ──────────────────────────────
 
 /// Every way maths is marked: $$…$$, \[…\], \(…\), $…$ (hugging its content).
@@ -341,7 +406,17 @@ const _commands =
 // x^2, x_1, H_{2}: a caret or underscore followed by a group, a digit/sign, or a single letter.
 final _trigger = RegExp('\\\\(?:$_commands)(?![a-zA-Z])|[A-Za-z0-9)\\]}]\\s*[\\^_]\\s*(?:\\{|[0-9+-]|[A-Za-z](?![A-Za-z]))');
 const _functionWords = {'sin', 'cos', 'tan', 'cot', 'sec', 'csc', 'log', 'ln', 'exp', 'lim', 'max', 'min'};
-final _mathChar = RegExp(r"[A-Za-z0-9\s+\-*/=().,|<>'^_\[\]!:]");
+// Two-letter English words end a formula; other letter pairs (dx, xy, ab) are maths.
+const _shortWords = {
+  'is', 'of', 'if', 'in', 'to', 'at', 'be', 'as', 'or', 'an', 'by', 'on', 'it', 'we', 'so', 'no', 'do', 'up', 'my', 'me', 'he', 'us',
+  'am', 'are', 'and', 'the',
+};
+
+/// True for a run of letters that reads as a word, not as maths.
+bool _isWord(String letters) =>
+    !_functionWords.contains(letters) && (letters.length >= 3 || _shortWords.contains(letters.toLowerCase()));
+
+final _mathChar = RegExp(r"[A-Za-z0-9 \t+\-*/=().,|<>'^_\[\]!:]");
 final _space = RegExp(r'\s');
 final _digit = RegExp(r'\d');
 
@@ -358,7 +433,7 @@ bool _isLetter(String ch) => _letter.hasMatch(ch);
       k--;
     }
     if (k >= 0 && text[k] == r'\') return 0;
-    return _functionWords.contains(m[0]) ? 0 : m[0]!.length;
+    return _isWord(m[0]!) ? m[0]!.length : 0;
   }
 
   // Left
@@ -390,7 +465,7 @@ bool _isLetter(String ch) => _letter.hasMatch(ch);
         left = k - 1;
         continue;
       }
-      if (left - k >= 2 && !_functionWords.contains(text.substring(k, left))) break;
+      if (left - k >= 2 && _isWord(text.substring(k, left))) break;
       left = k;
       continue;
     }
@@ -422,14 +497,40 @@ bool _isLetter(String ch) => _letter.hasMatch(ch);
   while (left < right && _space.hasMatch(text[left])) {
     left++;
   }
-  while (right > left && RegExp(r'[\s.,;:]').hasMatch(text[right - 1])) {
+  while (right > left && RegExp(r'[\s.,;:]').hasMatch(text[right - 1]) && !(right >= 2 && text[right - 2] == r'\')) {
     right--;
   }
+  // An option or item label in front ("A) ", "1. ", "(b) ") stays text.
+  final label = RegExp(r'^(?:[A-Za-z0-9]{1,3}[.)]|\([A-Za-z0-9]{1,3}\))[ \t]+').firstMatch(text.substring(left, right));
+  if (label != null && left + label[0]!.length < right) left += label[0]!.length;
   return (left, right);
+}
+
+/// Braces in a candidate formula must pair up.
+bool _balanced(String run) {
+  var depth = 0;
+  for (var i = 0; i < run.length; i++) {
+    if (run[i] == r'\') {
+      i++;
+    } else if (run[i] == '{') {
+      depth++;
+    } else if (run[i] == '}') {
+      depth--;
+      if (depth < 0) return false;
+    }
+  }
+  return depth == 0;
 }
 
 String _wrapPlainRun(String text) {
   if (!text.contains(r'\') && !text.contains('^') && !text.contains('_')) return text;
+  // A whole \begin{…} … \end{…} environment (a matrix, cases) is one formula.
+  if (text.contains(r'\begin{')) {
+    final env = RegExp(r'\\begin\{([a-zA-Z]+\*?)\}[\s\S]*?\\end\{\1\}').firstMatch(text);
+    if (env != null) {
+      return '${_wrapPlainRun(text.substring(0, env.start))}\\(${env[0]}\\)${_wrapPlainRun(text.substring(env.end))}';
+    }
+  }
   final out = StringBuffer();
   var cursor = 0;
   var from = 0;
@@ -441,10 +542,15 @@ String _wrapPlainRun(String text) {
     from = end;
     if (start < cursor) continue;
     final (left, right) = _growRun(text, start, end);
-    if (left < cursor || right <= left || RegExp(r'[\\^_]$').hasMatch(text.substring(left, right))) continue;
+    final run = right > left ? text.substring(left, right) : '';
+    if (left < cursor || right <= left || RegExp(r'[\\^_]$').hasMatch(run) || !_balanced(run)) {
+      // Not a formula after all: do not look inside this stretch again.
+      if (right > from) from = right;
+      continue;
+    }
     out
       ..write(text.substring(cursor, left))
-      ..write('\\(${text.substring(left, right)}\\)');
+      ..write('\\($run\\)');
     cursor = right;
     from = right;
   }
@@ -455,6 +561,11 @@ String _wrapPlainRun(String text) {
 /// Puts \( … \) around LaTeX that was pasted without delimiters ("x^2 + \frac{1}{2}").
 String wrapBareLatex(String text) {
   if (text.isEmpty) return text;
+  if (text.contains('`')) {
+    return splitCode(text)
+        .map((part) => part.code ? (part.block ? '```${part.text}```' : '`${part.text}`') : wrapBareLatex(part.text))
+        .join();
+  }
   final out = StringBuffer();
   var cursor = 0;
   for (final match in mathPattern.allMatches(text)) {

@@ -53,8 +53,16 @@ Widget _formula(String tex, TextStyle style, {required bool display}) {
   return SingleChildScrollView(scrollDirection: Axis.horizontal, child: math);
 }
 
-/// Plain text (an MCQ question, an option, an explanation) with its LaTeX typeset.
-/// Everything outside the formulas is shown literally.
+/// ChatGPT's Markdown headings ("### Title") as bold lines ("**Title**").
+String _headingsAsBold(String text) => text.replaceAllMapped(
+      RegExp(r'^[ \t]*#{1,6}[ \t]+(.+?)[ \t]*$', multiLine: true),
+      (m) => '**${m[1]}**',
+    );
+
+/// Plain text (an MCQ question, an option, an explanation, a pasted CQ) with
+/// its LaTeX typeset. Doubled backslashes from JSON are made single, LaTeX
+/// without $…$ is found, **bold** and # headings from ChatGPT are shown bold,
+/// and `code` is never read as maths. The stored text itself is not changed.
 class MathText extends StatelessWidget {
   const MathText(this.text, {super.key, this.style, this.maxLines});
 
@@ -65,25 +73,53 @@ class MathText extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final base = DefaultTextStyle.of(context).style.merge(style);
-    // LaTeX pasted without $…$ around it is typeset too.
-    final source = wrapBareLatex(text);
-    final segments = splitMath(source);
-    if (segments.every((s) => !s.isMath)) {
+    final source = normalizeEscapes(text);
+    final plainOnly = !source.contains(r'$') &&
+        !source.contains(r'\') &&
+        !source.contains('^') &&
+        !source.contains('_') &&
+        !source.contains('**') &&
+        !source.contains('`') &&
+        !source.contains('#');
+    if (plainOnly) {
       return Text(source, style: base, maxLines: maxLines, overflow: maxLines == null ? null : TextOverflow.ellipsis);
     }
+
     final spans = <InlineSpan>[];
-    for (final segment in segments) {
-      if (!segment.isMath) {
-        spans.add(TextSpan(text: segment.text));
-      } else if (segment.display) {
-        spans.add(const TextSpan(text: '\n'));
-        spans.add(WidgetSpan(alignment: PlaceholderAlignment.middle, child: _formula(segment.text, base, display: true)));
-        spans.add(const TextSpan(text: '\n'));
-      } else {
-        spans.add(WidgetSpan(
-          alignment: PlaceholderAlignment.middle,
-          child: _formula(segment.text, base, display: false),
+    var bold = false;
+    void addText(String value) {
+      // "**" switches bold on and off; the markers themselves are not shown.
+      final pieces = value.split('**');
+      for (var i = 0; i < pieces.length; i++) {
+        if (i > 0) bold = !bold;
+        if (pieces[i].isEmpty) continue;
+        spans.add(TextSpan(text: pieces[i], style: bold ? const TextStyle(fontWeight: FontWeight.w700) : null));
+      }
+    }
+
+    for (final part in splitCode(source)) {
+      if (part.code) {
+        spans.add(TextSpan(
+          text: part.text,
+          style: TextStyle(fontFamily: 'monospace', fontSize: (base.fontSize ?? 14) * 0.92, backgroundColor: context.tt.cardRaised),
         ));
+        continue;
+      }
+      final segments = splitMath(wrapBareLatex(_headingsAsBold(part.text)));
+      for (var i = 0; i < segments.length; i++) {
+        final segment = segments[i];
+        if (!segment.isMath) {
+          addText(segment.text);
+        } else if (segment.display) {
+          // A display formula sits on its own line.
+          final before = i > 0 ? segments[i - 1].text : '';
+          final after = i + 1 < segments.length ? segments[i + 1].text : '';
+          if (spans.isNotEmpty && !before.endsWith('\n')) spans.add(const TextSpan(text: '\n'));
+          spans.add(WidgetSpan(alignment: PlaceholderAlignment.middle, child: _formula(segment.text, base, display: true)));
+          if (i + 1 < segments.length && !after.startsWith('\n')) spans.add(const TextSpan(text: '\n'));
+        } else {
+          spans.add(WidgetSpan(alignment: PlaceholderAlignment.middle, child: _formula(segment.text, base, display: false)));
+        }
       }
     }
     return Text.rich(
@@ -96,10 +132,30 @@ class MathText extends StatelessWidget {
 
 String _css(Color color) => '#${(color.toARGB32() & 0xFFFFFF).toRadixString(16).padLeft(6, '0')}';
 
-/// [wrapBareLatex] for the text between tags (not inside tags or code).
-String _wrapBareLatexInHtml(String html) {
-  if (!html.contains('^') && !html.contains('_') && !html.contains(r'\')) return html;
-  return html.replaceAllMapped(RegExp(r'>([^<]+)<'), (m) => '>${wrapBareLatex(m[1]!)}<');
+/// The written paper's HTML ready to show: escaped backslashes made single,
+/// LaTeX without $…$ found (only in the text between tags), ChatGPT's
+/// **bold** and # headings shown bold, and every formula tagged for typesetting.
+/// Code and preformatted blocks are left exactly as they are.
+String prepareHtmlForDisplay(String html) {
+  final held = <String>[];
+  String hold(String block) {
+    held.add(block);
+    return '\u0000${held.length - 1}\u0000';
+  }
+
+  var out = normalizeEscapes(html).replaceAllMapped(
+    RegExp(r'<(pre|code)\b[^>]*>[\s\S]*?</\1>', caseSensitive: false),
+    (m) => hold(m[0]!),
+  );
+  // Delimited formulas first: a display formula may span paragraphs (<p>$$</p><p>…</p><p>$$</p>).
+  out = tagMathInHtml(out);
+  // Then LaTeX pasted without $…$: only the text between tags is looked at.
+  out = out.replaceAllMapped(RegExp(r'(^|>)([^<]+)(?=<|$)'), (m) => '${m[1]}${wrapBareLatex(m[2]!)}');
+  out = tagMathInHtml(out);
+  out = out
+      .replaceAllMapped(RegExp(r'<p>\s*#{1,6}\s+([\s\S]*?)</p>', caseSensitive: false), (m) => '<p><strong>${m[1]}</strong></p>')
+      .replaceAllMapped(RegExp(r'\*\*(?=\S)([^<>\n]*?\S)\*\*'), (m) => '<strong>${m[1]}</strong>');
+  return out.replaceAllMapped(RegExp('\u0000(\\d+)\u0000'), (m) => held[int.parse(m[1]!)]);
 }
 
 String _decodeEntities(String text) => text
@@ -140,7 +196,7 @@ class HtmlMath extends StatelessWidget {
     final base = DefaultTextStyle.of(context).style.merge(style);
     final tt = context.tt;
     return HtmlWidget(
-      tagMathInHtml(_wrapBareLatexInHtml(html)),
+      prepareHtmlForDisplay(html),
       baseUrl: Uri.tryParse(baseUrl),
       textStyle: base,
       customWidgetBuilder: (element) {
