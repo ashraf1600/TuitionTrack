@@ -581,8 +581,12 @@ class FlatField extends StatelessWidget {
     this.style,
     this.onChanged,
     this.capitalization = TextCapitalization.sentences,
+    this.contextMenuBuilder,
   });
   final TextEditingController controller;
+
+  /// The long-press menu, e.g. `sciencePasteMenu` for maths and science text.
+  final EditableTextContextMenuBuilder? contextMenuBuilder;
   final String? hint;
   final int minLines;
   final int maxLines;
@@ -603,6 +607,7 @@ class FlatField extends StatelessWidget {
         autofocus: autofocus,
         onChanged: onChanged,
         textCapitalization: capitalization,
+        contextMenuBuilder: contextMenuBuilder ?? _defaultContextMenu,
         style: style ?? const TextStyle(fontSize: 15),
         decoration: InputDecoration(
           hintText: hint,
@@ -914,3 +919,6 @@ class FieldLabel extends StatelessWidget {
     );
   }
 }
+
+Widget _defaultContextMenu(BuildContext context, EditableTextState state) =>
+    AdaptiveTextSelectionToolbar.editableText(editableTextState: state);

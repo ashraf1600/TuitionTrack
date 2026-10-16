@@ -10,6 +10,7 @@ import '../../core/repo.dart';
 import '../../core/session.dart';
 import '../../widgets/math_text.dart';
 import '../../widgets/media.dart';
+import '../../widgets/science_paste.dart';
 import '../../widgets/theme.dart';
 import '../../widgets/ui.dart';
 import 'mcq_builder.dart';
@@ -300,6 +301,7 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> {
               gap12,
               TextField(
                 controller: controller,
+                contextMenuBuilder: sciencePasteMenu,
                 maxLines: 8,
                 autofocus: true,
                 autocorrect: false,
@@ -336,7 +338,7 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> {
     final total = num.tryParse(_totalMarks.text.trim()) ?? 0;
     final allocated = _mcqTotal + _writtenTotal;
     final preview = plainTextToHtml(_written.text);
-    final needsPreview = _written.text.contains(r'$') || _written.text.contains(r'\') || _written.text.contains('[picture:');
+    final needsPreview = _written.text.contains(r'$') || _written.text.contains(r'\') || _written.text.contains('^') || _written.text.contains('_') || _written.text.contains('[picture:');
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -366,6 +368,7 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> {
           ] else ...[
             TextField(
               controller: _written,
+              contextMenuBuilder: sciencePasteMenu,
               maxLines: null,
               minLines: 6,
               textCapitalization: TextCapitalization.sentences,
@@ -647,7 +650,7 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> {
         gap12,
         _Label(tr('Model solution'), info: tr('Optional. Students can read it once results are out.')),
         FlatGroup(children: [
-          FlatField(controller: _solution, hint: tr('Worked solutions. Maths works as \$x^2\$ or \$\$…\$\$.'), minLines: 3, maxLines: 10),
+          FlatField(controller: _solution, contextMenuBuilder: sciencePasteMenu, hint: tr('Worked solutions. Maths works as \$x^2\$ or \$\$…\$\$.'), minLines: 3, maxLines: 10),
           if (_solutionMedia.isNotEmpty) ...[
             Padding(padding: const EdgeInsets.all(12), child: ServerImage(_solutionMedia, label: tr('solution sheet'), height: 140)),
             ListTile(

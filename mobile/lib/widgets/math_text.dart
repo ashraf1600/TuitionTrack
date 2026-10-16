@@ -4,12 +4,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_math_fork/flutter_math.dart';
 import 'package:flutter_widget_from_html_core/flutter_widget_from_html_core.dart';
 
-import 'theme.dart';
+import '../core/science_text.dart';
+import '../theme/tt_theme.dart';
 
 // Every way maths arrives from ChatGPT, textbooks and the website's editor:
 //   $$…$$ and \[…\] (display)   ·   \(…\) and $…$ (inline)
 // The inline-$ form must hug its content, so prices like "$5 and $10" stay as text.
-final _mathPattern = RegExp(r'\$\$([\s\S]+?)\$\$|\\\[([\s\S]+?)\\\]|\\\(([\s\S]+?)\\\)|\$(?!\s)([^$\n\r]*?[^\s$])\$(?!\d)');
+final _mathPattern = mathPattern;
 final _moneyOnly = RegExp(r'^\s*\d+([.,]\d+)?\s*$');
 
 class MathSegment {
@@ -41,10 +42,12 @@ List<MathSegment> splitMath(String source) {
 
 Widget _formula(String tex, TextStyle style, {required bool display}) {
   final math = Math.tex(
-    tex,
+    // Chemistry (\ce), units, Unicode symbols and numbered environments made renderable.
+    prepareTex(tex),
     textStyle: style,
     mathStyle: display ? MathStyle.display : MathStyle.text,
-    onErrorFallback: (error) => Text(display ? '\$\$$tex\$\$' : '\\($tex\\)', style: style.copyWith(color: AppColors.warning)),
+    // Still not valid LaTeX: show it as readable text, not raw commands.
+    onErrorFallback: (error) => Text(texToPlain(tex), style: style),
   );
   // A long formula scrolls sideways instead of overflowing the screen.
   return SingleChildScrollView(scrollDirection: Axis.horizontal, child: math);
@@ -62,9 +65,11 @@ class MathText extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final base = DefaultTextStyle.of(context).style.merge(style);
-    final segments = splitMath(text);
+    // LaTeX pasted without $…$ around it is typeset too.
+    final source = wrapBareLatex(text);
+    final segments = splitMath(source);
     if (segments.every((s) => !s.isMath)) {
-      return Text(text, style: base, maxLines: maxLines, overflow: maxLines == null ? null : TextOverflow.ellipsis);
+      return Text(source, style: base, maxLines: maxLines, overflow: maxLines == null ? null : TextOverflow.ellipsis);
     }
     final spans = <InlineSpan>[];
     for (final segment in segments) {
@@ -87,6 +92,14 @@ class MathText extends StatelessWidget {
       overflow: maxLines == null ? null : TextOverflow.ellipsis,
     );
   }
+}
+
+String _css(Color color) => '#${(color.toARGB32() & 0xFFFFFF).toRadixString(16).padLeft(6, '0')}';
+
+/// [wrapBareLatex] for the text between tags (not inside tags or code).
+String _wrapBareLatexInHtml(String html) {
+  if (!html.contains('^') && !html.contains('_') && !html.contains(r'\')) return html;
+  return html.replaceAllMapped(RegExp(r'>([^<]+)<'), (m) => '>${wrapBareLatex(m[1]!)}<');
 }
 
 String _decodeEntities(String text) => text
@@ -125,8 +138,9 @@ class HtmlMath extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final base = DefaultTextStyle.of(context).style.merge(style);
+    final tt = context.tt;
     return HtmlWidget(
-      tagMathInHtml(html),
+      tagMathInHtml(_wrapBareLatexInHtml(html)),
       baseUrl: Uri.tryParse(baseUrl),
       textStyle: base,
       customWidgetBuilder: (element) {
@@ -146,12 +160,12 @@ class HtmlMath extends StatelessWidget {
         switch (element.localName) {
           case 'th':
           case 'td':
-            return {'border': '1px solid #334155', 'padding': '6px'};
+            return {'border': '1px solid ${_css(tt.border)}', 'padding': '6px'};
           case 'a':
-            return {'color': '#A5B4FC'};
+            return {'color': _css(tt.primary)};
           case 'code':
           case 'pre':
-            return {'background-color': '#1E293B'};
+            return {'background-color': _css(tt.cardRaised)};
         }
         return null;
       },

@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/api.dart';
@@ -7,8 +6,10 @@ import '../../core/i18n.dart';
 import '../../core/json.dart';
 import '../../core/mcq_parser.dart';
 import '../../core/repo.dart';
+import '../../core/rich_clipboard.dart';
 import '../../widgets/math_text.dart';
 import '../../widgets/media.dart';
+import '../../widgets/science_paste.dart';
 import '../../widgets/theme.dart';
 import '../../widgets/ui.dart';
 
@@ -301,8 +302,8 @@ class _PasteScreenState extends State<_PasteScreen> {
   }
 
   Future<void> _fromClipboard() async {
-    final data = await Clipboard.getData(Clipboard.kTextPlain);
-    final text = data?.text ?? '';
+    // Keeps typeset maths (as LaTeX) and H₂O / x² from web pages, Word and Google Docs.
+    final text = await readClipboardForQuestions() ?? '';
     if (!mounted) return;
     if (text.trim().isEmpty) {
       showToast(context, tr('The clipboard is empty. Copy the questions first.'), error: true);
@@ -341,6 +342,7 @@ class _PasteScreenState extends State<_PasteScreen> {
                   enableSuggestions: false,
                   textAlignVertical: TextAlignVertical.top,
                   style: const TextStyle(fontFamily: 'monospace', fontSize: 13, height: 1.5),
+                  contextMenuBuilder: sciencePasteMenu,
                   decoration: const InputDecoration(hintText: pasteExample, alignLabelWithHint: true),
                 ),
               ),
@@ -429,7 +431,7 @@ class _QuestionEditorScreenState extends State<QuestionEditorScreen> {
     };
   }
 
-  static bool _hasMath(String text) => text.contains(r'$') || text.contains(r'\');
+  static bool _hasMath(String text) => text.contains(r'$') || text.contains(r'\') || text.contains('^') || text.contains('_');
 
   @override
   Widget build(BuildContext context) {
@@ -443,6 +445,7 @@ class _QuestionEditorScreenState extends State<QuestionEditorScreen> {
         children: [
           TextField(
             controller: _question,
+            contextMenuBuilder: sciencePasteMenu,
             maxLines: null,
             minLines: 2,
             textCapitalization: TextCapitalization.sentences,
@@ -516,6 +519,7 @@ class _QuestionEditorScreenState extends State<QuestionEditorScreen> {
                             children: [
                               TextField(
                                 controller: _options[i],
+                                contextMenuBuilder: sciencePasteMenu,
                                 maxLines: null,
                                 decoration: InputDecoration(labelText: tr('Option {p0}', {'p0': _letters[i]})),
                               ),
@@ -561,6 +565,7 @@ class _QuestionEditorScreenState extends State<QuestionEditorScreen> {
           gap12,
           TextField(
             controller: _explanation,
+            contextMenuBuilder: sciencePasteMenu,
             maxLines: null,
             decoration: InputDecoration(labelText: tr('Explanation (optional)'), helperText: tr('Shown to students with their results.')),
           ),
