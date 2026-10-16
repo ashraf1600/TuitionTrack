@@ -7,23 +7,64 @@
  * These helpers put the original LaTeX back, wrapped in \( … \) or $$ … $$.
  */
 
+import { mathmlToTex, scriptText } from './scienceText';
+
 const TEX_ANNOTATION = 'annotation[encoding="application/x-tex"]';
 const BLOCK_TAGS = new Set(['P', 'DIV', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'BLOCKQUOTE', 'PRE', 'TABLE', 'UL', 'OL', 'SECTION', 'ARTICLE']);
 
-/** True when copied HTML contains typeset maths with its LaTeX source attached. */
+/**
+ * True when copied HTML has something plain text would lose: typeset maths
+ * (KaTeX, MathJax, MathML from Word or a website) or raised/lowered text
+ * (H<sub>2</sub>O, x<sup>2</sup>, Google Docs' vertical-align spans).
+ */
 export function hasRenderedMath(html) {
-  return Boolean(html) && html.includes('application/x-tex');
+  return Boolean(html) && /application\/x-tex|<math[\s>]|<mjx-|<sup[\s>]|<sub[\s>]|vertical-align:\s*(super|sub)/i.test(html);
+}
+
+/** Raised or lowered text from Word, Google Docs or a website, kept as x² / H₂O. */
+function restoreScripts(doc) {
+  for (const el of [...doc.querySelectorAll('sup, sub, span[style*="vertical-align"]')]) {
+    if (!el.isConnected) continue;
+    const style = (el.getAttribute('style') || '').replace(/\s+/g, '').toLowerCase();
+    const kind = el.tagName === 'SUP' || style.includes('vertical-align:super') ? 'sup'
+      : el.tagName === 'SUB' || style.includes('vertical-align:sub') ? 'sub' : null;
+    if (!kind || el.closest('math, .katex, mjx-container')) continue;
+    el.replaceWith(doc.createTextNode(scriptText(el.textContent, kind)));
+  }
 }
 
 /** Replace every typeset formula in the document with its LaTeX source as plain text. */
 function restoreLatex(doc) {
   for (const annotation of [...doc.querySelectorAll(TEX_ANNOTATION)]) {
-    const latex = annotation.textContent.trim();
+    // Wikipedia wraps its LaTeX in {\displaystyle …}.
+    const latex = annotation.textContent.trim().replace(/^\{\\displaystyle\s*([\s\S]*)\}$/, '$1').trim();
     const display = annotation.closest('.katex-display') || annotation.closest('math[display="block"]');
-    const target = display || annotation.closest('.katex') || annotation.closest('math');
+    const target =
+      display || annotation.closest('.katex') || annotation.closest('.mwe-math-element') || annotation.closest('mjx-container') || annotation.closest('math');
     if (!target || !target.isConnected) continue;
     target.replaceWith(doc.createTextNode(display ? `$$${latex}$$` : `\\(${latex}\\)`));
   }
+  // MathJax 3 keeps a MathML copy for screen readers; Word and some sites paste bare MathML.
+  for (const container of [...doc.querySelectorAll('mjx-container')]) {
+    if (!container.isConnected) continue;
+    const math = container.querySelector('math');
+    if (!math) continue;
+    const display = container.getAttribute('display') === 'true' || math.getAttribute('display') === 'block';
+    const latex = mathmlToTex(math).trim();
+    container.replaceWith(doc.createTextNode(display ? `$$${latex}$$` : `\\(${latex}\\)`));
+  }
+  for (const math of [...doc.querySelectorAll('math')]) {
+    if (!math.isConnected) continue;
+    const latex = mathmlToTex(math).trim();
+    if (!latex) continue;
+    const display = math.getAttribute('display') === 'block';
+    math.replaceWith(doc.createTextNode(display ? `$$${latex}$$` : `\\(${latex}\\)`));
+  }
+  // The picture a site shows when it cannot typeset (its alt text is the LaTeX again).
+  for (const image of [...doc.querySelectorAll('img.mwe-math-fallback-image-inline, img.mwe-math-fallback-image-display')]) {
+    image.remove();
+  }
+  restoreScripts(doc);
 }
 
 /** For the rich-text editor: the same HTML with formulas turned back into LaTeX text. */

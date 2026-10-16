@@ -1,8 +1,11 @@
 import React, { useMemo } from 'react';
 import DOMPurify from 'dompurify';
 import katex from 'katex';
+// Chemistry: \ce{H2SO4}, \ce{2H2 + O2 -> 2H2O} (registers itself with katex).
+import 'katex/contrib/mhchem';
 // Bundled with the same katex version that renders the math (the CDN copy was an older release).
 import 'katex/dist/katex.min.css';
+import { prepareTex, texToPlain, wrapBareLatex } from '../../utils/scienceText';
 
 // Every way maths arrives from ChatGPT, textbooks and our own editor:
 //   $$…$$ and \[…\] (display)   ·   \(…\) and $…$ (inline)
@@ -28,7 +31,11 @@ const decodeEntities = (text) =>
  */
 function renderMathToHtml(content, { plain = false } = {}) {
   if (!content) return '';
-  const source = String(content);
+  // Text pasted from elsewhere may carry LaTeX without $…$ around it
+  // (in rich text, only the text between tags is looked at).
+  const source = plain
+    ? wrapBareLatex(String(content))
+    : String(content).replace(/>([^<]+)</g, (_, text) => `>${wrapBareLatex(text)}<`);
   let html = '';
   let cursor = 0;
   const outside = (text) => (plain ? escapeHtml(text).replace(/\r?\n/g, '<br />') : text);
@@ -48,9 +55,15 @@ function renderMathToHtml(content, { plain = false } = {}) {
     // Inside rich-text HTML the formula has been entity-encoded (and may hold a <br>).
     const formula = plain ? raw : decodeEntities(raw.replace(/<br\s*\/?>/gi, ' ').replace(/<\/?[a-z][^>]*>/gi, ''));
     try {
-      html += katex.renderToString(formula.trim(), { displayMode: display, throwOnError: false });
+      html += katex.renderToString(prepareTex(formula.trim(), { keepCe: true }), {
+        displayMode: display,
+        throwOnError: true,
+        // Unicode symbols and letters typed straight into a formula are fine.
+        strict: 'ignore',
+      });
     } catch {
-      html += outside(whole);
+      // Not valid LaTeX: show it as readable text rather than raw commands.
+      html += `<span class="math-fallback">${escapeHtml(texToPlain(formula))}</span>`;
     }
   }
   html += outside(source.slice(cursor));
