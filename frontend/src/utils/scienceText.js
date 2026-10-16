@@ -299,6 +299,54 @@ export function texToPlain(tex) {
   return out.trim();
 }
 
+// ── Escaped LaTeX (from JSON, an API or a programming tool) ──────────────────
+
+const KNOWN_COMMANDS =
+  'times|div|frac|dfrac|tfrac|sqrt|log|ln|lg|exp|sin|cos|tan|cot|sec|csc|lim|sum|prod|int|oint|quad|qquad|cdot|cdots|ldots|dots|pm|mp|' +
+  'leq|geq|le|ge|neq|ne|approx|equiv|sim|propto|infty|partial|nabla|alpha|beta|gamma|delta|epsilon|varepsilon|zeta|eta|theta|lambda|mu|' +
+  'nu|xi|pi|rho|sigma|tau|phi|varphi|chi|psi|omega|Gamma|Delta|Theta|Lambda|Xi|Pi|Sigma|Phi|Psi|Omega|begin|end|left|right|text|' +
+  'mathrm|mathbf|mathbb|vec|hat|bar|overline|underline|circ|degree|angle|triangle|perp|parallel|rightarrow|leftarrow|Rightarrow|' +
+  'leftrightarrow|rightleftharpoons|to|ce|pu|binom|displaystyle|therefore|because|in|notin|subset|cup|cap|forall|exists|boxed|cancel';
+// Two backslashes (not part of a longer run) right before a known command name.
+const ESCAPED_COMMAND = new RegExp(`(?<!\\\\)\\\\\\\\(?=(?:${KNOWN_COMMANDS})(?![a-zA-Z]))`, 'g');
+const NOT_NEWLINE_COMMANDS = /^(?:eq|e|u|abla|eg|i|ot|otin|ewline|exists|leq|geq|mid|parallel|subset|supset)(?![a-zA-Z])/;
+
+/**
+ * LaTeX that arrives with its backslashes doubled — "\\times", "\\frac{1}{2}",
+ * "\\( … \\)" from JSON or code — made single again. Valid LaTeX is left as it
+ * is: a real row break (\\) is only touched when a known command follows it
+ * directly, and a literal "\n" only becomes a line break in text that has no
+ * real line breaks at all (a JSON-escaped block).
+ */
+export function normalizeEscapes(text) {
+  if (!text || !text.includes('\\')) return text;
+  let out = text;
+  if (!out.includes('\n') && /\\n/.test(out)) {
+    out = out.replace(/\\n/g, (match, offset) => (NOT_NEWLINE_COMMANDS.test(out.slice(offset + 2)) ? match : '\n'));
+  }
+  if (out.includes('\\\\')) {
+    out = out
+      .replace(ESCAPED_COMMAND, '\\')
+      .replace(/(?<!\\)\\\\\(([\s\S]+?)\\\\\)/g, '\\($1\\)')
+      .replace(/(?<!\\)\\\\\[([\s\S]+?)\\\\\]/g, (whole, body) => (/^\s*-?\d+(\.\d+)?\s*(pt|em|ex|mm|cm)\s*$/.test(body) ? whole : `\\[${body}\\]`));
+  }
+  return out;
+}
+
+/** Splits out `inline code` and ``` fenced blocks, which are never maths. */
+export function splitCode(text) {
+  const parts = [];
+  let cursor = 0;
+  for (const match of text.matchAll(/```[\s\S]*?```|`[^`\n]+`/g)) {
+    if (match.index > cursor) parts.push({ code: false, text: text.slice(cursor, match.index) });
+    const fenced = match[0].startsWith('```');
+    parts.push({ code: true, block: fenced, text: fenced ? match[0].slice(3, -3).replace(/^[a-z]*\n/, '') : match[0].slice(1, -1) });
+    cursor = match.index + match[0].length;
+  }
+  if (cursor < text.length) parts.push({ code: false, text: text.slice(cursor) });
+  return parts;
+}
+
 // ── LaTeX typed or pasted without $…$ around it ──────────────────────────────
 
 const MATH_PATTERN = /\$\$([\s\S]+?)\$\$|\\\[([\s\S]+?)\\\]|\\\(([\s\S]+?)\\\)|\$(?!\s)([^$\n\r]*?[^\s$])\$(?!\d)/g;
@@ -306,7 +354,12 @@ const COMMANDS = 'frac|dfrac|tfrac|sqrt|times|div|pm|mp|cdot|le|leq|ge|geq|ne|ne
 // x^2, x_1, H_{2}: a caret or underscore followed by a group, a digit/sign, or a single letter.
 const TRIGGER = new RegExp(`\\\\(?:${COMMANDS})(?![a-zA-Z])|[A-Za-z0-9)\\]}]\\s*[\\^_]\\s*(?:\\{|[0-9+-]|[A-Za-z](?![A-Za-z]))`, 'g');
 const FUNCTION_WORDS = new Set(['sin', 'cos', 'tan', 'cot', 'sec', 'csc', 'log', 'ln', 'exp', 'lim', 'max', 'min']);
-const MATH_CHAR = /[A-Za-z0-9\s+\-*/=().,|<>'^_[\]!:]/;
+// Two-letter English words end a formula; other letter pairs (dx, xy, ab) are maths.
+const SHORT_WORDS = new Set(['is', 'of', 'if', 'in', 'to', 'at', 'be', 'as', 'or', 'an', 'by', 'on', 'it', 'we', 'so', 'no', 'do', 'up', 'my', 'me', 'he', 'us', 'am', 'are', 'and', 'the']);
+/** True for a run of letters that reads as a word, not as maths. */
+const isWord = (letters) =>
+  !FUNCTION_WORDS.has(letters) && (letters.length >= 3 || SHORT_WORDS.has(letters.toLowerCase()));
+const MATH_CHAR = /[A-Za-z0-9 \t+\-*/=().,|<>'^_[\]!:]/;
 
 /** Grows [start, end) over formula characters; stops at ordinary words. */
 function growRun(text, start, end) {
@@ -317,7 +370,7 @@ function growRun(text, start, end) {
     let k = i - 1;
     while (k >= 0 && /[A-Za-z]/.test(text[k])) k -= 1;
     if (k >= 0 && text[k] === '\\') return 0;
-    return FUNCTION_WORDS.has(m[0]) ? 0 : m[0].length;
+    return isWord(m[0]) ? m[0].length : 0;
   };
   // Left
   let left = start;
@@ -342,7 +395,7 @@ function growRun(text, start, end) {
         left = k - 1;
         continue;
       }
-      if (left - k >= 2 && !FUNCTION_WORDS.has(text.slice(k, left))) break;
+      if (left - k >= 2 && isWord(text.slice(k, left))) break;
       left = k;
       continue;
     }
@@ -372,12 +425,34 @@ function growRun(text, start, end) {
   }
   // Leave surrounding spaces and sentence punctuation outside.
   while (left < right && /\s/.test(text[left])) left += 1;
-  while (right > left && /[\s.,;:]/.test(text[right - 1])) right -= 1;
+  while (right > left && /[\s.,;:]/.test(text[right - 1]) && text[right - 2] !== '\\') right -= 1;
+  // An option or item label in front ("A) ", "1. ", "(b) ") stays text.
+  const label = /^(?:[A-Za-z0-9]{1,3}[.)]|\([A-Za-z0-9]{1,3}\))[ \t]+/.exec(text.slice(left, right));
+  if (label && left + label[0].length < right) left += label[0].length;
   return [left, right];
+}
+
+/** Braces in a candidate formula must pair up. */
+function balanced(run) {
+  let depth = 0;
+  for (let i = 0; i < run.length; i += 1) {
+    if (run[i] === '\\') i += 1;
+    else if (run[i] === '{') depth += 1;
+    else if (run[i] === '}' && (depth -= 1) < 0) return false;
+  }
+  return depth === 0;
 }
 
 function wrapPlainRun(text) {
   if (!text.includes('\\') && !/[\^_]/.test(text)) return text;
+  // A whole \begin{…} … \end{…} environment (a matrix, cases) is one formula.
+  if (/\\begin\{/.test(text)) {
+    const env = /\\begin\{([a-zA-Z]+\*?)\}[\s\S]*?\\end\{\1\}/.exec(text);
+    if (env) {
+      const end = env.index + env[0].length;
+      return `${wrapPlainRun(text.slice(0, env.index))}\\(${env[0]}\\)${wrapPlainRun(text.slice(end))}`;
+    }
+  }
   let out = '';
   let cursor = 0;
   TRIGGER.lastIndex = 0;
@@ -385,7 +460,12 @@ function wrapPlainRun(text) {
   while ((match = TRIGGER.exec(text))) {
     if (match.index < cursor) continue;
     const [left, right] = growRun(text, match.index, match.index + match[0].length);
-    if (left < cursor || right <= left || /[\\^_]$/.test(text.slice(left, right))) continue;
+    const run = text.slice(left, right);
+    if (left < cursor || right <= left || /[\\^_]$/.test(run) || !balanced(run)) {
+      // Not a formula after all: do not look inside this stretch again.
+      TRIGGER.lastIndex = Math.max(TRIGGER.lastIndex, right);
+      continue;
+    }
     out += `${text.slice(cursor, left)}\\(${text.slice(left, right)}\\)`;
     cursor = right;
     TRIGGER.lastIndex = right;
@@ -396,6 +476,11 @@ function wrapPlainRun(text) {
 /** Puts \( … \) around LaTeX that was pasted without delimiters ("x^2 + \frac{1}{2}"). */
 export function wrapBareLatex(text) {
   if (!text) return text;
+  if (text.includes('`')) {
+    return splitCode(text)
+      .map((part) => (part.code ? (part.block ? `\`\`\`${part.text}\`\`\`` : `\`${part.text}\``) : wrapBareLatex(part.text)))
+      .join('');
+  }
   let out = '';
   let cursor = 0;
   for (const match of text.matchAll(MATH_PATTERN)) {

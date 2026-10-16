@@ -287,3 +287,21 @@
   overflow-y: hidden;
   padding: 0.5em 0;
 }
+/* A long inline formula scrolls instead of widening the page on a phone. */
+.exam-content .katex,
+.katex {
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  vertical-align: middle;
+}
+/* A formula that is not valid LaTeX, shown as readable text. */
+.math-fallback {
+  font-style: italic;
+}
+.exam-content code {
+  font-size: 0.9em;
+  padding: 0.1em 0.3em;
+  border-radius: 0.25rem;
+  background: rgba(148, 163, 184, 0.15);
+}
