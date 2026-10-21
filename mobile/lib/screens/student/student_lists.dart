@@ -17,6 +17,21 @@ import 'homework_card.dart';
 /// Lists a student sees in more than one place: on the home tabs (everything)
 /// and inside one tutor's page (only that tutor's work).
 
+// ── Counts for the badges ───────────────────────────────────────────────────
+
+/// Exams and assignments still waiting for this student: open now or coming up, not turned in.
+int pendingExamCount(List<Json> exams, DateTime now) => exams
+    .where((e) => !e.flag('has_submission') && (e.flag('can_submit') || (e.date('start_time')?.isAfter(now) ?? false)))
+    .length;
+
+/// Homework not handed in yet (and not already closed by the tutor).
+int pendingHomeworkCount(List<HomeworkItem> items) => items.where((h) => !h.isSubmitted && !h.isEvaluated).length;
+
+/// A tab or menu label with a small red count beside it when [count] is above zero.
+/// [offset] moves the count clear of a text label (icons can use the default).
+Widget countBadge(Widget child, int count, {Offset? offset}) =>
+    Badge(isLabelVisible: count > 0, label: Text(localDigits('$count')), offset: offset, child: child);
+
 // ── Exams ────────────────────────────────────────────────────────────────────
 
 /// A student's exams and assignments, grouped into To do, Upcoming and Done.

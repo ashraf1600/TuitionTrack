@@ -44,6 +44,8 @@ class StudentHome extends StatefulWidget {
 class _StudentHomeState extends State<StudentHome> {
   final _loader = GlobalKey<LoaderState<_StudentData>>();
   int _tab = 0;
+  int _examCount = 0;
+  int _homeworkCount = 0;
 
   Future<_StudentData> _load() async {
     final repo = context.read<Repo>();
@@ -65,6 +67,13 @@ class _StudentHomeState extends State<StudentHome> {
       });
     // Class and homework reminders for the coming week (they work offline).
     unawaited(Reminders.instance.schedule(settings, studentReminders(results[1], results[4], DateTime.now())));
+    if (mounted) {
+      final now = context.read<Session>().api.serverNow;
+      setState(() {
+        _examCount = pendingExamCount(results[3], now);
+        _homeworkCount = pendingHomeworkCount(homework);
+      });
+    }
     return _StudentData(results[0], results[1], results[2], results[3], homework, results[4]);
   }
 
@@ -104,8 +113,17 @@ class _StudentHomeState extends State<StudentHome> {
         },
         destinations: [
           NavigationDestination(icon: Icon(Icons.style_outlined), selectedIcon: Icon(Icons.style), label: tr('Tutors')),
-          NavigationDestination(icon: Icon(Icons.assignment_outlined), selectedIcon: Icon(Icons.assignment), label: tr('Exams')),
-          NavigationDestination(icon: Icon(Icons.menu_book_outlined), selectedIcon: Icon(Icons.menu_book), label: tr('Homework')),
+          // Red counts: exams and homework still waiting, so a tap shows what is due.
+          NavigationDestination(
+            icon: countBadge(const Icon(Icons.assignment_outlined), _examCount),
+            selectedIcon: countBadge(const Icon(Icons.assignment), _examCount),
+            label: tr('Exams'),
+          ),
+          NavigationDestination(
+            icon: countBadge(const Icon(Icons.menu_book_outlined), _homeworkCount),
+            selectedIcon: countBadge(const Icon(Icons.menu_book), _homeworkCount),
+            label: tr('Homework'),
+          ),
         ],
       ),
     );
