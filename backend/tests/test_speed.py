@@ -2,7 +2,6 @@
 from datetime import timedelta
 
 from django.utils import timezone
-from rest_framework.test import APITestCase
 
 from apps.exams.models import Exam, ExamSubmission
 from tests.test_audit_fixes import AuditBase
