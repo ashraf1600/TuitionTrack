@@ -1,13 +1,16 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/api.dart';
+import '../../core/i18n.dart';
 import '../../core/json.dart';
 import '../../core/mcq_parser.dart';
 import '../../core/repo.dart';
+import '../../core/rich_clipboard.dart';
 import '../../widgets/math_text.dart';
 import '../../widgets/media.dart';
+import '../../widgets/science_paste.dart';
+import '../../widgets/science_toolbar.dart';
 import '../../widgets/theme.dart';
 import '../../widgets/ui.dart';
 
@@ -50,8 +53,8 @@ class McqBuilder extends StatelessWidget {
     showToast(
       context,
       parsed.issues.isEmpty
-          ? 'Added ${parsed.questions.length} question${parsed.questions.length == 1 ? '' : 's'}. Check each one before publishing.'
-          : 'Added ${parsed.questions.length}. ${parsed.issues.length} need${parsed.issues.length == 1 ? 's' : ''} a quick check — they are marked.',
+          ? tr('Added {p0} question{p1}. Check each one before publishing.', {'p0': parsed.questions.length, 'p1': parsed.questions.length == 1 ? '' : 's'})
+          : tr('Added {p0}. {p1} need{p2} a quick check — they are marked.', {'p0': parsed.questions.length, 'p1': parsed.issues.length, 'p2': parsed.issues.length == 1 ? 's' : ''}),
     );
   }
 
@@ -67,7 +70,7 @@ class McqBuilder extends StatelessWidget {
     final urls = await pickAndUpload(context);
     if (urls.isEmpty || !context.mounted) return;
     onChanged([...questions, for (final url in urls) blankQuestion(imageUrl: url, options: ['A', 'B', 'C', 'D'])]);
-    showToast(context, 'Added ${urls.length} picture question${urls.length == 1 ? '' : 's'}. Now mark the correct answer for each.');
+    showToast(context, tr('Added {p0} picture question{p1}. Now mark the correct answer for each.', {'p0': urls.length, 'p1': urls.length == 1 ? '' : 's'}));
   }
 
   Future<void> _fromBank(BuildContext context) async {
@@ -94,26 +97,25 @@ class McqBuilder extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         SectionTitle(
-          'Multiple choice',
-          subtitle: '${questions.length} question${questions.length == 1 ? '' : 's'} · ${trimNumber(total)} mark${total == 1 ? '' : 's'}'
-              '${unfinished > 0 ? ' · $unfinished need${unfinished == 1 ? 's' : ''} attention' : ''}',
+          tr('Multiple choice'),
+          subtitle: tr('{p0} question{p1} · {p2} mark{p3}{p4}', {'p0': questions.length, 'p1': questions.length == 1 ? '' : 's', 'p2': trimNumber(total), 'p3': total == 1 ? '' : 's', 'p4': unfinished > 0 ? tr(' · {p0} need{p1} attention', {'p0': unfinished, 'p1': unfinished == 1 ? 's' : ''}) : ''}),
         ),
         Wrap(
           spacing: 8,
           runSpacing: 8,
           children: [
-            FilledButton.icon(onPressed: () => _paste(context), icon: const Icon(Icons.content_paste, size: 18), label: const Text('Paste text')),
-            OutlinedButton.icon(onPressed: () => _type(context), icon: const Icon(Icons.edit_outlined, size: 18), label: const Text('Type a question')),
-            OutlinedButton.icon(onPressed: () => _fromPictures(context), icon: const Icon(Icons.add_photo_alternate_outlined, size: 18), label: const Text('From a picture')),
-            OutlinedButton.icon(onPressed: () => _fromBank(context), icon: const Icon(Icons.history, size: 18), label: const Text('My past questions')),
+            FilledButton.icon(onPressed: () => _paste(context), icon: const Icon(Icons.content_paste, size: 18), label: Text(tr('Paste text'))),
+            OutlinedButton.icon(onPressed: () => _type(context), icon: const Icon(Icons.edit_outlined, size: 18), label: Text(tr('Type a question'))),
+            OutlinedButton.icon(onPressed: () => _fromPictures(context), icon: const Icon(Icons.add_photo_alternate_outlined, size: 18), label: Text(tr('From a picture'))),
+            OutlinedButton.icon(onPressed: () => _fromBank(context), icon: const Icon(Icons.history, size: 18), label: Text(tr('My past questions'))),
           ],
         ),
         gap12,
         if (questions.isEmpty)
           EmptyState(
             icon: Icons.quiz_outlined,
-            title: 'No questions yet',
-            message: 'Paste a whole set from ChatGPT, type one, or start from a photo of a question.',
+            title: tr('No questions yet'),
+            message: tr('Paste a whole set from ChatGPT, type one, or start from a photo of a question.'),
           )
         else
           for (var i = 0; i < questions.length; i++) ...[
@@ -175,8 +177,8 @@ class _QuestionCard extends StatelessWidget {
                 padding: const EdgeInsets.only(top: 4),
                 child: CircleAvatar(
                   radius: 13,
-                  backgroundColor: AppColors.primary.withValues(alpha: 0.25),
-                  child: Text('${index + 1}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: AppColors.primarySoft)),
+                  backgroundColor: context.tt.primaryContainer,
+                  child: Text(localDigits('${index + 1}'), style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: context.tt.onPrimaryContainer)),
                 ),
               ),
               SizedBox(width: 10),
@@ -185,7 +187,7 @@ class _QuestionCard extends StatelessWidget {
                   padding: const EdgeInsets.only(top: 6),
                   child: question.str('question').isEmpty
                       ? Text(
-                          question.str('image_url').isEmpty ? 'No question text yet' : 'Picture question',
+                          question.str('image_url').isEmpty ? tr('No question text yet') : tr('Picture question'),
                           style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontStyle: FontStyle.italic),
                         )
                       : MathText(question.str('question'), style: const TextStyle(fontWeight: FontWeight.w600, height: 1.4)),
@@ -193,15 +195,15 @@ class _QuestionCard extends StatelessWidget {
               ),
               Padding(
                 padding: const EdgeInsets.only(top: 8, left: 6),
-                child: Text('${trimNumber(points)} mk', style: const TextStyle(color: AppColors.success, fontSize: 12, fontWeight: FontWeight.w700)),
+                child: Text(tr('{p0} mk', {'p0': trimNumber(points)}), style: const TextStyle(color: AppColors.success, fontSize: 12, fontWeight: FontWeight.w700)),
               ),
               PopupMenuButton<String>(
-                tooltip: 'Options for question ${index + 1}',
+                tooltip: tr('Options for question {p0}', {'p0': index + 1}),
                 onSelected: (value) => switch (value) { 'edit' => onEdit(), 'copy' => onDuplicate(), _ => onDelete() },
-                itemBuilder: (_) => const [
-                  PopupMenuItem(value: 'edit', child: Text('Edit')),
-                  PopupMenuItem(value: 'copy', child: Text('Duplicate')),
-                  PopupMenuItem(value: 'delete', child: Text('Delete', style: TextStyle(color: AppColors.danger))),
+                itemBuilder: (_) => [
+                  PopupMenuItem(value: 'edit', child: Text(tr('Edit'))),
+                  PopupMenuItem(value: 'copy', child: Text(tr('Duplicate'))),
+                  PopupMenuItem(value: 'delete', child: Text(tr('Delete'), style: TextStyle(color: AppColors.danger))),
                 ],
               ),
             ],
@@ -209,7 +211,7 @@ class _QuestionCard extends StatelessWidget {
           if (question.str('image_url').isNotEmpty)
             Padding(
               padding: const EdgeInsets.only(top: 8, right: 8),
-              child: ServerImage(question.str('image_url'), height: 160, label: 'Question ${index + 1} picture'),
+              child: ServerImage(question.str('image_url'), height: 160, label: tr('Question {p0} picture', {'p0': index + 1})),
             ),
           gap8,
           // Tap an option to mark it as the correct answer.
@@ -219,12 +221,12 @@ class _QuestionCard extends StatelessWidget {
               child: Semantics(
                 inMutuallyExclusiveGroup: true,
                 checked: correct == i,
-                label: 'Option ${_letters[i]}${correct == i ? ', correct answer' : ''}',
+                label: tr('Option {p0}{p1}', {'p0': _letters[i], 'p1': correct == i ? tr(', correct answer') : ''}),
                 child: Material(
-                  color: correct == i ? AppColors.success.withValues(alpha: 0.14) : Colors.transparent,
+                  color: correct == i ? context.tt.successContainer : Colors.transparent,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(10),
-                    side: BorderSide(color: correct == i ? AppColors.success.withValues(alpha: 0.6) : Theme.of(context).colorScheme.outline),
+                    side: BorderSide(color: correct == i ? context.tt.success : Theme.of(context).colorScheme.outline),
                   ),
                   clipBehavior: Clip.antiAlias,
                   child: InkWell(
@@ -243,7 +245,7 @@ class _QuestionCard extends StatelessWidget {
                           const SizedBox(width: 8),
                           Expanded(
                             child: options[i].trim().isEmpty
-                                ? const Text('Empty option — tap to edit', style: TextStyle(color: AppColors.warning, fontStyle: FontStyle.italic, fontSize: 13))
+                                ? Text(tr('Empty option — tap to edit'), style: TextStyle(color: AppColors.warning, fontStyle: FontStyle.italic, fontSize: 13))
                                 : MathText(options[i], style: TextStyle(fontSize: 14)),
                           ),
                         ],
@@ -256,7 +258,7 @@ class _QuestionCard extends StatelessWidget {
           if (question.str('explanation').isNotEmpty)
             Padding(
               padding: const EdgeInsets.only(top: 2, right: 8),
-              child: MathText('Explanation: ${question.str('explanation')}', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13)),
+              child: MathText(tr('Explanation: {p0}', {'p0': question.str('explanation')}), style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13)),
             ),
           if (problems.isNotEmpty)
             Padding(
@@ -301,11 +303,11 @@ class _PasteScreenState extends State<_PasteScreen> {
   }
 
   Future<void> _fromClipboard() async {
-    final data = await Clipboard.getData(Clipboard.kTextPlain);
-    final text = data?.text ?? '';
+    // Keeps typeset maths (as LaTeX) and H₂O / x² from web pages, Word and Google Docs.
+    final text = await readClipboardForQuestions() ?? '';
     if (!mounted) return;
     if (text.trim().isEmpty) {
-      showToast(context, 'The clipboard is empty. Copy the questions first.', error: true);
+      showToast(context, tr('The clipboard is empty. Copy the questions first.'), error: true);
       return;
     }
     _text.text = _text.text.trim().isEmpty ? text : '${_text.text.trimRight()}\n\n$text';
@@ -316,23 +318,21 @@ class _PasteScreenState extends State<_PasteScreen> {
     final count = _parsed.questions.length;
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Paste questions'),
-        actions: [TextButton(onPressed: () => _text.text = pasteExample, child: const Text('Example'))],
+        title: Text(tr('Paste questions')),
+        actions: [TextButton(onPressed: () => _text.text = pasteExample, child: Text(tr('Example')))],
       ),
-      body: SafeArea(
+      body: Column(children: [Expanded(child: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Text(
-                'Paste any number of questions from ChatGPT, a website or a document. Numbered questions with options A–D (or ক–ঘ) '
-                'are recognised, on separate lines or on one line. Maths is kept exactly as written. '
-                'In ChatGPT, use its Copy button so the formulas come across as LaTeX.',
+                tr('Paste any number of questions from ChatGPT, a website or a document. Numbered questions with options A–D (or ক–ঘ) are recognised, on separate lines or on one line. Maths is kept exactly as written. In ChatGPT, use its Copy button so the formulas come across as LaTeX.'),
                 style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
               ),
               gap12,
-              OutlinedButton.icon(onPressed: _fromClipboard, icon: const Icon(Icons.content_paste_go), label: const Text('Paste from clipboard')),
+              OutlinedButton.icon(onPressed: _fromClipboard, icon: const Icon(Icons.content_paste_go), label: Text(tr('Paste from clipboard'))),
               gap12,
               Expanded(
                 child: TextField(
@@ -343,6 +343,7 @@ class _PasteScreenState extends State<_PasteScreen> {
                   enableSuggestions: false,
                   textAlignVertical: TextAlignVertical.top,
                   style: const TextStyle(fontFamily: 'monospace', fontSize: 13, height: 1.5),
+                  contextMenuBuilder: sciencePasteMenu,
                   decoration: const InputDecoration(hintText: pasteExample, alignLabelWithHint: true),
                 ),
               ),
@@ -351,11 +352,10 @@ class _PasteScreenState extends State<_PasteScreen> {
                 liveRegion: true,
                 child: Text(
                   _text.text.trim().isEmpty
-                      ? 'Answers can be written as “Answer: B”, a ✅ after the option, or an answer key at the end.'
+                      ? tr('Answers can be written as “Answer: B”, a ✅ after the option, or an answer key at the end.')
                       : count == 0
-                          ? 'No questions recognised yet. Number each question (1. 2. 3.) and label the options A, B, C, D.'
-                          : 'Found $count question${count == 1 ? '' : 's'}'
-                              '${_parsed.issues.isEmpty ? ' · all have an answer' : ' · ${_parsed.issues.length} will need a quick check'}',
+                          ? tr('No questions recognised yet. Number each question (1. 2. 3.) and label the options A, B, C, D.')
+                          : tr('Found {p0} question{p1}{p2}', {'p0': count, 'p1': count == 1 ? '' : 's', 'p2': _parsed.issues.isEmpty ? tr(' · all have an answer') : tr(' · {p0} will need a quick check', {'p0': _parsed.issues.length})}),
                   style: TextStyle(color: count == 0 && _text.text.trim().isNotEmpty ? AppColors.warning : Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
                 ),
               ),
@@ -363,12 +363,12 @@ class _PasteScreenState extends State<_PasteScreen> {
               FilledButton.icon(
                 onPressed: count == 0 ? null : () => Navigator.pop(context, _parsed),
                 icon: const Icon(Icons.auto_awesome),
-                label: Text(count == 0 ? 'Add questions' : 'Add $count question${count == 1 ? '' : 's'}'),
+                label: Text(count == 0 ? tr('Add questions') : tr('Add {p0} question{p1}', {'p0': count, 'p1': count == 1 ? '' : 's'})),
               ),
             ],
           ),
         ),
-      ),
+      )), const ScienceToolbar()]),
     );
   }
 }
@@ -432,25 +432,26 @@ class _QuestionEditorScreenState extends State<QuestionEditorScreen> {
     };
   }
 
-  static bool _hasMath(String text) => text.contains(r'$') || text.contains(r'\');
+  static bool _hasMath(String text) => text.contains(r'$') || text.contains(r'\') || text.contains('^') || text.contains('_');
 
   @override
   Widget build(BuildContext context) {
     final problems = questionProblems(_value);
     return Scaffold(
       appBar: AppBar(
-        title: Text('Question ${widget.number}'),
-        actions: [TextButton(onPressed: () => Navigator.pop(context, _value), child: const Text('Done'))],
+        title: Text(tr('Question {p0}', {'p0': widget.number})),
+        actions: [TextButton(onPressed: () => Navigator.pop(context, _value), child: Text(tr('Done')))],
       ),
-      body: PageBody(
+      body: Column(children: [Expanded(child: PageBody(
         children: [
           TextField(
             controller: _question,
+            contextMenuBuilder: sciencePasteMenu,
             maxLines: null,
             minLines: 2,
             textCapitalization: TextCapitalization.sentences,
             decoration: InputDecoration(
-              labelText: 'Question',
+              labelText: tr('Question'),
               helperText: r'Maths works as $x^2$ or \(x_1\).',
               alignLabelWithHint: true,
             ),
@@ -462,7 +463,7 @@ class _QuestionEditorScreenState extends State<QuestionEditorScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Students will see', style: TextStyle(color: Theme.of(context).colorScheme.outlineVariant, fontSize: 11, fontWeight: FontWeight.w600)),
+                  Text(tr('Students will see'), style: TextStyle(color: Theme.of(context).colorScheme.outlineVariant, fontSize: 11, fontWeight: FontWeight.w600)),
                   SizedBox(height: 4),
                   MathText(_question.text),
                 ],
@@ -471,11 +472,11 @@ class _QuestionEditorScreenState extends State<QuestionEditorScreen> {
           ],
           gap12,
           if (_image.isNotEmpty) ...[
-            ServerImage(_image, label: 'Question picture'),
+            ServerImage(_image, label: tr('Question picture')),
             TextButton.icon(
               onPressed: () => setState(() => _image = ''),
               icon: Icon(Icons.delete_outline),
-              label: Text('Remove picture'),
+              label: Text(tr('Remove picture')),
               style: TextButton.styleFrom(foregroundColor: AppColors.danger),
             ),
           ] else
@@ -495,9 +496,9 @@ class _QuestionEditorScreenState extends State<QuestionEditorScreen> {
               icon: _uploading
                   ? SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
                   : Icon(Icons.add_photo_alternate_outlined),
-              label: Text(_uploading ? 'Uploading…' : 'Add a picture (diagram, graph, photo)'),
+              label: Text(_uploading ? tr('Uploading…') : tr('Add a picture (diagram, graph, photo)')),
             ),
-          SectionTitle('Options', subtitle: 'Select the circle next to the correct answer.'),
+          SectionTitle(tr('Options'), subtitle: tr('Select the circle next to the correct answer.')),
           RadioGroup<int>(
             groupValue: _correct,
             onChanged: (value) => setState(() => _correct = value),
@@ -511,7 +512,7 @@ class _QuestionEditorScreenState extends State<QuestionEditorScreen> {
                       children: [
                         Padding(
                           padding: const EdgeInsets.only(top: 4),
-                          child: Semantics(label: 'Option ${_letters[i]} is correct', child: Radio<int>(value: i)),
+                          child: Semantics(label: tr('Option {p0} is correct', {'p0': _letters[i]}), child: Radio<int>(value: i)),
                         ),
                         Expanded(
                           child: Column(
@@ -519,8 +520,9 @@ class _QuestionEditorScreenState extends State<QuestionEditorScreen> {
                             children: [
                               TextField(
                                 controller: _options[i],
+                                contextMenuBuilder: sciencePasteMenu,
                                 maxLines: null,
-                                decoration: InputDecoration(labelText: 'Option ${_letters[i]}'),
+                                decoration: InputDecoration(labelText: tr('Option {p0}', {'p0': _letters[i]})),
                               ),
                               if (_hasMath(_options[i].text))
                                 Padding(padding: const EdgeInsets.only(top: 4, left: 4), child: MathText(_options[i].text, style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant))),
@@ -529,7 +531,7 @@ class _QuestionEditorScreenState extends State<QuestionEditorScreen> {
                         ),
                         if (_options.length > 2)
                           IconButton(
-                            tooltip: 'Remove option ${_letters[i]}',
+                            tooltip: tr('Remove option {p0}', {'p0': _letters[i]}),
                             icon: const Icon(Icons.close, size: 20),
                             onPressed: () => setState(() {
                               _options.removeAt(i).dispose();
@@ -552,26 +554,27 @@ class _QuestionEditorScreenState extends State<QuestionEditorScreen> {
               child: TextButton.icon(
                 onPressed: () => setState(() => _options.add(TextEditingController()..addListener(_refresh))),
                 icon: const Icon(Icons.add),
-                label: const Text('Add option'),
+                label: Text(tr('Add option')),
               ),
             ),
           gap12,
           TextField(
             controller: _points,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            decoration: const InputDecoration(labelText: 'Marks for this question'),
+            decoration: InputDecoration(labelText: tr('Marks for this question')),
           ),
           gap12,
           TextField(
             controller: _explanation,
+            contextMenuBuilder: sciencePasteMenu,
             maxLines: null,
-            decoration: const InputDecoration(labelText: 'Explanation (optional)', helperText: 'Shown to students with their results.'),
+            decoration: InputDecoration(labelText: tr('Explanation (optional)'), helperText: tr('Shown to students with their results.')),
           ),
-          if (problems.isNotEmpty) ...[gap12, Banner2('Still needed: ${problems.join(' · ')}', color: AppColors.warning, icon: Icons.warning_amber_rounded)],
+          if (problems.isNotEmpty) ...[gap12, Banner2(tr('Still needed: {p0}', {'p0': problems.join(' · ')}), color: AppColors.warning, icon: Icons.warning_amber_rounded)],
           gap16,
-          FilledButton.icon(onPressed: () => Navigator.pop(context, _value), icon: const Icon(Icons.check), label: const Text('Done')),
+          FilledButton.icon(onPressed: () => Navigator.pop(context, _value), icon: const Icon(Icons.check), label: Text(tr('Done'))),
         ],
-      ),
+      )), const ScienceToolbar()]),
     );
   }
 }
@@ -616,14 +619,14 @@ class _BankScreenState extends State<_BankScreen> {
     final used = widget.inExam.map(_key).toSet();
     final items = _items;
     return Scaffold(
-      appBar: AppBar(title: Text('My past questions')),
+      appBar: AppBar(title: Text(tr('My past questions'))),
       body: SafeArea(
         child: Column(
           children: [
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
               child: TextField(
-                decoration: InputDecoration(labelText: 'Search by words in the question or options', prefixIcon: Icon(Icons.search)),
+                decoration: InputDecoration(labelText: tr('Search by words in the question or options'), prefixIcon: Icon(Icons.search)),
                 onChanged: (value) {
                   _search = value.trim();
                   _load();
@@ -638,7 +641,7 @@ class _BankScreenState extends State<_BankScreen> {
                           child: Padding(
                             padding: const EdgeInsets.all(24),
                             child: Text(
-                              _search.isEmpty ? 'Questions you write in any exam will appear here for reuse.' : 'No past questions match that search.',
+                              _search.isEmpty ? tr('Questions you write in any exam will appear here for reuse.') : tr('No past questions match that search.'),
                               textAlign: TextAlign.center,
                               style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
                             ),
@@ -655,11 +658,11 @@ class _BankScreenState extends State<_BankScreen> {
                               value: already || _picked.contains(key),
                               enabled: !already,
                               onChanged: (value) => setState(() => value == true ? _picked.add(key) : _picked.remove(key)),
-                              title: MathText(q.str('question').isEmpty ? '(picture question)' : q.str('question'), maxLines: 3),
+                              title: MathText(q.str('question').isEmpty ? tr('(picture question)') : q.str('question'), maxLines: 3),
                               subtitle: Text(
                                 already
-                                    ? 'Already in this exam'
-                                    : '${q.strings('options').join(' · ')}\nFrom: ${q.str('source_exam')} · ${trimNumber(q.number('points', 1))} mark(s)',
+                                    ? tr('Already in this exam')
+                                    : tr('{p0}\nFrom: {p1} · {p2} mark(s)', {'p0': q.strings('options').join(' · '), 'p1': q.str('source_exam'), 'p2': trimNumber(q.number('points', 1))}),
                                 maxLines: 3,
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 12),
@@ -689,7 +692,7 @@ class _BankScreenState extends State<_BankScreen> {
                                   'image_url': q.str('image_url'),
                                 },
                           ]),
-                  child: Text(_picked.isEmpty ? 'Choose questions' : 'Add ${_picked.length} selected'),
+                  child: Text(_picked.isEmpty ? tr('Choose questions') : tr('Add {p0} selected', {'p0': _picked.length})),
                 ),
               ),
             ),

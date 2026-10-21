@@ -4,18 +4,37 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../core/api.dart';
+import '../core/app_keys.dart';
+import '../core/i18n.dart';
 import '../core/repo.dart';
 import 'theme.dart';
+import 'tt_logo.dart';
 
-void showToast(BuildContext context, String message, {bool error = false}) {
-  final messenger = ScaffoldMessenger.maybeOf(context);
+/// A short message at the bottom. With [actionLabel] it offers one action
+/// (usually "Undo") and stays a little longer.
+void showToast(BuildContext context, String message, {bool error = false, String? actionLabel, VoidCallback? onAction}) {
+  showToastOn(ScaffoldMessenger.maybeOf(context), message,
+      error: error, actionLabel: actionLabel, onAction: onAction, tokens: context.tt);
+}
+
+/// [showToast] for code without a BuildContext (notification actions).
+/// [tokens] are the caller's theme; the messenger itself sits above the app theme.
+void showToastOn(ScaffoldMessengerState? messenger, String message,
+    {bool error = false, String? actionLabel, VoidCallback? onAction, TtTokens? tokens}) {
   if (messenger == null) return;
+  final hasAction = actionLabel != null && onAction != null;
+  // Normal messages use the theme's high-contrast snack bar; errors are filled
+  // with the danger colour (its ink is the background colour, 6:1 or better).
+  final tt = tokens ?? rootNavigatorKey.currentContext?.tt ?? messenger.context.tt;
   messenger
     ..hideCurrentSnackBar()
     ..showSnackBar(SnackBar(
-      content: Text(message, style: const TextStyle(color: Colors.white)),
-      backgroundColor: error ? const Color(0xFF9F1239) : const Color(0xFF065F46),
-      duration: Duration(seconds: error ? 5 : 3),
+      content: Text(message, style: TextStyle(color: tt.background, fontSize: 14)),
+      backgroundColor: error ? tt.danger : tt.textPrimary,
+      duration: Duration(seconds: error ? 5 : (hasAction ? 6 : 3)),
+      // Without this a snack bar with an action stays until tapped; an Undo should simply time out.
+      persist: false,
+      action: hasAction ? SnackBarAction(label: actionLabel, textColor: error ? tt.background : (tt.isDark ? TtColors.lPrimary : TtColors.dPrimary), onPressed: onAction) : null,
     ));
 }
 
@@ -23,7 +42,7 @@ void showToast(BuildContext context, String message, {bool error = false}) {
 /// may be scrolled out of sight, a message says so too.
 bool checkForm(BuildContext context, GlobalKey<FormState> form) {
   if (form.currentState?.validate() ?? false) return true;
-  showToast(context, 'Some details are missing or not right. Check the fields marked in red.', error: true);
+  showToast(context, tr('Some details are missing or not right. Check the fields marked in red.'), error: true);
   return false;
 }
 
@@ -37,7 +56,7 @@ Future<bool> attemptSave(BuildContext context, Future<Map<String, dynamic>> Func
   });
   if (ok && context.mounted) {
     final queued = result?['queued'] == true;
-    showToast(context, queued ? 'Saved on this phone. It will be sent when you are back online.' : success);
+    showToast(context, queued ? tr('Saved on this phone. It will be sent when you are back online.') : success);
   }
   return ok;
 }
@@ -52,7 +71,7 @@ Future<bool> attempt(BuildContext context, Future<void> Function() action, {Stri
     if (context.mounted) showToast(context, error.message, error: true);
     return false;
   } catch (_) {
-    if (context.mounted) showToast(context, 'Something went wrong. Please try again.', error: true);
+    if (context.mounted) showToast(context, tr('Something went wrong. Please try again.'), error: true);
     return false;
   }
 }
@@ -70,9 +89,9 @@ Future<bool> confirm(
       title: Text(title),
       content: Text(message),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+        TextButton(onPressed: () => Navigator.pop(context, false), child: Text(tr('Cancel'))),
         FilledButton(
-          style: danger ? FilledButton.styleFrom(backgroundColor: const Color(0xFFBE123C)) : null,
+          style: danger ? FilledButton.styleFrom(backgroundColor: context.tt.danger, foregroundColor: context.tt.background) : null,
           onPressed: () => Navigator.pop(context, true),
           child: Text(confirmLabel),
         ),
@@ -157,9 +176,9 @@ class LoaderState<T> extends State<Loader<T>> {
     } catch (_) {
       if (!mounted) return;
       if (_loaded) {
-        if (!quiet) showToast(context, 'Could not refresh. Please try again.', error: true);
+        if (!quiet) showToast(context, tr('Could not refresh. Please try again.'), error: true);
       } else {
-        setState(() => _error = 'Something went wrong while loading. Please try again.');
+        setState(() => _error = tr('Something went wrong while loading. Please try again.'));
       }
     } finally {
       _slowTimer?.cancel();
@@ -176,22 +195,36 @@ class LoaderState<T> extends State<Loader<T>> {
           reload();
         });
       }
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(32),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const CircularProgressIndicator(),
-              if (_slow) ...[
-                const SizedBox(height: 16),
-                Text(
-                  'Connecting to the server…\nIt can take up to a minute to wake up.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
-                ),
-              ],
-            ],
+      // Grey shapes where the content will appear: the wait feels shorter than a spinner.
+      return Align(
+        alignment: Alignment.topCenter,
+        child: ClipRect(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 720),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (_slow) ...[
+                    const Center(child: TtLoader(size: 64)),
+                    const SizedBox(height: 10),
+                    Text(
+                      tr('Connecting to the server…\nIt can take up to a minute to wake up.'),
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+                  const SkeletonBox(height: 84),
+                  const SizedBox(height: 12),
+                  const SkeletonBox(height: 140),
+                  const SizedBox(height: 12),
+                  const SkeletonBox(height: 120),
+                ],
+              ),
+            ),
           ),
         ),
       );
@@ -220,7 +253,7 @@ class ErrorView extends StatelessWidget {
             const SizedBox(height: 12),
             Text(message, textAlign: TextAlign.center, style: TextStyle(color: scheme.onSurface)),
             const SizedBox(height: 16),
-            FilledButton.icon(onPressed: onRetry, icon: const Icon(Icons.refresh), label: const Text('Try again')),
+            FilledButton.icon(onPressed: onRetry, icon: const Icon(Icons.refresh), label: Text(tr('Try again'))),
           ],
         ),
       ),
@@ -237,22 +270,18 @@ class EmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    final tt = context.tt;
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        border: Border.all(color: scheme.outline),
-        borderRadius: BorderRadius.circular(16),
-      ),
+      padding: const EdgeInsets.fromLTRB(16, 32, 16, 24),
       child: Column(
         children: [
-          Icon(icon, size: 36, color: scheme.outlineVariant),
-          const SizedBox(height: 10),
-          Text(title, textAlign: TextAlign.center, style: const TextStyle(fontWeight: FontWeight.w700)),
+          Icon(icon, size: 36, color: tt.textTertiary),
+          const SizedBox(height: 12),
+          Text(title, textAlign: TextAlign.center, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
           if (message != null) ...[
             const SizedBox(height: 4),
-            Text(message!, textAlign: TextAlign.center, style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 13)),
+            Text(message!, textAlign: TextAlign.center, style: TextStyle(color: tt.textSecondary, fontSize: 14, height: 1.5)),
           ],
           if (action != null) ...[const SizedBox(height: 14), action!],
         ],
@@ -272,7 +301,7 @@ class SectionTitle extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Padding(
-      padding: const EdgeInsets.only(top: 8, bottom: 10),
+      padding: const EdgeInsets.only(top: 8, bottom: 12),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
@@ -281,7 +310,7 @@ class SectionTitle extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
+                Text(title, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
                 if (subtitle != null) Text(subtitle!, style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 13)),
               ],
             ),
@@ -291,6 +320,18 @@ class SectionTitle extends StatelessWidget {
       ),
     );
   }
+}
+
+/// The tonal container behind an accent: the token container for success,
+/// warning, danger and primary, a light tint of anything else.
+Color tonalContainer(BuildContext context, Color accent) {
+  final tt = context.tt;
+  if (accent == AppColors.success || accent == AppColors.chartEarned) return tt.successContainer;
+  if (accent == AppColors.warning) return tt.warningContainer;
+  if (accent == AppColors.danger) return tt.dangerContainer;
+  if (accent == AppColors.primary || accent == AppColors.primarySoft) return tt.primaryContainer;
+  if (accent == AppColors.muted || accent == AppColors.faint) return tt.cardRaised;
+  return accent.withValues(alpha: 0.14);
 }
 
 /// A small rounded label: status, counts, categories.
@@ -304,11 +345,10 @@ class Pill extends StatelessWidget {
   Widget build(BuildContext context) {
     final ink = tone(context, color);
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.14),
-        border: Border.all(color: color.withValues(alpha: 0.35)),
-        borderRadius: BorderRadius.circular(20),
+        color: tonalContainer(context, color),
+        borderRadius: BorderRadius.circular(8),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -336,8 +376,7 @@ class Banner2 extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.10),
-        border: Border.all(color: color.withValues(alpha: 0.35)),
+        color: tonalContainer(context, color),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Row(
@@ -345,7 +384,7 @@ class Banner2 extends StatelessWidget {
         children: [
           Icon(icon, size: 18, color: ink),
           const SizedBox(width: 10),
-          Expanded(child: Text(message, style: TextStyle(color: ink, fontSize: 13, height: 1.35))),
+          Expanded(child: Text(message, style: TextStyle(color: ink, fontSize: 14, height: 1.45))),
           if (action != null) action!,
         ],
       ),
@@ -354,25 +393,32 @@ class Banner2 extends StatelessWidget {
 }
 
 class AppCard extends StatelessWidget {
-  const AppCard({super.key, required this.child, this.padding = const EdgeInsets.all(16), this.onTap, this.borderColor});
+  const AppCard({super.key, required this.child, this.padding = const EdgeInsets.all(16), this.onTap, this.onLongPress, this.borderColor});
   final Widget child;
   final EdgeInsets padding;
   final VoidCallback? onTap;
+
+  /// Quick actions, e.g. a menu of shortcuts for this card.
+  final VoidCallback? onLongPress;
   final Color? borderColor;
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    final tt = context.tt;
+    // No outlines: cards stand on their fill (and one soft shadow in the light
+    // theme). A [borderColor] is only for cards that must call attention.
     final shape = RoundedRectangleBorder(
       borderRadius: BorderRadius.circular(16),
-      // Hairline borders: cards are told apart by their fill, not by heavy outlines.
-      side: BorderSide(color: borderColor ?? scheme.outline.withValues(alpha: 0.45)),
+      side: borderColor == null ? BorderSide.none : BorderSide(color: borderColor!),
     );
-    return Material(
-      color: scheme.surface,
-      shape: shape,
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(onTap: onTap, child: Padding(padding: padding, child: child)),
+    return DecoratedBox(
+      decoration: BoxDecoration(borderRadius: BorderRadius.circular(16), boxShadow: tt.cardShadow),
+      child: Material(
+        color: tt.card,
+        shape: shape,
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(onTap: onTap, onLongPress: onLongPress, child: Padding(padding: padding, child: child)),
+      ),
     );
   }
 }
@@ -406,7 +452,11 @@ class _BusyButtonState extends State<BusyButton> {
   @override
   Widget build(BuildContext context) {
     final child = _busy
-        ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+        ? SizedBox(
+            width: 18,
+            height: 18,
+            child: CircularProgressIndicator(strokeWidth: 2, color: widget.outlined ? context.tt.primary : context.tt.onPrimary),
+          )
         : Row(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -494,14 +544,14 @@ class FlatGroup extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final block = Material(
-      color: scheme.surface,
-      borderRadius: BorderRadius.circular(14),
+      color: context.tt.card,
+      borderRadius: BorderRadius.circular(16),
       clipBehavior: Clip.antiAlias,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           for (var i = 0; i < children.length; i++) ...[
-            if (i > 0) Divider(height: 1, indent: 16, color: scheme.outline.withValues(alpha: 0.7)),
+            if (i > 0) Divider(height: 1, indent: 16, color: scheme.outline),
             children[i],
           ],
         ],
@@ -514,7 +564,7 @@ class FlatGroup extends StatelessWidget {
         Padding(
           padding: const EdgeInsets.fromLTRB(4, 0, 4, 6),
           child: Text(title!.toUpperCase(),
-              style: TextStyle(fontSize: 12, letterSpacing: 0.8, fontWeight: FontWeight.w700, color: scheme.onSurfaceVariant)),
+              style: TextStyle(fontSize: 12, letterSpacing: 0.72, fontWeight: FontWeight.w700, color: context.tt.textTertiary)),
         ),
         block,
       ],
@@ -534,8 +584,12 @@ class FlatField extends StatelessWidget {
     this.style,
     this.onChanged,
     this.capitalization = TextCapitalization.sentences,
+    this.contextMenuBuilder,
   });
   final TextEditingController controller;
+
+  /// The long-press menu, e.g. `sciencePasteMenu` for maths and science text.
+  final EditableTextContextMenuBuilder? contextMenuBuilder;
   final String? hint;
   final int minLines;
   final int maxLines;
@@ -556,6 +610,7 @@ class FlatField extends StatelessWidget {
         autofocus: autofocus,
         onChanged: onChanged,
         textCapitalization: capitalization,
+        contextMenuBuilder: contextMenuBuilder ?? _defaultContextMenu,
         style: style ?? const TextStyle(fontSize: 15),
         decoration: InputDecoration(
           hintText: hint,
@@ -582,25 +637,29 @@ class PickerRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    final tt = context.tt;
     return InkWell(
       onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
-        child: Row(
-          children: [
-            if (leading != null) ...[leading!, const SizedBox(width: 12)],
-            Text(label, style: TextStyle(fontSize: 14, color: scheme.onSurfaceVariant)),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(value,
-                  textAlign: TextAlign.right,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
-            ),
-            trailing ?? Icon(Icons.chevron_right, size: 20, color: scheme.onSurfaceVariant),
-          ],
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 56),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 12, 8),
+          child: Row(
+            children: [
+              if (leading != null) ...[leading!, const SizedBox(width: 12)],
+              Text(label, style: TextStyle(fontSize: 15, color: tt.textSecondary)),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(value,
+                    textAlign: TextAlign.right,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, fontFeatures: tabular, color: tt.textPrimary)),
+              ),
+              const SizedBox(width: 4),
+              trailing ?? Icon(Icons.chevron_right_rounded, size: 20, color: tt.textTertiary),
+            ],
+          ),
         ),
       ),
     );
@@ -616,11 +675,11 @@ class InfoTip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return IconButton(
-      tooltip: 'More about this',
+      tooltip: tr('More about this'),
       visualDensity: VisualDensity.compact,
       iconSize: 18,
       constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-      icon: Icon(Icons.info_outline, color: Theme.of(context).colorScheme.onSurfaceVariant),
+      icon: Icon(Icons.info_outline_rounded, color: context.tt.textTertiary),
       onPressed: () => showModalBottomSheet<void>(
         context: context,
         builder: (context) => SafeArea(
@@ -717,7 +776,7 @@ class _PickSheetState extends State<_PickSheet> {
                   child: TextField(
                     autofocus: false,
                     onChanged: (v) => setState(() => _query = v),
-                    decoration: const InputDecoration(hintText: 'Search', prefixIcon: Icon(Icons.search), isDense: true),
+                    decoration: InputDecoration(hintText: tr('Search'), prefixIcon: Icon(Icons.search), isDense: true),
                   ),
                 ),
               Flexible(
@@ -737,7 +796,7 @@ class _PickSheetState extends State<_PickSheet> {
                     if (shown.isEmpty)
                       Padding(
                         padding: const EdgeInsets.all(24),
-                        child: Text('Nothing matches.', textAlign: TextAlign.center, style: TextStyle(color: scheme.onSurfaceVariant)),
+                        child: Text(tr('Nothing matches.'), textAlign: TextAlign.center, style: TextStyle(color: scheme.onSurfaceVariant)),
                       ),
                   ],
                 ),
@@ -749,3 +808,120 @@ class _PickSheetState extends State<_PickSheet> {
     );
   }
 }
+
+
+/// A softly pulsing grey block standing in for content that is still loading.
+class SkeletonBox extends StatefulWidget {
+  const SkeletonBox({super.key, required this.height, this.radius = 16});
+  final double height;
+  final double radius;
+
+  @override
+  State<SkeletonBox> createState() => _SkeletonBoxState();
+}
+
+class _SkeletonBoxState extends State<SkeletonBox> with SingleTickerProviderStateMixin {
+  late final AnimationController _pulse = AnimationController(vsync: this, duration: const Duration(milliseconds: 900))
+    ..repeat(reverse: true);
+
+  @override
+  void dispose() {
+    _pulse.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final base = Theme.of(context).colorScheme.surfaceContainerHighest;
+    return Semantics(
+      label: tr('Loading'),
+      child: FadeTransition(
+        opacity: Tween<double>(begin: 0.45, end: 1).animate(_pulse),
+        child: Container(
+          height: widget.height,
+          decoration: BoxDecoration(color: base, borderRadius: BorderRadius.circular(widget.radius)),
+        ),
+      ),
+    );
+  }
+}
+
+/// A tonal segmented control: one 44 dp pill per option inside a soft track,
+/// the selected one filled with the primary container.
+class PillToggle<T> extends StatelessWidget {
+  const PillToggle({super.key, required this.options, required this.selected, required this.onChanged});
+
+  /// (value, label, optional icon)
+  final List<(T, String, IconData?)> options;
+  final T selected;
+  final ValueChanged<T> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final tt = context.tt;
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(color: tt.isDark ? tt.card : tt.background, borderRadius: BorderRadius.circular(14)),
+      child: Row(
+        children: [
+          for (final (value, label, icon) in options)
+            Expanded(
+              child: Semantics(
+                button: true,
+                selected: value == selected,
+                child: Material(
+                  color: value == selected ? tt.primaryContainer : Colors.transparent,
+                  borderRadius: BorderRadius.circular(10),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(10),
+                    onTap: value == selected ? null : () => onChanged(value),
+                    child: SizedBox(
+                      height: 44,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          if (icon != null) ...[
+                            Icon(icon, size: 18, color: value == selected ? tt.onPrimaryContainer : tt.textSecondary),
+                            const SizedBox(width: 8),
+                          ],
+                          Flexible(
+                            child: Text(
+                              label,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: value == selected ? FontWeight.w600 : FontWeight.w500,
+                                color: value == selected ? tt.onPrimaryContainer : tt.textSecondary,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A small label above a form field (instead of relying on placeholder text).
+class FieldLabel extends StatelessWidget {
+  const FieldLabel(this.text, {super.key});
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 2, bottom: 8),
+      child: Text(text, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: context.tt.textSecondary)),
+    );
+  }
+}
+
+Widget _defaultContextMenu(BuildContext context, EditableTextState state) =>
+    AdaptiveTextSelectionToolbar.editableText(editableTextState: state);

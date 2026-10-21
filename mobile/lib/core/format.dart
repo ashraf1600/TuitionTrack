@@ -1,34 +1,34 @@
 import 'package:intl/intl.dart';
 
-final _dateTime = DateFormat('EEE d MMM, h:mm a');
-final _date = DateFormat('EEE d MMM yyyy');
-final _shortDate = DateFormat('d MMM');
-final _time = DateFormat('h:mm a');
+import 'i18n.dart';
 
-String fmtDateTime(DateTime? value) => value == null ? '—' : _dateTime.format(value.toLocal());
-String fmtDate(DateTime? value) => value == null ? '—' : _date.format(value.toLocal());
-String fmtShortDate(DateTime? value) => value == null ? '—' : _shortDate.format(value.toLocal());
-String fmtTime(DateTime? value) => value == null ? '—' : _time.format(value.toLocal());
+// Built per call so dates follow the app language (Bangla month names and digits).
+String _format(String pattern, DateTime value) => DateFormat(pattern, intlLocale).format(value.toLocal());
+
+String fmtDateTime(DateTime? value) => value == null ? '—' : _format('EEE d MMM, h:mm a', value);
+String fmtDate(DateTime? value) => value == null ? '—' : _format('EEE d MMM yyyy', value);
+String fmtShortDate(DateTime? value) => value == null ? '—' : _format('d MMM', value);
+String fmtTime(DateTime? value) => value == null ? '—' : _format('h:mm a', value);
 
 /// "in 2 h 5 min", "in 3 days" — coarse on purpose; the exam screen has the exact timer.
 String relativeFromNow(Duration gap) {
   final mins = gap.inMinutes < 0 ? 0 : gap.inMinutes;
-  if (mins < 1) return 'in under a minute';
-  if (mins < 60) return 'in $mins min';
+  if (mins < 1) return tr('in under a minute');
+  if (mins < 60) return tr('in {n} min', {'n': mins});
   final hours = mins ~/ 60;
-  if (hours < 24) return 'in $hours h ${mins % 60} min';
+  if (hours < 24) return tr('in {h} h {m} min', {'h': hours, 'm': mins % 60});
   final days = hours ~/ 24;
-  return 'in $days day${days == 1 ? '' : 's'}';
+  return days == 1 ? tr('in 1 day') : tr('in {n} days', {'n': days});
 }
 
 /// "3 min ago", "2 days ago".
 String timeAgo(DateTime? value) {
   if (value == null) return '';
   final gap = DateTime.now().difference(value.toLocal());
-  if (gap.inMinutes < 1) return 'just now';
-  if (gap.inMinutes < 60) return '${gap.inMinutes} min ago';
-  if (gap.inHours < 24) return '${gap.inHours} h ago';
-  if (gap.inDays < 7) return '${gap.inDays} day${gap.inDays == 1 ? '' : 's'} ago';
+  if (gap.inMinutes < 1) return tr('just now');
+  if (gap.inMinutes < 60) return tr('{n} min ago', {'n': gap.inMinutes});
+  if (gap.inHours < 24) return tr('{n} h ago', {'n': gap.inHours});
+  if (gap.inDays < 7) return gap.inDays == 1 ? tr('1 day ago') : tr('{n} days ago', {'n': gap.inDays});
   return fmtShortDate(value);
 }
 
@@ -41,12 +41,24 @@ String countdown(Duration left) {
   return d > 0 ? '${d}d $hms' : hms;
 }
 
-/// "18:00" -> "6:00 PM".
+/// "18:00" -> "6:00 PM"; in Bangla "সন্ধ্যা ৬:০০" (the part of the day comes first).
 String to12h(String? time) {
   final match = RegExp(r'^(\d{1,2}):(\d{2})').firstMatch(time ?? '');
   if (match == null) return time ?? '';
   final h = int.parse(match[1]!);
-  return '${h % 12 == 0 ? 12 : h % 12}:${match[2]} ${h < 12 ? 'AM' : 'PM'}';
+  final clock = '${h % 12 == 0 ? 12 : h % 12}:${match[2]}';
+  if (isBangla) return '${_banglaDayPart(h)} ${localDigits(clock)}';
+  return '$clock ${h < 12 ? 'AM' : 'PM'}';
+}
+
+/// ভোর, সকাল, দুপুর, বিকাল, সন্ধ্যা, রাত — how Bangla speakers say the time of day.
+String _banglaDayPart(int hour) {
+  if (hour >= 4 && hour < 6) return 'ভোর';
+  if (hour >= 6 && hour < 12) return 'সকাল';
+  if (hour >= 12 && hour < 15) return 'দুপুর';
+  if (hour >= 15 && hour < 18) return 'বিকাল';
+  if (hour >= 18 && hour < 19) return 'সন্ধ্যা';
+  return 'রাত';
 }
 
 /// yyyy-MM-dd in local time; used to compare calendar days.

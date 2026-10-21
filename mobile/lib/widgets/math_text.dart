@@ -4,12 +4,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_math_fork/flutter_math.dart';
 import 'package:flutter_widget_from_html_core/flutter_widget_from_html_core.dart';
 
-import 'theme.dart';
+import '../core/science_text.dart';
+import '../theme/tt_theme.dart';
 
 // Every way maths arrives from ChatGPT, textbooks and the website's editor:
 //   $$…$$ and \[…\] (display)   ·   \(…\) and $…$ (inline)
 // The inline-$ form must hug its content, so prices like "$5 and $10" stay as text.
-final _mathPattern = RegExp(r'\$\$([\s\S]+?)\$\$|\\\[([\s\S]+?)\\\]|\\\(([\s\S]+?)\\\)|\$(?!\s)([^$\n\r]*?[^\s$])\$(?!\d)');
+final _mathPattern = mathPattern;
 final _moneyOnly = RegExp(r'^\s*\d+([.,]\d+)?\s*$');
 
 class MathSegment {
@@ -41,17 +42,27 @@ List<MathSegment> splitMath(String source) {
 
 Widget _formula(String tex, TextStyle style, {required bool display}) {
   final math = Math.tex(
-    tex,
+    // Chemistry (\ce), units, Unicode symbols and numbered environments made renderable.
+    prepareTex(tex),
     textStyle: style,
     mathStyle: display ? MathStyle.display : MathStyle.text,
-    onErrorFallback: (error) => Text(display ? '\$\$$tex\$\$' : '\\($tex\\)', style: style.copyWith(color: AppColors.warning)),
+    // Still not valid LaTeX: show it as readable text, not raw commands.
+    onErrorFallback: (error) => Text(texToPlain(tex), style: style),
   );
   // A long formula scrolls sideways instead of overflowing the screen.
   return SingleChildScrollView(scrollDirection: Axis.horizontal, child: math);
 }
 
-/// Plain text (an MCQ question, an option, an explanation) with its LaTeX typeset.
-/// Everything outside the formulas is shown literally.
+/// ChatGPT's Markdown headings ("### Title") as bold lines ("**Title**").
+String _headingsAsBold(String text) => text.replaceAllMapped(
+      RegExp(r'^[ \t]*#{1,6}[ \t]+(.+?)[ \t]*$', multiLine: true),
+      (m) => '**${m[1]}**',
+    );
+
+/// Plain text (an MCQ question, an option, an explanation, a pasted CQ) with
+/// its LaTeX typeset. Doubled backslashes from JSON are made single, LaTeX
+/// without $…$ is found, **bold** and # headings from ChatGPT are shown bold,
+/// and `code` is never read as maths. The stored text itself is not changed.
 class MathText extends StatelessWidget {
   const MathText(this.text, {super.key, this.style, this.maxLines});
 
@@ -62,23 +73,53 @@ class MathText extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final base = DefaultTextStyle.of(context).style.merge(style);
-    final segments = splitMath(text);
-    if (segments.every((s) => !s.isMath)) {
-      return Text(text, style: base, maxLines: maxLines, overflow: maxLines == null ? null : TextOverflow.ellipsis);
+    final source = normalizeEscapes(text);
+    final plainOnly = !source.contains(r'$') &&
+        !source.contains(r'\') &&
+        !source.contains('^') &&
+        !source.contains('_') &&
+        !source.contains('**') &&
+        !source.contains('`') &&
+        !source.contains('#');
+    if (plainOnly) {
+      return Text(source, style: base, maxLines: maxLines, overflow: maxLines == null ? null : TextOverflow.ellipsis);
     }
+
     final spans = <InlineSpan>[];
-    for (final segment in segments) {
-      if (!segment.isMath) {
-        spans.add(TextSpan(text: segment.text));
-      } else if (segment.display) {
-        spans.add(const TextSpan(text: '\n'));
-        spans.add(WidgetSpan(alignment: PlaceholderAlignment.middle, child: _formula(segment.text, base, display: true)));
-        spans.add(const TextSpan(text: '\n'));
-      } else {
-        spans.add(WidgetSpan(
-          alignment: PlaceholderAlignment.middle,
-          child: _formula(segment.text, base, display: false),
+    var bold = false;
+    void addText(String value) {
+      // "**" switches bold on and off; the markers themselves are not shown.
+      final pieces = value.split('**');
+      for (var i = 0; i < pieces.length; i++) {
+        if (i > 0) bold = !bold;
+        if (pieces[i].isEmpty) continue;
+        spans.add(TextSpan(text: pieces[i], style: bold ? const TextStyle(fontWeight: FontWeight.w700) : null));
+      }
+    }
+
+    for (final part in splitCode(source)) {
+      if (part.code) {
+        spans.add(TextSpan(
+          text: part.text,
+          style: TextStyle(fontFamily: 'monospace', fontSize: (base.fontSize ?? 14) * 0.92, backgroundColor: context.tt.cardRaised),
         ));
+        continue;
+      }
+      final segments = splitMath(wrapBareLatex(_headingsAsBold(part.text)));
+      for (var i = 0; i < segments.length; i++) {
+        final segment = segments[i];
+        if (!segment.isMath) {
+          addText(segment.text);
+        } else if (segment.display) {
+          // A display formula sits on its own line.
+          final before = i > 0 ? segments[i - 1].text : '';
+          final after = i + 1 < segments.length ? segments[i + 1].text : '';
+          if (spans.isNotEmpty && !before.endsWith('\n')) spans.add(const TextSpan(text: '\n'));
+          spans.add(WidgetSpan(alignment: PlaceholderAlignment.middle, child: _formula(segment.text, base, display: true)));
+          if (i + 1 < segments.length && !after.startsWith('\n')) spans.add(const TextSpan(text: '\n'));
+        } else {
+          spans.add(WidgetSpan(alignment: PlaceholderAlignment.middle, child: _formula(segment.text, base, display: false)));
+        }
       }
     }
     return Text.rich(
@@ -87,6 +128,34 @@ class MathText extends StatelessWidget {
       overflow: maxLines == null ? null : TextOverflow.ellipsis,
     );
   }
+}
+
+String _css(Color color) => '#${(color.toARGB32() & 0xFFFFFF).toRadixString(16).padLeft(6, '0')}';
+
+/// The written paper's HTML ready to show: escaped backslashes made single,
+/// LaTeX without $…$ found (only in the text between tags), ChatGPT's
+/// **bold** and # headings shown bold, and every formula tagged for typesetting.
+/// Code and preformatted blocks are left exactly as they are.
+String prepareHtmlForDisplay(String html) {
+  final held = <String>[];
+  String hold(String block) {
+    held.add(block);
+    return '\u0000${held.length - 1}\u0000';
+  }
+
+  var out = normalizeEscapes(html).replaceAllMapped(
+    RegExp(r'<(pre|code)\b[^>]*>[\s\S]*?</\1>', caseSensitive: false),
+    (m) => hold(m[0]!),
+  );
+  // Delimited formulas first: a display formula may span paragraphs (<p>$$</p><p>…</p><p>$$</p>).
+  out = tagMathInHtml(out);
+  // Then LaTeX pasted without $…$: only the text between tags is looked at.
+  out = out.replaceAllMapped(RegExp(r'(^|>)([^<]+)(?=<|$)'), (m) => '${m[1]}${wrapBareLatex(m[2]!)}');
+  out = tagMathInHtml(out);
+  out = out
+      .replaceAllMapped(RegExp(r'<p>\s*#{1,6}\s+([\s\S]*?)</p>', caseSensitive: false), (m) => '<p><strong>${m[1]}</strong></p>')
+      .replaceAllMapped(RegExp(r'\*\*(?=\S)([^<>\n]*?\S)\*\*'), (m) => '<strong>${m[1]}</strong>');
+  return out.replaceAllMapped(RegExp('\u0000(\\d+)\u0000'), (m) => held[int.parse(m[1]!)]);
 }
 
 String _decodeEntities(String text) => text
@@ -125,8 +194,9 @@ class HtmlMath extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final base = DefaultTextStyle.of(context).style.merge(style);
+    final tt = context.tt;
     return HtmlWidget(
-      tagMathInHtml(html),
+      prepareHtmlForDisplay(html),
       baseUrl: Uri.tryParse(baseUrl),
       textStyle: base,
       customWidgetBuilder: (element) {
@@ -146,12 +216,12 @@ class HtmlMath extends StatelessWidget {
         switch (element.localName) {
           case 'th':
           case 'td':
-            return {'border': '1px solid #334155', 'padding': '6px'};
+            return {'border': '1px solid ${_css(tt.border)}', 'padding': '6px'};
           case 'a':
-            return {'color': '#A5B4FC'};
+            return {'color': _css(tt.primary)};
           case 'code':
           case 'pre':
-            return {'background-color': '#1E293B'};
+            return {'background-color': _css(tt.cardRaised)};
         }
         return null;
       },

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../core/i18n.dart';
 import 'theme.dart';
 
 /// A circular "done of total" meter with the count in the middle (e.g. 10/12).
@@ -28,7 +29,7 @@ class ProgressRing extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final value = total <= 0 ? 0.0 : (done / total).clamp(0.0, 1.0);
     return Semantics(
-      label: '$done of $total${caption == null ? '' : ' $caption'} done',
+      label: tr('{p0} of {p1}{p2} done', {'p0': done, 'p1': total, 'p2': caption == null ? '' : ' $caption'}),
       excludeSemantics: true,
       child: SizedBox(
         width: size,
@@ -40,8 +41,8 @@ class ProgressRing extends StatelessWidget {
               value: value,
               strokeWidth: thickness,
               strokeCap: StrokeCap.round,
-              color: color,
-              backgroundColor: scheme.surfaceContainerHighest,
+              color: tone(context, color),
+              backgroundColor: context.tt.chartTrack,
             ),
             Center(
               child: Padding(
@@ -53,8 +54,8 @@ class ProgressRing extends StatelessWidget {
                     children: [
                       Text.rich(
                         TextSpan(children: [
-                          TextSpan(text: '$done', style: TextStyle(fontWeight: FontWeight.w800, color: scheme.onSurface)),
-                          TextSpan(text: '/$total', style: TextStyle(fontWeight: FontWeight.w600, color: scheme.onSurfaceVariant)),
+                          TextSpan(text: localDigits('$done'), style: TextStyle(fontWeight: FontWeight.w700, color: scheme.onSurface)),
+                          TextSpan(text: localDigits('/$total'), style: TextStyle(fontWeight: FontWeight.w600, color: scheme.onSurfaceVariant)),
                         ]),
                         style: TextStyle(fontSize: size * 0.24),
                       ),
@@ -87,8 +88,8 @@ class ProgressLine extends StatelessWidget {
       child: LinearProgressIndicator(
         value: value.isNaN ? 0 : value.clamp(0.0, 1.0),
         minHeight: height,
-        color: color,
-        backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
+        color: tone(context, color),
+        backgroundColor: context.tt.chartTrack,
         semanticsLabel: label,
       ),
     );

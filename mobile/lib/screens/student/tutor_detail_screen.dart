@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 
 import '../../core/connect.dart';
 import '../../core/format.dart';
+import '../../core/i18n.dart';
 import '../../core/json.dart';
 import '../../core/repo.dart';
 import '../../widgets/theme.dart';
@@ -89,7 +90,7 @@ class _TutorDetailScreenState extends State<TutorDetailScreen> {
           title: Text(widget.title, overflow: TextOverflow.ellipsis),
           actions: [
             IconButton(
-              tooltip: 'Payment history',
+              tooltip: tr('Payment history'),
               icon: const Icon(Icons.receipt_long_outlined),
               onPressed: () => Navigator.push(
                 context,
@@ -97,7 +98,7 @@ class _TutorDetailScreenState extends State<TutorDetailScreen> {
               ),
             ),
           ],
-          bottom: const TabBar(tabs: [Tab(text: 'Classes'), Tab(text: 'Exams'), Tab(text: 'Homework')]),
+          bottom: TabBar(tabs: [Tab(text: tr('Classes')), Tab(text: tr('Exams')), Tab(text: tr('Homework'))]),
         ),
         body: Loader<_Detail>(
           key: _key,
@@ -126,11 +127,11 @@ class _ClassesTab extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     if (detail.tuitions.isEmpty && detail.legacyRoutine.isEmpty && detail.upcoming.isEmpty) {
-      return const PageBody(children: [
+      return PageBody(children: [
         EmptyState(
           icon: Icons.class_outlined,
-          title: 'No classes yet',
-          message: 'When your tutor adds you to a tuition, its routine and class tracker appear here.',
+          title: tr('No classes yet'),
+          message: tr('When your tutor adds you to a tuition, its routine and class tracker appear here.'),
         ),
       ]);
     }
@@ -141,8 +142,7 @@ class _ClassesTab extends StatelessWidget {
           // Reminders first, but they never stop anything below from working.
           for (final p in tuition.maps('pending_payments')) ...[
             Banner2(
-              'Payment pending for cycle #${p.integer('cycle_number')}${detail.tuitions.length > 1 ? ' (${tuition.str('title')})' : ''}. '
-              'Classes go on as usual; this goes away when your tutor marks it paid.',
+              tr('Payment pending for cycle #{p0}{p1}. Classes go on as usual; this goes away when your tutor marks it paid.', {'p0': p.integer('cycle_number'), 'p1': detail.tuitions.length > 1 ? ' (${tuition.str('title')})' : ''}),
               color: AppColors.warning,
               icon: Icons.warning_amber_rounded,
             ),
@@ -170,33 +170,33 @@ class _ClassesTab extends StatelessWidget {
                 if (tuition.obj('active_cycle') case final cycle?)
                   CycleProgress(cycle: cycle)
                 else
-                  Text('No classes recorded yet.', style: TextStyle(color: scheme.onSurfaceVariant)),
+                  Text(tr('No classes recorded yet.'), style: TextStyle(color: scheme.onSurfaceVariant)),
               ],
             ),
           ),
           gap16,
         ],
         if (detail.legacyRoutine.isNotEmpty) ...[
-          const SectionTitle('Other class times'),
+          SectionTitle(tr('Other class times')),
           FlatGroup(children: [
             for (final r in detail.legacyRoutine)
               ListTile(
                 dense: true,
                 leading: const Icon(Icons.schedule, size: 20),
-                title: Text(r.subject.isEmpty ? 'Class' : r.subject),
-                trailing: Text('${normalizeDay(r.day).isEmpty ? r.day : normalizeDay(r.day).substring(0, 3)} · ${to12h(r.start)}${r.end.isEmpty ? '' : '–${to12h(r.end)}'}'),
+                title: Text(r.subject.isEmpty ? tr('Class') : r.subject),
+                trailing: Text('${normalizeDay(r.day).isEmpty ? r.day : dayLabel(normalizeDay(r.day))} · ${to12h(r.start)}${r.end.isEmpty ? '' : '–${to12h(r.end)}'}'),
               ),
           ]),
           gap16,
         ],
         if (detail.upcoming.isNotEmpty) ...[
-          const SectionTitle('Upcoming classes'),
+          SectionTitle(tr('Upcoming classes')),
           FlatGroup(children: [
             for (final c in detail.upcoming)
               ListTile(
                 dense: true,
                 leading: const Icon(Icons.event_rounded, size: 20),
-                title: Text(c.topic.isEmpty ? 'Class' : c.topic),
+                title: Text(c.topic.isEmpty ? tr('Class') : c.topic),
                 trailing: Text(fmtDateTime(c.at)),
               ),
           ]),
@@ -214,6 +214,6 @@ class _ClassesTab extends StatelessWidget {
   static String _slotLabel(Json slot) {
     final day = normalizeDay(slot.str('day'));
     final end = slot.str('end_time');
-    return '${day.isEmpty ? slot.str('day') : day.substring(0, 3)} ${to12h(slotStart(slot))}${end.isEmpty ? '' : '–${to12h(end)}'}';
+    return '${day.isEmpty ? slot.str('day') : dayLabel(day)} ${to12h(slotStart(slot))}${end.isEmpty ? '' : '–${to12h(end)}'}';
   }
 }

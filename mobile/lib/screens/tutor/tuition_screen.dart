@@ -3,12 +3,14 @@ import 'package:provider/provider.dart';
 
 import '../../core/api.dart';
 import '../../core/format.dart';
+import '../../core/i18n.dart';
 import '../../core/json.dart';
 import '../../core/repo.dart';
 import '../../widgets/charts.dart';
 import '../../widgets/theme.dart';
 import '../../widgets/ui.dart';
 import '../common/cycle_progress.dart';
+import '../common/notification_actions.dart';
 import '../common/payments_screen.dart';
 import 'exam_editor_screen.dart';
 import 'exams_view.dart';
@@ -47,15 +49,14 @@ class _TuitionScreenState extends State<TuitionScreen> {
   Future<void> _delete(Json tuition) async {
     final ok = await confirm(
       context,
-      title: 'Delete "${tuition.str('title')}"?',
-      message: 'The tuition, its student list and its exams (with all submissions and marks) will be deleted. '
-          'What you already earned stays in your wallet history. This cannot be undone.',
-      confirmLabel: 'Delete tuition',
+      title: tr('Delete "{p0}"?', {'p0': tuition.str('title')}),
+      message: tr('The tuition, its student list and its exams (with all submissions and marks) will be deleted. What you already earned stays in your wallet history. This cannot be undone.'),
+      confirmLabel: tr('Delete tuition'),
       danger: true,
     );
     if (!ok || !mounted) return;
     final repo = context.read<Repo>();
-    if (await attempt(context, () => repo.deleteTuition(widget.tuitionId), success: 'Tuition deleted.') && mounted) {
+    if (await attempt(context, () => repo.deleteTuition(widget.tuitionId), success: tr('Tuition deleted.')) && mounted) {
       Navigator.pop(context);
     }
   }
@@ -75,7 +76,7 @@ class _TuitionScreenState extends State<TuitionScreen> {
               title: Text(tuition.str('title'), overflow: TextOverflow.ellipsis),
               actions: [
                 IconButton(
-                  tooltip: 'Payments',
+                  tooltip: tr('Payments'),
                   icon: Badge(
                     isLabelVisible: tuition.maps('pending_payments').isNotEmpty,
                     label: Text('${tuition.maps('pending_payments').length}'),
@@ -90,21 +91,21 @@ class _TuitionScreenState extends State<TuitionScreen> {
                   },
                 ),
                 PopupMenuButton<String>(
-                  tooltip: 'Tuition options',
+                  tooltip: tr('Tuition options'),
                   onSelected: (value) => value == 'edit' ? _edit(tuition) : _delete(tuition),
-                  itemBuilder: (_) => const [
-                    PopupMenuItem(value: 'edit', child: ListTile(leading: Icon(Icons.edit_outlined), title: Text('Edit tuition'), contentPadding: EdgeInsets.zero)),
+                  itemBuilder: (_) => [
+                    PopupMenuItem(value: 'edit', child: ListTile(leading: Icon(Icons.edit_outlined), title: Text(tr('Edit tuition')), contentPadding: EdgeInsets.zero)),
                     PopupMenuItem(
                       value: 'delete',
-                      child: ListTile(leading: Icon(Icons.delete_outline, color: AppColors.danger), title: Text('Delete tuition'), contentPadding: EdgeInsets.zero),
+                      child: ListTile(leading: Icon(Icons.delete_outline, color: AppColors.danger), title: Text(tr('Delete tuition')), contentPadding: EdgeInsets.zero),
                     ),
                   ],
                 ),
               ],
               bottom: TabBar(tabs: [
-                const Tab(text: 'Classes'),
-                Tab(text: 'Students (${tuition.maps('enrollments').length})'),
-                const Tab(text: 'Exams'),
+                Tab(text: tr('Classes')),
+                Tab(text: tr('Students ({p0})', {'p0': tuition.maps('enrollments').length})),
+                Tab(text: tr('Exams')),
               ]),
             ),
             body: TabBarView(
@@ -129,7 +130,7 @@ class _TuitionScreenState extends State<TuitionScreen> {
                           if (changed == true && mounted) setState(() => _examsVersion++);
                         },
                         icon: const Icon(Icons.add),
-                        label: Text('New exam'),
+                        label: Text(tr('New exam')),
                       ),
               );
             }),
@@ -165,15 +166,15 @@ class _ClassesTab extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text('Class $classNo', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+              Text(tr('Class {p0}', {'p0': classNo}), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
               Text(
-                wasDone ? 'Recorded. You can correct the date or topic, or undo it.' : 'Marking it done counts it for every student in the tuition and adds it to your wallet.',
+                wasDone ? tr('Recorded. You can correct the date or topic, or undo it.') : tr('Marking it done counts it for every student in the tuition and adds it to your wallet.'),
                 style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
               ),
               gap16,
               OutlinedButton.icon(
                 icon: const Icon(Icons.calendar_today_outlined, size: 18),
-                label: Text('Held on ${fmtDate(date)}'),
+                label: Text(tr('Held on {p0}', {'p0': fmtDate(date)})),
                 onPressed: () async {
                   final picked = await showDatePicker(
                     context: context,
@@ -189,27 +190,27 @@ class _ClassesTab extends StatelessWidget {
                 controller: topic,
                 maxLength: 255,
                 textCapitalization: TextCapitalization.sentences,
-                decoration: const InputDecoration(labelText: 'Topic covered (optional)', hintText: 'e.g. Quadratic equations'),
+                decoration: InputDecoration(labelText: tr('Topic covered (optional)'), hintText: tr('e.g. Quadratic equations')),
               ),
               gap8,
               FilledButton.icon(
                 onPressed: () => Navigator.pop(context, 'done'),
                 icon: const Icon(Icons.check),
-                label: Text(wasDone ? 'Save changes' : 'Mark as done'),
+                label: Text(wasDone ? tr('Save changes') : tr('Mark as done')),
               ),
               // Set homework for this class — applies to the whole tuition.
               // The class itself stays independent: marking it done later does not
               // uncreate homework that was already sent to students.
               OutlinedButton.icon(
                 icon: Icon(Icons.assignment_outlined, size: 18),
-                label: Text('Set homework for this class'),
+                label: Text(tr('Set homework for this class')),
                 onPressed: () => Navigator.pop(context, 'homework'),
               ),
               if (wasDone)
                 TextButton(
                   onPressed: () => Navigator.pop(context, 'undo'),
                   style: TextButton.styleFrom(foregroundColor: AppColors.danger),
-                  child: Text('Undo — this class was not held'),
+                  child: Text(tr('Undo — this class was not held')),
                 ),
             ],
           ),
@@ -229,16 +230,61 @@ class _ClassesTab extends StatelessWidget {
           date: done ? date : null, topic: done ? topicText : '', tuitionTitle: tuition.str('title'));
     });
     if (!ok || !context.mounted) return;
-    final finished = result['completed_cycle_number'];
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    final oldDate = entry.date('date');
+    final oldTopic = entry.str('topic');
     showToast(
       context,
-      result['queued'] == true
-          ? 'Saved on this phone. It will be sent when you are back online.'
-          : finished is num
-              ? 'Cycle #$finished is complete and cycle #${finished.toInt() + 1} has started. Mark #$finished paid when you receive the money.'
-              : done
-                  ? 'Class $classNo marked done for the whole tuition.'
-                  : 'Class $classNo unmarked.',
+      !done
+          ? tr('Class {n} unmarked.', {'n': classNo})
+          : wasDone
+              ? tr('Class {n} updated.', {'n': classNo})
+              : classMarkedMessage(result, classNo, tuition.str('title')),
+      actionLabel: tr('Undo'),
+      onAction: () async {
+        try {
+          if (done && !wasDone) {
+            // Newly marked: unmark it (reopening the cycle if it had just rolled over).
+            await repo.undoMarkClass(tuition.str('id'), classNo, true, result);
+          } else {
+            // Unmarked or edited: put back the date and topic it had.
+            await repo.markClass(tuition.str('id'), classNo, true, date: oldDate, topic: oldTopic);
+          }
+          showToastOn(messenger, tr('Undone.'));
+        } on ApiException catch (error) {
+          showToastOn(messenger, error.message, error: true);
+        }
+        await reload();
+      },
+    );
+    await reload();
+  }
+
+  /// Records the payment at once, with Undo (no "are you sure" step).
+  /// One tap: marks the next class done today, with Undo (the tile opens the full editor).
+  Future<void> _quickMark(BuildContext context, Json entry) async {
+    final tuition = data.tuition;
+    final repo = context.read<Repo>();
+    final classNo = classNoOf(entry);
+    Json result = const {};
+    final ok = await attempt(context, () async {
+      result = await repo.markClass(tuition.str('id'), classNo, true, tuitionTitle: tuition.str('title'));
+    });
+    if (!ok || !context.mounted) return;
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    showToast(
+      context,
+      classMarkedMessage(result, classNo, tuition.str('title')),
+      actionLabel: tr('Undo'),
+      onAction: () async {
+        try {
+          await repo.undoMarkClass(tuition.str('id'), classNo, true, result);
+          showToastOn(messenger, tr('Class {n} unmarked.', {'n': classNo}));
+        } on ApiException catch (error) {
+          showToastOn(messenger, error.message, error: true);
+        }
+        await reload();
+      },
     );
     await reload();
   }
@@ -246,17 +292,23 @@ class _ClassesTab extends StatelessWidget {
   Future<void> _markPaid(BuildContext context, Json pending) async {
     final repo = context.read<Repo>();
     final n = pending.integer('cycle_number');
-    final ok = await confirm(
-      context,
-      title: 'Mark cycle #$n as paid?',
-      message: 'Record that ${pending.numberOrNull('amount') == null ? 'the fee' : taka(pending.number('amount'))} was received. '
-          'Students stop seeing "payment pending" for this cycle.',
-      confirmLabel: 'Mark paid',
-    );
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    final ok = await attempt(context, () => repo.setCyclePayment(pending.str('cycle_id'), true));
     if (!ok || !context.mounted) return;
-    if (await attempt(context, () => repo.setCyclePayment(pending.str('cycle_id'), true), success: 'Cycle #$n marked as paid.')) {
-      await reload();
-    }
+    showToast(
+      context,
+      tr('Cycle #{n} marked as paid.', {'n': n}),
+      actionLabel: tr('Undo'),
+      onAction: () async {
+        try {
+          await repo.setCyclePayment(pending.str('cycle_id'), false);
+        } on ApiException catch (error) {
+          showToastOn(messenger, error.message, error: true);
+        }
+        await reload();
+      },
+    );
+    await reload();
   }
 
   Future<void> _reopen(BuildContext context, Json previous) async {
@@ -264,13 +316,12 @@ class _ClassesTab extends StatelessWidget {
     final n = previous.integer('cycle_number');
     final ok = await confirm(
       context,
-      title: 'Reopen cycle #$n?',
-      message: 'Use this if the last class of cycle #$n was marked by mistake. The new, still empty cycle is removed '
-          'and cycle #$n becomes current again, so you can unmark that class.',
-      confirmLabel: 'Reopen',
+      title: tr('Reopen cycle #{p0}?', {'p0': n}),
+      message: tr('Use this if the last class of cycle #{p0} was marked by mistake. The new, still empty cycle is removed and cycle #{p1} becomes current again, so you can unmark that class.', {'p0': n, 'p1': n}),
+      confirmLabel: tr('Reopen'),
     );
     if (!ok || !context.mounted) return;
-    if (await attempt(context, () => repo.reopenCycle(previous.str('id')), success: 'Cycle #$n is open again.')) {
+    if (await attempt(context, () => repo.reopenCycle(previous.str('id')), success: tr('Cycle #{p0} is open again.', {'p0': n}))) {
       await reload();
     }
   }
@@ -294,14 +345,14 @@ class _ClassesTab extends StatelessWidget {
         .where((s) => s.id.isNotEmpty)
         .toList();
     final titleCtrl = TextEditingController(
-      text: topicText.isNotEmpty ? 'Class $classNo — $topicText' : 'Class $classNo homework',
+      text: topicText.isNotEmpty ? tr('Class {p0} — {p1}', {'p0': classNo, 'p1': topicText}) : tr('Class {p0} homework', {'p0': classNo}),
     );
     final descriptionCtrl = TextEditingController();
     final initialDue = DateTime.now().add(Duration(days: 1));
     var dueDate = DateTime(initialDue.year, initialDue.month, initialDue.day, 18, 0);
     var perStudent = roster.isNotEmpty;
     final sourceLabel =
-        'Class $classNo · ${heldOn.day.toString().padLeft(2, '0')}/${heldOn.month.toString().padLeft(2, '0')}';
+        tr('Class {p0} · {p1}/{p2}', {'p0': classNo, 'p1': heldOn.day.toString().padLeft(2, '0'), 'p2': heldOn.month.toString().padLeft(2, '0')});
 
     var titleTick = 0;
     final saved = await showDialog<bool>(
@@ -311,7 +362,7 @@ class _ClassesTab extends StatelessWidget {
           // Refresh the Send button whenever the title changes.
           void onTitleChanged() => setStateDialog(() => titleTick++);
           return AlertDialog(
-            title: Text('Homework — class $classNo'),
+            title: Text(tr('Homework — class {p0}', {'p0': classNo})),
             content: SingleChildScrollView(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -321,7 +372,7 @@ class _ClassesTab extends StatelessWidget {
                     Padding(
                       padding: const EdgeInsets.only(bottom: 8),
                       child: Text(
-                        'Topic: $topicText',
+                        tr('Topic: {p0}', {'p0': topicText}),
                         style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
                       ),
                     ),
@@ -329,7 +380,7 @@ class _ClassesTab extends StatelessWidget {
                     controller: titleCtrl,
                     textCapitalization: TextCapitalization.sentences,
                     onChanged: (_) => onTitleChanged(),
-                    decoration: const InputDecoration(labelText: 'Title', hintText: 'e.g. Solve exercises 4.1–4.3'),
+                    decoration: InputDecoration(labelText: tr('Title'), hintText: tr('e.g. Solve exercises 4.1–4.3')),
                   ),
                   gap12,
                   TextField(
@@ -337,15 +388,15 @@ class _ClassesTab extends StatelessWidget {
                     minLines: 2,
                     maxLines: 5,
                     textCapitalization: TextCapitalization.sentences,
-                    decoration: const InputDecoration(
-                      labelText: 'Details (optional)',
-                      hintText: 'Pages, problems, instructions…',
+                    decoration: InputDecoration(
+                      labelText: tr('Details (optional)'),
+                      hintText: tr('Pages, problems, instructions…'),
                     ),
                   ),
                   gap12,
                   OutlinedButton.icon(
                     icon: const Icon(Icons.event_outlined, size: 18),
-                    label: Text('Due ${fmtDate(dueDate)}'),
+                    label: Text(tr('Due {p0}', {'p0': fmtDate(dueDate)})),
                     onPressed: () async {
                       final picked = await showDatePicker(
                         context: dialogContext,
@@ -374,9 +425,9 @@ class _ClassesTab extends StatelessWidget {
                     gap8,
                     SwitchListTile(
                       contentPadding: EdgeInsets.zero,
-                      title: Text('One copy per student (${roster.length})',
+                      title: Text(tr('One copy per student ({p0})', {'p0': roster.length}),
                           style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-                      subtitle: Text('Each submission is marked done individually. Off = one shared task.',
+                      subtitle: Text(tr('Each submission is marked done individually. Off = one shared task.'),
                           style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant)),
                       value: perStudent,
                       onChanged: (v) => setStateDialog(() => perStudent = v),
@@ -385,18 +436,18 @@ class _ClassesTab extends StatelessWidget {
                   gap8,
                   Text(
                     perStudent && roster.isNotEmpty
-                        ? 'Sent to ${roster.length} students separately.'
-                        : 'Sent to every student in ${tuition.str('title')}.',
+                        ? tr('Sent to {p0} students separately.', {'p0': roster.length})
+                        : tr('Sent to every student in {p0}.', {'p0': tuition.str('title')}),
                     style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 12),
                   ),
                 ],
               ),
             ),
             actions: [
-              TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Cancel')),
+              TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: Text(tr('Cancel'))),
               FilledButton(
                 onPressed: titleCtrl.text.trim().isEmpty ? null : () => Navigator.pop(dialogContext, true),
-                child: const Text('Send'),
+                child: Text(tr('Send')),
               ),
             ],
           );
@@ -438,10 +489,10 @@ class _ClassesTab extends StatelessWidget {
     showToast(
       context,
       queued > 0
-          ? 'Homework saved on this phone. It will be sent when you are back online.'
+          ? tr('Homework saved on this phone. It will be sent when you are back online.')
           : perStudent && roster.isNotEmpty
-              ? 'Homework sent to ${roster.length} students (one copy each).'
-              : 'Homework sent to ${tuition.str('title')}.',
+              ? tr('Homework sent to {p0} students (one copy each).', {'p0': roster.length})
+              : tr('Homework sent to {p0}.', {'p0': tuition.str('title')}),
     );
     await reload();
   }
@@ -450,15 +501,14 @@ class _ClassesTab extends StatelessWidget {
     final repo = context.read<Repo>();
     final ok = await confirm(
       context,
-      title: 'Start cycle #${cycle.integer('cycle_number') + 1}?',
-      message: 'Cycle #${cycle.integer('cycle_number')} is complete. It will be closed with its earnings of '
-          '${taka(cycle.number('earned_revenue'))} kept in your history, and a fresh cycle starts for the tuition.',
-      confirmLabel: 'Start next cycle',
+      title: tr('Start cycle #{p0}?', {'p0': cycle.integer('cycle_number') + 1}),
+      message: tr('Cycle #{p0} is complete. It will be closed with its earnings of {p1} kept in your history, and a fresh cycle starts for the tuition.', {'p0': cycle.integer('cycle_number'), 'p1': taka(cycle.number('earned_revenue'))}),
+      confirmLabel: tr('Start next cycle'),
     );
     if (!ok || !context.mounted) return;
     try {
       await repo.resetCycle(cycle.str('id'));
-      if (context.mounted) showToast(context, 'New cycle started.');
+      if (context.mounted) showToast(context, tr('New cycle started.'));
       await reload();
     } on ApiException catch (error) {
       if (!context.mounted) return;
@@ -470,7 +520,7 @@ class _ClassesTab extends StatelessWidget {
                   error.message.toLowerCase().contains('cycle'));
       showToast(
         context,
-        hint ? 'Finish the classes of this cycle before starting the next one.' : error.message,
+        hint ? tr('Finish the classes of this cycle before starting the next one.') : error.message,
         error: true,
       );
     }
@@ -486,7 +536,7 @@ class _ClassesTab extends StatelessWidget {
 
     if (cycle == null) {
       return PageBody(children: [
-        EmptyState(icon: Icons.event_busy_outlined, title: 'No cycle yet', message: 'This tuition has no class cycle yet.'),
+        EmptyState(icon: Icons.event_busy_outlined, title: tr('No cycle yet'), message: tr('This tuition has no class cycle yet.')),
       ]);
     }
     final classes = orderedClasses(cycle);
@@ -507,11 +557,10 @@ class _ClassesTab extends StatelessWidget {
         // Unpaid finished cycles: a reminder with a one-tap fix. Nothing is blocked.
         for (final p in pendingPayments) ...[
           Banner2(
-            'Payment pending for cycle #${p.integer('cycle_number')}'
-            '${p.numberOrNull('amount') == null ? '' : ' · ${taka(p.number('amount'))}'}',
+            tr('Payment pending for cycle #{p0}{p1}', {'p0': p.integer('cycle_number'), 'p1': p.numberOrNull('amount') == null ? '' : ' · ${taka(p.number('amount'))}'}),
             color: AppColors.warning,
             icon: Icons.warning_amber_rounded,
-            action: TextButton(onPressed: () => _markPaid(context, p), child: const Text('Mark paid')),
+            action: TextButton(onPressed: () => _markPaid(context, p), child: Text(tr('Mark paid'))),
           ),
           gap8,
         ],
@@ -522,17 +571,17 @@ class _ClassesTab extends StatelessWidget {
             children: [
               Row(
                 children: [
-                  ProgressRing(done: done, total: total, size: 104, thickness: 10, caption: 'classes done'),
+                  ProgressRing(done: done, total: total, size: 104, thickness: 10, caption: tr('classes done')),
                   const SizedBox(width: 18),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('Cycle #${cycle.integer('cycle_number')}', style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 13)),
-                        Text('$done/$total classes done', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
+                        Text(tr('Cycle #{p0}', {'p0': cycle.integer('cycle_number')}), style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 13)),
+                        Text(tr('{p0}/{p1} classes done', {'p0': done, 'p1': total}), style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
                         const SizedBox(height: 2),
                         Text(
-                          total - done <= 0 ? 'All classes taught' : '${total - done} class${total - done == 1 ? '' : 'es'} left',
+                          total - done <= 0 ? tr('All classes taught') : tr('{p0} class{p1} left', {'p0': total - done, 'p1': total - done == 1 ? '' : 'es'}),
                           style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 13),
                         ),
                       ],
@@ -543,41 +592,41 @@ class _ClassesTab extends StatelessWidget {
               gap16,
               Row(
                 children: [
-                  Expanded(child: Stat(label: 'Earned', value: taka(wallet.number('earned_revenue')), color: AppColors.success)),
-                  Expanded(child: Stat(label: 'Still to earn', value: taka(wallet.number('pending_balance')), color: AppColors.primarySoft)),
-                  Expanded(child: Stat(label: 'Per class', value: taka(wallet.number('per_class_rate')))),
+                  Expanded(child: Stat(label: tr('Earned'), value: taka(wallet.number('earned_revenue')), color: AppColors.success)),
+                  Expanded(child: Stat(label: tr('Still to earn'), value: taka(wallet.number('pending_balance')), color: AppColors.primarySoft)),
+                  Expanded(child: Stat(label: tr('Per class'), value: taka(wallet.number('per_class_rate')))),
                 ],
               ),
               if (next != null) ...[
                 gap16,
                 FilledButton.icon(
-                  onPressed: () => _openClass(context, next),
+                  onPressed: () => _quickMark(context, next),
                   icon: const Icon(Icons.check),
-                  label: Text('Mark class ${classNoOf(next)} done'),
+                  label: Text(tr('Mark class {p0} done', {'p0': classNoOf(next)})),
                 ),
               ],
               if (done == 0 && previous != null)
                 TextButton.icon(
                   onPressed: () => _reopen(context, previous),
                   icon: const Icon(Icons.undo_rounded, size: 18),
-                  label: Text('Last class of cycle #${previous.integer('cycle_number')} was a mistake? Reopen it'),
+                  label: Text(tr('Last class of cycle #{p0} was a mistake? Reopen it', {'p0': previous.integer('cycle_number')})),
                 ),
             ],
           ),
         ),
         if (cycle.flag('is_complete')) ...[
           gap12,
-          const Banner2(
-            'All classes of this cycle are done. Start the next cycle to keep tracking classes.',
+          Banner2(
+            tr('All classes of this cycle are done. Start the next cycle to keep tracking classes.'),
             color: AppColors.success,
             icon: Icons.celebration_outlined,
           ),
           gap8,
-          BusyButton(onPressed: () => _startNext(context, cycle), label: 'Start next cycle', icon: Icons.restart_alt),
+          BusyButton(onPressed: () => _startNext(context, cycle), label: tr('Start next cycle'), icon: Icons.restart_alt),
         ],
 
         // Every class of the cycle as a tile: done, next, or still to come.
-        const SectionTitle('Classes', subtitle: 'Tap a class to mark it, change its date or topic, or set homework.'),
+        SectionTitle(tr('Classes'), subtitle: tr('Tap a class to mark it, change its date or topic, or set homework.')),
         Wrap(
           spacing: 8,
           runSpacing: 8,
@@ -588,9 +637,9 @@ class _ClassesTab extends StatelessWidget {
         ),
 
         // The log of what was taught, newest first.
-        SectionTitle('Done classes ($done/$total)', icon: Icons.task_alt),
+        SectionTitle(tr('Done classes ({p0}/{p1})', {'p0': done, 'p1': total}), icon: Icons.task_alt),
         if (doneClasses.isEmpty)
-          Text('No class marked done yet in this cycle.', style: TextStyle(color: scheme.onSurfaceVariant))
+          Text(tr('No class marked done yet in this cycle.'), style: TextStyle(color: scheme.onSurfaceVariant))
         else
           AppCard(
             padding: EdgeInsets.zero,
@@ -600,17 +649,17 @@ class _ClassesTab extends StatelessWidget {
                   if (i > 0) const Divider(indent: 64),
                   ListTile(
                     leading: CircleAvatar(
-                      backgroundColor: AppColors.chartEarned.withValues(alpha: 0.15),
+                      backgroundColor: context.tt.successContainer,
                       child: Text('${classNoOf(doneClasses[i])}',
                           style: TextStyle(fontWeight: FontWeight.w800, color: tone(context, AppColors.success))),
                     ),
                     title: Text(
-                      doneClasses[i].str('topic').isNotEmpty ? doneClasses[i].str('topic') : 'Class ${classNoOf(doneClasses[i])}',
+                      doneClasses[i].str('topic').isNotEmpty ? doneClasses[i].str('topic') : tr('Class {p0}', {'p0': classNoOf(doneClasses[i])}),
                       style: const TextStyle(fontWeight: FontWeight.w600),
                     ),
                     subtitle: Text(
                       [
-                        if (doneClasses[i].str('topic').isNotEmpty) 'Class ${classNoOf(doneClasses[i])}',
+                        if (doneClasses[i].str('topic').isNotEmpty) tr('Class {p0}', {'p0': classNoOf(doneClasses[i])}),
                         fmtDate(doneClasses[i].date('date')),
                       ].join(' · '),
                       style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 13),
@@ -624,7 +673,7 @@ class _ClassesTab extends StatelessWidget {
           ),
 
         if (history.isNotEmpty) ...[
-          SectionTitle('Past cycles', subtitle: 'Earned in past cycles: ${taka(wallet.number('archived_earnings'))}'),
+          SectionTitle(tr('Past cycles'), subtitle: tr('Earned in past cycles: {p0}', {'p0': taka(wallet.number('archived_earnings'))})),
           AppCard(
             padding: EdgeInsets.zero,
             child: Column(
@@ -633,9 +682,9 @@ class _ClassesTab extends StatelessWidget {
                   if (i > 0) const Divider(),
                   ExpansionTile(
                     shape: const Border(),
-                    title: Text('Cycle #${history[i].integer('cycle_number')}', style: const TextStyle(fontWeight: FontWeight.w600)),
+                    title: Text(tr('Cycle #{p0}', {'p0': history[i].integer('cycle_number')}), style: const TextStyle(fontWeight: FontWeight.w600)),
                     subtitle: Text(
-                      '${history[i].integer('completed_classes')}/${history[i].integer('total_classes')} classes done · earned ${taka(history[i].number('earned_revenue'))}',
+                      tr('{p0}/{p1} classes done · earned {p2}', {'p0': history[i].integer('completed_classes'), 'p1': history[i].integer('total_classes'), 'p2': taka(history[i].number('earned_revenue'))}),
                       style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 13),
                     ),
                     childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
@@ -645,7 +694,7 @@ class _ClassesTab extends StatelessWidget {
                         Padding(
                           padding: const EdgeInsets.only(bottom: 4),
                           child: Text(
-                            'Class ${classNoOf(entry)} · ${fmtDate(entry.date('date'))}${entry.str('topic').isNotEmpty ? ' · ${entry.str('topic')}' : ''}',
+                            tr('Class {p0} · {p1}{p2}', {'p0': classNoOf(entry), 'p1': fmtDate(entry.date('date')), 'p2': entry.str('topic').isNotEmpty ? ' · ${entry.str('topic')}' : ''}),
                             style: const TextStyle(fontSize: 13),
                           ),
                         ),
@@ -674,16 +723,16 @@ class _ClassTile extends StatelessWidget {
     final done = entry.flag('completed');
     final no = classNoOf(entry);
     final Color fill = done
-        ? AppColors.chartEarned.withValues(alpha: 0.16)
+        ? context.tt.successContainer
         : isNext
-            ? AppColors.chartPending.withValues(alpha: 0.14)
+            ? context.tt.primaryContainer
             : scheme.surfaceContainerHighest;
-    final Color edge = done ? AppColors.chartEarned : (isNext ? AppColors.chartPending : scheme.outline);
+    final Color edge = done ? context.tt.chartEarned : (isNext ? context.tt.primary : scheme.outline);
     return Tooltip(
-      message: done ? 'Class $no · ${fmtShortDate(entry.date('date'))}' : (isNext ? 'Class $no · next' : 'Class $no · not yet'),
+      message: done ? tr('Class {p0} · {p1}', {'p0': no, 'p1': fmtShortDate(entry.date('date'))}) : (isNext ? tr('Class {p0} · next', {'p0': no}) : tr('Class {p0} · not yet', {'p0': no})),
       child: Semantics(
         button: true,
-        label: done ? 'Class $no, done on ${fmtDate(entry.date('date'))}' : 'Class $no, ${isNext ? 'next' : 'not done yet'}',
+        label: done ? tr('Class {p0}, done on {p1}', {'p0': no, 'p1': fmtDate(entry.date('date'))}) : tr('Class {p0}, {p1}', {'p0': no, 'p1': isNext ? tr('next') : tr('not done yet')}),
         excludeSemantics: true,
         child: Material(
           color: fill,
@@ -701,7 +750,7 @@ class _ClassTile extends StatelessWidget {
                   if (done)
                     Icon(Icons.check, size: 14, color: tone(context, AppColors.success))
                   else if (isNext)
-                    Text('next', style: TextStyle(fontSize: 10, color: tone(context, AppColors.primarySoft))),
+                    Text(tr('next'), style: TextStyle(fontSize: 10, color: tone(context, AppColors.primarySoft))),
                 ],
               ),
             ),
@@ -735,13 +784,13 @@ class _StudentsTab extends StatelessWidget {
     return PageBody(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 96),
       children: [
-        FilledButton.icon(onPressed: () => _add(context), icon: Icon(Icons.person_add_alt_1), label: Text('Add students to this tuition')),
+        FilledButton.icon(onPressed: () => _add(context), icon: Icon(Icons.person_add_alt_1), label: Text(tr('Add students to this tuition'))),
         gap16,
         if (students.isEmpty)
           EmptyState(
             icon: Icons.person_outline,
-            title: 'No students in this tuition yet',
-            message: 'Add students you created, or ones who asked to join you.',
+            title: tr('No students in this tuition yet'),
+            message: tr('Add students you created, or ones who asked to join you.'),
           )
         else
           AppCard(
@@ -762,20 +811,19 @@ class _StudentsTab extends StatelessWidget {
                       style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
                     ),
                     trailing: IconButton(
-                      tooltip: 'Remove ${students[i].str('student_name')} from the tuition',
+                      tooltip: tr('Remove {p0} from the tuition', {'p0': students[i].str('student_name')}),
                       icon: Icon(Icons.person_remove_outlined),
                       onPressed: () async {
                         final student = students[i];
                         final ok = await confirm(
                           context,
-                          title: 'Remove ${student.str('student_name')}?',
-                          message: 'They leave "${tuition.str('title')}" and stop seeing its classes and exams. '
-                              'Their account stays, and the tuition\'s cycle and earnings are not changed.',
-                          confirmLabel: 'Remove',
+                          title: tr('Remove {p0}?', {'p0': student.str('student_name')}),
+                          message: tr('They leave "{p0}" and stop seeing its classes and exams. Their account stays, and the tuition\'s cycle and earnings are not changed.', {'p0': tuition.str('title')}),
+                          confirmLabel: tr('Remove'),
                           danger: true,
                         );
                         if (!ok || !context.mounted) return;
-                        if (await attempt(context, () => repo.unenroll(tuition.str('id'), student.str('student_id')), success: 'Removed from the tuition.')) {
+                        if (await attempt(context, () => repo.unenroll(tuition.str('id'), student.str('student_id')), success: tr('Removed from the tuition.'))) {
                           await reload();
                         }
                       },
@@ -828,7 +876,7 @@ class _AddStudentsSheetState extends State<_AddStudentsSheet> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text('Add students to ${widget.tuition.str('title')}', style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
+            Text(tr('Add students to {p0}', {'p0': widget.tuition.str('title')}), style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
             gap12,
             Expanded(
               child: _candidates == null
@@ -836,7 +884,7 @@ class _AddStudentsSheetState extends State<_AddStudentsSheet> {
                   : _candidates!.isEmpty
                       ? Center(
                           child: Text(
-                            'All your active students are already in this tuition.\nCreate a student from the Students tab first.',
+                            tr('All your active students are already in this tuition.\nCreate a student from the Students tab first.'),
                             textAlign: TextAlign.center,
                             style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
                           ),
@@ -857,11 +905,11 @@ class _AddStudentsSheetState extends State<_AddStudentsSheet> {
                         ),
             ),
             BusyButton(
-              label: _picked.isEmpty ? 'Choose students' : 'Add ${_picked.length} student${_picked.length == 1 ? '' : 's'}',
+              label: _picked.isEmpty ? tr('Choose students') : tr('Add {p0} student{p1}', {'p0': _picked.length, 'p1': _picked.length == 1 ? '' : 's'}),
               onPressed: _picked.isEmpty
                   ? null
                   : () async {
-                      final ok = await attempt(context, () => repo.enroll(widget.tuition.str('id'), _picked.toList()), success: 'Added to the tuition.');
+                      final ok = await attempt(context, () => repo.enroll(widget.tuition.str('id'), _picked.toList()), success: tr('Added to the tuition.'));
                       if (ok && context.mounted) Navigator.pop(context, true);
                     },
             ),

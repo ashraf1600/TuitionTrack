@@ -2,7 +2,6 @@
 // needing a running backend. Mirrors a tiny part of `live_api_test.dart` so
 // regressions get caught quickly even when LIVE_API isn't set.
 import 'package:flutter_test/flutter_test.dart';
-
 import 'package:tuitiontrack/core/connect.dart';
 import 'package:tuitiontrack/core/json.dart';
 

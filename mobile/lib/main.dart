@@ -1,18 +1,28 @@
+import 'dart:ui' show DartPluginRegistrant;
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:intl/date_symbol_data_local.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:workmanager/workmanager.dart';
 
 import 'core/api.dart';
+import 'core/app_keys.dart';
+import 'core/i18n.dart';
 import 'core/offline.dart';
+import 'core/reminders.dart';
 import 'core/repo.dart';
 import 'core/session.dart';
 import 'screens/auth/force_password_screen.dart';
 import 'screens/auth/login_screen.dart';
+import 'screens/common/notification_actions.dart';
 import 'screens/student/student_home.dart';
 import 'screens/tutor/tutor_home.dart';
 import 'widgets/theme.dart';
+import 'widgets/tt_logo.dart';
 
 /// The server the app talks to until the user sets another one on the sign-in screen.
 /// Override at build time with --dart-define=API_BASE_URL=https://… . Release builds
@@ -37,8 +47,65 @@ Future<void> main() async {
     ),
     settings: PrefsSettings(prefs),
   );
+  // Month and day names for both languages.
+  await initializeDateFormatting();
+  // Phone notifications; a phone that refuses them still runs the app.
+  try {
+    await Reminders.instance.init();
+  } catch (error) {
+    debugPrint('Notifications unavailable: $error');
+  }
+  Reminders.instance.onResponse = (response) => handleNotificationResponse(session, response);
   runApp(TuitionTrackApp(session: session));
   await session.restore();
+  // The notification that opened the app (e.g. "Mark done"), once someone is signed in.
+  final launch = Reminders.instance.launchResponse;
+  if (launch != null && session.signedIn) {
+    Reminders.instance.launchResponse = null;
+    WidgetsBinding.instance.addPostFrameCallback((_) => handleNotificationResponse(session, launch));
+  }
+  await _startBackgroundCheck();
+}
+
+const _updatesTask = 'tuitiontrack-updates';
+
+/// Every 15 minutes or so (the shortest Android allows; it decides exactly, and waits for a network),
+/// asks the server for new notifications even when the app is closed, and
+/// shows the new ones on the phone. Needs no Firebase account.
+Future<void> _startBackgroundCheck() async {
+  if (!Reminders.instance.available) return;
+  try {
+    await Workmanager().initialize(backgroundDispatcher);
+    await Workmanager().registerPeriodicTask(_updatesTask, _updatesTask, frequency: const Duration(minutes: 15));
+  } catch (error) {
+    debugPrint('Background check unavailable: $error');
+  }
+}
+
+/// Runs in the background (its own isolate): new notifications -> phone notifications.
+@pragma('vm:entry-point')
+void backgroundDispatcher() {
+  Workmanager().executeTask((task, input) async {
+    try {
+      DartPluginRegistrant.ensureInitialized();
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.reload();
+      final settings = PrefsSettings(prefs);
+      if (!Reminders.enabledIn(settings)) return true;
+      final saved = settings.getString(Session.serverKey);
+      final api = ApiClient(baseUrl: saved == null || saved.isEmpty ? defaultServer : saved, tokens: SecureTokenStore());
+      await api.loadTokens();
+      if (!api.hasSession) return true;
+      setAppLanguage(settings.getString('language') ?? 'en');
+      final items = await Repo(api).notifications();
+      await Reminders.instance.init();
+      await Reminders.instance.announce(settings, items);
+    } catch (error) {
+      // Offline, signed out, or the server is asleep: try again next time.
+      debugPrint('Background check skipped: $error');
+    }
+    return true;
+  });
 }
 
 class TuitionTrackApp extends StatefulWidget {
@@ -50,7 +117,7 @@ class TuitionTrackApp extends StatefulWidget {
 }
 
 class _TuitionTrackAppState extends State<TuitionTrackApp> with WidgetsBindingObserver {
-  final _navigator = GlobalKey<NavigatorState>();
+  final _navigator = rootNavigatorKey;
   String? _lastUser;
 
   @override
@@ -105,11 +172,21 @@ class _TuitionTrackAppState extends State<TuitionTrackApp> with WidgetsBindingOb
         builder: (context, _) => MaterialApp(
           title: 'TuitionTrack',
           debugShowCheckedModeBanner: false,
-          theme: buildLightTheme(),
-          darkTheme: buildTheme(),
+          theme: ttTheme(isDark: false, isBangla: widget.session.language == 'bn'),
+          darkTheme: ttTheme(isDark: true, isBangla: widget.session.language == 'bn'),
           themeMode: widget.session.themeMode,
           navigatorKey: _navigator,
-          home: const _Root(),
+          scaffoldMessengerKey: rootMessengerKey,
+          // English or Bangla, chosen in the menu; date pickers and system texts follow it.
+          locale: Locale(widget.session.language),
+          supportedLocales: const [Locale('en'), Locale('bn')],
+          localizationsDelegates: const [
+            GlobalMaterialLocalizations.delegate,
+            GlobalWidgetsLocalizations.delegate,
+            GlobalCupertinoLocalizations.delegate,
+          ],
+          // A new language rebuilds every screen under it (keys force fresh state).
+          home: _Root(key: ValueKey('language-${widget.session.language}')),
         ),
       ),
     );
@@ -117,13 +194,13 @@ class _TuitionTrackAppState extends State<TuitionTrackApp> with WidgetsBindingOb
 }
 
 class _Root extends StatelessWidget {
-  const _Root();
+  const _Root({super.key});
 
   @override
   Widget build(BuildContext context) {
     final session = context.watch<Session>();
     if (!session.ready) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      return const TtSplash();
     }
     if (!session.signedIn) return const LoginScreen();
     if (session.mustChangePassword) return const ForcePasswordScreen();

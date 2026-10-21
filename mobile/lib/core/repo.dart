@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'api.dart';
 import 'connect.dart';
+import 'i18n.dart';
 import 'offline.dart';
 
 Json _map(dynamic data) => data is Map ? Map<String, dynamic>.from(data) : <String, dynamic>{};
@@ -121,7 +122,7 @@ class Repo {
       '/tuitions/$tuitionId/mark_class/',
       body,
       kind: PendingKind.markClass,
-      label: tuitionTitle.isEmpty ? 'Class $classNo' : 'Class $classNo of $tuitionTitle',
+      label: tuitionTitle.isEmpty ? tr('Class {n}', {'n': classNo}) : tr('Class {n} of {title}', {'n': classNo, 'title': tuitionTitle}),
       extra: {
         'tuition_id': tuitionId,
         if (_completedAfter(tuitionId, classNo, completed) case final int done) 'completed_after': done,
@@ -134,6 +135,14 @@ class Repo {
   /// Tutor: record that a cycle was paid in cash (or undo it).
   Future<Json> setCyclePayment(String cycleId, bool paid, {String? note}) async =>
       _map(await api.post('/attendance-cycles/$cycleId/payment/', {'paid': paid, 'note': ?note}));
+
+  /// Undoes [markClass] ([result] is what it answered): unmarks the class, and
+  /// first reopens the finished cycle when marking it had started the next one.
+  Future<void> undoMarkClass(String tuitionId, int classNo, bool completed, Json result) async {
+    final finished = result['completed_cycle_id'];
+    if (completed && finished is String && finished.isNotEmpty) await reopenCycle(finished);
+    await markClass(tuitionId, classNo, !completed);
+  }
 
   /// Tutor: undo an automatic roll-over while the new cycle is still empty.
   Future<Json> reopenCycle(String cycleId) async => _map(await api.post('/attendance-cycles/$cycleId/reopen/'));
@@ -165,7 +174,7 @@ class Repo {
     final normalized = normalizeInviteCode(code);
     if (normalized == null) {
       throw ApiException(
-        'Enter the 4–8 character invite code from your tutor.',
+        tr('Enter the 4–8 character invite code from your tutor.'),
         code: 'bad_code',
       );
     }
@@ -209,7 +218,7 @@ class Repo {
     };
     return _sendOrKeep('POST', '/homework/', body,
         kind: PendingKind.createHomework,
-        label: 'Homework "$title"${targetName.isEmpty ? '' : ' for $targetName'}',
+        label: targetName.isEmpty ? tr('Homework "{title}"', {'title': title}) : tr('Homework "{title}" for {name}', {'title': title, 'name': targetName}),
         extra: {'target_name': targetName});
   }
   Future<Json> updateHomework(String id, Json changes) async {
@@ -234,7 +243,7 @@ class Repo {
   Future<Json> submitHomework(String id, String url) async {
     _refuseLocal(id);
     final data = await _sendOrKeep('POST', '/homework/$id/submit/', {'submitted_online_url': url},
-        kind: PendingKind.submitHomework, label: 'Your homework link', extra: {'homework_id': id});
+        kind: PendingKind.submitHomework, label: tr('Your homework link'), extra: {'homework_id': id});
     return data.containsKey('homework') ? _map(data['homework']) : data;
   }
 
@@ -242,7 +251,7 @@ class Repo {
   Future<Json> evaluateHomework(String id, {bool evaluated = true, String feedback = ''}) async {
     _refuseLocal(id);
     final data = await _sendOrKeep('POST', '/homework/$id/evaluate/', {'is_evaluated': evaluated, 'tutor_feedback': feedback},
-        kind: PendingKind.evaluateHomework, label: 'Homework check', extra: {'homework_id': id});
+        kind: PendingKind.evaluateHomework, label: tr('Homework check'), extra: {'homework_id': id});
     return data.containsKey('homework') ? _map(data['homework']) : data;
   }
 

@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../../core/api.dart';
 import '../../core/format.dart';
+import '../../core/i18n.dart';
 import '../../core/json.dart';
 import '../../core/mcq_parser.dart';
 import '../../core/repo.dart';
@@ -28,12 +29,12 @@ class SubmissionsScreen extends StatelessWidget {
   final String title;
 
   static (String, Color, IconData) _state(String state) => switch (state) {
-        'graded' => ('Marked', AppColors.success, Icons.check_circle),
-        'submitted' => ('To mark', AppColors.warning, Icons.rate_review_outlined),
-        'late' => ('Late — to mark', AppColors.warning, Icons.rate_review_outlined),
-        'in_progress' => ('Working on it', AppColors.primarySoft, Icons.edit_note),
-        'missing' => ('Did not submit', AppColors.danger, Icons.cancel_outlined),
-        _ => ('Not started', AppColors.faint, Icons.hourglass_empty),
+        'graded' => (tr('Marked'), AppColors.success, Icons.check_circle),
+        'submitted' => (tr('To mark'), AppColors.warning, Icons.rate_review_outlined),
+        'late' => (tr('Late — to mark'), AppColors.warning, Icons.rate_review_outlined),
+        'in_progress' => (tr('Working on it'), AppColors.primarySoft, Icons.edit_note),
+        'missing' => (tr('Did not submit'), AppColors.danger, Icons.cancel_outlined),
+        _ => (tr('Not started'), AppColors.faint, Icons.hourglass_empty),
       };
 
   @override
@@ -56,26 +57,26 @@ class SubmissionsScreen extends StatelessWidget {
                   spacing: 24,
                   runSpacing: 12,
                   children: [
-                    Stat(label: 'Submitted', value: '${data.roster.integer('count')} of ${data.roster.integer('assigned_count')}'),
-                    Stat(label: 'Marked', value: '${data.roster.integer('graded_count')}', color: AppColors.success),
-                    Stat(label: 'To mark', value: '$toMark', color: toMark > 0 ? AppColors.warning : Theme.of(context).colorScheme.onSurface),
+                    Stat(label: tr('Submitted'), value: tr('{a} of {b}', {'a': data.roster.integer('count'), 'b': data.roster.integer('assigned_count')})),
+                    Stat(label: tr('Marked'), value: '${data.roster.integer('graded_count')}', color: AppColors.success),
+                    Stat(label: tr('To mark'), value: '$toMark', color: toMark > 0 ? AppColors.warning : Theme.of(context).colorScheme.onSurface),
                   ],
                 ),
               ),
               gap8,
               Text(
                 data.exam.flag('results_released')
-                    ? 'Results are out: students see marks as soon as you save them.'
+                    ? tr('Results are out: students see marks as soon as you save them.')
                     : switch (data.exam.str('result_publish_mode')) {
-                        'IMMEDIATE' => 'Each student sees their result as soon as they submit.',
-                        'SCHEDULED' => 'Students see marks when results are published automatically.',
-                        _ => 'Results are hidden from students until you publish them.',
+                        'IMMEDIATE' => tr('Each student sees their result as soon as they submit.'),
+                        'SCHEDULED' => tr('Students see marks when results are published automatically.'),
+                        _ => tr('Results are hidden from students until you publish them.'),
                       },
                 style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
               ),
               gap16,
               if (roster.isEmpty)
-                const EmptyState(icon: Icons.person_off_outlined, title: 'Nobody is assigned', message: 'Add students to the tuition to set this for them.')
+                EmptyState(icon: Icons.person_off_outlined, title: tr('Nobody is assigned'), message: tr('Add students to the tuition to set this for them.'))
               else
                 AppCard(
                   padding: EdgeInsets.zero,
@@ -191,11 +192,11 @@ class _GradeScreenState extends State<GradeScreen> {
           final text = _perQuestion[item.str('id')]!.text.trim();
           final marks = text.isEmpty ? 0 : num.tryParse(text);
           if (marks == null || marks < 0) {
-            setState(() => _error = 'Enter the marks for "${item.str('label')}" as a number.');
+            setState(() => _error = tr('Enter the marks for "{p0}" as a number.', {'p0': item.str('label')}));
             return;
           }
           if (marks > item.number('marks')) {
-            setState(() => _error = '"${item.str('label')}" is out of ${trimNumber(item.number('marks'))}.');
+            setState(() => _error = tr('"{p0}" is out of {p1}.', {'p0': item.str('label'), 'p1': trimNumber(item.number('marks'))}));
             return;
           }
           breakdown[item.str('id')] = marks;
@@ -205,13 +206,13 @@ class _GradeScreenState extends State<GradeScreen> {
         final text = _written.text.trim();
         final marks = text.isEmpty ? 0 : num.tryParse(text);
         if (marks == null || marks < 0) {
-          setState(() => _error = 'Enter the written marks as a number.');
+          setState(() => _error = tr('Enter the written marks as a number.'));
           return;
         }
         payload['cq_score'] = marks;
       }
       if (_mcqScore + _writtenTotal > exam.number('total_marks')) {
-        setState(() => _error = 'MCQ marks plus written marks come to more than the total of ${trimNumber(exam.number('total_marks'))}.');
+        setState(() => _error = tr('MCQ marks plus written marks come to more than the total of {p0}.', {'p0': trimNumber(exam.number('total_marks'))}));
         return;
       }
     }
@@ -219,7 +220,7 @@ class _GradeScreenState extends State<GradeScreen> {
     try {
       await repo.grade(submission.str('id'), payload);
       if (!mounted) return;
-      showToast(context, 'Marks saved for ${widget.studentName}.');
+      showToast(context, tr('Marks saved for {p0}.', {'p0': widget.studentName}));
       Navigator.pop(context);
     } on ApiException catch (error) {
       if (mounted) setState(() => _error = error.message);
@@ -254,14 +255,14 @@ class _GradeScreenState extends State<GradeScreen> {
             spacing: 8,
             runSpacing: 6,
             children: [
-              Pill('Submitted ${fmtDateTime(submission.date('submitted_at'))}'),
-              if (submission.str('status') == 'DELAYED') Pill('Late', color: AppColors.warning),
+              Pill(tr('Submitted {p0}', {'p0': fmtDateTime(submission.date('submitted_at'))})),
+              if (submission.str('status') == 'DELAYED') Pill(tr('Late'), color: AppColors.warning),
               if (submission.date('started_at') != null && submission.date('submitted_at') != null)
-                Pill('Took ${submission.date('submitted_at')!.difference(submission.date('started_at')!).inMinutes} min', icon: Icons.timer_outlined),
+                Pill(tr('Took {p0} min', {'p0': submission.date('submitted_at')!.difference(submission.date('started_at')!).inMinutes}), icon: Icons.timer_outlined),
             ],
           ),
           if (questions.isNotEmpty) ...[
-            SectionTitle('Multiple choice', subtitle: '$correctCount of ${questions.length} correct · ${trimNumber(_mcqScore)} marks (marked automatically)'),
+            SectionTitle(tr('Multiple choice'), subtitle: tr('{p0} of {p1} correct · {p2} marks (marked automatically)', {'p0': correctCount, 'p1': questions.length, 'p2': trimNumber(_mcqScore)})),
             for (var i = 0; i < review.length; i++) ...[
               Builder(builder: (context) {
                 final (q, chosen, correct) = review[i];
@@ -286,12 +287,12 @@ class _GradeScreenState extends State<GradeScreen> {
                             if (q.str('image_url').isNotEmpty) ...[gap8, ServerImage(q.str('image_url'), height: 140)],
                             SizedBox(height: 4),
                             if (chosen == null)
-                              Text('Left blank',
+                              Text(tr('Left blank'),
                                   style: TextStyle(
                                       color: Theme.of(context).colorScheme.outlineVariant, fontSize: 13))
                             else
-                              MathText('Answered: ${option(chosen)}', style: TextStyle(color: color, fontSize: 13)),
-                            if (!right && correct != null) MathText('Correct: ${option(correct)}', style: TextStyle(color: AppColors.success, fontSize: 13)),
+                              MathText(tr('Answered: {p0}', {'p0': option(chosen)}), style: TextStyle(color: color, fontSize: 13)),
+                            if (!right && correct != null) MathText(tr('Correct: {p0}', {'p0': option(correct)}), style: TextStyle(color: AppColors.success, fontSize: 13)),
                           ],
                         ),
                       ),
@@ -303,13 +304,13 @@ class _GradeScreenState extends State<GradeScreen> {
             ],
           ],
           if (_hasWritten) ...[
-            SectionTitle('Written part'),
+            SectionTitle(tr('Written part')),
             if (hasPaper)
               AppCard(
                 padding: EdgeInsets.zero,
                 child: ExpansionTile(
                   shape: Border(),
-                  title: Text('Show the question paper'),
+                  title: Text(tr('Show the question paper')),
                   childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                   expandedCrossAxisAlignment: CrossAxisAlignment.start,
                   children: [HtmlMath(paper, baseUrl: api.baseUrl)],
@@ -317,21 +318,21 @@ class _GradeScreenState extends State<GradeScreen> {
               ),
             gap8,
             if (submission.str('text_answer').isEmpty && images.isEmpty)
-              Banner2('This student did not hand in a written answer.', color: AppColors.warning)
+              Banner2(tr('This student did not hand in a written answer.'), color: AppColors.warning)
             else ...[
               if (submission.str('text_answer').isNotEmpty) ...[
-                Text('Typed answer', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 12, fontWeight: FontWeight.w600)),
+                Text(tr('Typed answer'), style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 12, fontWeight: FontWeight.w600)),
                 gap8,
                 AppCard(child: SelectableText(submission.str('text_answer'), style: const TextStyle(height: 1.4))),
                 gap12,
               ],
               if (images.isNotEmpty) ...[
-                Text('Answer sheets (${images.length}) — tap to enlarge', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 12, fontWeight: FontWeight.w600)),
+                Text(tr('Answer sheets ({p0}) — tap to enlarge', {'p0': images.length}), style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 12, fontWeight: FontWeight.w600)),
                 gap8,
-                for (var i = 0; i < images.length; i++) ...[ServerImage(images[i], height: 420, label: 'Page ${i + 1}'), gap8],
+                for (var i = 0; i < images.length; i++) ...[ServerImage(images[i], height: 420, label: tr('Page {p0}', {'p0': i + 1})), gap8],
               ],
             ],
-            const SectionTitle('Marks for the written part'),
+            SectionTitle(tr('Marks for the written part')),
             if (_scheme.isNotEmpty)
               for (final item in _scheme)
                 Padding(
@@ -357,8 +358,8 @@ class _GradeScreenState extends State<GradeScreen> {
                 controller: _written,
                 keyboardType: const TextInputType.numberWithOptions(decimal: true),
                 decoration: InputDecoration(
-                  labelText: 'Written marks',
-                  helperText: 'Up to ${trimNumber(exam.number('total_marks') - _mcqScore)} (total ${trimNumber(exam.number('total_marks'))} minus ${trimNumber(_mcqScore)} MCQ).',
+                  labelText: tr('Written marks'),
+                  helperText: tr('Up to {p0} (total {p1} minus {p2} MCQ).', {'p0': trimNumber(exam.number('total_marks') - _mcqScore), 'p1': trimNumber(exam.number('total_marks')), 'p2': trimNumber(_mcqScore)}),
                 ),
                 onChanged: (_) => setState(() {}),
               ),
@@ -369,13 +370,13 @@ class _GradeScreenState extends State<GradeScreen> {
             maxLines: null,
             minLines: 2,
             textCapitalization: TextCapitalization.sentences,
-            decoration: const InputDecoration(labelText: 'Feedback for the student (optional)', alignLabelWithHint: true),
+            decoration: InputDecoration(labelText: tr('Feedback for the student (optional)'), alignLabelWithHint: true),
           ),
           gap16,
           AppCard(
             child: Row(
               children: [
-                const Expanded(child: Text('Total', style: TextStyle(fontWeight: FontWeight.w700))),
+                Expanded(child: Text(tr('Total'), style: TextStyle(fontWeight: FontWeight.w700))),
                 Text(
                   '${trimNumber(_mcqScore + (_hasWritten ? _writtenTotal : 0))} / ${trimNumber(exam.number('total_marks'))}',
                   style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: AppColors.success),
@@ -385,7 +386,7 @@ class _GradeScreenState extends State<GradeScreen> {
           ),
           if (_error != null) ...[gap12, Banner2(_error!, color: AppColors.danger, icon: Icons.error_outline)],
           gap16,
-          BusyButton(onPressed: _save, label: submission.flag('is_graded') ? 'Update marks' : 'Save marks', icon: Icons.check),
+          BusyButton(onPressed: _save, label: submission.flag('is_graded') ? tr('Update marks') : tr('Save marks'), icon: Icons.check),
         ],
       ),
     );

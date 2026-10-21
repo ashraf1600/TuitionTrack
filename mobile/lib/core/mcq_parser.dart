@@ -7,6 +7,8 @@
 /// formula can never be mistaken for an option or a question number.
 library;
 
+import 'i18n.dart';
+
 const _banglaDigits = '০১২৩৪৫৬৭৮৯';
 const _letterIndex = <String, int>{
   'A': 0, 'B': 1, 'C': 2, 'D': 3, 'E': 4,
@@ -324,11 +326,10 @@ ParsedQuestions parseQuestions(String rawText) {
     if (correct == null && q.boldOptions.length == 1) correct = q.boldOptions.first;
     if (correct != null && correct >= options.length) correct = null;
 
-    final label = 'Question ${i + 1}';
     if (options.length < 2) {
-      issues.add('$label: could not find the options — please type them in.');
+      issues.add(tr('Question {n}: could not find the options — please type them in.', {'n': i + 1}));
     } else if (correct == null) {
-      issues.add('$label: no answer was given — choose the correct option.');
+      issues.add(tr('Question {n}: no answer was given — choose the correct option.', {'n': i + 1}));
     }
 
     while (options.length < 4) {
@@ -407,15 +408,15 @@ List<String> questionProblems(Map<String, dynamic> q) {
   final options = ((q['options'] as List?) ?? const []).map((o) => '$o').toList();
   final hasText = '${q['question'] ?? ''}'.trim().isNotEmpty;
   final hasImage = '${q['image_url'] ?? ''}'.isNotEmpty;
-  if (!hasText && !hasImage) problems.add('Add the question text or a picture');
+  if (!hasText && !hasImage) problems.add(tr('Add the question text or a picture'));
   if (options.where((o) => o.trim().isNotEmpty).length < 2) {
-    problems.add('Add at least two options');
+    problems.add(tr('Add at least two options'));
   } else if (options.any((o) => o.trim().isEmpty)) {
-    problems.add('Fill in or remove the empty option');
+    problems.add(tr('Fill in or remove the empty option'));
   }
   final correct = correctIndexOf(q);
   if (correct == null || correct >= options.length || options[correct].trim().isEmpty) {
-    problems.add('Choose the correct answer');
+    problems.add(tr('Choose the correct answer'));
   }
   return problems;
 }

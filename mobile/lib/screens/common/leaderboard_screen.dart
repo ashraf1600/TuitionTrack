@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../core/i18n.dart';
 import '../../core/json.dart';
 import '../../core/repo.dart';
 import '../../core/session.dart';
@@ -18,7 +19,7 @@ class LeaderboardScreen extends StatelessWidget {
     final repo = context.read<Repo>();
     final myId = context.read<Session>().user?.str('id');
     return Scaffold(
-      appBar: AppBar(title: Text('Leaderboard')),
+      appBar: AppBar(title: Text(tr('Leaderboard'))),
       body: Loader<Json>(
         load: () => repo.leaderboard(examId),
         builder: (context, data, reload) {
@@ -27,12 +28,12 @@ class LeaderboardScreen extends StatelessWidget {
             children: [
               Text(data.str('exam_title', title), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
               Text(
-                [if (data.str('tuition_title').isNotEmpty) data.str('tuition_title'), 'Out of ${trimNumber(data.number('total_marks'))}'].join(' · '),
+                [if (data.str('tuition_title').isNotEmpty) data.str('tuition_title'), tr('Out of {p0}', {'p0': trimNumber(data.number('total_marks'))})].join(' · '),
                 style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
               ),
               gap16,
               if (rows.isEmpty)
-                const EmptyState(icon: Icons.emoji_events_outlined, title: 'No submissions yet', message: 'The ranking appears once students hand in.')
+                EmptyState(icon: Icons.emoji_events_outlined, title: tr('No submissions yet'), message: tr('The ranking appears once students hand in.'))
               else
                 AppCard(
                   padding: EdgeInsets.zero,
@@ -62,24 +63,25 @@ class _Row extends StatelessWidget {
   Widget build(BuildContext context) {
     final rank = row.integer('rank');
     final missed = row.str('status') == 'MISSED';
-    final medal = switch (rank) { 1 => const Color(0xFFFBBF24), 2 => const Color(0xFFCBD5E1), 3 => const Color(0xFFD97706), _ => null };
+    final tt = context.tt;
+    final medal = switch (rank) { 1 => tt.warning, 2 => tt.textSecondary, 3 => TtColors.bronze, _ => null };
     return Container(
-      color: mine ? AppColors.primary.withValues(alpha: 0.12) : null,
+      color: mine ? tt.primaryContainer : null,
       child: ListTile(
         leading: CircleAvatar(
           backgroundColor: (medal ?? Theme.of(context).colorScheme.surfaceContainerHighest).withValues(alpha: medal == null ? 1 : 0.2),
           child: Text('$rank', style: TextStyle(fontWeight: FontWeight.w800, color: medal ?? Theme.of(context).colorScheme.onSurfaceVariant)),
         ),
         title: Text(
-          '${row.str('student_name')}${mine ? ' (you)' : ''}',
+          '${row.str('student_name')}${mine ? tr(' (you)') : ''}',
           style: const TextStyle(fontWeight: FontWeight.w600),
         ),
         subtitle: Text(
           missed
-              ? 'Did not submit'
+              ? tr('Did not submit')
               : [
                   '${trimNumber(row.number('percentage'))}%',
-                  if (!row.flag('is_graded')) 'not fully marked',
+                  if (!row.flag('is_graded')) tr('not fully marked'),
                   if (row.str('status') == 'DELAYED') 'late',
                 ].join(' · '),
           style: TextStyle(color: missed ? AppColors.danger : Theme.of(context).colorScheme.onSurfaceVariant),

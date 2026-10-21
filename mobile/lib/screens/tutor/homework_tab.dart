@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../../core/api.dart';
 import '../../core/connect.dart';
 import '../../core/format.dart';
+import '../../core/i18n.dart';
 import '../../core/json.dart';
 import '../../core/repo.dart';
 import '../../widgets/theme.dart';
@@ -38,6 +39,7 @@ class HomeworkTab extends StatefulWidget {
 class _HomeworkTabState extends State<HomeworkTab> {
   final _key = GlobalKey<LoaderState<_HomeworkData>>();
   String _filter = 'all'; // all | pending | evaluated
+  static const _filterLabels = {'all': 'All', 'pending': 'Pending', 'evaluated': 'Evaluated'};
 
   Future<_HomeworkData> _load() async {
     final repo = context.read<Repo>();
@@ -59,13 +61,13 @@ class _HomeworkTabState extends State<HomeworkTab> {
   Future<void> _delete(HomeworkItem hw) async {
     final ok = await confirm(
       context,
-      title: 'Delete homework?',
-      message: '"${hw.title}" will be removed for its students. This cannot be undone.',
-      confirmLabel: 'Delete',
+      title: tr('Delete homework?'),
+      message: tr('"{p0}" will be removed for its students. This cannot be undone.', {'p0': hw.title}),
+      confirmLabel: tr('Delete'),
       danger: true,
     );
     if (!ok || !mounted) return;
-    if (await attempt(context, () => context.read<Repo>().deleteHomework(hw.id), success: 'Homework deleted.')) {
+    if (await attempt(context, () => context.read<Repo>().deleteHomework(hw.id), success: tr('Homework deleted.'))) {
       await _key.currentState?.reload();
     }
   }
@@ -77,15 +79,14 @@ class _HomeworkTabState extends State<HomeworkTab> {
     final tuition = _firstOrNull(tuitions, (t) => t.str('id') == hw.tuitionId);
     final members = (tuition?.maps('enrollments') ?? const []).where((e) => e['is_active'] != false).length;
     if (members == 0) {
-      showToast(context, 'No enrolled students found in this tuition to split across.', error: true);
+      showToast(context, tr('No enrolled students found in this tuition to split across.'), error: true);
       return;
     }
     final ok = await confirm(
       context,
-      title: 'Split into per-student copies?',
-      message: '"${hw.title}" becomes $members individual rows (one per student). '
-          'Work already handed in is kept. The shared row is removed.',
-      confirmLabel: 'Split ($members)',
+      title: tr('Split into per-student copies?'),
+      message: tr('"{p0}" becomes {p1} individual rows (one per student). Work already handed in is kept. The shared row is removed.', {'p0': hw.title, 'p1': members}),
+      confirmLabel: tr('Split ({p0})', {'p0': members}),
     );
     if (!ok || !mounted) return;
     final repo = context.read<Repo>();
@@ -94,7 +95,7 @@ class _HomeworkTabState extends State<HomeworkTab> {
       made = (await repo.splitHomework(hw.id)).length;
     });
     if (!done || !mounted) return;
-    showToast(context, 'Split into $made individual copies.');
+    showToast(context, tr('Split into {p0} individual copies.', {'p0': made}));
     await _key.currentState?.reload();
   }
 
@@ -116,45 +117,39 @@ class _HomeworkTabState extends State<HomeworkTab> {
         }).toList();
         return PageBody(
           children: [
-            Row(
-              children: [
-                Expanded(
-                  child: SegmentedButton<String>(
-                    segments: [
-                      for (final f in const ['all', 'pending', 'evaluated'])
-                        ButtonSegment(
-                          value: f,
-                          label: Text('${f[0].toUpperCase()}${f.substring(1)} (${counts[f] ?? 0})'),
-                        ),
-                    ],
-                    selected: {_filter},
-                    onSelectionChanged: (s) => setState(() => _filter = s.first),
-                  ),
-                ),
+            PillToggle<String>(
+              options: [
+                for (final f in const ['all', 'pending', 'evaluated'])
+                  (f, '${tr(_filterLabels[f]!)} ${localDigits('${counts[f] ?? 0}')}', null),
               ],
+              selected: _filter,
+              onChanged: (f) => setState(() => _filter = f),
             ),
             gap12,
-            FilledButton.icon(
+            FilledButton.tonalIcon(
+              style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(52)),
               onPressed: () {
                 HapticFeedback.lightImpact();
                 _create(data);
               },
-              icon: const Icon(Icons.add),
-              label: const Text('Assign homework'),
+              icon: const Icon(Icons.add_rounded),
+              label: Text(tr('Assign homework')),
             ),
-            gap12,
+            gap8,
             if (filtered.isEmpty)
               EmptyState(
                 icon: Icons.assignment_outlined,
-                title: 'No homework found',
+                title: tr('No homework found'),
                 message: _filter == 'all'
-                    ? 'Assign homework to a tuition or a student to get started.'
-                    : 'No $_filter homework right now.',
+                    ? tr('Assign homework to a tuition or a student to get started.')
+                    : (_filter == 'pending' ? tr('No pending homework right now.') : tr('No evaluated homework right now.')),
               )
             else
-              for (final hw in filtered) ...[
+              for (final (i, hw) in filtered.indexed) ...[
                 _TutorHomeworkRow(
                   hw: hw,
+                  // Work for the same student (or tuition) sits under one header.
+                  showHeader: i == 0 || _targetOf(filtered[i - 1]) != _targetOf(hw),
                   onChanged: () async {
                     await _key.currentState?.reload();
                   },
@@ -170,60 +165,73 @@ class _HomeworkTabState extends State<HomeworkTab> {
   }
 }
 
+String _targetOf(HomeworkItem hw) => hw.studentName.isNotEmpty ? hw.studentName : hw.tuitionTitle;
+
 class _TutorHomeworkRow extends StatelessWidget {
-  const _TutorHomeworkRow({required this.hw, required this.onChanged, required this.onDelete, this.onSplit});
+  const _TutorHomeworkRow({required this.hw, required this.onChanged, required this.onDelete, this.onSplit, this.showHeader = true});
   final HomeworkItem hw;
   final Future<void> Function() onChanged;
   final VoidCallback onDelete;
   final VoidCallback? onSplit;
+  final bool showHeader;
 
   @override
   Widget build(BuildContext context) {
-    final target = hw.studentName.isNotEmpty ? hw.studentName : hw.tuitionTitle;
+    final tt = context.tt;
+    final target = _targetOf(hw);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (target.isNotEmpty)
+        if (target.isNotEmpty && showHeader)
           Padding(
-            padding: const EdgeInsets.only(left: 4, bottom: 4),
+            padding: const EdgeInsets.fromLTRB(4, 12, 4, 8),
             child: Row(
               children: [
-                Icon(hw.studentName.isNotEmpty ? Icons.person_outline : Icons.class_outlined,
-                    size: 14, color: tone(context, AppColors.primarySoft)),
-                const SizedBox(width: 4),
+                CircleAvatar(
+                  radius: 12,
+                  backgroundColor: tt.primaryContainer,
+                  child: hw.studentName.isNotEmpty
+                      ? Text(target.characters.first.toUpperCase(),
+                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tt.onPrimaryContainer))
+                      : Icon(Icons.groups_outlined, size: 14, color: tt.onPrimaryContainer),
+                ),
+                const SizedBox(width: 8),
                 Expanded(
                   child: Text(target,
-                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tone(context, AppColors.primarySoft)),
-                      overflow: TextOverflow.ellipsis),
+                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: tt.textSecondary), overflow: TextOverflow.ellipsis),
                 ),
                 if (hw.isSharedGroupTask)
-                  Text('shared', style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurfaceVariant)),
+                  Text(tr('shared'), style: TextStyle(fontSize: 12, color: tt.textTertiary)),
               ],
             ),
           ),
-        HomeworkCard(hw: hw, isTutor: true, onChanged: onChanged),
-        if (!hw.isPending)
-          Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              if (onSplit != null)
-                TextButton.icon(
+        HomeworkCard(
+          hw: hw,
+          isTutor: true,
+          onChanged: onChanged,
+          trailing: hw.isPending
+              ? null
+              : IconButton(
+                  tooltip: tr('Delete homework'),
+                  visualDensity: VisualDensity.compact,
+                  icon: Icon(Icons.delete_outline_rounded, size: 20, color: tt.textTertiary),
                   onPressed: () {
                     HapticFeedback.lightImpact();
-                    onSplit!();
+                    onDelete();
                   },
-                  icon: const Icon(Icons.call_split_outlined, size: 16),
-                  label: const Text('Split per student'),
                 ),
-              IconButton(
-                tooltip: 'Delete homework',
-                icon: const Icon(Icons.delete_outline, size: 20),
-                onPressed: () {
-                  HapticFeedback.lightImpact();
-                  onDelete();
-                },
-              ),
-            ],
+        ),
+        if (!hw.isPending && onSplit != null)
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton.icon(
+              onPressed: () {
+                HapticFeedback.lightImpact();
+                onSplit!();
+              },
+              icon: const Icon(Icons.call_split_outlined, size: 16),
+              label: Text(tr('Split per student')),
+            ),
           ),
       ],
     );
@@ -232,26 +240,31 @@ class _TutorHomeworkRow extends StatelessWidget {
 
 /// Standalone route for the + button: loads tuitions + students, then the form.
 class HomeworkCreateScreen extends StatelessWidget {
-  const HomeworkCreateScreen({super.key});
+  const HomeworkCreateScreen({super.key, this.initialTuitionId});
+
+  /// Opens the form with this tuition already chosen.
+  final String? initialTuitionId;
 
   @override
   Widget build(BuildContext context) {
     return Loader<_HomeworkData>(
       load: () async {
         final repo = context.read<Repo>();
-        final results = await Future.wait([repo.homework(), repo.tuitions(), repo.students()]);
-        return _HomeworkData(const [], results[1], results[2]);
+        final results = await Future.wait([repo.tuitions(), repo.students()]);
+        return _HomeworkData(const [], results[0], results[1]);
       },
-      builder: (context, data, reload) => HomeworkFormScreen(tuitions: data.tuitions, students: data.students),
+      builder: (context, data, reload) =>
+          HomeworkFormScreen(tuitions: data.tuitions, students: data.students, initialTuitionId: initialTuitionId),
     );
   }
 }
 /// Create sheet: title + deadline required, tuition or student target,
 /// optional fan-out into one copy per student.
 class HomeworkFormScreen extends StatefulWidget {
-  const HomeworkFormScreen({super.key, required this.tuitions, required this.students});
+  const HomeworkFormScreen({super.key, required this.tuitions, required this.students, this.initialTuitionId});
   final List<Json> tuitions;
   final List<Json> students;
+  final String? initialTuitionId;
 
   @override
   State<HomeworkFormScreen> createState() => _HomeworkFormScreenState();
@@ -266,6 +279,12 @@ class _HomeworkFormScreenState extends State<HomeworkFormScreen> {
   bool _perStudent = true;
   bool _showInstructions = false;
   DateTime _due = _at(1, 18);
+
+  @override
+  void initState() {
+    super.initState();
+    _tuitionId = widget.initialTuitionId;
+  }
 
   /// [days] from today at [hour]:00.
   static DateTime _at(int days, int hour) {
@@ -309,11 +328,11 @@ class _HomeworkFormScreenState extends State<HomeworkFormScreen> {
   Future<void> _send() async {
     HapticFeedback.lightImpact();
     if (_title.text.trim().isEmpty) {
-      showToast(context, 'Title is required.', error: true);
+      showToast(context, tr('Title is required.'), error: true);
       return;
     }
     if (_due.isBefore(DateTime.now())) {
-      showToast(context, 'Deadline must be in the future.', error: true);
+      showToast(context, tr('Deadline must be in the future.'), error: true);
       return;
     }
     final repo = context.read<Repo>();
@@ -322,11 +341,11 @@ class _HomeworkFormScreenState extends State<HomeworkFormScreen> {
     var sent = 0;
     var queued = 0;
     void count(Json result) => result['queued'] == true ? queued++ : sent++;
-    var success = 'Homework assigned.';
+    var success = tr('Homework assigned.');
     final ok = await attempt(context, () async {
       if (_toGroup) {
         final tuition = _firstOrNull(widget.tuitions, (t) => t.str('id') == _tuitionId) ?? _firstOrNull(widget.tuitions);
-        if (tuition == null) throw ApiException('Create a tuition first.');
+        if (tuition == null) throw ApiException(tr('Create a tuition first.'));
         final roster = _roster;
         if (_perStudent && roster.isNotEmpty) {
           for (final (sid, name) in roster) {
@@ -338,7 +357,7 @@ class _HomeworkFormScreenState extends State<HomeworkFormScreen> {
               targetName: name,
             ));
           }
-          success = 'Homework sent to ${roster.length} students (one copy each).';
+          success = tr('Homework sent to {p0} students (one copy each).', {'p0': roster.length});
         } else {
           count(await repo.createHomework(
             title: title,
@@ -347,11 +366,11 @@ class _HomeworkFormScreenState extends State<HomeworkFormScreen> {
             tuitionId: tuition.str('id'),
             targetName: tuition.str('title'),
           ));
-          success = 'Homework sent to ${tuition.str('title')}.';
+          success = tr('Homework sent to {p0}.', {'p0': tuition.str('title')});
         }
       } else {
         final student = _firstOrNull(widget.students, (s) => s.str('id') == _studentId) ?? _firstOrNull(widget.students);
-        if (student == null) throw ApiException('Choose a student.');
+        if (student == null) throw ApiException(tr('Choose a student.'));
         count(await repo.createHomework(
           title: title,
           description: description,
@@ -367,8 +386,8 @@ class _HomeworkFormScreenState extends State<HomeworkFormScreen> {
         queued == 0
             ? success
             : sent == 0
-                ? 'Saved on this phone. It will be sent when you are back online.'
-                : '$sent sent, $queued saved on this phone to send when you are back online.',
+                ? tr('Saved on this phone. It will be sent when you are back online.')
+                : tr('{p0} sent, {p1} saved on this phone to send when you are back online.', {'p0': sent, 'p1': queued}),
       );
     }
     if (ok && mounted) Navigator.pop(context, true);
@@ -378,7 +397,7 @@ class _HomeworkFormScreenState extends State<HomeworkFormScreen> {
     final picked = _toGroup
         ? await pickFromSheet(
             context,
-            title: 'Choose a tuition',
+            title: tr('Choose a tuition'),
             icon: Icons.class_outlined,
             selected: _tuition?.str('id'),
             options: [
@@ -392,7 +411,7 @@ class _HomeworkFormScreenState extends State<HomeworkFormScreen> {
           )
         : await pickFromSheet(
             context,
-            title: 'Choose a student',
+            title: tr('Choose a student'),
             selected: _student?.str('id'),
             options: [
               for (final s in widget.students) (value: s.str('id'), label: _studentName(s), subtitle: '@${s.str('username')}'),
@@ -414,10 +433,10 @@ class _HomeworkFormScreenState extends State<HomeworkFormScreen> {
     final roster = _roster;
     final tuition = _tuition;
     final student = _student;
-    final targetName = _toGroup ? (tuition?.str('title') ?? 'No tuitions yet') : (student == null ? 'No students yet' : _studentName(student));
-    final quick = <(String, DateTime)>[('Tomorrow', _at(1, 18)), ('In 3 days', _at(3, 18)), ('Next week', _at(7, 18))];
+    final targetName = _toGroup ? (tuition?.str('title') ?? tr('No tuitions yet')) : (student == null ? tr('No students yet') : _studentName(student));
+    final quick = <(String, DateTime)>[(tr('Tomorrow'), _at(1, 18)), (tr('In 3 days'), _at(3, 18)), (tr('Next week'), _at(7, 18))];
     return Scaffold(
-      appBar: AppBar(title: const Text('Assign homework')),
+      appBar: AppBar(title: Text(tr('Assign homework'))),
       body: Column(
         children: [
           Expanded(
@@ -427,7 +446,7 @@ class _HomeworkFormScreenState extends State<HomeworkFormScreen> {
                 FlatGroup(children: [
                   FlatField(
                     controller: _title,
-                    hint: 'Title, e.g. Chapter 4 problems',
+                    hint: tr('Title, e.g. Chapter 4 problems'),
                     style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
                     onChanged: (_) => setState(() {}),
                   ),
@@ -435,7 +454,7 @@ class _HomeworkFormScreenState extends State<HomeworkFormScreen> {
                     duration: const Duration(milliseconds: 180),
                     alignment: Alignment.topCenter,
                     child: _showInstructions || _desc.text.isNotEmpty
-                        ? FlatField(controller: _desc, hint: 'Instructions: pages, problems, how to hand in…', minLines: 3, maxLines: 8, autofocus: _desc.text.isEmpty)
+                        ? FlatField(controller: _desc, hint: tr('Instructions: pages, problems, how to hand in…'), minLines: 3, maxLines: 8, autofocus: _desc.text.isEmpty)
                         : InkWell(
                             onTap: () => setState(() => _showInstructions = true),
                             child: Padding(
@@ -444,7 +463,7 @@ class _HomeworkFormScreenState extends State<HomeworkFormScreen> {
                                 children: [
                                   Icon(Icons.add, size: 18, color: scheme.onSurfaceVariant),
                                   const SizedBox(width: 8),
-                                  Text('Add instructions', style: TextStyle(color: scheme.onSurfaceVariant)),
+                                  Text(tr('Add instructions'), style: TextStyle(color: scheme.onSurfaceVariant)),
                                 ],
                               ),
                             ),
@@ -457,9 +476,9 @@ class _HomeworkFormScreenState extends State<HomeworkFormScreen> {
                   child: SegmentedButton<bool>(
                     showSelectedIcon: false,
                     style: const ButtonStyle(visualDensity: VisualDensity.compact),
-                    segments: const [
-                      ButtonSegment(value: true, label: Text('Tuition'), icon: Icon(Icons.class_outlined, size: 18)),
-                      ButtonSegment(value: false, label: Text('Student'), icon: Icon(Icons.person_outline, size: 18)),
+                    segments: [
+                      ButtonSegment(value: true, label: Text(tr('Tuition')), icon: Icon(Icons.class_outlined, size: 18)),
+                      ButtonSegment(value: false, label: Text(tr('Student')), icon: Icon(Icons.person_outline, size: 18)),
                     ],
                     selected: {_toGroup},
                     onSelectionChanged: (s) => setState(() => _toGroup = s.first),
@@ -469,7 +488,7 @@ class _HomeworkFormScreenState extends State<HomeworkFormScreen> {
                 FlatGroup(children: [
                   PickerRow(
                     leading: InitialAvatar(targetName, radius: 14, icon: _toGroup ? Icons.class_outlined : null),
-                    label: _toGroup ? 'Tuition' : 'Student',
+                    label: _toGroup ? tr('Tuition') : tr('Student'),
                     value: targetName,
                     onTap: (_toGroup ? widget.tuitions.isEmpty : widget.students.isEmpty) ? null : _chooseTarget,
                   ),
@@ -478,11 +497,10 @@ class _HomeworkFormScreenState extends State<HomeworkFormScreen> {
                       padding: const EdgeInsets.only(left: 16, right: 4),
                       child: Row(
                         children: [
-                          Expanded(child: Text('One copy per student (${roster.length})', style: const TextStyle(fontSize: 14))),
-                          const InfoTip(
-                            'On: every student gets their own copy, and you mark each one done separately.\n\n'
-                            'Off: one shared task for the whole tuition; marking it done counts for everyone.',
-                            title: 'One copy per student',
+                          Expanded(child: Text(tr('One copy per student ({p0})', {'p0': roster.length}), style: const TextStyle(fontSize: 14))),
+                          InfoTip(
+                            tr('On: every student gets their own copy, and you mark each one done separately.\n\nOff: one shared task for the whole tuition; marking it done counts for everyone.'),
+                            title: tr('One copy per student'),
                           ),
                           Switch(value: _perStudent, onChanged: (v) => setState(() => _perStudent = v)),
                         ],
@@ -490,8 +508,8 @@ class _HomeworkFormScreenState extends State<HomeworkFormScreen> {
                     ),
                   PickerRow(
                     leading: Icon(Icons.calendar_month_outlined, size: 22, color: tone(context, AppColors.primarySoft)),
-                    label: 'Due',
-                    value: '${fmtShortDate(_due)}, ${weekdayName(_due).substring(0, 3)} · ${fmtTime(_due)}',
+                    label: tr('Due'),
+                    value: '${fmtShortDate(_due)}, ${dayLabel(weekdayName(_due))} · ${fmtTime(_due)}',
                     onTap: _pickDue,
                   ),
                 ]),
@@ -518,7 +536,7 @@ class _HomeworkFormScreenState extends State<HomeworkFormScreen> {
               child: SizedBox(
                 width: double.infinity,
                 child: BusyButton(
-                  label: _toGroup && _perStudent && roster.isNotEmpty ? 'Assign to ${roster.length} students' : 'Assign homework',
+                  label: _toGroup && _perStudent && roster.isNotEmpty ? tr('Assign to {p0} students', {'p0': roster.length}) : tr('Assign homework'),
                   icon: Icons.send,
                   onPressed: _title.text.trim().isEmpty ? null : _send,
                 ),

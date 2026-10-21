@@ -4,7 +4,9 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/connect.dart';
+import '../../core/i18n.dart';
 import '../../core/repo.dart';
+import '../../widgets/theme.dart';
 import '../../widgets/ui.dart';
 import 'tutor_detail_screen.dart';
 
@@ -29,17 +31,17 @@ class _TutorsScreenState extends State<TutorsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('My Tutors')),
+      appBar: AppBar(title: Text(tr('My Tutors'))),
       body: Loader<List<ConnectedTutor>>(
         key: _key,
         load: _load,
         builder: (context, tutors, reload) {
           if (tutors.isEmpty) {
-            return const PageBody(children: [
+            return PageBody(children: [
               EmptyState(
                 icon: Icons.handshake_outlined,
-                title: 'No connected tutors yet',
-                message: 'Once your tutor accepts, they appear here as e.g. "Ashraf Sir".',
+                title: tr('No connected tutors yet'),
+                message: tr('Once your tutor accepts, they appear here as e.g. "Ashraf Sir".'),
               ),
             ]);
           }
@@ -78,7 +80,7 @@ class _TutorCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: Theme.of(context).cardColor,
         borderRadius: BorderRadius.circular(16),
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.07), blurRadius: 18, offset: const Offset(0, 8))],
+        boxShadow: context.tt.cardShadow,
       ),
       child: ListTile(
         contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),

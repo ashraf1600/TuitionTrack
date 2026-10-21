@@ -4,12 +4,16 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/api.dart';
+import '../../core/app_info.dart';
 import '../../core/format.dart';
+import '../../core/i18n.dart';
 import '../../core/json.dart';
+import '../../core/reminders.dart';
 import '../../core/repo.dart';
 import '../../core/session.dart';
 import '../../widgets/theme.dart';
 import '../../widgets/ui.dart';
+import '../../widgets/update_banner.dart';
 import 'account_screen.dart';
 
 const _seenKey = 'seen_notifications';
@@ -49,9 +53,12 @@ class _NotificationBellState extends State<NotificationBell> with WidgetsBinding
   }
 
   Future<void> _load() async {
+    final settings = context.read<Session>().settings;
     try {
       final items = await context.read<Repo>().notifications();
       if (mounted) setState(() => _items = items);
+      // New ones also go to the phone's notification shade.
+      await Reminders.instance.announce(settings, items);
     } on ApiException {
       // The bell is not worth an error message; it refreshes again shortly.
     }
@@ -62,8 +69,14 @@ class _NotificationBellState extends State<NotificationBell> with WidgetsBinding
     final seen = context.watch<Session>().settings.getList(_seenKey).toSet();
     final unseen = _items.where((n) => !seen.contains(n.str('id'))).length;
     return IconButton(
-      tooltip: unseen == 0 ? 'Notifications' : '$unseen new notifications',
-      icon: Badge(isLabelVisible: unseen > 0, label: Text('$unseen'), child: Icon(Icons.notifications_outlined)),
+      tooltip: unseen == 0 ? tr('Notifications') : tr('{p0} new notifications', {'p0': unseen}),
+      icon: Badge(
+        isLabelVisible: unseen > 0,
+        backgroundColor: context.tt.warning,
+        textColor: context.tt.background,
+        label: Text(localDigits('$unseen')),
+        child: Icon(Icons.notifications_outlined, color: context.tt.textSecondary),
+      ),
       onPressed: () async {
         await Navigator.push(context, MaterialPageRoute<void>(builder: (_) => NotificationsScreen(items: _items)));
         if (mounted) {
@@ -98,23 +111,26 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   static (IconData, Color) _look(String kind) => switch (kind) {
         'request' => (Icons.person_add_alt_1_outlined, AppColors.primarySoft),
         'grade' => (Icons.rate_review_outlined, AppColors.warning),
+        'class' => (Icons.task_alt_outlined, AppColors.success),
         'cycle' => (Icons.event_available_outlined, AppColors.success),
         'open' => (Icons.play_circle_outline, AppColors.success),
         'late' => (Icons.warning_amber_outlined, AppColors.warning),
         'soon' => (Icons.schedule_outlined, AppColors.primarySoft),
         'result' => (Icons.emoji_events_outlined, AppColors.warning),
         'connection' => (Icons.handshake_outlined, AppColors.primarySoft),
+        'payment' => (Icons.payments_outlined, AppColors.warning),
+        'homework' => (Icons.menu_book_outlined, AppColors.primarySoft),
         _ => (Icons.notifications_outlined, AppColors.faint),
       };
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text('Notifications')),
+      appBar: AppBar(title: Text(tr('Notifications'))),
       body: widget.items.isEmpty
           ? Padding(
               padding: EdgeInsets.all(16),
-              child: EmptyState(icon: Icons.notifications_none, title: 'Nothing new', message: 'You are all caught up.'),
+              child: EmptyState(icon: Icons.notifications_none, title: tr('Nothing new'), message: tr('You are all caught up.')),
             )
           : ListView.separated(
               padding: const EdgeInsets.symmetric(vertical: 8),
@@ -133,7 +149,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                 ].join(' · ');
                 final isNew = !_wasSeen.contains(item.str('id'));
                 return ListTile(
-                  leading: CircleAvatar(backgroundColor: color.withValues(alpha: 0.15), child: Icon(icon, color: color)),
+                  leading: CircleAvatar(backgroundColor: tonalContainer(context, color), child: Icon(icon, color: tone(context, color))),
                   title: Text(item.str('title'), style: TextStyle(fontWeight: isNew ? FontWeight.w700 : FontWeight.w500)),
                   subtitle: detail.isEmpty ? null : Text(detail, style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant)),
                   trailing: isNew ? const Icon(Icons.circle, size: 10, color: AppColors.primary) : null,
@@ -150,16 +166,36 @@ List<Widget> homeActions(BuildContext context) {
   return [
     const NotificationBell(),
     IconButton(
-      tooltip: 'My account',
+      tooltip: tr('My account'),
       icon: CircleAvatar(
-        radius: 15,
-        backgroundColor: AppColors.primary.withValues(alpha: 0.3),
+        radius: 16,
+        backgroundColor: context.tt.primaryContainer,
         child: Text(
           session.displayName.isEmpty ? '?' : session.displayName[0].toUpperCase(),
-          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppColors.primarySoft),
+          style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: context.tt.onPrimaryContainer),
         ),
       ),
       onPressed: () => Navigator.push(context, MaterialPageRoute<void>(builder: (_) => const AccountScreen())),
+    ),
+    // Three dots: things that are not needed every day.
+    PopupMenuButton<String>(
+      tooltip: tr('More'),
+      icon: const Icon(Icons.more_vert_rounded),
+      onSelected: (value) {
+        if (value == 'update') checkForUpdate(context);
+      },
+      itemBuilder: (context) => [
+        PopupMenuItem<String>(
+          value: 'update',
+          child: ListTile(
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.system_update_rounded),
+            title: Text(tr('Check for update')),
+            subtitle: Text(tr('Version {v}', {'v': Raw(appVersion)})),
+          ),
+        ),
+      ],
     ),
     const SizedBox(width: 4),
   ];

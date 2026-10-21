@@ -4,7 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import '../../core/api.dart';
 import '../../core/connect.dart';
+import '../../core/i18n.dart';
 import '../../core/repo.dart';
 import '../../widgets/media.dart';
 import '../../widgets/theme.dart';
@@ -15,10 +17,13 @@ import '../../widgets/ui.dart';
 /// Student sees Upload + "Pending Tutor Review"/"Marked as Done".
 /// Tutor sees "Mark as Done" (the only writer of is_evaluated=true).
 class HomeworkCard extends StatefulWidget {
-  const HomeworkCard({super.key, required this.hw, required this.isTutor, required this.onChanged});
+  const HomeworkCard({super.key, required this.hw, required this.isTutor, required this.onChanged, this.trailing});
   final HomeworkItem hw;
   final bool isTutor;
   final Future<void> Function() onChanged;
+
+  /// A small action at the card's top right (the tutor's delete button).
+  final Widget? trailing;
 
   @override
   State<HomeworkCard> createState() => _HomeworkCardState();
@@ -68,9 +73,9 @@ class _HomeworkCardState extends State<HomeworkCard> {
         showDialog(
           context: context,
           builder: (_) => AlertDialog(
-            title: const Text('Hurry!'),
-            content: Text('Homework "${widget.hw.title}" is due in less than 2 hours!'),
-            actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('OK'))],
+            title: Text(tr('Hurry!')),
+            content: Text(tr('Homework "{p0}" is due in less than 2 hours!', {'p0': widget.hw.title})),
+            actions: [TextButton(onPressed: () => Navigator.pop(context), child: Text(tr('OK')))],
           ),
         );
       });
@@ -78,12 +83,12 @@ class _HomeworkCardState extends State<HomeworkCard> {
   }
 
   String get _countdown {
-    if (_left.isNegative) return 'Overdue';
+    if (_left.isNegative) return tr('Overdue');
     final h = _left.inHours;
     final m = _left.inMinutes % 60;
     final s = _left.inSeconds % 60;
     String two(int v) => v.toString().padLeft(2, '0');
-    return '${two(h)}h : ${two(m)}m : ${two(s)}s left';
+    return tr('{p0}h : {p1}m : {p2}s left', {'p0': two(h), 'p1': two(m), 'p2': two(s)});
   }
 
   Future<void> _submit() async {
@@ -92,24 +97,41 @@ class _HomeworkCardState extends State<HomeworkCard> {
     setState(() => _busy = true);
     try {
       final ok = await attemptSave(context, () => repo.submitHomework(widget.hw.id, _url.text.trim()),
-          success: 'Submission recorded.');
+          success: tr('Submission recorded.'));
       if (ok) await widget.onChanged();
     } finally {
       if (mounted) setState(() => _busy = false);
     }
   }
 
+  /// Marks the homework checked at once, with Undo instead of a confirmation.
   Future<void> _markDone() async {
     HapticFeedback.lightImpact();
     final repo = context.read<Repo>();
-    final ok = await confirm(context,
-        title: 'Mark as done?', message: 'The student will see this homework as checked and can no longer change what they handed in.');
-    if (!ok || !mounted) return;
+    final messenger = ScaffoldMessenger.maybeOf(context);
     setState(() => _busy = true);
     try {
-      final done = await attemptSave(context, () => repo.evaluateHomework(widget.hw.id, evaluated: true),
-          success: 'Marked as done.');
-      if (done) await widget.onChanged();
+      Json result = const {};
+      final done = await attempt(context, () async {
+        result = await repo.evaluateHomework(widget.hw.id, evaluated: true);
+      });
+      if (!done || !mounted) return;
+      final onChanged = widget.onChanged;
+      final id = widget.hw.id;
+      showToast(
+        context,
+        result['queued'] == true ? tr('Saved on this phone. It will be sent when you are back online.') : tr('Marked as done.'),
+        actionLabel: tr('Undo'),
+        onAction: () async {
+          try {
+            await repo.evaluateHomework(id, evaluated: false);
+          } on ApiException catch (error) {
+            showToastOn(messenger, error.message, error: true);
+          }
+          await onChanged();
+        },
+      );
+      await onChanged();
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -119,90 +141,83 @@ class _HomeworkCardState extends State<HomeworkCard> {
   Widget build(BuildContext context) {
     final hw = widget.hw;
     final urgent = !hw.isEvaluated && _left.inSeconds > 0 && _left.inSeconds <= 7200;
+    final tt = context.tt;
     return AppCard(
-      borderColor: urgent ? AppColors.danger.withValues(alpha: 0.6) : null,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           if (urgent)
             Container(
-              margin: const EdgeInsets.only(bottom: 10),
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(color: AppColors.danger.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(12)),
-              child: const Row(
+              margin: const EdgeInsets.only(bottom: 12),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(color: tt.dangerContainer, borderRadius: BorderRadius.circular(12)),
+              child: Row(
                 children: [
-                  Icon(Icons.alarm, color: AppColors.danger, size: 18),
-                  SizedBox(width: 8),
+                  Icon(Icons.alarm, color: tt.danger, size: 18),
+                  const SizedBox(width: 8),
                   Expanded(
-                    child: Text('Hurry! Homework due in less than 2 hours!',
-                        style: TextStyle(color: AppColors.danger, fontWeight: FontWeight.w700, fontSize: 13)),
+                    child: Text(tr('Hurry! Homework due in less than 2 hours!'),
+                        style: TextStyle(color: tt.danger, fontWeight: FontWeight.w600, fontSize: 14)),
                   ),
                 ],
               ),
             ),
-          Text(hw.title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
-          if (hw.sourceLabel.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.only(top: 2),
-              child: Text(hw.sourceLabel, style: const TextStyle(fontSize: 12, color: AppColors.primarySoft)),
-            ),
-          if (hw.description.isNotEmpty) ...[gap8, Text(hw.description, style: const TextStyle(fontSize: 13))],
-          gap8,
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Icon(Icons.timer_outlined, size: 16, color: AppColors.primarySoft),
-              const SizedBox(width: 6),
-              Text(_countdown,
-                  style: TextStyle(
-                      fontWeight: FontWeight.w700,
-                      color: _left.isNegative || urgent ? AppColors.danger : AppColors.primarySoft)),
+              Expanded(child: Text(hw.title, style: TextStyle(fontSize: 17, height: 1.3, fontWeight: FontWeight.w600, color: tt.textPrimary))),
+              if (widget.trailing != null) widget.trailing!,
             ],
           ),
-          gap8,
-          if (hw.isPending)
-            const Pill('Waiting to sync', color: AppColors.primarySoft, icon: Icons.cloud_upload_outlined)
-          else
-            Pill(hw.isEvaluated ? 'Marked as Done' : 'Pending Tutor Review',
-                color: hw.isEvaluated ? AppColors.success : AppColors.warning, icon: hw.isEvaluated ? Icons.verified : Icons.hourglass_empty),
-          if (hw.feedback.isNotEmpty) ...[gap8, Text('Feedback: ${hw.feedback}', style: const TextStyle(fontSize: 13))],
+          if (hw.sourceLabel.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(hw.sourceLabel, style: TextStyle(fontSize: 13, color: tt.textSecondary)),
+            ),
+          if (hw.description.isNotEmpty) ...[gap8, Text(hw.description, style: const TextStyle(fontSize: 14, height: 1.5))],
+          gap12,
+          // Status as icon + word chips: the time left, and where the work stands.
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              Pill(_countdown,
+                  color: _left.isNegative || urgent ? AppColors.danger : AppColors.primarySoft,
+                  icon: _left.isNegative ? Icons.schedule_rounded : Icons.timer_outlined),
+              if (hw.isPending)
+                Pill(tr('Waiting to sync'), color: AppColors.primarySoft, icon: Icons.cloud_upload_outlined)
+              else
+                Pill(hw.isEvaluated ? tr('Marked as Done') : tr('Pending Tutor Review'),
+                    color: hw.isEvaluated ? AppColors.success : AppColors.warning,
+                    icon: hw.isEvaluated ? Icons.check_rounded : Icons.hourglass_empty_rounded),
+            ],
+          ),
+          if (hw.feedback.isNotEmpty) ...[gap12, Text(tr('Feedback: {p0}', {'p0': hw.feedback}), style: const TextStyle(fontSize: 14, height: 1.5))],
           // What the student handed in, for the tutor to review (and for the student to check).
           if (hw.submittedUrl.isNotEmpty || hw.submissionFileUrl.isNotEmpty) ...[
-            gap8,
-            Wrap(
-              spacing: 8,
-              runSpacing: 4,
-              children: [
-                if (hw.submittedUrl.isNotEmpty)
-                  OutlinedButton.icon(
-                    onPressed: () => openExternal(context, hw.submittedUrl),
-                    icon: const Icon(Icons.link, size: 16),
-                    label: const Text('Open submitted link'),
-                  ),
-                if (hw.submissionFileUrl.isNotEmpty)
-                  OutlinedButton.icon(
-                    onPressed: () => openExternal(context, hw.submissionFileUrl),
-                    icon: const Icon(Icons.attach_file, size: 16),
-                    label: const Text('Open submitted file'),
-                  ),
-              ],
-            ),
+            gap12,
+            if (hw.submittedUrl.isNotEmpty)
+              _QuietButton(icon: Icons.link_rounded, label: tr('Open submitted link'), onPressed: () => openExternal(context, hw.submittedUrl)),
+            if (hw.submittedUrl.isNotEmpty && hw.submissionFileUrl.isNotEmpty) gap8,
+            if (hw.submissionFileUrl.isNotEmpty)
+              _QuietButton(icon: Icons.attach_file_rounded, label: tr('Open submitted file'), onPressed: () => openExternal(context, hw.submissionFileUrl)),
           ] else if (widget.isTutor && hw.isSubmitted) ...[
             gap8,
-            const Text('Marked as submitted (no link or file).', style: TextStyle(fontSize: 12, color: AppColors.muted)),
+            Text(tr('Marked as submitted (no link or file).'), style: TextStyle(fontSize: 13, color: tt.textSecondary)),
           ],
           gap12,
           if (hw.isPending)
-            Text('Assigned on this phone while offline. It reaches your students once you are back online.',
-                style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant))
+            Text(tr('Assigned on this phone while offline. It reaches your students once you are back online.'),
+                style: TextStyle(fontSize: 13, color: tt.textSecondary))
           else if (!widget.isTutor) ...[
             // Checked work is closed: the server refuses changes after the tutor marks it done.
             if (!hw.isEvaluated) ...[
               TextField(
                 controller: _url,
                 keyboardType: TextInputType.url,
-                decoration: const InputDecoration(
-                  labelText: 'Submission link (optional)',
-                  hintText: 'https://docs.google.com/...',
+                decoration: InputDecoration(
+                  labelText: tr('Submission link (optional)'),
+                  hintText: tr('https://docs.google.com/...'),
                   prefixIcon: Icon(Icons.link),
                 ),
               ),
@@ -210,7 +225,7 @@ class _HomeworkCardState extends State<HomeworkCard> {
               SizedBox(
                 width: double.infinity,
                 child: BusyButton(
-                  label: _busy ? 'Submitting...' : (hw.isSubmitted ? 'Update submission' : 'Submit homework'),
+                  label: _busy ? tr('Submitting...') : (hw.isSubmitted ? tr('Update submission') : tr('Submit homework')),
                   icon: Icons.upload,
                   onPressed: _busy
                       ? null
@@ -221,14 +236,29 @@ class _HomeworkCardState extends State<HomeworkCard> {
                 ),
               ),
             ],
-          ] else
+          ] else if (hw.isEvaluated)
+            // Rest state: nothing left to do on this one.
+            Container(
+              height: 48,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(color: tt.isDark ? tt.background : tt.cardRaised, borderRadius: BorderRadius.circular(12)),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.check_rounded, size: 18, color: tt.textSecondary),
+                  const SizedBox(width: 8),
+                  Text(tr('Evaluated ✓').replaceAll('✓', '').trim(),
+                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: tt.textSecondary)),
+                ],
+              ),
+            )
+          else
             SizedBox(
               width: double.infinity,
               child: BusyButton(
-                label: hw.isEvaluated ? 'Evaluated ✓' : 'Mark as Done',
-                icon: Icons.verified,
-                color: AppColors.successDeep,
-                onPressed: (hw.isEvaluated || _busy)
+                label: tr('Mark as Done'),
+                icon: Icons.check_rounded,
+                onPressed: _busy
                     ? null
                     : () async {
                         HapticFeedback.lightImpact();
@@ -237,6 +267,32 @@ class _HomeworkCardState extends State<HomeworkCard> {
               ),
             ),
         ],
+      ),
+    );
+  }
+}
+
+/// A full-width, quiet 48 dp button for secondary actions on a card.
+class _QuietButton extends StatelessWidget {
+  const _QuietButton({required this.icon, required this.label, required this.onPressed});
+  final IconData icon;
+  final String label;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final tt = context.tt;
+    return SizedBox(
+      width: double.infinity,
+      child: TextButton.icon(
+        style: TextButton.styleFrom(
+          backgroundColor: tt.isDark ? tt.background : tt.cardRaised,
+          foregroundColor: tt.textPrimary,
+          minimumSize: const Size.fromHeight(48),
+        ),
+        onPressed: onPressed,
+        icon: Icon(icon, size: 18),
+        label: Text(label),
       ),
     );
   }

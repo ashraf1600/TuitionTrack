@@ -34,5 +34,12 @@ class MetaView(APIView):
                 'content_types': sorted(MediaUploadView.ALLOWED_CONTENT_TYPES),
             },
             'result_publish_modes': [choice for choice, _ in Exam.ResultPublishMode.choices],
+            # The newest app build and where to download it (empty when not set).
+            'app': {
+                'latest_version': settings.APP_LATEST_VERSION,
+                'download_url': settings.APP_DOWNLOAD_URL
+                if settings.APP_DOWNLOAD_URL.startswith('https://') else '',
+                'release_notes': settings.APP_RELEASE_NOTES,
+            },
             'page_size': {'default': 20, 'max': 1000, 'query_param': 'page_size'},
         })

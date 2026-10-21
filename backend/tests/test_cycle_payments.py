@@ -13,7 +13,9 @@ from apps.cycles.models import AttendanceCycle
 User = get_user_model()
 
 
-class CyclePaymentTests(APITestCase):
+class PaymentSetup(APITestCase):
+    """A tutor with one three-class tuition and one student in it."""
+
     def setUp(self):
         self.tutor = User.objects.create_user(username='p_tutor', password='x', role=User.Role.TUTOR, first_name='Ashraful')
         self.other = User.objects.create_user(username='p_other', password='x', role=User.Role.TUTOR)
@@ -36,6 +38,8 @@ class CyclePaymentTests(APITestCase):
             self.assertEqual(resp.status_code, status.HTTP_200_OK, resp.data)
         return resp
 
+
+class CyclePaymentTests(PaymentSetup):
     def test_last_class_starts_the_next_cycle_and_leaves_payment_pending(self):
         resp = self.finish_cycle()
         self.assertEqual(resp.data['completed_cycle_number'], 1)
@@ -118,3 +122,50 @@ class CyclePaymentTests(APITestCase):
         self.assertEqual(detail.status_code, status.HTTP_200_OK)
         stranger = self.client.get(reverse('tutor-detail-for-student', kwargs={'tutor_id': self.other.id}))
         self.assertEqual(stranger.status_code, status.HTTP_404_NOT_FOUND)
+
+
+class PaymentNotificationTests(PaymentSetup):
+    """The bell (and the phone notifications built from it) follows payments and homework."""
+
+    def ids(self, user):
+        self.client.force_authenticate(user)
+        return [n['id'] for n in self.client.get(reverse('notifications')).data['notifications']]
+
+    def test_pending_then_paid(self):
+        self.finish_cycle()
+        cycle = AttendanceCycle.objects.get(tuition_id=self.tuition_id, cycle_number=1)
+        self.assertIn(f'pay-{cycle.id}', self.ids(self.student))
+        self.assertIn(f'unpaid-{cycle.id}', self.ids(self.tutor))
+
+        self.client.force_authenticate(self.tutor)
+        self.client.post(reverse('attendance-cycle-payment', kwargs={'pk': cycle.id}), {'paid': True}, format='json')
+        self.assertNotIn(f'pay-{cycle.id}', self.ids(self.student))
+        self.assertIn(f'paid-{cycle.id}', self.ids(self.student))
+        self.assertNotIn(f'unpaid-{cycle.id}', self.ids(self.tutor))
+
+    def test_mark_class_names_the_finished_cycle_for_undo(self):
+        resp = self.finish_cycle()
+        cycle = AttendanceCycle.objects.get(tuition_id=self.tuition_id, cycle_number=1)
+        self.assertEqual(resp.data['completed_cycle_id'], str(cycle.id))
+
+    def test_new_homework_is_announced_to_the_student(self):
+        from datetime import timedelta
+        from django.utils import timezone
+        self.client.force_authenticate(self.tutor)
+        hw = self.client.post(reverse('homework-list'), {
+            'title': 'Chapter 4', 'tuition': self.tuition_id,
+            'due_date': (timezone.now() + timedelta(days=3)).isoformat(),
+        }, format='json')
+        self.assertEqual(hw.status_code, status.HTTP_201_CREATED, hw.data)
+        self.assertIn(f"hw-new-{hw.data['id']}", self.ids(self.student))
+
+
+class MetaAppUpdateTests(APITestCase):
+    def test_meta_offers_the_latest_app_only_over_https(self):
+        from django.test import override_settings
+        with override_settings(APP_LATEST_VERSION='1.2.0', APP_DOWNLOAD_URL='https://example.com/TuitionTrack.apk'):
+            app = self.client.get(reverse('api-meta')).data['app']
+        self.assertEqual(app['latest_version'], '1.2.0')
+        self.assertEqual(app['download_url'], 'https://example.com/TuitionTrack.apk')
+        with override_settings(APP_DOWNLOAD_URL='http://example.com/x.apk'):
+            self.assertEqual(self.client.get(reverse('api-meta')).data['app']['download_url'], '')
