@@ -5,7 +5,7 @@
  "publish_at": null,
  "result": {
   "exam": {
-   "id": "72f440a4-4768-4a6d-825e-4905c0bd4e0f",
+   "id": "d40add53-6940-42a7-8c60-b8793ace3a4c",
    "title": "Monthly Test: Kinematics",
    "category": "EXAM",
    "exam_type": "MCQ",
@@ -13,7 +13,7 @@
    "negative_marks_per_wrong": 0.0
   },
   "status": "SUBMITTED",
-  "submitted_at": "2026-10-16T18:03:18.530575Z",
+  "submitted_at": "2026-10-16T18:15:12.062731Z",
   "is_graded": true,
   "obtained_marks": 21.0,
   "percentage": 84.0,

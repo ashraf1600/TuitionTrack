@@ -153,6 +153,11 @@ def build():
         Homework.objects.create(student=rafi, **item)
 
     ConnectionRequest.objects.create(student=rafi, tutor=tanvir, message='Assalamu alaikum Sir, I want to join your English batch.')
+    # Someone new asking to join the tutor's classes (the tutor's request panel).
+    nabila = User.objects.create_user(username='nabila', password='Demo12345!x', role=User.Role.STUDENT,
+                                      first_name='Nabila', last_name='Rahman')
+    StudentProfile.objects.create(user=nabila, grade_level='Class 9', institution='Dr. Khastagir Govt. Girls School')
+    ConnectionRequest.objects.create(student=nabila, tutor=ashraf, message='I would like to join the Physics batch, Sir.')
     return ashraf, rafi
 
 
@@ -190,13 +195,21 @@ def main(out_dir):
         ('/api/v1/auth/me/', 'me'), ('/api/v1/tuitions/', 'tuitions'), ('/api/v1/students/', 'students'),
         ('/api/v1/exams/', 'exams'), ('/api/v1/homework/', 'homework'), ('/api/v1/connections/', 'connections'),
         ('/api/v1/analytics/wallet/', 'wallet'), ('/api/v1/notifications/', 'notifications'),
+        ('/api/v1/students/unassigned/', 'students_unassigned'), ('/api/v1/routines/', 'routines'),
+        ('/api/v1/schedules/?upcoming=true', 'schedules'), ('/api/v1/meta/', 'meta'),
     ]:
         dump(client, path, tutor_dir, name)
+    physics = Tuition.objects.get(subject='Physics')
+    dump(client, f'/api/v1/tuitions/{physics.id}/', tutor_dir, 'tuition_detail')
+    dump(client, f'/api/v1/attendance-cycles/?tuition_id={physics.id}', tutor_dir, 'cycles')
+    open_exam = Exam.objects.get(title='Monthly Test: Kinematics')
+    dump(client, f'/api/v1/exams/{open_exam.id}/submissions/', tutor_dir, 'submissions')
 
     (out / 'meta.json').write_text(json.dumps({
         'captured_at': timezone.now().isoformat(),
         'student_id': str(student.id), 'tutor_id': str(tutor.id),
         'tutor_detail_id': str(tutor.id), 'result_exam_id': str(graded.id),
+        'tuition_id': str(Tuition.objects.get(subject='Physics').id),
     }, indent=1))
     print('fixtures written to', out.resolve())
 

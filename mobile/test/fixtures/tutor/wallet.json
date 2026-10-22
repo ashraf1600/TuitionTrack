@@ -20,10 +20,10 @@
  ],
  "tuition_breakdowns": [
   {
-   "tuition_id": "724151b0-0fd4-45bc-a783-5fbde5bd5030",
+   "tuition_id": "1ee06117-da03-4eff-9659-61ccda053a74",
    "tuition_title": "Higher Math Weekend",
    "student_count": 1,
-   "cycle_id": "e42300ab-a024-4a80-9033-2be6b28d3ed4",
+   "cycle_id": "46a845d8-d73d-41c7-b990-b862453587d2",
    "cycle_number": 1,
    "completed_classes": 3,
    "total_classes": 8,
@@ -34,10 +34,10 @@
    "progress_percentage": 38.0
   },
   {
-   "tuition_id": "b1052539-a131-4e48-844f-a26d33ebe527",
+   "tuition_id": "7f224607-d82e-4b5f-bb5c-d5cd601c2d45",
    "tuition_title": "SSC Physics Batch A",
    "student_count": 5,
-   "cycle_id": "eb039e60-a188-4a20-9be2-9bd2f25e8cdb",
+   "cycle_id": "7269ba85-89bb-4a9a-b7f4-e418ac0da160",
    "cycle_number": 1,
    "completed_classes": 7,
    "total_classes": 12,

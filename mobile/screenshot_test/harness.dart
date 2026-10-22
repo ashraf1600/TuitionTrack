@@ -125,6 +125,10 @@ class Fixtures {
       '/routines/': 'routines', '/schedules/': 'schedules', '/students/': 'students', '/analytics/wallet/': 'wallet',
     };
     if (plain.containsKey(path)) return plain[path];
+    if (path == '/students/unassigned/') return 'students_unassigned';
+    if (path == '/attendance-cycles/') return 'cycles';
+    if (path.endsWith('/submissions/')) return 'submissions';
+    if (RegExp(r'^/tuitions/[0-9a-f-]+/$').hasMatch(path)) return 'tuition_detail';
     if (path.startsWith('/my-tutors/')) return 'tutor_detail';
     if (path.endsWith('/result/')) return 'exam_result';
     if (path.endsWith('/leaderboard/')) return 'leaderboard';

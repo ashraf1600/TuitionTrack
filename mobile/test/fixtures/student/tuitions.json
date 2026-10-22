@@ -4,8 +4,8 @@
  "previous": null,
  "results": [
   {
-   "id": "71deb091-6618-4713-9163-225428b61770",
-   "tutor_id": "33be89b0-f696-4c7f-8f94-f2bd8369af52",
+   "id": "bc5bf42d-b16e-4a09-8f3b-f557899bc256",
+   "tutor_id": "0a2a8cfe-2673-4095-ab63-0fdbe70e584f",
    "tutor_name": "Nusrat Jahan",
    "tutor_display_name": "Nusrat Sir",
    "title": "Chemistry Class 10",
@@ -39,8 +39,8 @@
    ],
    "enrolled_count": 1,
    "active_cycle": {
-    "id": "a135d129-6f69-4d1a-94e3-efae02e3aa83",
-    "tuition_id": "71deb091-6618-4713-9163-225428b61770",
+    "id": "3b299cfc-0985-4046-93b7-8c502c8f6747",
+    "tuition_id": "bc5bf42d-b16e-4a09-8f3b-f557899bc256",
     "tuition_title": "Chemistry Class 10",
     "cycle_number": 2,
     "completed_classes": 3,
@@ -53,19 +53,19 @@
      {
       "class_no": 1,
       "completed": true,
-      "date": "2026-10-16T18:13:18.530575+00:00",
+      "date": "2026-10-16T18:25:12.062731+00:00",
       "topic": "Lesson 13"
      },
      {
       "class_no": 2,
       "completed": true,
-      "date": "2026-10-18T18:13:18.530575+00:00",
+      "date": "2026-10-18T18:25:12.062731+00:00",
       "topic": "Lesson 14"
      },
      {
       "class_no": 3,
       "completed": true,
-      "date": "2026-10-20T18:13:18.530575+00:00",
+      "date": "2026-10-20T18:25:12.062731+00:00",
       "topic": "Lesson 15"
      },
      {
@@ -125,21 +125,21 @@
     ],
     "payment_status": "PENDING",
     "paid_at": null,
-    "created_at": "2026-10-22T18:13:21.169108Z",
-    "updated_at": "2026-10-22T18:13:21.171708Z"
+    "created_at": "2026-10-22T18:25:14.657227Z",
+    "updated_at": "2026-10-22T18:25:14.659453Z"
    },
    "pending_payments": [
     {
-     "cycle_id": "758034eb-60d6-4b64-83bb-4fa6fb68107e",
+     "cycle_id": "234fbdc1-85c2-4f25-bf58-6781246675e8",
      "cycle_number": 1,
-     "finished_at": "2026-10-22T18:13:21.165710Z"
+     "finished_at": "2026-10-22T18:25:14.654502Z"
     }
    ],
-   "created_at": "2026-10-22T18:13:21.122480Z"
+   "created_at": "2026-10-22T18:25:14.613285Z"
   },
   {
-   "id": "724151b0-0fd4-45bc-a783-5fbde5bd5030",
-   "tutor_id": "b4be48da-4162-4d8a-a9fe-75969547f26c",
+   "id": "1ee06117-da03-4eff-9659-61ccda053a74",
+   "tutor_id": "5314ab58-c2bc-462c-a9d1-65283d8f73b5",
    "tutor_name": "Ashraful Islam",
    "tutor_display_name": "Ashraful Sir",
    "title": "Higher Math Weekend",
@@ -173,8 +173,8 @@
    ],
    "enrolled_count": 1,
    "active_cycle": {
-    "id": "e42300ab-a024-4a80-9033-2be6b28d3ed4",
-    "tuition_id": "724151b0-0fd4-45bc-a783-5fbde5bd5030",
+    "id": "46a845d8-d73d-41c7-b990-b862453587d2",
+    "tuition_id": "1ee06117-da03-4eff-9659-61ccda053a74",
     "tuition_title": "Higher Math Weekend",
     "cycle_number": 1,
     "completed_classes": 3,
@@ -187,19 +187,19 @@
      {
       "class_no": 1,
       "completed": true,
-      "date": "2026-10-16T18:13:18.530575+00:00",
+      "date": "2026-10-16T18:25:12.062731+00:00",
       "topic": "Chapter 1"
      },
      {
       "class_no": 2,
       "completed": true,
-      "date": "2026-10-19T18:13:18.530575+00:00",
+      "date": "2026-10-19T18:25:12.062731+00:00",
       "topic": "Chapter 2"
      },
      {
       "class_no": 3,
       "completed": true,
-      "date": "2026-10-22T18:13:18.530575+00:00",
+      "date": "2026-10-22T18:25:12.062731+00:00",
       "topic": "Chapter 3"
      },
      {
@@ -235,15 +235,15 @@
     ],
     "payment_status": "PENDING",
     "paid_at": null,
-    "created_at": "2026-10-22T18:13:21.135479Z",
-    "updated_at": "2026-10-22T18:13:21.160896Z"
+    "created_at": "2026-10-22T18:25:14.625966Z",
+    "updated_at": "2026-10-22T18:25:14.650005Z"
    },
    "pending_payments": [],
-   "created_at": "2026-10-22T18:13:21.121047Z"
+   "created_at": "2026-10-22T18:25:14.612004Z"
   },
   {
-   "id": "b1052539-a131-4e48-844f-a26d33ebe527",
-   "tutor_id": "b4be48da-4162-4d8a-a9fe-75969547f26c",
+   "id": "7f224607-d82e-4b5f-bb5c-d5cd601c2d45",
+   "tutor_id": "5314ab58-c2bc-462c-a9d1-65283d8f73b5",
    "tutor_name": "Ashraful Islam",
    "tutor_display_name": "Ashraful Sir",
    "title": "SSC Physics Batch A",
@@ -287,8 +287,8 @@
    ],
    "enrolled_count": 5,
    "active_cycle": {
-    "id": "eb039e60-a188-4a20-9be2-9bd2f25e8cdb",
-    "tuition_id": "b1052539-a131-4e48-844f-a26d33ebe527",
+    "id": "7269ba85-89bb-4a9a-b7f4-e418ac0da160",
+    "tuition_id": "7f224607-d82e-4b5f-bb5c-d5cd601c2d45",
     "tuition_title": "SSC Physics Batch A",
     "cycle_number": 1,
     "completed_classes": 7,
@@ -301,43 +301,43 @@
      {
       "class_no": 1,
       "completed": true,
-      "date": "2026-10-08T18:13:18.530575+00:00",
+      "date": "2026-10-08T18:25:12.062731+00:00",
       "topic": "Motion"
      },
      {
       "class_no": 2,
       "completed": true,
-      "date": "2026-10-10T18:13:18.530575+00:00",
+      "date": "2026-10-10T18:25:12.062731+00:00",
       "topic": "Velocity"
      },
      {
       "class_no": 3,
       "completed": true,
-      "date": "2026-10-12T18:13:18.530575+00:00",
+      "date": "2026-10-12T18:25:12.062731+00:00",
       "topic": "Acceleration"
      },
      {
       "class_no": 4,
       "completed": true,
-      "date": "2026-10-14T18:13:18.530575+00:00",
+      "date": "2026-10-14T18:25:12.062731+00:00",
       "topic": "Newton's laws"
      },
      {
       "class_no": 5,
       "completed": true,
-      "date": "2026-10-16T18:13:18.530575+00:00",
+      "date": "2026-10-16T18:25:12.062731+00:00",
       "topic": "Friction"
      },
      {
       "class_no": 6,
       "completed": true,
-      "date": "2026-10-18T18:13:18.530575+00:00",
+      "date": "2026-10-18T18:25:12.062731+00:00",
       "topic": "Work"
      },
      {
       "class_no": 7,
       "completed": true,
-      "date": "2026-10-20T18:13:18.530575+00:00",
+      "date": "2026-10-20T18:25:12.062731+00:00",
       "topic": "Energy"
      },
      {
@@ -373,11 +373,11 @@
     ],
     "payment_status": "PENDING",
     "paid_at": null,
-    "created_at": "2026-10-22T18:13:21.129655Z",
-    "updated_at": "2026-10-22T18:13:21.157970Z"
+    "created_at": "2026-10-22T18:25:14.620321Z",
+    "updated_at": "2026-10-22T18:25:14.647454Z"
    },
    "pending_payments": [],
-   "created_at": "2026-10-22T18:13:21.119296Z"
+   "created_at": "2026-10-22T18:25:14.610504Z"
   }
  ]
 }
