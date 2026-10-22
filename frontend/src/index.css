@@ -305,3 +305,8 @@
   border-radius: 0.25rem;
   background: rgba(148, 163, 184, 0.15);
 }
+
+/* The logo as a loader: the ring's arc travels round. */
+@keyframes tt-logo-spin { to { transform: rotate(360deg); } }
+.tt-logo-spin { animation: tt-logo-spin 1.4s linear infinite; }
+@media (prefers-reduced-motion: reduce) { .tt-logo-spin { animation: none; } }

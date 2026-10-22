@@ -5,6 +5,7 @@ import Navbar from '../components/common/Navbar';
 import Modal from '../components/common/Modal';
 import ConnectedTutorsHub from '../components/student/ConnectedTutorsHub';
 import TutorWorkspaceView from '../components/student/TutorWorkspaceView';
+import StudentToday from '../components/student/StudentToday';
 import TutorCodeConnect from '../components/student/TutorCodeConnect';
 import ExamTakerModal from '../components/student/ExamTakerModal';
 import ExamResultModal from '../components/student/ExamResultModal';
@@ -37,6 +38,7 @@ export default function StudentPortal() {
   const [tuitions, setTuitions] = useState([]);
   const [connections, setConnections] = useState([]);
   const [exams, setExams] = useState([]);
+  const [homework, setHomework] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -57,8 +59,9 @@ export default function StudentPortal() {
         api.getConnections(),
         api.getMyTutors(),
         api.getExams(),
+        api.getHomework(),
       ]);
-      const [tuitionData, connectionData, tutorsData, examData] = results.map((r) =>
+      const [tuitionData, connectionData, tutorsData, examData, homeworkData] = results.map((r) =>
         r.status === 'fulfilled' ? asList(r.value) : null
       );
       // Keep what is already on screen for any part that failed this time.
@@ -66,6 +69,7 @@ export default function StudentPortal() {
       if (connectionData) setConnections(connectionData);
       if (tutorsData) setTutors(tutorsData);
       if (examData) setExams(examData);
+      if (homeworkData) setHomework(homeworkData);
       const failed = results.find((r) => r.status === 'rejected');
       if (failed) throw failed.reason;
     } catch (err) {
@@ -161,7 +165,15 @@ export default function StudentPortal() {
             onViewLeaderboard={handleViewLeaderboard}
           />
         ) : (
-          /* ── Screen 1: Connected Tutors Hub (Master View) ── */
+          /* ── Screen 1: Today across every tutor, then the Connected Tutors Hub ── */
+          <div className="space-y-6">
+          <StudentToday
+            tuitions={tuitions}
+            exams={exams}
+            homework={homework}
+            onTakeExam={handleTakeExam}
+            onOpenTutor={(tutorId) => tutorId && handleSelectTutor(tutorId)}
+          />
           <ConnectedTutorsHub
             studentName={user?.name || user?.username}
             tutors={tutors}
@@ -173,6 +185,7 @@ export default function StudentPortal() {
             onRefresh={loadData}
             onChanged={loadData}
           />
+          </div>
         )}
       </main>
 
