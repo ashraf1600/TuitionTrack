@@ -1,0 +1,133 @@
+{
+ "count": 16,
+ "notifications": [
+  {
+   "id": "soon-9971099d-fe2c-4799-816f-efbbd709aaeb",
+   "kind": "soon",
+   "title": "Exam coming up: Chapter 4 Test: Periodic Table",
+   "body": "opens",
+   "when": "2026-10-23T21:13:18.530575Z",
+   "link": "/student"
+  },
+  {
+   "id": "open-60a5519c-b302-4446-8983-a2ce63d4ad19",
+   "kind": "open",
+   "title": "Exam open now: Weekly MCQ: Motion & Force",
+   "body": "closes",
+   "when": "2026-10-22T18:53:18.530575Z",
+   "link": "/student"
+  },
+  {
+   "id": "open-e9870ff1-d49d-4ce9-af62-ea199eeedf8d",
+   "kind": "open",
+   "title": "Assignment open now: Assignment: Trigonometry set",
+   "body": "closes",
+   "when": "2026-10-24T18:13:18.530575Z",
+   "link": "/student"
+  },
+  {
+   "id": "result-72f440a4-4768-4a6d-825e-4905c0bd4e0f",
+   "kind": "result",
+   "title": "Results are out: Monthly Test: Kinematics",
+   "body": "",
+   "when": "2026-10-17T18:13:18.530575Z",
+   "link": "/student"
+  },
+  {
+   "id": "result-39f66f0c-e967-48bf-a703-39dc8dba66f9",
+   "kind": "result",
+   "title": "Results are out: Class Test: Acids & Bases",
+   "body": "",
+   "when": "2026-10-11T18:13:18.530575Z",
+   "link": "/student"
+  },
+  {
+   "id": "result-ff0cc14e-94a8-46f5-970b-b5ab3d058299",
+   "kind": "result",
+   "title": "Results are out: Weekly MCQ: Vectors",
+   "body": "",
+   "when": "2026-10-04T18:13:18.530575Z",
+   "link": "/student"
+  },
+  {
+   "id": "result-22584cfc-b8bd-4e16-9008-68b6b215c0b9",
+   "kind": "result",
+   "title": "Results are out: Class Test: Mole Concept",
+   "body": "",
+   "when": "2026-09-27T18:13:18.530575Z",
+   "link": "/student"
+  },
+  {
+   "id": "pay-758034eb-60d6-4b64-83bb-4fa6fb68107e",
+   "kind": "payment",
+   "title": "Nusrat Sir: payment pending for cycle #1",
+   "body": "Classes go on as usual.",
+   "when": "2026-10-22T18:13:21.165710Z",
+   "link": "/student?tutor=33be89b0-f696-4c7f-8f94-f2bd8369af52"
+  },
+  {
+   "id": "class-e42300ab-a024-4a80-9033-2be6b28d3ed4-3-1792692798",
+   "kind": "class",
+   "title": "Ashraful Sir: class 3 done",
+   "body": "Chapter 3",
+   "when": "2026-10-22T18:13:18.530575Z",
+   "link": "/student?tutor=b4be48da-4162-4d8a-a9fe-75969547f26c"
+  },
+  {
+   "id": "class-a135d129-6f69-4d1a-94e3-efae02e3aa83-3-1792519998",
+   "kind": "class",
+   "title": "Nusrat Sir: class 3 done",
+   "body": "Lesson 15",
+   "when": "2026-10-20T18:13:18.530575Z",
+   "link": "/student?tutor=33be89b0-f696-4c7f-8f94-f2bd8369af52"
+  },
+  {
+   "id": "class-eb039e60-a188-4a20-9be2-9bd2f25e8cdb-7-1792519998",
+   "kind": "class",
+   "title": "Ashraful Sir: class 7 done",
+   "body": "Energy",
+   "when": "2026-10-20T18:13:18.530575Z",
+   "link": "/student?tutor=b4be48da-4162-4d8a-a9fe-75969547f26c"
+  },
+  {
+   "id": "hw-checked-386270df-55b7-43a5-b2e9-eeba2c4fb5f6",
+   "kind": "homework",
+   "title": "Homework checked: Newton's laws — 15 short questions",
+   "body": "Excellent! Neat diagrams.",
+   "when": "2026-10-17T18:13:18.530575Z",
+   "link": "/student"
+  },
+  {
+   "id": "hw-new-1746d56d-fbe6-44c0-9894-b69321341223",
+   "kind": "homework",
+   "title": "New homework: Draw velocity–time graphs",
+   "body": "due",
+   "when": "2026-10-21T16:13:18.530575Z",
+   "link": "/student"
+  },
+  {
+   "id": "hw-new-ae14ffe7-80e6-468b-b5f6-a01975fee18c",
+   "kind": "homework",
+   "title": "New homework: Trigonometric identities — practice sheet",
+   "body": "due",
+   "when": "2026-10-26T18:13:18.530575Z",
+   "link": "/student"
+  },
+  {
+   "id": "hw-new-6b3e20b6-5ee4-4954-a7a1-38e6252aff4f",
+   "kind": "homework",
+   "title": "New homework: Balance 10 chemical equations",
+   "body": "due",
+   "when": "2026-10-24T22:13:18.530575Z",
+   "link": "/student"
+  },
+  {
+   "id": "hw-due-5e1e7f85-f251-436f-a563-338c758c7930",
+   "kind": "homework",
+   "title": "Homework due soon: Solve exercise 3.2 (all)",
+   "body": "due",
+   "when": "2026-10-22T23:13:18.530575Z",
+   "link": "/student"
+  }
+ ]
+}

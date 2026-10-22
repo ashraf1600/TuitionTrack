@@ -1,0 +1,167 @@
+{
+ "tutor": {
+  "id": "b4be48da-4162-4d8a-a9fe-75969547f26c",
+  "display_name": "Ashraful Sir",
+  "username": "ashraf",
+  "profile_picture_url": null,
+  "tuitions": [
+   {
+    "id": "724151b0-0fd4-45bc-a783-5fbde5bd5030",
+    "title": "Higher Math Weekend",
+    "subject": "Higher Math",
+    "routine": [
+     {
+      "day": "Saturday",
+      "start_time": "10:00",
+      "end_time": "11:30"
+     },
+     {
+      "day": "Wednesday",
+      "start_time": "10:00",
+      "end_time": "11:30"
+     }
+    ],
+    "cycle_length": 8
+   },
+   {
+    "id": "b1052539-a131-4e48-844f-a26d33ebe527",
+    "title": "SSC Physics Batch A",
+    "subject": "Physics",
+    "routine": [
+     {
+      "day": "Friday",
+      "start_time": "02:00",
+      "end_time": "03:30"
+     },
+     {
+      "day": "Sunday",
+      "start_time": "17:00",
+      "end_time": "18:30"
+     },
+     {
+      "day": "Tuesday",
+      "start_time": "17:00",
+      "end_time": "18:30"
+     }
+    ],
+    "cycle_length": 12
+   }
+  ],
+  "subjects": [
+   "Higher Math",
+   "Physics"
+  ]
+ },
+ "weekly_routine": [],
+ "upcoming_classes": [],
+ "homework": [
+  {
+   "id": "386270df-55b7-43a5-b2e9-eeba2c4fb5f6",
+   "title": "Newton's laws — 15 short questions",
+   "description": "",
+   "due_date": "2026-10-16T18:13:18Z",
+   "source_label": "",
+   "tutor_id": "b4be48da-4162-4d8a-a9fe-75969547f26c",
+   "tutor_name": "Ashraful Islam",
+   "tutor_display_name": "Ashraful Sir",
+   "tutor_profile_picture": null,
+   "student_id": "e7ec39d9-0486-42a8-bee0-8c43388cbdbe",
+   "student_name": "Rafi Ahmed",
+   "tuition_id": "b1052539-a131-4e48-844f-a26d33ebe527",
+   "tuition_title": "SSC Physics Batch A",
+   "is_group": false,
+   "group_source_id": null,
+   "client_ref": "",
+   "submitted_online_url": "https://drive.google.com/file/d/demo2/view",
+   "submission_file_url": null,
+   "submitted_at": "2026-10-16T15:13:18.530575Z",
+   "is_submitted": true,
+   "is_evaluated": true,
+   "evaluated_at": "2026-10-17T18:13:18.530575Z",
+   "tutor_feedback": "Excellent! Neat diagrams.",
+   "created_at": "2026-10-22T18:13:21.224512Z",
+   "updated_at": "2026-10-22T18:13:21.224518Z"
+  },
+  {
+   "id": "1746d56d-fbe6-44c0-9894-b69321341223",
+   "title": "Draw velocity–time graphs",
+   "description": "",
+   "due_date": "2026-10-21T16:13:18Z",
+   "source_label": "",
+   "tutor_id": "b4be48da-4162-4d8a-a9fe-75969547f26c",
+   "tutor_name": "Ashraful Islam",
+   "tutor_display_name": "Ashraful Sir",
+   "tutor_profile_picture": null,
+   "student_id": "e7ec39d9-0486-42a8-bee0-8c43388cbdbe",
+   "student_name": "Rafi Ahmed",
+   "tuition_id": "b1052539-a131-4e48-844f-a26d33ebe527",
+   "tuition_title": "SSC Physics Batch A",
+   "is_group": false,
+   "group_source_id": null,
+   "client_ref": "",
+   "submitted_online_url": "",
+   "submission_file_url": null,
+   "submitted_at": null,
+   "is_submitted": false,
+   "is_evaluated": false,
+   "evaluated_at": null,
+   "tutor_feedback": "",
+   "created_at": "2026-10-22T18:13:21.221882Z",
+   "updated_at": "2026-10-22T18:13:21.221889Z"
+  },
+  {
+   "id": "5e1e7f85-f251-436f-a563-338c758c7930",
+   "title": "Solve exercise 3.2 (all)",
+   "description": "Write the answers in your copy and upload a photo.",
+   "due_date": "2026-10-22T23:13:18Z",
+   "source_label": "",
+   "tutor_id": "b4be48da-4162-4d8a-a9fe-75969547f26c",
+   "tutor_name": "Ashraful Islam",
+   "tutor_display_name": "Ashraful Sir",
+   "tutor_profile_picture": null,
+   "student_id": "e7ec39d9-0486-42a8-bee0-8c43388cbdbe",
+   "student_name": "Rafi Ahmed",
+   "tuition_id": "b1052539-a131-4e48-844f-a26d33ebe527",
+   "tuition_title": "SSC Physics Batch A",
+   "is_group": false,
+   "group_source_id": null,
+   "client_ref": "",
+   "submitted_online_url": "",
+   "submission_file_url": null,
+   "submitted_at": null,
+   "is_submitted": false,
+   "is_evaluated": false,
+   "evaluated_at": null,
+   "tutor_feedback": "",
+   "created_at": "2026-10-22T18:13:21.217543Z",
+   "updated_at": "2026-10-22T18:13:21.217552Z"
+  },
+  {
+   "id": "ae14ffe7-80e6-468b-b5f6-a01975fee18c",
+   "title": "Trigonometric identities — practice sheet",
+   "description": "",
+   "due_date": "2026-10-26T18:13:18Z",
+   "source_label": "",
+   "tutor_id": "b4be48da-4162-4d8a-a9fe-75969547f26c",
+   "tutor_name": "Ashraful Islam",
+   "tutor_display_name": "Ashraful Sir",
+   "tutor_profile_picture": null,
+   "student_id": "e7ec39d9-0486-42a8-bee0-8c43388cbdbe",
+   "student_name": "Rafi Ahmed",
+   "tuition_id": "724151b0-0fd4-45bc-a783-5fbde5bd5030",
+   "tuition_title": "Higher Math Weekend",
+   "is_group": false,
+   "group_source_id": null,
+   "client_ref": "",
+   "submitted_online_url": "",
+   "submission_file_url": null,
+   "submitted_at": null,
+   "is_submitted": false,
+   "is_evaluated": false,
+   "evaluated_at": null,
+   "tutor_feedback": "",
+   "created_at": "2026-10-22T18:13:21.220553Z",
+   "updated_at": "2026-10-22T18:13:21.220560Z"
+  }
+ ]
+}

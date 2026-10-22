@@ -1,0 +1,84 @@
+[
+ {
+  "id": "b4be48da-4162-4d8a-a9fe-75969547f26c",
+  "display_name": "Ashraful Sir",
+  "username": "ashraf",
+  "profile_picture_url": null,
+  "tuitions": [
+   {
+    "id": "724151b0-0fd4-45bc-a783-5fbde5bd5030",
+    "title": "Higher Math Weekend",
+    "subject": "Higher Math",
+    "routine": [
+     {
+      "day": "Saturday",
+      "start_time": "10:00",
+      "end_time": "11:30"
+     },
+     {
+      "day": "Wednesday",
+      "start_time": "10:00",
+      "end_time": "11:30"
+     }
+    ],
+    "cycle_length": 8
+   },
+   {
+    "id": "b1052539-a131-4e48-844f-a26d33ebe527",
+    "title": "SSC Physics Batch A",
+    "subject": "Physics",
+    "routine": [
+     {
+      "day": "Friday",
+      "start_time": "02:00",
+      "end_time": "03:30"
+     },
+     {
+      "day": "Sunday",
+      "start_time": "17:00",
+      "end_time": "18:30"
+     },
+     {
+      "day": "Tuesday",
+      "start_time": "17:00",
+      "end_time": "18:30"
+     }
+    ],
+    "cycle_length": 12
+   }
+  ],
+  "subjects": [
+   "Higher Math",
+   "Physics"
+  ]
+ },
+ {
+  "id": "33be89b0-f696-4c7f-8f94-f2bd8369af52",
+  "display_name": "Nusrat Sir",
+  "username": "nusrat",
+  "profile_picture_url": null,
+  "tuitions": [
+   {
+    "id": "71deb091-6618-4713-9163-225428b61770",
+    "title": "Chemistry Class 10",
+    "subject": "Chemistry",
+    "routine": [
+     {
+      "day": "Saturday",
+      "start_time": "18:30",
+      "end_time": "20:00"
+     },
+     {
+      "day": "Monday",
+      "start_time": "18:30",
+      "end_time": "20:00"
+     }
+    ],
+    "cycle_length": 12
+   }
+  ],
+  "subjects": [
+   "Chemistry"
+  ]
+ }
+]

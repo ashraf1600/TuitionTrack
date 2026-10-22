@@ -1,0 +1,44 @@
+{
+ "api_version": "v1",
+ "server_time": "2026-10-22T18:13:21.347176Z",
+ "display_time_zone": "Asia/Dhaka",
+ "media_base_url": "http://testserver",
+ "media_url": "/media/",
+ "uploads": {
+  "max_size_mb": 10,
+  "extensions": [
+   ".jpeg",
+   ".jpg",
+   ".pdf",
+   ".png",
+   ".webp"
+  ],
+  "content_types": [
+   "application/pdf",
+   "image/jpeg",
+   "image/png",
+   "image/webp"
+  ]
+ },
+ "result_publish_modes": [
+  "IMMEDIATE",
+  "MANUAL",
+  "SCHEDULED"
+ ],
+ "app": {
+  "latest_version": "",
+  "download_url": "",
+  "release_notes": ""
+ },
+ "page_size": {
+  "default": 20,
+  "max": 1000,
+  "query_param": "page_size"
+ },
+ "auth": {
+  "google_client_id": "",
+  "google_signup": false,
+  "password_reset_email": false,
+  "password_reset_code_length": 6
+ }
+}

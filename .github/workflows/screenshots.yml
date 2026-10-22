@@ -1,0 +1,61 @@
+name: App screenshots
+
+# Renders the mobile app's screens from recorded demo data (mobile/screenshot_test)
+# and saves the pictures on the `screenshots` branch, in a folder named after the
+# branch and commit, so a design change can be reviewed without a phone.
+on:
+  push:
+    branches: ['feature/**', 'design/**']
+    paths: ['mobile/**', '.github/workflows/screenshots.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: screenshots-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - name: Render screens
+        id: render
+        continue-on-error: true
+        run: flutter test screenshot_test --update-goldens --reporter expanded 2>&1 | tee ../render.log
+      - name: Publish to the screenshots branch
+        working-directory: .
+        env:
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          set -e
+          dest="${BRANCH//\//-}/${GITHUB_SHA::7}"
+          mkdir -p /tmp/shots/"$dest"
+          cp mobile/screenshot_test/goldens/*.png /tmp/shots/"$dest"/ 2>/dev/null || true
+          cp render.log /tmp/shots/"$dest"/render.log
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git fetch --depth 1 origin screenshots 2>/dev/null; then
+            git checkout -B screenshots FETCH_HEAD
+          else
+            git checkout --orphan screenshots
+            git rm -rf --quiet . || true
+          fi
+          git clean -fdq -e /tmp
+          mkdir -p "$dest"
+          cp -r /tmp/shots/"$dest"/. "$dest"/
+          git add "$dest"
+          git commit -m "Screenshots for $BRANCH @ ${GITHUB_SHA::7}" || exit 0
+          git push origin screenshots
+          echo "Published to screenshots:/$dest"

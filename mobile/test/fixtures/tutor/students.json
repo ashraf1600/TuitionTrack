@@ -1,0 +1,127 @@
+{
+ "count": 5,
+ "next": null,
+ "previous": null,
+ "results": [
+  {
+   "id": "1f183159-714e-4e86-ab37-b12f39e7f6b8",
+   "student_id": "1f183159-714e-4e86-ab37-b12f39e7f6b8",
+   "username": "fahim",
+   "full_name": "Fahim",
+   "email": "",
+   "phone": "",
+   "is_active": true,
+   "must_change_password": false,
+   "profile": {
+    "id": "97cf75d3-d1c3-4ab2-9ace-8898846c3333",
+    "grade_level": "",
+    "institution": "",
+    "parent_name": "",
+    "parent_phone": "",
+    "address": "",
+    "tuition_fee": "0.00",
+    "cycle_length": 12,
+    "notes": "",
+    "created_at": "2026-10-22T18:13:21.116773Z",
+    "updated_at": "2026-10-22T18:13:21.116794Z"
+   },
+   "created_at": "2026-10-22T18:13:21.113496Z"
+  },
+  {
+   "id": "631c9997-6c55-4746-9858-b179d7d730c8",
+   "student_id": "631c9997-6c55-4746-9858-b179d7d730c8",
+   "username": "mitu",
+   "full_name": "Mitu",
+   "email": "",
+   "phone": "",
+   "is_active": true,
+   "must_change_password": false,
+   "profile": {
+    "id": "c42e18a9-f444-404e-bfa2-37bf3388b9a0",
+    "grade_level": "",
+    "institution": "",
+    "parent_name": "",
+    "parent_phone": "",
+    "address": "",
+    "tuition_fee": "0.00",
+    "cycle_length": 12,
+    "notes": "",
+    "created_at": "2026-10-22T18:13:20.167802Z",
+    "updated_at": "2026-10-22T18:13:20.167821Z"
+   },
+   "created_at": "2026-10-22T18:13:20.164579Z"
+  },
+  {
+   "id": "381cb31f-93c1-4948-bacb-100eccb021a3",
+   "student_id": "381cb31f-93c1-4948-bacb-100eccb021a3",
+   "username": "orpa",
+   "full_name": "Orpa",
+   "email": "",
+   "phone": "",
+   "is_active": true,
+   "must_change_password": false,
+   "profile": {
+    "id": "ba54508e-f92c-4ccc-abff-b306298e97de",
+    "grade_level": "",
+    "institution": "",
+    "parent_name": "",
+    "parent_phone": "",
+    "address": "",
+    "tuition_fee": "0.00",
+    "cycle_length": 12,
+    "notes": "",
+    "created_at": "2026-10-22T18:13:20.815058Z",
+    "updated_at": "2026-10-22T18:13:20.815075Z"
+   },
+   "created_at": "2026-10-22T18:13:20.812644Z"
+  },
+  {
+   "id": "e7ec39d9-0486-42a8-bee0-8c43388cbdbe",
+   "student_id": "e7ec39d9-0486-42a8-bee0-8c43388cbdbe",
+   "username": "rafi",
+   "full_name": "Rafi Ahmed",
+   "email": "rafi@example.com",
+   "phone": "",
+   "is_active": true,
+   "must_change_password": false,
+   "profile": {
+    "id": "20e049df-2831-40fb-ab6b-562686207c0a",
+    "grade_level": "Class 10",
+    "institution": "Chittagong Collegiate School",
+    "parent_name": "",
+    "parent_phone": "",
+    "address": "",
+    "tuition_fee": "0.00",
+    "cycle_length": 12,
+    "notes": "",
+    "created_at": "2026-10-22T18:13:19.839544Z",
+    "updated_at": "2026-10-22T18:13:19.839571Z"
+   },
+   "created_at": "2026-10-22T18:13:19.835527Z"
+  },
+  {
+   "id": "22ed25a3-f0cb-4080-9b72-09b594d570cd",
+   "student_id": "22ed25a3-f0cb-4080-9b72-09b594d570cd",
+   "username": "sakib",
+   "full_name": "Sakib",
+   "email": "",
+   "phone": "",
+   "is_active": true,
+   "must_change_password": false,
+   "profile": {
+    "id": "9273648a-3e8d-49db-99b6-c5a73d22ca78",
+    "grade_level": "",
+    "institution": "",
+    "parent_name": "",
+    "parent_phone": "",
+    "address": "",
+    "tuition_fee": "0.00",
+    "cycle_length": 12,
+    "notes": "",
+    "created_at": "2026-10-22T18:13:20.524368Z",
+    "updated_at": "2026-10-22T18:13:20.524387Z"
+   },
+   "created_at": "2026-10-22T18:13:20.521982Z"
+  }
+ ]
+}
