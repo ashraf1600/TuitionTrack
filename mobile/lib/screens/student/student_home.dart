@@ -12,14 +12,16 @@ import '../../core/repo.dart';
 import '../../core/session.dart';
 import '../../widgets/app_drawer.dart';
 import '../../widgets/charts.dart';
+import '../../widgets/kit.dart';
 import '../../widgets/offline_banner.dart';
-import '../../widgets/student_kit.dart';
 import '../../widgets/theme.dart';
+import '../../widgets/tt_logo.dart';
 import '../../widgets/ui.dart';
 import '../../widgets/update_banner.dart';
 import '../common/notifications.dart';
 import 'connect_screen.dart';
 import 'student_lists.dart';
+import 'student_today.dart';
 import 'tutor_detail_screen.dart';
 
 class _StudentData {
@@ -44,7 +46,8 @@ class StudentHome extends StatefulWidget {
 
 class _StudentHomeState extends State<StudentHome> {
   final _loader = GlobalKey<LoaderState<_StudentData>>();
-  int _tab = 0;
+  StudentTab _tab = StudentTab.home;
+  bool _showResults = false;
   int _examCount = 0;
   int _homeworkCount = 0;
 
@@ -78,16 +81,34 @@ class _StudentHomeState extends State<StudentHome> {
     return _StudentData(results[0], results[1], results[2], results[3], homework, results[4]);
   }
 
-  String _title() => switch (_tab) {
-        1 => tr('Exams & assignments'),
-        2 => tr('Homework'),
-        _ => tr('Hello, {p0}', {'p0': context.read<Session>().displayName}),
+  void _open(StudentTab tab, {bool results = false}) {
+    setState(() {
+      _tab = tab;
+      _showResults = results;
+    });
+    _loader.currentState?.reload(quiet: true);
+  }
+
+  Future<void> _openTutor(String tutorId, String name) async {
+    if (tutorId.isEmpty) return;
+    await Navigator.push(
+      context,
+      MaterialPageRoute<void>(builder: (_) => TutorDetailScreen(tutorId: tutorId, title: name.isEmpty ? tr('Tutor') : name)),
+    );
+    await _loader.currentState?.reload(quiet: true);
+  }
+
+  Widget? _title() => switch (_tab) {
+        StudentTab.home => const TtWordmark(size: 20, center: false),
+        StudentTab.tutors => Text(tr('Your tutors')),
+        StudentTab.tests => Text(tr('Tests & results')),
+        StudentTab.homework => Text(tr('Homework')),
       };
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(_title()), actions: homeActions(context)),
+      appBar: AppBar(title: _title(), centerTitle: false, actions: homeActions(context)),
       drawer: const AppDrawer(),
       body: Column(
         children: [
@@ -97,32 +118,52 @@ class _StudentHomeState extends State<StudentHome> {
             child: Loader<_StudentData>(
               key: _loader,
               load: _load,
-              builder: (context, data, reload) => switch (_tab) {
-                1 => StudentExamsList(exams: data.exams, reload: reload),
-                2 => StudentHomeworkList(items: data.homework, reload: reload),
-                _ => _TutorFlashcards(data: data, reload: reload, onOpenTab: (tab) => setState(() => _tab = tab)),
-              },
+              builder: (context, data, reload) => AnimatedSwitcher(
+                duration: const Duration(milliseconds: 220),
+                switchInCurve: Curves.easeOut,
+                child: KeyedSubtree(
+                  key: ValueKey(_tab),
+                  child: switch (_tab) {
+                    StudentTab.home => StudentTodayView(
+                        tutors: data.tutors,
+                        tuitions: data.tuitions,
+                        connections: data.connections,
+                        exams: data.exams,
+                        homework: data.homework,
+                        reload: reload,
+                        onOpenTab: _open,
+                        onOpenTutor: _openTutor,
+                      ),
+                    StudentTab.tutors => _TutorFlashcards(data: data, reload: reload, onOpenTutor: _openTutor),
+                    StudentTab.tests => StudentExamsList(
+                        key: ValueKey('tests-$_showResults'),
+                        exams: data.exams,
+                        reload: reload,
+                        initialView: _showResults ? ExamsView.results : null,
+                      ),
+                    StudentTab.homework => StudentHomeworkList(items: data.homework, reload: reload),
+                  },
+                ),
+              ),
             ),
           ),
         ],
       ),
       bottomNavigationBar: NavigationBar(
-        selectedIndex: _tab,
-        onDestinationSelected: (index) {
-          setState(() => _tab = index);
-          _loader.currentState?.reload(quiet: true);
-        },
+        selectedIndex: _tab.index,
+        onDestinationSelected: (index) => _open(StudentTab.values[index]),
         destinations: [
-          NavigationDestination(icon: Icon(Icons.style_outlined), selectedIcon: Icon(Icons.style), label: tr('Tutors')),
-          // Red counts: exams and homework still waiting, so a tap shows what is due.
+          NavigationDestination(icon: const Icon(Icons.home_outlined), selectedIcon: const Icon(Icons.home_rounded), label: tr('Home')),
+          NavigationDestination(icon: const Icon(Icons.school_outlined), selectedIcon: const Icon(Icons.school_rounded), label: tr('Tutors')),
+          // Red counts: tests and homework still waiting, so a tap shows what is due.
           NavigationDestination(
-            icon: countBadge(const Icon(Icons.assignment_outlined), _examCount),
-            selectedIcon: countBadge(const Icon(Icons.assignment), _examCount),
-            label: tr('Exams'),
+            icon: countBadge(const Icon(Icons.quiz_outlined), _examCount),
+            selectedIcon: countBadge(const Icon(Icons.quiz_rounded), _examCount),
+            label: tr('Tests'),
           ),
           NavigationDestination(
             icon: countBadge(const Icon(Icons.menu_book_outlined), _homeworkCount),
-            selectedIcon: countBadge(const Icon(Icons.menu_book), _homeworkCount),
+            selectedIcon: countBadge(const Icon(Icons.menu_book_rounded), _homeworkCount),
             label: tr('Homework'),
           ),
         ],
@@ -134,10 +175,10 @@ class _StudentHomeState extends State<StudentHome> {
 // ── Flashcards ───────────────────────────────────────────────────────────────
 
 class _TutorFlashcards extends StatelessWidget {
-  const _TutorFlashcards({required this.data, required this.reload, required this.onOpenTab});
+  const _TutorFlashcards({required this.data, required this.reload, required this.onOpenTutor});
   final _StudentData data;
   final Future<void> Function() reload;
-  final void Function(int tab) onOpenTab;
+  final void Function(String tutorId, String name) onOpenTutor;
 
   Future<void> _openConnect(BuildContext context) async {
     await Navigator.push(context, MaterialPageRoute<void>(builder: (_) => const ConnectScreen()));
@@ -150,17 +191,14 @@ class _TutorFlashcards extends StatelessWidget {
     final tutors = data.tutors;
     return PageBody(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
-      children: [
-        // What matters right now, across every tutor: the next class, exams open now, homework due soon.
-        TodayPanel(
-          tuitions: data.tuitions,
-          exams: data.exams,
-          homework: data.homework,
-          now: context.read<Session>().api.serverNow,
-          onStartExam: (exam) => takeExam(context, exam, reload),
-          onOpenHomework: () => onOpenTab(2),
-        ),
-        if (tutors.isNotEmpty) SectionTitle(tr('Your tutors'), icon: Icons.people_alt_outlined),
+      children: staggered(context, [
+        if (tutors.isNotEmpty) ...[
+          Text(
+            tutors.length == 1 ? tr('1 tutor · tap a card for classes, tests and homework') : tr('{n} tutors · tap a card for classes, tests and homework', {'n': tutors.length}),
+            style: TextStyle(fontSize: 13, color: context.tt.textSecondary),
+          ),
+          gap12,
+        ],
         if (pending.isNotEmpty) ...[
           Banner2(
             pending.length == 1
@@ -189,19 +227,20 @@ class _TutorFlashcards extends StatelessWidget {
               tutor: tutor,
               tuitions: data.tuitions.where((t) => t.str('tutor_id') == tutor.str('id')).toList(),
               openWork: _openWork(tutor.str('id')),
-              onOpen: () async {
-                await Navigator.push(
-                  context,
-                  MaterialPageRoute<void>(
-                    builder: (_) => TutorDetailScreen(tutorId: tutor.str('id'), title: _tutorName(tutor)),
-                  ),
-                );
-                await reload();
-              },
+              onOpen: () => onOpenTutor(tutor.str('id'), _tutorName(tutor)),
             ),
             gap12,
           ],
-      ],
+        if (tutors.isNotEmpty) ...[
+          gap8,
+          OutlinedButton.icon(
+            style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(50)),
+            onPressed: () => _openConnect(context),
+            icon: const Icon(Icons.person_add_alt_1_rounded),
+            label: Text(tr('Add another tutor')),
+          ),
+        ],
+      ]),
     );
   }
 

@@ -67,6 +67,17 @@ void main() {
     }
   });
 
+  testWidgets('tests, results', (tester) async {
+    await openApp(tester, size: tallPhone);
+    await tapTab(tester, 2);
+    final results = find.text('Results');
+    if (results.evaluate().isNotEmpty) {
+      await tester.tap(results.first);
+      await settle(tester);
+    }
+    await shoot(tester, 'student_05b_results');
+  });
+
   testWidgets('tutor detail', (tester) async {
     await openApp(tester, size: tallPhone);
     await push(tester, TutorDetailScreen(tutorId: fixtures.meta['tutor_detail_id'] as String, title: 'Ashraful Sir'));

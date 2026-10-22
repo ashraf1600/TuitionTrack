@@ -38,6 +38,11 @@ Future<void> loadAppFonts() async {
   await family('HankenGrotesk', [
     for (final w in ['Regular', 'Medium', 'SemiBold', 'Bold']) 'assets/fonts/HankenGrotesk-$w.ttf',
   ]);
+  // Widgets that set no font (button labels) ask for Roboto, which tests do not have;
+  // a phone draws them in its system font, so the app font stands in here.
+  await family('Roboto', [
+    for (final w in ['Regular', 'Medium', 'SemiBold', 'Bold']) 'assets/fonts/HankenGrotesk-$w.ttf',
+  ]);
   await family('HindSiliguri', [
     for (final w in ['Regular', 'Medium', 'SemiBold', 'Bold']) 'assets/fonts/HindSiliguri-$w.ttf',
   ]);
