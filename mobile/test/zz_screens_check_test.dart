@@ -150,6 +150,26 @@ String _examId(String role, String title) {
   return (list.firstWhere((e) => e['title'] == title) as Map)['id'] as String;
 }
 
+void _check(String name, Future<void> Function(WidgetTester tester) body) {
+  testWidgets(name, (tester) async {
+    final original = FlutterError.onError;
+    FlutterError.onError = (details) {
+      // ignore: avoid_print
+      print('::error::$name: ${details.exceptionAsString().replaceAll('\n', ' ')} ${details.stack.toString().split('\n').take(4).join(' | ')}');
+      original?.call(details);
+    };
+    try {
+      await body(tester);
+    } catch (e, s) {
+      // ignore: avoid_print
+      print('::error::$name THROWN: ${'$e'.replaceAll('\n', ' ')} ${s.toString().split('\n').take(4).join(' | ')}');
+      rethrow;
+    } finally {
+      FlutterError.onError = original;
+    }
+  });
+}
+
 void main() {
   setUpAll(() async {
     autoUpdateGoldenFiles = true;
@@ -164,14 +184,14 @@ void main() {
     addTearDown(tester.view.reset);
   }
 
-  testWidgets('signed out', (tester) async {
+  _check('signed out', (tester) async {
     await phone(tester);
     await tester.pumpWidget(_app(await _session(null), const LoginScreen()));
     await _shot(tester, '01_login');
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('tutor', (tester) async {
+  _check('tutor', (tester) async {
     await phone(tester);
     final session = await _session('tutor');
     await tester.pumpWidget(_app(session, const TutorHome()));
@@ -187,7 +207,7 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('tutor: a tuition', (tester) async {
+  _check('tutor: a tuition', (tester) async {
     await phone(tester);
     final session = await _session('tutor');
     final raw = _fixtures['tutor:/tuitions/'];
@@ -197,7 +217,7 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('tutor: new exam with the symbol toolbar', (tester) async {
+  _check('tutor: new exam with the symbol toolbar', (tester) async {
     await phone(tester);
     final session = await _session('tutor');
     await tester.pumpWidget(_app(session, const ExamEditorScreen()));
@@ -211,7 +231,7 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('tutor: notifications and account', (tester) async {
+  _check('tutor: notifications and account', (tester) async {
     await phone(tester);
     final session = await _session('tutor');
     final items = [for (final n in (_fixtures['tutor:/notifications/'] as Map)['notifications'] as List) Map<String, dynamic>.from(n as Map)];
@@ -222,7 +242,7 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('student', (tester) async {
+  _check('student', (tester) async {
     await phone(tester);
     final session = await _session('student');
     await tester.pumpWidget(_app(session, const StudentHome()));
@@ -240,7 +260,7 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('student: a tutor page', (tester) async {
+  _check('student: a tutor page', (tester) async {
     await phone(tester);
     final session = await _session('student');
     final raw = _fixtures['student:/my-tutors/'];
@@ -254,7 +274,7 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('student: a result', (tester) async {
+  _check('student: a result', (tester) async {
     await phone(tester);
     final session = await _session('student');
     final id = _examId('student', 'Motion — Weekly Test 3');
