@@ -399,8 +399,11 @@ class Banner2 extends StatelessWidget {
 }
 
 class AppCard extends StatelessWidget {
-  const AppCard({super.key, required this.child, this.padding = const EdgeInsets.all(16), this.onTap, this.onLongPress, this.borderColor});
+  const AppCard({super.key, required this.child, this.padding = const EdgeInsets.all(16), this.onTap, this.onLongPress, this.borderColor, this.accent});
   final Widget child;
+
+  /// A thin coloured band along the top, e.g. a tuition's own colour.
+  final Color? accent;
   final EdgeInsets padding;
   final VoidCallback? onTap;
 
@@ -423,7 +426,17 @@ class AppCard extends StatelessWidget {
         color: tt.card,
         shape: shape,
         clipBehavior: Clip.antiAlias,
-        child: InkWell(onTap: onTap, onLongPress: onLongPress, child: Padding(padding: padding, child: child)),
+        child: InkWell(
+          onTap: onTap,
+          onLongPress: onLongPress,
+          child: accent == null
+              ? Padding(padding: padding, child: child)
+              : Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [Container(height: 4, color: accent), Padding(padding: padding, child: child)],
+                ),
+        ),
       ),
     );
   }
