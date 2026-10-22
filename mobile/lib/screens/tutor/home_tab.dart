@@ -14,6 +14,7 @@ import '../../core/repo.dart';
 import '../../core/session.dart';
 import '../../core/week_plan.dart';
 import '../../widgets/charts.dart';
+import '../../widgets/kit.dart';
 import '../../widgets/share.dart';
 import '../../widgets/student_kit.dart' show shortGap;
 import '../../widgets/theme.dart';
@@ -60,7 +61,12 @@ class HomeTab extends StatelessWidget {
 
         return PageBody(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
-          children: [
+          children: staggered(context, [
+            GreetingHeader(
+              name: context.read<Session>().displayName,
+              now: DateTime.now(),
+              subtitle: _todaySummary(data.tuitions, data.wallet),
+            ),
             _GetStarted(tuitions: data.tuitions, onCreateTuition: onCreateTuition, onOpen: open, reload: reload),
             _WalletStrip(wallet: data.wallet),
             if (data.requests.isNotEmpty) ...[
@@ -79,11 +85,26 @@ class HomeTab extends StatelessWidget {
               )
             else
               _TuitionGrid(tuitions: data.tuitions, onOpen: open, onActions: (t) => _quickActions(context, t, open, reload)),
-          ],
+          ]),
         );
       },
     );
   }
+}
+
+/// "2 classes today · ৳1,500 to collect" under the greeting.
+String _todaySummary(List<Json> tuitions, Json wallet) {
+  final today = DateTime.now();
+  final classes = tuitions.fold<int>(0, (n, t) => n + slotsOn(t.maps('routine'), today).length);
+  final parts = <String>[
+    classes == 0
+        ? tr('No classes today')
+        : classes == 1
+            ? tr('1 class today')
+            : tr('{n} classes today', {'n': classes}),
+    if (wallet.integer('unpaid_cycles') > 0) tr('{p0} to collect', {'p0': taka(wallet.number('unpaid_total'))}),
+  ];
+  return parts.join(' · ');
 }
 
 /// First steps for a new tutor, ticked off as they happen; gone once all are
@@ -297,7 +318,7 @@ class _Heading extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.baseline,
         textBaseline: TextBaseline.alphabetic,
         children: [
-          Expanded(child: Text(title, style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: tt.textPrimary))),
+          Expanded(child: Text(title, style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700, letterSpacing: -0.2, color: tt.textPrimary))),
           if (trailing != null) Text(trailing!, style: TextStyle(fontSize: 13, color: tt.textSecondary)),
         ],
       ),

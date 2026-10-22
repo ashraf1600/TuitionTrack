@@ -1101,4 +1101,8 @@ const bnStrings = <String, String>{
   'Up {p0}% from the last one': 'আগেরটির চেয়ে {p0}% বেশি',
   'Down {p0}% from the last one': 'আগেরটির চেয়ে {p0}% কম',
   'Classes this cycle': 'এই সাইকেলের ক্লাস',
+  'No classes today': 'আজ কোনো ক্লাস নেই',
+  '1 class today': 'আজ ১টি ক্লাস',
+  '{n} classes today': 'আজ {n}টি ক্লাস',
+  '{p0} to collect': '{p0} আদায় বাকি',
 };

@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 
 import '../../core/i18n.dart';
-import '../../core/session.dart';
 import '../../widgets/app_drawer.dart';
 import '../../widgets/offline_banner.dart';
+import '../../widgets/tt_logo.dart';
 import '../../widgets/update_banner.dart';
 import '../common/notifications.dart';
 import 'exam_editor_screen.dart';
@@ -43,7 +42,6 @@ class _TutorHomeState extends State<TutorHome> {
 
   @override
   Widget build(BuildContext context) {
-    final session = context.watch<Session>();
     final body = switch (_tab) {
       0 => HomeTab(key: ValueKey('home$_version'), onCreateTuition: _create),
       1 => StudentsTab(key: ValueKey('students$_version')),
@@ -52,7 +50,8 @@ class _TutorHomeState extends State<TutorHome> {
     };
     return Scaffold(
       appBar: AppBar(
-        title: Text(_tab == 0 ? tr('Hello, {p0}', {'p0': session.displayName}) : tr(_titles[_tab])),
+        title: _tab == 0 ? const TtWordmark(size: 20, center: false) : Text(tr(_titles[_tab])),
+        centerTitle: false,
         actions: homeActions(context),
       ),
       drawer: const AppDrawer(),
