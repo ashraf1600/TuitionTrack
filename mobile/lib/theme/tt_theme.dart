@@ -259,7 +259,10 @@ ThemeData ttTheme({required bool isDark, bool isBangla = false}) {
     borderRadius: BorderRadius.circular(14),
     borderSide: BorderSide(color: tt.border),
   );
-  final textTheme = ttTextTheme(tt.textPrimary, tt.textSecondary, isBangla: isBangla);
+  // The app font on every style, so widgets that take a style straight from the
+  // text theme (list rows, dialogs) do not fall back to the phone's system font.
+  final textTheme = ttTextTheme(tt.textPrimary, tt.textSecondary, isBangla: isBangla)
+      .apply(fontFamily: 'HankenGrotesk', fontFamilyFallback: const ['HindSiliguri']);
   return ThemeData(
     useMaterial3: true,
     brightness: scheme.brightness,
@@ -417,7 +420,7 @@ ThemeData ttTheme({required bool isDark, bool isBangla = false}) {
       minVerticalPadding: 10,
       minTileHeight: 56,
       titleTextStyle: textTheme.bodyLarge,
-      subtitleTextStyle: TextStyle(fontSize: 13, height: 1.4, color: tt.textSecondary),
+      subtitleTextStyle: uiText(13, FontWeight.w400).copyWith(height: 1.4, color: tt.textSecondary),
     ),
     progressIndicatorTheme: ProgressIndicatorThemeData(
       color: tt.chartEarned,

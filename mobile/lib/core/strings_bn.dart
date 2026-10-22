@@ -1105,4 +1105,5 @@ const bnStrings = <String, String>{
   '1 class today': 'আজ ১টি ক্লাস',
   '{n} classes today': 'আজ {n}টি ক্লাস',
   '{p0} to collect': '{p0} আদায় বাকি',
+  '{p0} of {p1}': '{p1}-এর মধ্যে {p0}',
 };
