@@ -47,7 +47,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           if git fetch --depth 1 origin screenshots 2>/dev/null; then
-            git checkout -B screenshots FETCH_HEAD
+            git checkout -f -B screenshots FETCH_HEAD
           else
             git checkout --orphan screenshots
             git rm -rf --quiet . || true
