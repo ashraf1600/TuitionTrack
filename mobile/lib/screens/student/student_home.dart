@@ -13,6 +13,7 @@ import '../../core/session.dart';
 import '../../widgets/app_drawer.dart';
 import '../../widgets/charts.dart';
 import '../../widgets/offline_banner.dart';
+import '../../widgets/student_kit.dart';
 import '../../widgets/theme.dart';
 import '../../widgets/ui.dart';
 import '../../widgets/update_banner.dart';
@@ -99,7 +100,7 @@ class _StudentHomeState extends State<StudentHome> {
               builder: (context, data, reload) => switch (_tab) {
                 1 => StudentExamsList(exams: data.exams, reload: reload),
                 2 => StudentHomeworkList(items: data.homework, reload: reload),
-                _ => _TutorFlashcards(data: data, reload: reload),
+                _ => _TutorFlashcards(data: data, reload: reload, onOpenTab: (tab) => setState(() => _tab = tab)),
               },
             ),
           ),
@@ -133,9 +134,10 @@ class _StudentHomeState extends State<StudentHome> {
 // ── Flashcards ───────────────────────────────────────────────────────────────
 
 class _TutorFlashcards extends StatelessWidget {
-  const _TutorFlashcards({required this.data, required this.reload});
+  const _TutorFlashcards({required this.data, required this.reload, required this.onOpenTab});
   final _StudentData data;
   final Future<void> Function() reload;
+  final void Function(int tab) onOpenTab;
 
   Future<void> _openConnect(BuildContext context) async {
     await Navigator.push(context, MaterialPageRoute<void>(builder: (_) => const ConnectScreen()));
@@ -149,6 +151,16 @@ class _TutorFlashcards extends StatelessWidget {
     return PageBody(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
       children: [
+        // What matters right now, across every tutor: the next class, exams open now, homework due soon.
+        TodayPanel(
+          tuitions: data.tuitions,
+          exams: data.exams,
+          homework: data.homework,
+          now: context.read<Session>().api.serverNow,
+          onStartExam: (exam) => takeExam(context, exam, reload),
+          onOpenHomework: () => onOpenTab(2),
+        ),
+        if (tutors.isNotEmpty) SectionTitle(tr('Your tutors'), icon: Icons.people_alt_outlined),
         if (pending.isNotEmpty) ...[
           Banner2(
             pending.length == 1

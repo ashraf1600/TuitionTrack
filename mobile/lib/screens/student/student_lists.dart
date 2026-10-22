@@ -7,6 +7,7 @@ import '../../core/i18n.dart';
 import '../../core/json.dart';
 import '../../core/repo.dart';
 import '../../core/session.dart';
+import '../../widgets/student_kit.dart';
 import '../../widgets/theme.dart';
 import '../../widgets/ui.dart';
 import '../common/leaderboard_screen.dart';
@@ -71,8 +72,10 @@ class StudentExamsList extends StatelessWidget {
             for (final exam in items) ...[StudentExamCard(exam: exam, reload: reload, showTutor: showTutor), gap12],
           ],
         );
+    final percents = resultPercents(exams);
     return PageBody(
       children: [
+        if (percents.length >= 2) ...[ScoreTrend(percents: percents.length > 8 ? percents.sublist(percents.length - 8) : percents), gap12],
         if (todo.isNotEmpty) group(tr('To do'), tr('Open now'), Icons.play_circle_outline, todo),
         if (upcoming.isNotEmpty) group(tr('Upcoming'), tr('Not open yet'), Icons.schedule, upcoming),
         if (done.isNotEmpty) group(tr('Done'), tr('Turned in or finished'), Icons.check_circle_outline, done),
@@ -81,48 +84,53 @@ class StudentExamsList extends StatelessWidget {
   }
 }
 
+/// Starts (or opens) [exam] for the student, then shows what happens to the answers.
+Future<void> takeExam(BuildContext context, Json exam, Future<void> Function() reload) async {
+  final repo = context.read<Repo>();
+  final isAssignment = exam.str('category') == 'ASSIGNMENT';
+  final minutes = exam.integer('duration_minutes');
+  if (minutes > 0 && !isAssignment) {
+    final ok = await confirm(
+      context,
+      title: tr('Start the timed exam?'),
+      message: tr('You get {p0} minutes from the moment you start, and the clock keeps running if you leave the app.', {'p0': minutes}),
+      confirmLabel: tr('Start now'),
+    );
+    if (!ok || !context.mounted) return;
+  }
+  Json? started;
+  await attempt(context, () async => started = await repo.startExam(exam.str('id')));
+  if (started == null || !context.mounted) return;
+  final response = await Navigator.push<Json>(
+    context,
+    MaterialPageRoute(builder: (_) => ExamTakeScreen(exam: started!.obj('exam') ?? {})),
+  );
+  await reload();
+  if (response == null || !context.mounted) return;
+  final status = response.obj('result_status') ?? {};
+  if (response.flag('results_released')) {
+    showToast(context, tr('Submitted. Here is your result.'));
+    openExamResult(context, exam);
+  } else if (status.str('mode') == 'SCHEDULED' && status.date('publish_at') != null) {
+    showToast(context, tr('Submitted. Results will be published on {p0}.', {'p0': fmtDateTime(status.date('publish_at'))}));
+  } else {
+    showToast(context, tr('Submitted. Your tutor will publish the results.'));
+  }
+}
+
+void openExamResult(BuildContext context, Json exam) {
+  Navigator.push(context, MaterialPageRoute<void>(builder: (_) => ExamResultScreen(examId: exam.str('id'), title: exam.str('title'))));
+}
+
 class StudentExamCard extends StatelessWidget {
   const StudentExamCard({super.key, required this.exam, required this.reload, this.showTutor = true});
   final Json exam;
   final bool showTutor;
   final Future<void> Function() reload;
 
-  Future<void> _take(BuildContext context) async {
-    final repo = context.read<Repo>();
-    final isAssignment = exam.str('category') == 'ASSIGNMENT';
-    final minutes = exam.integer('duration_minutes');
-    if (minutes > 0 && !isAssignment) {
-      final ok = await confirm(
-        context,
-        title: tr('Start the timed exam?'),
-        message: tr('You get {p0} minutes from the moment you start, and the clock keeps running if you leave the app.', {'p0': minutes}),
-        confirmLabel: tr('Start now'),
-      );
-      if (!ok || !context.mounted) return;
-    }
-    Json? started;
-    await attempt(context, () async => started = await repo.startExam(exam.str('id')));
-    if (started == null || !context.mounted) return;
-    final response = await Navigator.push<Json>(
-      context,
-      MaterialPageRoute(builder: (_) => ExamTakeScreen(exam: started!.obj('exam') ?? {})),
-    );
-    await reload();
-    if (response == null || !context.mounted) return;
-    final status = response.obj('result_status') ?? {};
-    if (response.flag('results_released')) {
-      showToast(context, tr('Submitted. Here is your result.'));
-      _openResult(context);
-    } else if (status.str('mode') == 'SCHEDULED' && status.date('publish_at') != null) {
-      showToast(context, tr('Submitted. Results will be published on {p0}.', {'p0': fmtDateTime(status.date('publish_at'))}));
-    } else {
-      showToast(context, tr('Submitted. Your tutor will publish the results.'));
-    }
-  }
+  Future<void> _take(BuildContext context) => takeExam(context, exam, reload);
 
-  void _openResult(BuildContext context) {
-    Navigator.push(context, MaterialPageRoute<void>(builder: (_) => ExamResultScreen(examId: exam.str('id'), title: exam.str('title'))));
-  }
+  void _openResult(BuildContext context) => openExamResult(context, exam);
 
   @override
   Widget build(BuildContext context) {
@@ -147,10 +155,22 @@ class StudentExamCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Pill(isAssignment ? tr('Assignment') : tr('Exam'), color: AppColors.primarySoft),
-              if (minutes > 0 && !isAssignment) ...[SizedBox(width: 6), Pill(tr('{p0} min', {'p0': minutes}), icon: Icons.timer_outlined)],
-              Spacer(),
+              // Type, length and the time left, wrapping onto a second line on small phones.
+              Expanded(
+                child: Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: [
+                    Pill(isAssignment ? tr('Assignment') : tr('Exam'), color: AppColors.primarySoft),
+                    if (minutes > 0 && !isAssignment) Pill(tr('{p0} min', {'p0': minutes}), icon: Icons.timer_outlined),
+                    if (open && !isLate) DeadlineChip(at: end, now: now, kind: isAssignment ? DeadlineKind.due : DeadlineKind.closes),
+                    if (upcoming) DeadlineChip(at: start, now: now, kind: DeadlineKind.opens),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
               Text(tr('{p0} marks', {'p0': trimNumber(exam.number('total_marks'))}), style: TextStyle(fontWeight: FontWeight.w700, color: AppColors.success)),
             ],
           ),

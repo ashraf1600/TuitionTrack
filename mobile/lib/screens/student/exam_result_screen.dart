@@ -8,6 +8,7 @@ import '../../core/repo.dart';
 import '../../core/session.dart';
 import '../../widgets/math_text.dart';
 import '../../widgets/media.dart';
+import '../../widgets/student_kit.dart';
 import '../../widgets/theme.dart';
 import '../../widgets/ui.dart';
 import '../common/leaderboard_screen.dart';
@@ -15,8 +16,12 @@ import '../common/leaderboard_screen.dart';
 const _letters = ['A', 'B', 'C', 'D', 'E'];
 
 class _ResultData {
-  _ResultData(this.status, this.exam);
+  _ResultData(this.status, this.exam, {this.rank, this.outOf});
   final Json status;
+
+  /// The student's place among everyone who sat it, when the leaderboard is open to them.
+  final int? rank;
+  final int? outOf;
 
   /// The exam detail (only needed while results are pending, to show what was answered).
   final Json? exam;
@@ -38,10 +43,25 @@ class ExamResultScreen extends StatelessWidget {
       body: Loader<_ResultData>(
         load: () async {
           final status = await repo.result(examId);
-          return _ResultData(status, status.flag('available') ? null : await repo.exam(examId));
+          if (!status.flag('available')) return _ResultData(status, await repo.exam(examId));
+          int? rank;
+          int? outOf;
+          try {
+            final board = await repo.leaderboard(examId);
+            final rows = board.maps('leaderboard');
+            final me = context.mounted ? context.read<Session>().user?.str('id') : null;
+            final mine = rows.where((r) => r.str('student_id') == me).firstOrNull;
+            if (mine != null && rows.length > 1) {
+              rank = mine.integer('rank');
+              outOf = rows.length;
+            }
+          } catch (_) {
+            // The ranking is a bonus: the result shows without it.
+          }
+          return _ResultData(status, null, rank: rank, outOf: outOf);
         },
         builder: (context, data, reload) => data.status.flag('available')
-            ? _Released(result: data.status.obj('result') ?? {}, examId: examId, title: title)
+            ? _Released(result: data.status.obj('result') ?? {}, examId: examId, title: title, rank: data.rank, outOf: data.outOf)
             : _Pending(status: data.status, exam: data.exam ?? {}),
       ),
     );
@@ -158,10 +178,12 @@ class _Pending extends StatelessWidget {
 
 /// The evaluated paper, once results are released.
 class _Released extends StatelessWidget {
-  const _Released({required this.result, required this.examId, required this.title});
+  const _Released({required this.result, required this.examId, required this.title, this.rank, this.outOf});
   final Json result;
   final String examId;
   final String title;
+  final int? rank;
+  final int? outOf;
 
   @override
   Widget build(BuildContext context) {
@@ -185,8 +207,11 @@ class _Released extends StatelessWidget {
             children: [
               Row(
                 children: [
-                  Icon(Icons.workspace_premium_outlined, color: AppColors.success, size: 36),
-                  SizedBox(width: 12),
+                  if (!awaiting && result.numberOrNull('percentage') != null)
+                    ScoreRing(percent: result.number('percentage').toDouble(), size: 84)
+                  else
+                    Icon(Icons.workspace_premium_outlined, color: AppColors.success, size: 36),
+                  SizedBox(width: 14),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -224,6 +249,8 @@ class _Released extends StatelessWidget {
                       color: awaiting ? AppColors.warning : AppColors.success,
                     ),
                   if (result.str('status') == 'DELAYED') Pill(tr('Handed in late'), color: AppColors.warning),
+                  if (rank != null && outOf != null)
+                    Pill(tr('Rank {p0} of {p1}', {'p0': rank, 'p1': outOf}), color: AppColors.warning, icon: Icons.emoji_events_outlined),
                 ],
               ),
               gap12,
@@ -272,7 +299,7 @@ class _Released extends StatelessWidget {
               ),
             ),
           gap12,
-          for (var i = 0; i < questions.length; i++) ...[_ReviewQuestion(q: questions[i], index: i), gap12],
+          _QuestionReview(questions: questions),
         ],
         if (written != null) ...[
           SectionTitle(tr('Written part')),
@@ -416,6 +443,43 @@ class _ReviewQuestion extends StatelessWidget {
           ],
         ],
       ),
+    );
+  }
+}
+
+
+/// Every MCQ with the right answer, or only the ones to revise (wrong or left blank).
+class _QuestionReview extends StatefulWidget {
+  const _QuestionReview({required this.questions});
+  final List<Json> questions;
+
+  @override
+  State<_QuestionReview> createState() => _QuestionReviewState();
+}
+
+class _QuestionReviewState extends State<_QuestionReview> {
+  bool _onlyMistakes = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final mistakes = [
+      for (var i = 0; i < widget.questions.length; i++)
+        if (widget.questions[i].str('outcome') != 'correct') i,
+    ];
+    final shown = _onlyMistakes ? mistakes : [for (var i = 0; i < widget.questions.length; i++) i];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (mistakes.isNotEmpty) ...[
+          PillToggle<bool>(
+            options: [(false, tr('All questions'), null), (true, tr('To revise ({p0})', {'p0': mistakes.length}), null)],
+            selected: _onlyMistakes,
+            onChanged: (value) => setState(() => _onlyMistakes = value),
+          ),
+          gap12,
+        ],
+        for (final i in shown) ...[_ReviewQuestion(q: widget.questions[i], index: i), gap12],
+      ],
     );
   }
 }

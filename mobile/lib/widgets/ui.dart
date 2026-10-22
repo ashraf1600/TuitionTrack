@@ -276,8 +276,14 @@ class EmptyState extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(16, 32, 16, 24),
       child: Column(
         children: [
-          Icon(icon, size: 36, color: tt.textTertiary),
-          const SizedBox(height: 12),
+          // The icon on a soft tinted disc, like the logo's tile: calmer than a bare grey icon.
+          Container(
+            width: 72,
+            height: 72,
+            decoration: BoxDecoration(color: tt.primaryContainer, shape: BoxShape.circle),
+            child: Icon(icon, size: 34, color: tt.onPrimaryContainer),
+          ),
+          const SizedBox(height: 14),
           Text(title, textAlign: TextAlign.center, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
           if (message != null) ...[
             const SizedBox(height: 4),

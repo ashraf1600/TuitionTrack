@@ -260,6 +260,10 @@ ThemeData ttTheme({required bool isDark, bool isBangla = false}) {
     colorScheme: scheme,
     extensions: [tt],
     scaffoldBackgroundColor: tt.background,
+    // Screens slide and fade in (Android's own motion) instead of the older zoom.
+    pageTransitionsTheme: const PageTransitionsTheme(
+      builders: {TargetPlatform.android: FadeForwardsPageTransitionsBuilder()},
+    ),
     canvasColor: tt.background,
     fontFamily: 'HankenGrotesk',
     fontFamilyFallback: const ['HindSiliguri'],
