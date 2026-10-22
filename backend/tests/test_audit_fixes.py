@@ -257,7 +257,8 @@ class ClassDoneNotificationTests(AuditBase):
         cycle.save()
         items = self._class_items()
         self.assertEqual(len(items), 1)
-        self.assertEqual(items[0]['title'], f'Class 1 done: {self.tuition.title}')
+        self.assertEqual(items[0]['title'], 'Amin Sir: class 1 done')
+        self.assertNotIn(self.tuition.title, items[0]['title'])
         self.assertEqual(items[0]['body'], "Newton's laws")
         # The id is stable between polls, so the phone shows the pop-up once.
         self.assertEqual(items[0]['id'], self._class_items()[0]['id'])

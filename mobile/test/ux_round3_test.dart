@@ -97,6 +97,8 @@ void main() {
       final classes = reminders.where((r) => r.key.startsWith('class:')).toList();
       expect(classes.first.at, DateTime(2026, 10, 11, 15, 30));
       expect(classes.first.body, 'Class with Ashraf Sir starts in 30 minutes.');
+      // Students never see the name the tutor gave the tuition.
+      expect(classes.first.title, isNot(contains('Physics')));
       final homework = reminders.where((r) => r.key.startsWith('homework:')).toList();
       expect(homework.map((r) => r.key), ['homework:h1']);
       expect(homework.single.at, DateTime(2026, 10, 11, 18));

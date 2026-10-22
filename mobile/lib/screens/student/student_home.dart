@@ -278,8 +278,10 @@ class _Flashcard extends StatelessWidget {
                             Text(name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
                             Text(
                               [
+                                // Subjects only: the names tutors give their tuitions are not shown to students.
                                 if (subjects.isNotEmpty) subjects.join(', '),
-                                if (tuitions.isNotEmpty) tuitions.map((t) => t.str('title')).join(' · ') else tr('Not in a tuition yet'),
+                                if (tuitions.isEmpty) tr('No classes yet'),
+                                if (tuitions.isNotEmpty && subjects.isEmpty) tr('Tap to see classes, exams and homework'),
                               ].join(' — '),
                               maxLines: 2,
                               overflow: TextOverflow.ellipsis,
@@ -303,7 +305,7 @@ class _Flashcard extends StatelessWidget {
                             children: [
                               Text(tr('{p0}/{p1} classes done', {'p0': done, 'p1': total}), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
                               Text(
-                                tr('Cycle #{p0}{p1}', {'p0': cycle?.integer('cycle_number') ?? 1, 'p1': tuitions.length > 1 ? ' · ${main.str('title')}' : ''}),
+                                tr('Cycle #{p0}{p1}', {'p0': cycle?.integer('cycle_number') ?? 1, 'p1': tuitions.length > 1 && main.str('subject').isNotEmpty ? ' · ${main.str('subject')}' : ''}),
                                 style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant),
                               ),
                               if (next != null)
@@ -315,8 +317,8 @@ class _Flashcard extends StatelessWidget {
                                       const SizedBox(width: 4),
                                       Flexible(
                                         child: Text(
-                                          tuitions.length > 1
-                                              ? tr('Next: {when} · {title}', {'when': whenLabel(next.at, now), 'title': next.tuition.str('title')})
+                                          tuitions.length > 1 && next.tuition.str('subject').isNotEmpty
+                                              ? tr('Next: {when} · {title}', {'when': whenLabel(next.at, now), 'title': next.tuition.str('subject')})
                                               : tr('Next: {when}', {'when': whenLabel(next.at, now)}),
                                           maxLines: 1,
                                           overflow: TextOverflow.ellipsis,
@@ -343,9 +345,9 @@ class _Flashcard extends StatelessWidget {
                       ],
                     ),
                     // A second or third tuition with the same tutor: one slim line each.
-                    for (final other in tuitions.skip(1)) ...[
+                    for (final (i, other) in tuitions.skip(1).indexed) ...[
                       gap12,
-                      _MiniProgress(tuition: other),
+                      _MiniProgress(tuition: other, number: i + 2),
                     ],
                   ],
                   if (pendingCycles.isNotEmpty) ...[
@@ -363,8 +365,9 @@ class _Flashcard extends StatelessWidget {
 }
 
 class _MiniProgress extends StatelessWidget {
-  const _MiniProgress({required this.tuition});
+  const _MiniProgress({required this.tuition, required this.number});
   final Json tuition;
+  final int number;
 
   @override
   Widget build(BuildContext context) {
@@ -373,7 +376,7 @@ class _MiniProgress extends StatelessWidget {
     final total = cycle?.integer('total_classes') ?? tuition.integer('cycle_length');
     return Row(
       children: [
-        Expanded(child: Text(tuition.str('title'), maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600))),
+        Expanded(child: Text(tuition.str('subject').isNotEmpty ? tuition.str('subject') : tr('Class group {n}', {'n': number}), maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600))),
         const SizedBox(width: 8),
         SizedBox(width: 80, child: ProgressLine(value: total == 0 ? 0.0 : done / total, height: 4)),
         const SizedBox(width: 8),

@@ -102,7 +102,8 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
               for (final row in rows)
                 if (row.cycles.isNotEmpty) ...[
                   FlatGroup(
-                    title: row.tuition.str('title'),
+                    // Students see the subject; the tuition's own name is for the tutor.
+                    title: isTutor ? row.tuition.str('title') : (row.tuition.str('subject').isNotEmpty ? row.tuition.str('subject') : tr('Classes')),
                     children: [
                       for (final cycle in row.cycles)
                         _CycleRow(

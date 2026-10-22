@@ -219,6 +219,8 @@ class NotificationsView(APIView):
                 )
 
         elif user.role == 'STUDENT':
+            # Students see their tutor as "Ashraf Sir"; the names tutors give their tuitions stay on the tutor's side.
+            from apps.authentication.naming import sir_name
             from django.db.models import Q
             # Only exams that can still matter (open, coming up, or closed in the last 30 days),
             # and only this student's own submissions.
@@ -273,14 +275,14 @@ class NotificationsView(APIView):
                     # No amount: the cycle's fee is the whole group's total, not what one student owes.
                     add(
                         f'pay-{cycle.id}', 'payment',
-                        f'{cycle.tuition.title}: payment pending for cycle #{cycle.cycle_number}',
+                        f'{sir_name(tutor)}: payment pending for cycle #{cycle.cycle_number}',
                         'Classes go on as usual.', cycle.updated_at, link,
                     )
                 elif cycle.paid_at and cycle.paid_at >= recent:
                     add(
                         f'paid-{cycle.id}', 'payment',
                         f'Payment received for cycle #{cycle.cycle_number}',
-                        cycle.tuition.title, cycle.paid_at, link,
+                        sir_name(tutor), cycle.paid_at, link,
                     )
             # Classes the tutor just marked done (last 3 days): the phone shows each one as a pop-up.
             # The id carries the class date, so undoing and marking again notifies again, while
@@ -310,7 +312,7 @@ class NotificationsView(APIView):
                 tutor = cycle.tuition.tutor
                 add(
                     f'class-{cycle.id}-{number}-{int(when.timestamp())}', 'class',
-                    f'Class {number} done: {cycle.tuition.title}',
+                    f'{sir_name(tutor)}: class {number} done',
                     str(entry.get('topic') or ''), when, f'/student?tutor={tutor.id}',
                 )
 
@@ -322,7 +324,7 @@ class NotificationsView(APIView):
                 if cycle.is_complete and cycle.payment_status == AttendanceCycle.Payment.PENDING:
                     add(
                         f'cycle-due-{cycle.id}', 'payment',
-                        f'{cycle.tuition.title}: cycle #{cycle.cycle_number} complete — payment due',
+                        f'{sir_name(cycle.tuition.tutor)}: cycle #{cycle.cycle_number} complete — payment due',
                         'Classes go on as usual.', cycle.updated_at, f'/student?tutor={cycle.tuition.tutor_id}',
                     )
 

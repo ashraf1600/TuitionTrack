@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../../core/connect.dart' show HomeworkItem;
+import '../../core/connect.dart' show HomeworkItem, tutorSirName;
 import '../../core/format.dart';
 import '../../core/i18n.dart';
 import '../../core/json.dart';
@@ -36,7 +36,10 @@ Widget countBadge(Widget child, int count, {Offset? offset}) =>
 
 /// A student's exams and assignments, grouped into To do, Upcoming and Done.
 class StudentExamsList extends StatelessWidget {
-  const StudentExamsList({super.key, required this.exams, required this.reload});
+  const StudentExamsList({super.key, required this.exams, required this.reload, this.showTutor = true});
+
+  /// Name the tutor ("Ashraf Sir") on each card. Off on one tutor's own page, where it goes without saying.
+  final bool showTutor;
   final List<Json> exams;
   final Future<void> Function() reload;
 
@@ -65,7 +68,7 @@ class StudentExamsList extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             SectionTitle('$title (${items.length})', subtitle: subtitle, icon: icon),
-            for (final exam in items) ...[StudentExamCard(exam: exam, reload: reload), gap12],
+            for (final exam in items) ...[StudentExamCard(exam: exam, reload: reload, showTutor: showTutor), gap12],
           ],
         );
     return PageBody(
@@ -79,8 +82,9 @@ class StudentExamsList extends StatelessWidget {
 }
 
 class StudentExamCard extends StatelessWidget {
-  const StudentExamCard({super.key, required this.exam, required this.reload});
+  const StudentExamCard({super.key, required this.exam, required this.reload, this.showTutor = true});
   final Json exam;
+  final bool showTutor;
   final Future<void> Function() reload;
 
   Future<void> _take(BuildContext context) async {
@@ -152,7 +156,9 @@ class StudentExamCard extends StatelessWidget {
           ),
           gap8,
           Text(exam.str('title'), style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
-          if (exam.str('batch_name').isNotEmpty) Text(exam.str('batch_name'), style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13)),
+          // Who set it ("Ashraf Sir"); the tuition's own name is the tutor's business.
+          if (showTutor && tutorSirName(exam).isNotEmpty)
+            Text(tutorSirName(exam), style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13)),
           gap8,
           if (upcoming)
             Text(tr('Opens {p0} · {p1}', {'p0': relativeFromNow(start.difference(now)), 'p1': fmtDateTime(start)}), style: TextStyle(color: AppColors.primarySoft))
@@ -242,7 +248,10 @@ class StudentExamCard extends StatelessWidget {
 
 /// Student homework dashboard: pending + done, ordered by due date.
 class StudentHomeworkList extends StatelessWidget {
-  const StudentHomeworkList({super.key, required this.items, required this.reload});
+  const StudentHomeworkList({super.key, required this.items, required this.reload, this.showTutor = true});
+
+  /// Name the tutor on each card (off on one tutor's own page).
+  final bool showTutor;
   final List<HomeworkItem> items;
   final Future<void> Function() reload;
 
@@ -281,7 +290,7 @@ class StudentHomeworkList extends StatelessWidget {
           ),
         if (pending > 0) gap12,
         for (final hw in items) ...[
-          HomeworkCard(hw: hw, isTutor: false, onChanged: reload),
+          HomeworkCard(hw: hw, isTutor: false, onChanged: reload, showTutor: showTutor),
           gap12,
         ],
       ],

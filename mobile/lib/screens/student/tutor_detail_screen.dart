@@ -123,8 +123,8 @@ class _TutorDetailScreenState extends State<TutorDetailScreen> {
           builder: (context, d, reload) => TabBarView(
             children: [
               RefreshIndicator(onRefresh: reload, child: _ClassesTab(detail: d)),
-              RefreshIndicator(onRefresh: reload, child: StudentExamsList(exams: d.exams, reload: reload)),
-              RefreshIndicator(onRefresh: reload, child: StudentHomeworkList(items: d.homework, reload: reload)),
+              RefreshIndicator(onRefresh: reload, child: StudentExamsList(exams: d.exams, reload: reload, showTutor: false)),
+              RefreshIndicator(onRefresh: reload, child: StudentHomeworkList(items: d.homework, reload: reload, showTutor: false)),
             ],
           ),
         ),
@@ -154,7 +154,7 @@ class _ClassesTab extends StatelessWidget {
     return PageBody(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
       children: [
-        for (final tuition in detail.tuitions) ...[
+        for (final (index, tuition) in detail.tuitions.indexed) ...[
           // Reminders first, but they never stop anything below from working.
           for (final p in tuition.maps('pending_payments')) ...[
             Banner2(
@@ -169,8 +169,11 @@ class _ClassesTab extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 // The tuition's own name stays with the tutor; the student sees the subject only.
-                if (tuition.str('subject').isNotEmpty)
-                  Text(tuition.str('subject'), style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
+                if (tuition.str('subject').isNotEmpty || detail.tuitions.length > 1)
+                  Text(
+                    tuition.str('subject').isNotEmpty ? tuition.str('subject') : tr('Class group {n}', {'n': index + 1}),
+                    style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
+                  ),
                 if (tuition.maps('routine').isNotEmpty) ...[
                   gap12,
                   Wrap(
