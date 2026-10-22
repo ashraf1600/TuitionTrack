@@ -180,6 +180,12 @@ extension TtContext on BuildContext {
   TtTokens get tt => Theme.of(this).extension<TtTokens>() ?? TtTokens.dark;
 }
 
+/// Text for buttons, tabs and chips. Material gives them no font of their own,
+/// so without this they fall back to the phone's system font (and Bangla on
+/// buttons would not match the rest of the app).
+TextStyle uiText(double size, FontWeight weight) =>
+    TextStyle(fontSize: size, fontWeight: weight, fontFamily: 'HankenGrotesk', fontFamilyFallback: const ['HindSiliguri']);
+
 /// Tabular figures, so times and counts line up in columns.
 const tabular = [FontFeature.tabularFigures()];
 
@@ -253,7 +259,10 @@ ThemeData ttTheme({required bool isDark, bool isBangla = false}) {
     borderRadius: BorderRadius.circular(14),
     borderSide: BorderSide(color: tt.border),
   );
-  final textTheme = ttTextTheme(tt.textPrimary, tt.textSecondary, isBangla: isBangla);
+  // The app font on every style, so widgets that take a style straight from the
+  // text theme (list rows, dialogs) do not fall back to the phone's system font.
+  final textTheme = ttTextTheme(tt.textPrimary, tt.textSecondary, isBangla: isBangla)
+      .apply(fontFamily: 'HankenGrotesk', fontFamilyFallback: const ['HindSiliguri']);
   return ThemeData(
     useMaterial3: true,
     brightness: scheme.brightness,
@@ -311,7 +320,7 @@ ThemeData ttTheme({required bool isDark, bool isBangla = false}) {
     filledButtonTheme: FilledButtonThemeData(
       style: FilledButton.styleFrom(
         minimumSize: const Size(48, 48),
-        textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+        textStyle: uiText(14, FontWeight.w600),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ),
     ),
@@ -320,7 +329,7 @@ ThemeData ttTheme({required bool isDark, bool isBangla = false}) {
         minimumSize: const Size(48, 48),
         foregroundColor: tt.textPrimary,
         side: BorderSide(color: tt.border),
-        textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+        textStyle: uiText(14, FontWeight.w600),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ),
     ),
@@ -329,7 +338,7 @@ ThemeData ttTheme({required bool isDark, bool isBangla = false}) {
       style: TextButton.styleFrom(
         minimumSize: const Size(48, 48),
         foregroundColor: isDark ? tt.onPrimaryContainer : tt.primary,
-        textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+        textStyle: uiText(14, FontWeight.w600),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ),
     ),
@@ -341,7 +350,7 @@ ThemeData ttTheme({required bool isDark, bool isBangla = false}) {
         shape: WidgetStatePropertyAll(RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
         backgroundColor: WidgetStateProperty.resolveWith((s) => s.contains(WidgetState.selected) ? tt.primaryContainer : Colors.transparent),
         foregroundColor: WidgetStateProperty.resolveWith((s) => s.contains(WidgetState.selected) ? tt.onPrimaryContainer : tt.textSecondary),
-        textStyle: const WidgetStatePropertyAll(TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+        textStyle: WidgetStatePropertyAll(uiText(14, FontWeight.w600)),
       ),
     ),
     floatingActionButtonTheme: FloatingActionButtonThemeData(
@@ -352,7 +361,7 @@ ThemeData ttTheme({required bool isDark, bool isBangla = false}) {
       hoverElevation: isDark ? 0 : 3,
       highlightElevation: isDark ? 0 : 3,
       extendedSizeConstraints: const BoxConstraints.tightFor(height: 52),
-      extendedTextStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+      extendedTextStyle: uiText(15, FontWeight.w600),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
     ),
     navigationBarTheme: NavigationBarThemeData(
@@ -377,7 +386,7 @@ ThemeData ttTheme({required bool isDark, bool isBangla = false}) {
     snackBarTheme: SnackBarThemeData(
       behavior: SnackBarBehavior.floating,
       backgroundColor: tt.textPrimary,
-      contentTextStyle: TextStyle(color: tt.background, fontSize: 14),
+      contentTextStyle: uiText(14, FontWeight.w500).copyWith(color: tt.background),
       actionTextColor: scheme.inversePrimary,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
     ),
@@ -401,7 +410,7 @@ ThemeData ttTheme({required bool isDark, bool isBangla = false}) {
     chipTheme: ChipThemeData(
       backgroundColor: tt.primaryContainer,
       selectedColor: tt.primaryContainer,
-      labelStyle: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tt.onPrimaryContainer),
+      labelStyle: uiText(12, FontWeight.w600).copyWith(color: tt.onPrimaryContainer),
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       side: BorderSide.none,
@@ -411,7 +420,7 @@ ThemeData ttTheme({required bool isDark, bool isBangla = false}) {
       minVerticalPadding: 10,
       minTileHeight: 56,
       titleTextStyle: textTheme.bodyLarge,
-      subtitleTextStyle: TextStyle(fontSize: 13, height: 1.4, color: tt.textSecondary),
+      subtitleTextStyle: uiText(13, FontWeight.w400).copyWith(height: 1.4, color: tt.textSecondary),
     ),
     progressIndicatorTheme: ProgressIndicatorThemeData(
       color: tt.chartEarned,
@@ -424,8 +433,8 @@ ThemeData ttTheme({required bool isDark, bool isBangla = false}) {
       unselectedLabelColor: tt.textSecondary,
       indicatorColor: tt.primary,
       dividerColor: tt.border,
-      labelStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
-      unselectedLabelStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+      labelStyle: uiText(14, FontWeight.w600),
+      unselectedLabelStyle: uiText(14, FontWeight.w500),
     ),
     switchTheme: SwitchThemeData(
       thumbColor: WidgetStateProperty.resolveWith((s) => s.contains(WidgetState.selected) ? tt.onPrimary : tt.textTertiary),

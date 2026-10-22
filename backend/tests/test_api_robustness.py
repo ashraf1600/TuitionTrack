@@ -30,13 +30,14 @@ User = get_user_model()
 
 PUBLIC_ROUTES = (
     'auth/token/', 'auth/token/refresh/', 'auth/logout/', 'auth/register/', 'auth/register/student/',
-    'auth/tutors/', 'auth/password-reset/', 'auth/password-reset/confirm/', 'meta/',
+    'auth/tutors/', 'auth/password-reset/', 'auth/password-reset/verify/', 'auth/password-reset/confirm/',
+    'auth/google/', 'meta/',
 )
 
 # Every body key the API reads anywhere, so each malformed value reaches real code.
 KNOWN_KEYS = [
     'username', 'password', 'password_confirm', 'first_name', 'last_name', 'email', 'phone', 'identifier',
-    'uid', 'token', 'refresh', 'new_password', 'current_password', 'grade_level', 'institution', 'address',
+    'uid', 'token', 'code', 'credential', 'id_token', 'role', 'refresh', 'new_password', 'current_password', 'grade_level', 'institution', 'address',
     'parent_name', 'parent_phone', 'message', 'selected_tutor_id', 'tutor_id', 'tutor_username', 'profile',
     'title', 'subject', 'description', 'cycle_length', 'total_fee', 'tuition_fee', 'routine', 'student_ids',
     'student_id', 'tuition_id', 'batch_id', 'class_no', 'classNo', 'completed', 'date', 'topic', 'notes',

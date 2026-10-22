@@ -66,9 +66,22 @@ services:
       - key: APP_DOWNLOAD_URL
         value: https://github.com/ashraf1600/TuitionTrack/releases/latest/download/TuitionTrack.apk
 
-      # ── Email: Default logs to console. Real SMTP credentials can be added later in Dashboard ──
+      # ── Email (password-reset codes) ──
+      # Render's free plan blocks SMTP, so mail goes out over HTTPS through Brevo.
+      # Set BREVO_API_KEY and DEFAULT_FROM_EMAIL (a sender verified in Brevo) in the Dashboard.
+      # Until BREVO_API_KEY is set, reset e-mails are not delivered (the error is in the logs).
       - key: EMAIL_BACKEND
-        value: django.core.mail.backends.console.EmailBackend
+        value: config.email_backends.BrevoEmailBackend
+      - key: BREVO_API_KEY
+        sync: false
+      - key: DEFAULT_FROM_EMAIL     # e.g. TuitionTrack <yourname@gmail.com>
+        sync: false
+
+      # ── Sign in with Google ──
+      # The "Web application" OAuth client ID. Website and app read it from /api/v1/meta/,
+      # so this is the only place it needs to be set. Empty: no Google button.
+      - key: GOOGLE_CLIENT_ID
+        sync: false
 
       # ── Optional: Auto-create Django admin superuser on first deploy ──
       # - key: DJANGO_SUPERUSER_USERNAME

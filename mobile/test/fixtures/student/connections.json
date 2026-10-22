@@ -1,0 +1,22 @@
+{
+ "count": 1,
+ "next": null,
+ "previous": null,
+ "results": [
+  {
+   "id": "bfb58d83-b13e-43ae-b161-d6c0fe3861f0",
+   "status": "PENDING",
+   "message": "Assalamu alaikum Sir, I want to join your English batch.",
+   "created_at": "2026-10-22T18:25:14.722559Z",
+   "responded_at": null,
+   "student_id": "0ae3e33c-3ded-41c4-931f-a42e0b3f4138",
+   "student_name": "Rafi Ahmed",
+   "student_username": "rafi",
+   "student": null,
+   "tutor_id": "e25411c1-d64a-4906-9f63-cd0fb1f0283f",
+   "tutor_name": "Tanvir Hasan",
+   "tutor_display_name": "Tanvir Sir",
+   "tutor_username": "tanvir"
+  }
+ ]
+}

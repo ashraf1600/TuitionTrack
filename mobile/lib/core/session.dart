@@ -5,6 +5,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'api.dart';
+import 'google_auth.dart';
 import 'i18n.dart';
 import 'json.dart';
 import 'offline.dart';
@@ -207,6 +208,22 @@ class Session extends ChangeNotifier {
     final data = Map<String, dynamic>.from(
       await api.post('/auth/token/', {'username': username.trim(), 'password': password}) as Map,
     );
+    await _startSession(data);
+  }
+
+  /// Signs in with a Google ID token. With no account for that Google email the
+  /// server answers 404 `google_account_not_found` (an [ApiException] whose
+  /// [ApiException.data] has the email); calling again with [role] ('TUTOR' or
+  /// 'STUDENT') then creates the account. Returns true when an account was created.
+  Future<bool> loginWithGoogle(String idToken, {String? role}) async {
+    final data = Map<String, dynamic>.from(
+      await api.post('/auth/google/', {'id_token': idToken, if (role != null) 'role': role}) as Map,
+    );
+    await _startSession(data);
+    return data.flag('created');
+  }
+
+  Future<void> _startSession(Json data) async {
     // Whatever was saved on this phone belongs to whoever used it before.
     await api.cache?.clear();
     await api.setTokens(data.str('access'), data.str('refresh'));
@@ -237,6 +254,9 @@ class Session extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// False for an account made with Google that has not set a password yet.
+  bool get hasPassword => user?['has_password'] != false;
+
   Future<void> changePassword(String current, String next) async {
     final data = Map<String, dynamic>.from(
       await api.post('/auth/change-password/', {'current_password': current, 'new_password': next}) as Map,
@@ -256,6 +276,8 @@ class Session extends ChangeNotifier {
       }
     }
     await api.setTokens(null, null);
+    // The next "Continue with Google" shows the account picker again.
+    unawaited(GoogleAuth.signOut());
     // Signing out leaves nothing of this account on the phone.
     await outbox.clear();
     outbox.useOwner('');

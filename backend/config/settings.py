@@ -347,6 +347,26 @@ EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS', 'True').lower() in ('true', '1', 't')
 EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', '')
 EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '')
 DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'TuitionTrack <noreply@tuitiontrack.app>')
+# HTTPS e-mail APIs (config/email_backends.py). Render's free plan blocks SMTP, so use one of these there.
+BREVO_API_KEY = os.getenv('BREVO_API_KEY', '').strip()
+RESEND_API_KEY = os.getenv('RESEND_API_KEY', '').strip()
+
+# ─── Password reset by e-mail ─────────────────────────────────────────────────
+# The e-mail carries a 6-digit code (typed in the app or on the website) and a link.
+PASSWORD_RESET_CODE_MINUTES = int(os.getenv('PASSWORD_RESET_CODE_MINUTES', '15'))
+PASSWORD_RESET_CODE_ATTEMPTS = 5
+# How long the link stays valid (Django's own reset tokens). Default: 1 hour.
+PASSWORD_RESET_TIMEOUT = int(os.getenv('PASSWORD_RESET_TIMEOUT_SECONDS', str(60 * 60)))
+
+# ─── Sign in with Google ──────────────────────────────────────────────────────
+# The OAuth "Web application" client ID from Google Cloud Console. The website uses it
+# directly and the Android app passes it as serverClientId, so Google ID tokens from
+# both carry this audience. Empty: the Google button is hidden everywhere.
+GOOGLE_CLIENT_ID = os.getenv('GOOGLE_CLIENT_ID', '').strip()
+# Optional extra audiences accepted (comma-separated), e.g. an iOS client ID.
+GOOGLE_EXTRA_CLIENT_IDS = [c.strip() for c in os.getenv('GOOGLE_EXTRA_CLIENT_IDS', '').split(',') if c.strip()]
+# Whether someone with no TuitionTrack account yet may create one with Google.
+GOOGLE_SIGNUP_ENABLED = os.getenv('GOOGLE_SIGNUP_ENABLED', 'True').lower() in ('true', '1', 't')
 
 # ─── Production (DEBUG off) ───────────────────────────────────────────────────
 if not DEBUG:

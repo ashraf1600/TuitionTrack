@@ -14,7 +14,7 @@ typedef Json = Map<String, dynamic>;
 
 /// An error answer from the API (or a failure to reach it), already in words a person can read.
 class ApiException implements Exception {
-  ApiException(this.message, {this.code = 'error', this.status = 0, this.errors = const {}});
+  ApiException(this.message, {this.code = 'error', this.status = 0, this.errors = const {}, this.data = const {}});
 
   final String message;
   final String code;
@@ -22,6 +22,10 @@ class ApiException implements Exception {
 
   /// Field errors: `{field: [messages]}`.
   final Map<String, dynamic> errors;
+
+  /// The whole error answer, for errors that carry more than a message
+  /// (e.g. the Google account's email when no TuitionTrack account uses it).
+  final Map<String, dynamic> data;
 
   bool get isOffline => status == 0;
 
@@ -233,6 +237,7 @@ class ApiClient {
         code: map['code'] is String ? map['code'] as String : 'error',
         status: response.statusCode,
         errors: map['errors'] is Map ? Map<String, dynamic>.from(map['errors'] as Map) : const {},
+        data: map,
       );
     }
     throw ApiException(

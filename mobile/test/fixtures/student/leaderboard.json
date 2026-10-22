@@ -1,0 +1,77 @@
+{
+ "exam_id": "d40add53-6940-42a7-8c60-b8793ace3a4c",
+ "exam_title": "Monthly Test: Kinematics",
+ "exam_type": "MCQ",
+ "batch_name": "SSC Physics Batch A",
+ "tuition_title": "SSC Physics Batch A",
+ "total_marks": 25.0,
+ "is_results_published": true,
+ "result_publish_mode": "MANUAL",
+ "leaderboard": [
+  {
+   "rank": 1,
+   "student_id": "3d1b0bd1-f4da-4339-83de-f130c503bcda",
+   "student_name": "Fahim",
+   "obtained_marks": 24.0,
+   "total_marks": 25.0,
+   "percentage": 96.0,
+   "mcq_score": 24.0,
+   "cq_score": null,
+   "status": "SUBMITTED",
+   "submitted_at": "2026-10-16T18:13:12.062731Z",
+   "is_graded": true
+  },
+  {
+   "rank": 2,
+   "student_id": "998efc44-eb32-4bc0-8827-9cc3993f986c",
+   "student_name": "Orpa",
+   "obtained_marks": 22.0,
+   "total_marks": 25.0,
+   "percentage": 88.0,
+   "mcq_score": 22.0,
+   "cq_score": null,
+   "status": "SUBMITTED",
+   "submitted_at": "2026-10-16T18:13:12.062731Z",
+   "is_graded": true
+  },
+  {
+   "rank": 3,
+   "student_id": "0ae3e33c-3ded-41c4-931f-a42e0b3f4138",
+   "student_name": "Rafi Ahmed",
+   "obtained_marks": 21.0,
+   "total_marks": 25.0,
+   "percentage": 84.0,
+   "mcq_score": 21.0,
+   "cq_score": null,
+   "status": "SUBMITTED",
+   "submitted_at": "2026-10-16T18:15:12.062731Z",
+   "is_graded": true
+  },
+  {
+   "rank": 4,
+   "student_id": "3e7bc00d-9ef9-4335-8ba7-173563943b76",
+   "student_name": "Sakib",
+   "obtained_marks": 20.0,
+   "total_marks": 25.0,
+   "percentage": 80.0,
+   "mcq_score": 20.0,
+   "cq_score": null,
+   "status": "SUBMITTED",
+   "submitted_at": "2026-10-16T18:13:12.062731Z",
+   "is_graded": true
+  },
+  {
+   "rank": 5,
+   "student_id": "df5d042d-1f3e-4b27-9a62-6dc6e55bb099",
+   "student_name": "Mitu",
+   "obtained_marks": 18.0,
+   "total_marks": 25.0,
+   "percentage": 72.0,
+   "mcq_score": 18.0,
+   "cq_score": null,
+   "status": "SUBMITTED",
+   "submitted_at": "2026-10-16T18:13:12.062731Z",
+   "is_graded": true
+  }
+ ]
+}

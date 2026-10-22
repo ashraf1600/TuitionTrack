@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 
 import '../../core/api.dart';
 import '../../core/connect.dart';
+import '../../core/format.dart';
 import '../../core/i18n.dart';
 import '../../core/repo.dart';
 import '../../widgets/media.dart';
@@ -73,8 +74,10 @@ class _HomeworkCardState extends State<HomeworkCard> {
     if (!mounted) return;
     final left = widget.hw.dueDate.difference(DateTime.now());
     setState(() => _left = left);
-    // Alert once: <= 7200s AND not evaluated AND still in the future.
-    if (!_alertShown && !widget.hw.isEvaluated && left.inSeconds > 0 && left.inSeconds <= 7200) {
+    // Alert once: <= 7200s AND not evaluated AND still in the future. Tutors get
+    // a dialog; for students the card itself turns red (a pop-up on every list
+    // open would only get in the way).
+    if (widget.isTutor && !_alertShown && !widget.hw.isEvaluated && left.inSeconds > 0 && left.inSeconds <= 7200) {
       _alertShown = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
@@ -146,8 +149,179 @@ class _HomeworkCardState extends State<HomeworkCard> {
     }
   }
 
+  /// The link box and Hand in button, in a sheet so the card stays calm.
+  Future<void> _openHandIn() async {
+    HapticFeedback.lightImpact();
+    final submitted = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      builder: (sheet) => Padding(
+        padding: EdgeInsets.fromLTRB(20, 0, 20, MediaQuery.of(sheet).viewInsets.bottom + 20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(widget.hw.isSubmitted ? tr('Change what you handed in') : tr('Hand in your homework'),
+                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+            const SizedBox(height: 4),
+            Text(widget.hw.title, style: TextStyle(color: sheet.tt.textSecondary)),
+            gap16,
+            TextField(
+              controller: _url,
+              autofocus: true,
+              keyboardType: TextInputType.url,
+              decoration: InputDecoration(
+                labelText: tr('Link to your work (optional)'),
+                hintText: tr('https://docs.google.com/...'),
+                helperText: tr('A Google Drive, Docs or photo link. Leave it empty if you hand it in on paper.'),
+                prefixIcon: const Icon(Icons.link_rounded),
+              ),
+            ),
+            gap16,
+            BusyButton(
+              icon: Icons.send_rounded,
+              label: widget.hw.isSubmitted ? tr('Update') : tr('Hand in'),
+              onPressed: () async {
+                await _submit();
+                if (sheet.mounted) Navigator.pop(sheet, true);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+    if (submitted == true) HapticFeedback.mediumImpact();
+  }
+
+  /// The student's card: status, due date, feedback, and one clear action.
+  Widget _studentCard(BuildContext context) {
+    final hw = widget.hw;
+    final tt = context.tt;
+    final late = _left.isNegative;
+    final urgent = !hw.isSubmitted && !hw.isEvaluated && !late && _left.inSeconds <= 7200;
+    final (String status, Color color, IconData icon) = hw.isPending
+        ? (tr('Waiting to sync'), AppColors.primarySoft, Icons.cloud_upload_outlined)
+        : hw.isEvaluated
+            ? (tr('Checked'), AppColors.success, Icons.verified_rounded)
+            : hw.isSubmitted
+                ? (tr('Handed in · waiting for review'), AppColors.primarySoft, Icons.outbox_rounded)
+                : late
+                    ? (tr('Not handed in · late'), AppColors.danger, Icons.error_outline_rounded)
+                    : (tr('Not handed in'), AppColors.warning, Icons.radio_button_unchecked_rounded);
+    final gap = _left.abs();
+    final gapText = gap.inDays >= 1 ? tr('{n} d', {'n': gap.inDays}) : (gap.inHours >= 1 ? tr('{n} h', {'n': gap.inHours}) : tr('{n} min', {'n': gap.inMinutes}));
+    final dueText = hw.isSubmitted || hw.isEvaluated
+        ? tr('Was due {p0}', {'p0': fmtDateTime(hw.dueDate)})
+        : late
+            ? tr('Due {p0} · {p1} late', {'p0': fmtDateTime(hw.dueDate), 'p1': Raw(gapText)})
+            : tr('Due {p0} · in {p1}', {'p0': fmtDateTime(hw.dueDate), 'p1': Raw(gapText)});
+
+    return AppCard(
+      borderColor: urgent ? tt.danger.withValues(alpha: 0.6) : null,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Pill(status, color: color, icon: icon),
+          gap12,
+          Text(hw.title, style: TextStyle(fontSize: 17, height: 1.3, fontWeight: FontWeight.w700, letterSpacing: -0.2, color: tt.textPrimary)),
+          if (_byline(hw).isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 3),
+              child: Text(_byline(hw), style: TextStyle(fontSize: 13, color: tt.textSecondary)),
+            ),
+          if (hw.description.isNotEmpty) ...[
+            gap8,
+            Text(hw.description, maxLines: 4, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 14, height: 1.5, color: tt.textPrimary)),
+          ],
+          gap12,
+          Row(
+            children: [
+              Icon(Icons.event_rounded, size: 16, color: urgent || (late && !hw.isSubmitted && !hw.isEvaluated) ? tt.danger : tt.textTertiary),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  dueText,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: urgent ? FontWeight.w700 : FontWeight.w500,
+                    color: urgent || (late && !hw.isSubmitted && !hw.isEvaluated) ? tt.danger : tt.textSecondary,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          if (hw.feedback.isNotEmpty) ...[
+            gap12,
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(color: tt.successContainer, borderRadius: BorderRadius.circular(12)),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.format_quote_rounded, size: 18, color: tt.onSuccessContainer),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(tr('Feedback from {p0}', {'p0': Raw(hw.tutorDisplay.isEmpty ? tr('your tutor') : hw.tutorDisplay)}),
+                            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: tt.onSuccessContainer)),
+                        const SizedBox(height: 2),
+                        Text(hw.feedback, style: TextStyle(fontSize: 14, height: 1.45, color: tt.textPrimary)),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+          if (hw.submittedUrl.isNotEmpty || hw.submissionFileUrl.isNotEmpty) ...[
+            gap8,
+            Wrap(
+              spacing: 8,
+              children: [
+                if (hw.submittedUrl.isNotEmpty)
+                  TextButton.icon(
+                    onPressed: () => openExternal(context, hw.submittedUrl),
+                    icon: const Icon(Icons.link_rounded, size: 18),
+                    label: Text(tr('Your link')),
+                  ),
+                if (hw.submissionFileUrl.isNotEmpty)
+                  TextButton.icon(
+                    onPressed: () => openExternal(context, hw.submissionFileUrl),
+                    icon: const Icon(Icons.attach_file_rounded, size: 18),
+                    label: Text(tr('Your file')),
+                  ),
+              ],
+            ),
+          ],
+          if (!hw.isPending && !hw.isEvaluated) ...[
+            gap12,
+            SizedBox(
+              width: double.infinity,
+              child: hw.isSubmitted
+                  ? OutlinedButton.icon(
+                      onPressed: _busy ? null : _openHandIn,
+                      icon: const Icon(Icons.edit_outlined, size: 18),
+                      label: Text(tr('Change what I handed in')),
+                    )
+                  : FilledButton.icon(
+                      style: urgent || late ? FilledButton.styleFrom(backgroundColor: AppColors.warningDeep, foregroundColor: Colors.white) : null,
+                      onPressed: _busy ? null : _openHandIn,
+                      icon: const Icon(Icons.send_rounded, size: 18),
+                      label: Text(late ? tr('Hand in late') : tr('Hand in')),
+                    ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (!widget.isTutor) return _studentCard(context);
     final hw = widget.hw;
     final urgent = !hw.isEvaluated && _left.inSeconds > 0 && _left.inSeconds <= 7200;
     final tt = context.tt;

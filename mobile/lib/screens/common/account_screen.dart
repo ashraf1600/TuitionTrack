@@ -498,7 +498,8 @@ class _ChangePasswordSheetState extends State<_ChangePasswordSheet> {
     if (!checkForm(context, _form)) return;
     setState(() => _error = null);
     try {
-      await context.read<Session>().changePassword(_current.text, _next.text);
+      final session = context.read<Session>();
+      await session.changePassword(session.hasPassword ? _current.text : '', _next.text);
       if (mounted) Navigator.pop(context, true);
     } on ApiException catch (error) {
       if (mounted) setState(() => _error = error.message);
@@ -507,6 +508,8 @@ class _ChangePasswordSheetState extends State<_ChangePasswordSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final session = context.watch<Session>();
+    final hasPassword = session.hasPassword;
     return Padding(
       padding: EdgeInsets.fromLTRB(16, 0, 16, MediaQuery.of(context).viewInsets.bottom + 16),
       child: Form(
@@ -516,11 +519,19 @@ class _ChangePasswordSheetState extends State<_ChangePasswordSheet> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text(tr('Change password'), style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
+              Text(hasPassword ? tr('Change password') : tr('Set a password'), style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
               gap12,
               if (_error != null) ...[Banner2(_error!, color: AppColors.danger, icon: Icons.error_outline), gap12],
-              PasswordField(controller: _current, label: tr('Current password'), validator: (v) => (v == null || v.isEmpty) ? tr('Required') : null),
-              gap12,
+              if (hasPassword) ...[
+                PasswordField(controller: _current, label: tr('Current password'), validator: (v) => (v == null || v.isEmpty) ? tr('Required') : null),
+                gap12,
+              ] else ...[
+                Text(
+                  tr('You sign in with Google. Set a password to also sign in with your username {p0}.', {'p0': Raw(session.user?.str('username') ?? '')}),
+                  style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
+                ),
+                gap12,
+              ],
               PasswordField(
                 controller: _next,
                 label: tr('New password'),
@@ -536,7 +547,7 @@ class _ChangePasswordSheetState extends State<_ChangePasswordSheet> {
                 validator: (v) => v != _next.text ? tr('The two passwords are different') : null,
               ),
               gap16,
-              BusyButton(onPressed: _save, label: tr('Change password')),
+              BusyButton(onPressed: _save, label: hasPassword ? tr('Change password') : tr('Set password')),
             ],
           ),
         ),

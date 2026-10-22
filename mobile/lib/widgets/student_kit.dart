@@ -267,13 +267,7 @@ class ScoreTrend extends StatelessWidget {
                 Text(tr('Your recent results'), style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tt.textSecondary)),
                 const SizedBox(height: 2),
                 Text('${localDigits('${last.round()}')}%', style: TextStyle(fontSize: 24, fontWeight: FontWeight.w800, color: tt.textPrimary)),
-                if (change.abs() >= 1)
-                  Text(
-                    change > 0
-                        ? tr('▲ {p0}% from the last one', {'p0': change.round()})
-                        : tr('▼ {p0}% from the last one', {'p0': change.abs().round()}),
-                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tone(context, change > 0 ? AppColors.success : AppColors.warning)),
-                  ),
+                if (change.abs() >= 1) ...[const SizedBox(height: 4), TrendChip(change: change)],
               ],
             ),
           ),
@@ -284,6 +278,33 @@ class ScoreTrend extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// "↑ 12% from the last one" in green, or "↓ 5% …" in amber.
+class TrendChip extends StatelessWidget {
+  const TrendChip({super.key, required this.change});
+  final double change;
+
+  @override
+  Widget build(BuildContext context) {
+    final up = change > 0;
+    final ink = tone(context, up ? AppColors.success : AppColors.warning);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(up ? Icons.trending_up_rounded : Icons.trending_down_rounded, size: 16, color: ink),
+        const SizedBox(width: 4),
+        Flexible(
+          child: Text(
+            up
+                ? tr('Up {p0}% from the last one', {'p0': change.round()})
+                : tr('Down {p0}% from the last one', {'p0': change.abs().round()}),
+            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: ink),
+          ),
+        ),
+      ],
     );
   }
 }

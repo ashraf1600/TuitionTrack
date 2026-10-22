@@ -1,0 +1,104 @@
+{
+ "count": 1,
+ "next": null,
+ "previous": null,
+ "results": [
+  {
+   "id": "7269ba85-89bb-4a9a-b7f4-e418ac0da160",
+   "tuition_id": "7f224607-d82e-4b5f-bb5c-d5cd601c2d45",
+   "tuition_title": "SSC Physics Batch A",
+   "cycle_number": 1,
+   "completed_classes": 7,
+   "total_classes": 12,
+   "progress_percent": 58,
+   "progress_percentage": 58,
+   "is_complete": false,
+   "status": "ACTIVE",
+   "classes_data": [
+    {
+     "class_no": 1,
+     "completed": true,
+     "date": "2026-10-08T18:25:12.062731+00:00",
+     "topic": "Motion"
+    },
+    {
+     "class_no": 2,
+     "completed": true,
+     "date": "2026-10-10T18:25:12.062731+00:00",
+     "topic": "Velocity"
+    },
+    {
+     "class_no": 3,
+     "completed": true,
+     "date": "2026-10-12T18:25:12.062731+00:00",
+     "topic": "Acceleration"
+    },
+    {
+     "class_no": 4,
+     "completed": true,
+     "date": "2026-10-14T18:25:12.062731+00:00",
+     "topic": "Newton's laws"
+    },
+    {
+     "class_no": 5,
+     "completed": true,
+     "date": "2026-10-16T18:25:12.062731+00:00",
+     "topic": "Friction"
+    },
+    {
+     "class_no": 6,
+     "completed": true,
+     "date": "2026-10-18T18:25:12.062731+00:00",
+     "topic": "Work"
+    },
+    {
+     "class_no": 7,
+     "completed": true,
+     "date": "2026-10-20T18:25:12.062731+00:00",
+     "topic": "Energy"
+    },
+    {
+     "class_no": 8,
+     "completed": false,
+     "date": null,
+     "topic": ""
+    },
+    {
+     "class_no": 9,
+     "completed": false,
+     "date": null,
+     "topic": ""
+    },
+    {
+     "class_no": 10,
+     "completed": false,
+     "date": null,
+     "topic": ""
+    },
+    {
+     "class_no": 11,
+     "completed": false,
+     "date": null,
+     "topic": ""
+    },
+    {
+     "class_no": 12,
+     "completed": false,
+     "date": null,
+     "topic": ""
+    }
+   ],
+   "payment_status": "PENDING",
+   "paid_at": null,
+   "created_at": "2026-10-22T18:25:14.620321Z",
+   "updated_at": "2026-10-22T18:25:14.647454Z",
+   "total_fee": 12000.0,
+   "tuition_fee": 12000.0,
+   "per_class_rate": 1000.0,
+   "earned_revenue": 7000.0,
+   "pending_balance": 5000.0,
+   "student_count": 5,
+   "payment_note": ""
+  }
+ ]
+}

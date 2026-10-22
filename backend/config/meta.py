@@ -5,6 +5,8 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from config.email_backends import email_is_configured
+
 API_VERSION = 'v1'
 
 
@@ -42,4 +44,13 @@ class MetaView(APIView):
                 'release_notes': settings.APP_RELEASE_NOTES,
             },
             'page_size': {'default': 20, 'max': 1000, 'query_param': 'page_size'},
+            # What the sign-in screens can offer.
+            'auth': {
+                # The Google OAuth web client ID; empty means "hide the Google button".
+                'google_client_id': settings.GOOGLE_CLIENT_ID,
+                'google_signup': bool(settings.GOOGLE_CLIENT_ID) and settings.GOOGLE_SIGNUP_ENABLED,
+                # False while reset e-mails would only reach the server log.
+                'password_reset_email': email_is_configured(),
+                'password_reset_code_length': 6,
+            },
         })

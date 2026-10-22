@@ -13,8 +13,10 @@ from .sessions import issue_tokens, revoke_all_sessions, revoke_refresh_token
 
 from .serializers import (
     ChangePasswordSerializer,
+    GoogleLoginSerializer,
     PasswordResetConfirmSerializer,
     PasswordResetRequestSerializer,
+    PasswordResetVerifySerializer,
     ProfileUpdateSerializer,
     CustomTokenObtainPairSerializer,
     TutorRegistrationSerializer,
@@ -196,63 +198,44 @@ class ChangePasswordView(APIView):
 class PasswordResetRequestView(APIView):
     """
     POST /api/v1/auth/password-reset/   {identifier: username or email}
-    Emails a one-time reset link. The answer is the same whether or not the
-    account exists, so it cannot be used to discover usernames.
+    Emails a 6-digit code (for the app or website) and a one-time link. The
+    answer is the same whether or not the account exists, so it cannot be used
+    to discover usernames.
     """
     permission_classes = [AllowAny]
     throttle_classes = [ScopedRateThrottle]
     throttle_scope = 'auth'
 
     def post(self, request):
-        from django.conf import settings
-        from django.contrib.auth import get_user_model
-        from django.contrib.auth.tokens import default_token_generator
-        from django.core.mail import send_mail
-        from django.db.models import Q
-        from django.utils.encoding import force_bytes
-        from django.utils.http import urlsafe_base64_encode
+        from .password_reset import GENERIC_MESSAGE, request_reset
 
         serializer = PasswordResetRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        identifier = serializer.validated_data['identifier'].strip()
+        request_reset(serializer.validated_data['identifier'])
+        return Response({'message': GENERIC_MESSAGE})
 
-        User = get_user_model()
-        users = User.objects.filter(is_active=True).filter(
-            Q(username__iexact=identifier) | Q(email__iexact=identifier)
-        ).exclude(email='')[:3]
 
-        from config.background import run_after_commit
-        messages = []
-        for user in users:
-            uid = urlsafe_base64_encode(force_bytes(user.pk))
-            token = default_token_generator.make_token(user)
-            link = f"{settings.FRONTEND_URL.rstrip('/')}/reset-password?uid={uid}&token={token}"
-            messages.append((
-                user.email,
-                f'Hello {user.get_full_name() or user.username},\n\n'
-                f'Use this link to choose a new password for your TuitionTrack account '
-                f'(username: {user.username}):\n\n{link}\n\n'
-                f'If you did not ask for this, you can ignore this email.',
-            ))
+class PasswordResetVerifyView(APIView):
+    """
+    POST /api/v1/auth/password-reset/verify/   {identifier, code}
+    Checks the 6-digit code from the email. A correct code is used up and
+    answers {uid, token}, which /password-reset/confirm/ takes with the new
+    password. Five wrong guesses end the code.
+    """
+    permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'auth'
 
-        def send_all():
-            for address, text in messages:
-                send_mail(
-                    subject='[TuitionTrack] Reset your password',
-                    message=text,
-                    from_email=settings.DEFAULT_FROM_EMAIL,
-                    recipient_list=[address],
-                    fail_silently=True,
-                )
+    def post(self, request):
+        from .password_reset import CodeError, link_tokens, redeem_code
 
-        # Off the request, so the answer does not reveal (by its timing) whether an e-mail went out.
-        if messages:
-            run_after_commit(send_all)
-
-        return Response({
-            'message': 'If that account has an email address, a reset link has been sent to it. '
-                       'Students without an email can ask their tutor to reset the password.'
-        })
+        serializer = PasswordResetVerifySerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            user = redeem_code(serializer.validated_data['identifier'], serializer.validated_data['code'])
+        except CodeError as exc:
+            return Response({'message': str(exc), 'code': 'invalid_reset_code'}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'message': 'Code accepted. Choose a new password.', **link_tokens(user), 'username': user.username})
 
 
 class PasswordResetConfirmView(APIView):
@@ -269,7 +252,57 @@ class PasswordResetConfirmView(APIView):
         user.must_change_password = False
         user.save(update_fields=['password', 'must_change_password', 'updated_at'])
         revoke_all_sessions(user)
-        return Response({'message': 'Your password has been reset. You can sign in now.'})
+        return Response({'message': 'Your password has been reset. You can sign in now.', 'username': user.username})
+
+
+class GoogleLoginView(APIView):
+    """
+    POST /api/v1/auth/google/   {id_token | credential, role?}
+    Signs in with a Google ID token (website button: `credential`; app: `id_token`).
+    Answers like /auth/token/: {access, refresh, user, created}.
+
+    With no matching account the answer is 404 with code `google_account_not_found`
+    and the Google name and email, so the client can ask "tutor or student?" and
+    call again with `role` to create the account.
+    """
+    permission_classes = [AllowAny]
+    authentication_classes = []
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'auth'
+
+    def post(self, request):
+        from django.contrib.auth.models import update_last_login
+
+        from .google_auth import GoogleAuthError, create_user, find_user, verify_id_token
+        from .serializers import login_user_payload
+
+        serializer = GoogleLoginSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            claims = verify_id_token(serializer.validated_data['token'])
+            user = find_user(claims)
+            created = False
+            if user is None:
+                role = serializer.validated_data.get('role')
+                if not role:
+                    from django.conf import settings
+                    return Response({
+                        'message': 'No TuitionTrack account uses this Google email yet.',
+                        'code': 'google_account_not_found',
+                        'email': claims['email'],
+                        'name': claims.get('name') or '',
+                        'signup_allowed': settings.GOOGLE_SIGNUP_ENABLED,
+                    }, status=status.HTTP_404_NOT_FOUND)
+                user = create_user(claims, role)
+                created = True
+        except GoogleAuthError as exc:
+            return Response({'message': str(exc), 'code': exc.code, **exc.extra}, status=exc.status)
+
+        update_last_login(None, user)
+        return Response(
+            {**issue_tokens(user), 'user': login_user_payload(user, request), 'created': created},
+            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+        )
 
 
 class TutorDirectoryView(generics.ListAPIView):

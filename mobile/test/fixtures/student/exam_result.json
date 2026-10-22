@@ -1,0 +1,460 @@
+{
+ "available": true,
+ "submitted": true,
+ "mode": "MANUAL",
+ "publish_at": null,
+ "result": {
+  "exam": {
+   "id": "d40add53-6940-42a7-8c60-b8793ace3a4c",
+   "title": "Monthly Test: Kinematics",
+   "category": "EXAM",
+   "exam_type": "MCQ",
+   "total_marks": 25.0,
+   "negative_marks_per_wrong": 0.0
+  },
+  "status": "SUBMITTED",
+  "submitted_at": "2026-10-16T18:15:12.062731Z",
+  "is_graded": true,
+  "obtained_marks": 21.0,
+  "percentage": 84.0,
+  "mcq_score": 21.0,
+  "mcq_total": 25.0,
+  "cq_score": null,
+  "summary": {
+   "correct": 0,
+   "wrong": 0,
+   "skipped": 25
+  },
+  "questions": [
+   {
+    "id": "q1",
+    "question": "Question 1",
+    "image_url": "",
+    "options": [
+     "A",
+     "B",
+     "C",
+     "D"
+    ],
+    "points": 1.0,
+    "correct_answer": 1,
+    "selected": null,
+    "outcome": "skipped",
+    "awarded": 0.0,
+    "explanation": ""
+   },
+   {
+    "id": "q2",
+    "question": "Question 2",
+    "image_url": "",
+    "options": [
+     "A",
+     "B",
+     "C",
+     "D"
+    ],
+    "points": 1.0,
+    "correct_answer": 2,
+    "selected": null,
+    "outcome": "skipped",
+    "awarded": 0.0,
+    "explanation": ""
+   },
+   {
+    "id": "q3",
+    "question": "Question 3",
+    "image_url": "",
+    "options": [
+     "A",
+     "B",
+     "C",
+     "D"
+    ],
+    "points": 1.0,
+    "correct_answer": 3,
+    "selected": null,
+    "outcome": "skipped",
+    "awarded": 0.0,
+    "explanation": ""
+   },
+   {
+    "id": "q4",
+    "question": "Question 4",
+    "image_url": "",
+    "options": [
+     "A",
+     "B",
+     "C",
+     "D"
+    ],
+    "points": 1.0,
+    "correct_answer": 0,
+    "selected": null,
+    "outcome": "skipped",
+    "awarded": 0.0,
+    "explanation": ""
+   },
+   {
+    "id": "q5",
+    "question": "Question 5",
+    "image_url": "",
+    "options": [
+     "A",
+     "B",
+     "C",
+     "D"
+    ],
+    "points": 1.0,
+    "correct_answer": 1,
+    "selected": null,
+    "outcome": "skipped",
+    "awarded": 0.0,
+    "explanation": ""
+   },
+   {
+    "id": "q6",
+    "question": "Question 6",
+    "image_url": "",
+    "options": [
+     "A",
+     "B",
+     "C",
+     "D"
+    ],
+    "points": 1.0,
+    "correct_answer": 2,
+    "selected": null,
+    "outcome": "skipped",
+    "awarded": 0.0,
+    "explanation": ""
+   },
+   {
+    "id": "q7",
+    "question": "Question 7",
+    "image_url": "",
+    "options": [
+     "A",
+     "B",
+     "C",
+     "D"
+    ],
+    "points": 1.0,
+    "correct_answer": 3,
+    "selected": null,
+    "outcome": "skipped",
+    "awarded": 0.0,
+    "explanation": ""
+   },
+   {
+    "id": "q8",
+    "question": "Question 8",
+    "image_url": "",
+    "options": [
+     "A",
+     "B",
+     "C",
+     "D"
+    ],
+    "points": 1.0,
+    "correct_answer": 0,
+    "selected": null,
+    "outcome": "skipped",
+    "awarded": 0.0,
+    "explanation": ""
+   },
+   {
+    "id": "q9",
+    "question": "Question 9",
+    "image_url": "",
+    "options": [
+     "A",
+     "B",
+     "C",
+     "D"
+    ],
+    "points": 1.0,
+    "correct_answer": 1,
+    "selected": null,
+    "outcome": "skipped",
+    "awarded": 0.0,
+    "explanation": ""
+   },
+   {
+    "id": "q10",
+    "question": "Question 10",
+    "image_url": "",
+    "options": [
+     "A",
+     "B",
+     "C",
+     "D"
+    ],
+    "points": 1.0,
+    "correct_answer": 2,
+    "selected": null,
+    "outcome": "skipped",
+    "awarded": 0.0,
+    "explanation": ""
+   },
+   {
+    "id": "q11",
+    "question": "Question 11",
+    "image_url": "",
+    "options": [
+     "A",
+     "B",
+     "C",
+     "D"
+    ],
+    "points": 1.0,
+    "correct_answer": 3,
+    "selected": null,
+    "outcome": "skipped",
+    "awarded": 0.0,
+    "explanation": ""
+   },
+   {
+    "id": "q12",
+    "question": "Question 12",
+    "image_url": "",
+    "options": [
+     "A",
+     "B",
+     "C",
+     "D"
+    ],
+    "points": 1.0,
+    "correct_answer": 0,
+    "selected": null,
+    "outcome": "skipped",
+    "awarded": 0.0,
+    "explanation": ""
+   },
+   {
+    "id": "q13",
+    "question": "Question 13",
+    "image_url": "",
+    "options": [
+     "A",
+     "B",
+     "C",
+     "D"
+    ],
+    "points": 1.0,
+    "correct_answer": 1,
+    "selected": null,
+    "outcome": "skipped",
+    "awarded": 0.0,
+    "explanation": ""
+   },
+   {
+    "id": "q14",
+    "question": "Question 14",
+    "image_url": "",
+    "options": [
+     "A",
+     "B",
+     "C",
+     "D"
+    ],
+    "points": 1.0,
+    "correct_answer": 2,
+    "selected": null,
+    "outcome": "skipped",
+    "awarded": 0.0,
+    "explanation": ""
+   },
+   {
+    "id": "q15",
+    "question": "Question 15",
+    "image_url": "",
+    "options": [
+     "A",
+     "B",
+     "C",
+     "D"
+    ],
+    "points": 1.0,
+    "correct_answer": 3,
+    "selected": null,
+    "outcome": "skipped",
+    "awarded": 0.0,
+    "explanation": ""
+   },
+   {
+    "id": "q16",
+    "question": "Question 16",
+    "image_url": "",
+    "options": [
+     "A",
+     "B",
+     "C",
+     "D"
+    ],
+    "points": 1.0,
+    "correct_answer": 0,
+    "selected": null,
+    "outcome": "skipped",
+    "awarded": 0.0,
+    "explanation": ""
+   },
+   {
+    "id": "q17",
+    "question": "Question 17",
+    "image_url": "",
+    "options": [
+     "A",
+     "B",
+     "C",
+     "D"
+    ],
+    "points": 1.0,
+    "correct_answer": 1,
+    "selected": null,
+    "outcome": "skipped",
+    "awarded": 0.0,
+    "explanation": ""
+   },
+   {
+    "id": "q18",
+    "question": "Question 18",
+    "image_url": "",
+    "options": [
+     "A",
+     "B",
+     "C",
+     "D"
+    ],
+    "points": 1.0,
+    "correct_answer": 2,
+    "selected": null,
+    "outcome": "skipped",
+    "awarded": 0.0,
+    "explanation": ""
+   },
+   {
+    "id": "q19",
+    "question": "Question 19",
+    "image_url": "",
+    "options": [
+     "A",
+     "B",
+     "C",
+     "D"
+    ],
+    "points": 1.0,
+    "correct_answer": 3,
+    "selected": null,
+    "outcome": "skipped",
+    "awarded": 0.0,
+    "explanation": ""
+   },
+   {
+    "id": "q20",
+    "question": "Question 20",
+    "image_url": "",
+    "options": [
+     "A",
+     "B",
+     "C",
+     "D"
+    ],
+    "points": 1.0,
+    "correct_answer": 0,
+    "selected": null,
+    "outcome": "skipped",
+    "awarded": 0.0,
+    "explanation": ""
+   },
+   {
+    "id": "q21",
+    "question": "Question 21",
+    "image_url": "",
+    "options": [
+     "A",
+     "B",
+     "C",
+     "D"
+    ],
+    "points": 1.0,
+    "correct_answer": 1,
+    "selected": null,
+    "outcome": "skipped",
+    "awarded": 0.0,
+    "explanation": ""
+   },
+   {
+    "id": "q22",
+    "question": "Question 22",
+    "image_url": "",
+    "options": [
+     "A",
+     "B",
+     "C",
+     "D"
+    ],
+    "points": 1.0,
+    "correct_answer": 2,
+    "selected": null,
+    "outcome": "skipped",
+    "awarded": 0.0,
+    "explanation": ""
+   },
+   {
+    "id": "q23",
+    "question": "Question 23",
+    "image_url": "",
+    "options": [
+     "A",
+     "B",
+     "C",
+     "D"
+    ],
+    "points": 1.0,
+    "correct_answer": 3,
+    "selected": null,
+    "outcome": "skipped",
+    "awarded": 0.0,
+    "explanation": ""
+   },
+   {
+    "id": "q24",
+    "question": "Question 24",
+    "image_url": "",
+    "options": [
+     "A",
+     "B",
+     "C",
+     "D"
+    ],
+    "points": 1.0,
+    "correct_answer": 0,
+    "selected": null,
+    "outcome": "skipped",
+    "awarded": 0.0,
+    "explanation": ""
+   },
+   {
+    "id": "q25",
+    "question": "Question 25",
+    "image_url": "",
+    "options": [
+     "A",
+     "B",
+     "C",
+     "D"
+    ],
+    "points": 1.0,
+    "correct_answer": 1,
+    "selected": null,
+    "outcome": "skipped",
+    "awarded": 0.0,
+    "explanation": ""
+   }
+  ],
+  "written": null,
+  "tutor_feedback": "Good work — revise the formulas once more.",
+  "solution_html": "",
+  "solution_media_url": ""
+ }
+}

@@ -14,6 +14,7 @@ import '../../core/repo.dart';
 import '../../core/session.dart';
 import '../../core/week_plan.dart';
 import '../../widgets/charts.dart';
+import '../../widgets/kit.dart';
 import '../../widgets/share.dart';
 import '../../widgets/student_kit.dart' show shortGap;
 import '../../widgets/theme.dart';
@@ -60,7 +61,12 @@ class HomeTab extends StatelessWidget {
 
         return PageBody(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
-          children: [
+          children: staggered(context, [
+            GreetingHeader(
+              name: context.read<Session>().displayName,
+              now: DateTime.now(),
+              subtitle: _todaySummary(data.tuitions, data.wallet),
+            ),
             _GetStarted(tuitions: data.tuitions, onCreateTuition: onCreateTuition, onOpen: open, reload: reload),
             _WalletStrip(wallet: data.wallet),
             if (data.requests.isNotEmpty) ...[
@@ -79,11 +85,26 @@ class HomeTab extends StatelessWidget {
               )
             else
               _TuitionGrid(tuitions: data.tuitions, onOpen: open, onActions: (t) => _quickActions(context, t, open, reload)),
-          ],
+          ]),
         );
       },
     );
   }
+}
+
+/// "2 classes today · ৳1,500 to collect" under the greeting.
+String _todaySummary(List<Json> tuitions, Json wallet) {
+  final today = DateTime.now();
+  final classes = tuitions.fold<int>(0, (n, t) => n + slotsOn(t.maps('routine'), today).length);
+  final parts = <String>[
+    classes == 0
+        ? tr('No classes today')
+        : classes == 1
+            ? tr('1 class today')
+            : tr('{n} classes today', {'n': classes}),
+    if (wallet.integer('unpaid_cycles') > 0) tr('{p0} to collect', {'p0': taka(wallet.number('unpaid_total'))}),
+  ];
+  return parts.join(' · ');
 }
 
 /// First steps for a new tutor, ticked off as they happen; gone once all are
@@ -297,7 +318,7 @@ class _Heading extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.baseline,
         textBaseline: TextBaseline.alphabetic,
         children: [
-          Expanded(child: Text(title, style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: tt.textPrimary))),
+          Expanded(child: Text(title, style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700, letterSpacing: -0.2, color: tt.textPrimary))),
           if (trailing != null) Text(trailing!, style: TextStyle(fontSize: 13, color: tt.textSecondary)),
         ],
       ),
@@ -1021,7 +1042,7 @@ class _TuitionGrid extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         const spacing = 12.0;
-        final columns = constraints.maxWidth >= 560 ? 3 : 2;
+        final columns = constraints.maxWidth >= 560 ? 2 : 1;
         final width = (constraints.maxWidth - spacing * (columns - 1)) / columns;
         return Wrap(
           spacing: spacing,
@@ -1054,38 +1075,85 @@ class _TuitionCard extends StatelessWidget {
     final cycleNo = cycle?.integer('cycle_number') ?? 1;
     final students = tuition.integer('enrolled_count');
     final due = tuition.maps('pending_payments').isNotEmpty;
+    final subject = tuition.str('subject');
+    final now = DateTime.now();
+    final next = nextClass([tuition], now);
+    final fee = tuition.number('total_fee');
+    final earned = total <= 0 ? 0 : fee * done / total;
+    final color = tuitionColor(tuition);
     return AppCard(
       onTap: onTap,
       onLongPress: onLongPress,
-      accent: tuitionColor(tuition),
-      padding: const EdgeInsets.fromLTRB(16, 16, 12, 16),
-      child: ConstrainedBox(
-        constraints: BoxConstraints(minHeight: isBangla ? 116 : 104),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(tuition.str('title'),
-                      maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: tt.textPrimary)),
-                  const SizedBox(height: 4),
-                  Text(
-                    '${tr('{p0} student{p1}', {'p0': students, 'p1': students == 1 ? '' : 's'})} · ${tr('Cycle {p0}', {'p0': cycleNo})}',
-                    style: TextStyle(fontSize: 12, height: 1.4, color: tt.textSecondary),
-                  ),
-                  if (due) ...[
-                    const SizedBox(height: 8),
-                    _DueChip(tt: tt),
-                  ],
-                ],
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(color: color.withValues(alpha: 0.18), borderRadius: BorderRadius.circular(12)),
+                child: Icon(Icons.class_rounded, size: 20, color: color),
               ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(tuition.str('title'),
+                        maxLines: 1, overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, letterSpacing: -0.2, color: tt.textPrimary)),
+                    Text(
+                      [
+                        if (subject.isNotEmpty) subject,
+                        tr('{p0} student{p1}', {'p0': students, 'p1': students == 1 ? '' : 's'}),
+                        tr('Cycle {p0}', {'p0': cycleNo}),
+                      ].join(' · '),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontSize: 12, height: 1.4, color: tt.textSecondary),
+                    ),
+                  ],
+                ),
+              ),
+              if (due) ...[const SizedBox(width: 8), _DueChip(tt: tt)],
+            ],
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Text(
+                tr('{p0}/{p1} classes', {'p0': done, 'p1': total}),
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: tt.textPrimary, fontFeatures: tabular),
+              ),
+              const Spacer(),
+              if (fee > 0)
+                Text(
+                  tr('{p0} of {p1}', {'p0': taka(earned), 'p1': taka(fee)}),
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tt.success, fontFeatures: tabular),
+                ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          GrowBar(value: total <= 0 ? 0 : done / total, color: tt.chartEarned, height: 6),
+          if (next != null) ...[
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Icon(Icons.schedule_rounded, size: 15, color: tt.textTertiary),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    tr('Next: {when}', {'when': whenLabel(next.at, now)}),
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tt.textSecondary),
+                  ),
+                ),
+                Icon(Icons.chevron_right_rounded, size: 18, color: tt.textTertiary),
+              ],
             ),
-            const SizedBox(width: 8),
-            ProgressRing(done: done, total: total, size: 52, thickness: 4),
           ],
-        ),
+        ],
       ),
     );
   }

@@ -48,19 +48,39 @@ jobs:
         working-directory: mobile
         run: flutter test
 
+      - name: Use the release signing key
+        # One fixed key is required for Sign in with Google: Google only accepts the app
+        # when the SHA-1 of the key that signed it is registered (Google Cloud Console →
+        # Credentials → Android OAuth client). Add these repository secrets once:
+        #   ANDROID_KEYSTORE_BASE64  base64 of your .jks file
+        #   ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD
+        # See RENDER_DEPLOYMENT_GUIDE.md → "Sign in with Google". Without them the APK is
+        # signed with this runner's throwaway debug key and Google sign-in will not work.
+        working-directory: mobile/android
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "::warning::No ANDROID_KEYSTORE_BASE64 secret: signing with a throwaway debug key. Google sign-in will not work in this APK."
+            exit 0
+          fi
+          echo "$KEYSTORE_BASE64" | base64 -d > app/upload-keystore.jks
+          {
+            echo "storeFile=upload-keystore.jks"
+            echo "storePassword=$KEYSTORE_PASSWORD"
+            echo "keyAlias=$KEY_ALIAS"
+            echo "keyPassword=$KEY_PASSWORD"
+          } > key.properties
+          echo "SHA-1 to register with Google (Android OAuth client):"
+          keytool -list -v -keystore app/upload-keystore.jks -storepass "$KEYSTORE_PASSWORD" -alias "$KEY_ALIAS" | grep -E "SHA1|SHA-1"
+
       - name: Build release APK
         working-directory: mobile
         # The app's default server; set the repository variable API_BASE_URL to change it.
         run: flutter build apk --release --dart-define=API_BASE_URL=${{ vars.API_BASE_URL || 'https://tuitiontrack-api.onrender.com' }}
-
-      - name: Sign APK (placeholder — replace with your keystore)
-        # NOTE: This step signs with the debug key so the workflow runs without
-        # secrets. For a real release, add signing.properties, KEYSTORE_FILE,
-        # KEYSTORE_PASSWORD, KEY_ALIAS, KEY_PASSWORD as repo secrets and
-        # replace this step with a release signing block.
-        run: |
-          echo "Built unsigned-by-key keystore APK. See README to add a release keystore."
-          ls -la mobile/build/app/outputs/flutter-apk/
 
       - name: Compute SHA-256
         run: |

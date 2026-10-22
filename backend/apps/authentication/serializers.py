@@ -48,26 +48,28 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         # Accept the username in any capitalisation, or the account's email address.
         attrs[self.username_field] = resolve_login_name(attrs.get(self.username_field))
         data = super().validate(attrs)
-        request = self.context.get('request')
-        pic_url = None
-        if self.user.profile_picture:
-            pic_url = (
-                request.build_absolute_uri(self.user.profile_picture.url)
-                if request else self.user.profile_picture.url
-            )
         # Append extra user data to the response body as well
-        data['user'] = {
-            'id': str(self.user.id),
-            'username': self.user.username,
-            'name': self.user.get_full_name() or self.user.username,
-            'email': self.user.email,
-            'role': self.user.role,
-            'tutor_id': str(self.user.tutor_id) if self.user.tutor_id else None,
-            'must_change_password': self.user.must_change_password,
-            'tutor_code': self.user.tutor_code,
-            'profile_picture_url': pic_url,
-        }
+        data['user'] = login_user_payload(self.user, self.context.get('request'))
         return data
+
+
+def login_user_payload(user, request=None):
+    """The `user` object every sign-in answer carries (password, Google)."""
+    pic_url = None
+    if user.profile_picture:
+        pic_url = request.build_absolute_uri(user.profile_picture.url) if request else user.profile_picture.url
+    return {
+        'id': str(user.id),
+        'username': user.username,
+        'name': user.get_full_name() or user.username,
+        'email': user.email,
+        'role': user.role,
+        'tutor_id': str(user.tutor_id) if user.tutor_id else None,
+        'must_change_password': user.must_change_password,
+        'has_password': user.has_usable_password(),
+        'tutor_code': user.tutor_code,
+        'profile_picture_url': pic_url,
+    }
 
 
 class TutorRegistrationSerializer(serializers.ModelSerializer):
@@ -274,9 +276,19 @@ class UserProfileSerializer(serializers.ModelSerializer):
             'id', 'username', 'name', 'email', 'first_name', 'last_name',
             'role', 'phone', 'tutor_id', 'must_change_password',
             'tutor_code', 'profile_picture_url',
-            'profile', 'created_at'
+            'profile', 'created_at', 'has_password', 'google_linked',
         ]
         read_only_fields = fields
+
+    # False for an account made with Google that has not set a password yet.
+    has_password = serializers.SerializerMethodField()
+    google_linked = serializers.SerializerMethodField()
+
+    def get_has_password(self, obj):
+        return obj.has_usable_password()
+
+    def get_google_linked(self, obj):
+        return bool(obj.google_sub)
 
     profile = serializers.SerializerMethodField()
 
@@ -353,11 +365,15 @@ def _validated_new_password(value, user):
 
 
 class ChangePasswordSerializer(serializers.Serializer):
-    current_password = serializers.CharField(write_only=True)
+    # Not needed by an account made with Google that has no password yet: it is setting its first one.
+    current_password = serializers.CharField(write_only=True, required=False, allow_blank=True, default='')
     new_password = serializers.CharField(write_only=True, min_length=8)
 
     def validate_current_password(self, value):
-        if not self.context['request'].user.check_password(value):
+        user = self.context['request'].user
+        if not user.has_usable_password():
+            return value
+        if not value or not user.check_password(value):
             raise serializers.ValidationError('Your current password is not correct.')
         return value
 
@@ -365,13 +381,33 @@ class ChangePasswordSerializer(serializers.Serializer):
         return _validated_new_password(value, self.context['request'].user)
 
     def validate(self, attrs):
-        if attrs['current_password'] == attrs['new_password']:
+        if attrs.get('current_password') and attrs['current_password'] == attrs['new_password']:
             raise serializers.ValidationError({'new_password': 'Choose a password different from the current one.'})
         return attrs
 
 
 class PasswordResetRequestSerializer(serializers.Serializer):
     identifier = serializers.CharField(max_length=254, help_text='Username or email address.')
+
+
+class PasswordResetVerifySerializer(serializers.Serializer):
+    identifier = serializers.CharField(max_length=254, help_text='The same username or email the code was asked for.')
+    code = serializers.CharField(max_length=20, help_text='The 6-digit code from the email.')
+
+
+class GoogleLoginSerializer(serializers.Serializer):
+    # `credential` is what the website's Google button hands over; `id_token` what the app sends.
+    credential = serializers.CharField(required=False, allow_blank=True, max_length=8192)
+    id_token = serializers.CharField(required=False, allow_blank=True, max_length=8192)
+    # Only to create a new account when none matches: TUTOR or STUDENT.
+    role = serializers.ChoiceField(choices=User.Role.choices, required=False)
+
+    def validate(self, attrs):
+        token = attrs.get('id_token') or attrs.get('credential')
+        if not token:
+            raise serializers.ValidationError({'id_token': ['This field is required.']})
+        attrs['token'] = token
+        return attrs
 
 
 class PasswordResetConfirmSerializer(serializers.Serializer):

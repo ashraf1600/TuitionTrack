@@ -1,0 +1,383 @@
+{
+ "count": 3,
+ "next": null,
+ "previous": null,
+ "results": [
+  {
+   "id": "bc5bf42d-b16e-4a09-8f3b-f557899bc256",
+   "tutor_id": "0a2a8cfe-2673-4095-ab63-0fdbe70e584f",
+   "tutor_name": "Nusrat Jahan",
+   "tutor_display_name": "Nusrat Sir",
+   "title": "Chemistry Class 10",
+   "name": "Chemistry Class 10",
+   "subject": "Chemistry",
+   "description": "",
+   "cycle_length": 12,
+   "routine": [
+    {
+     "day": "Saturday",
+     "start_time": "18:30",
+     "end_time": "20:00"
+    },
+    {
+     "day": "Monday",
+     "start_time": "18:30",
+     "end_time": "20:00"
+    }
+   ],
+   "weekly_routine": [
+    {
+     "day": "Saturday",
+     "start_time": "18:30",
+     "end_time": "20:00"
+    },
+    {
+     "day": "Monday",
+     "start_time": "18:30",
+     "end_time": "20:00"
+    }
+   ],
+   "enrolled_count": 1,
+   "active_cycle": {
+    "id": "3b299cfc-0985-4046-93b7-8c502c8f6747",
+    "tuition_id": "bc5bf42d-b16e-4a09-8f3b-f557899bc256",
+    "tuition_title": "Chemistry Class 10",
+    "cycle_number": 2,
+    "completed_classes": 3,
+    "total_classes": 12,
+    "progress_percent": 25,
+    "progress_percentage": 25,
+    "is_complete": false,
+    "status": "ACTIVE",
+    "classes_data": [
+     {
+      "class_no": 1,
+      "completed": true,
+      "date": "2026-10-16T18:25:12.062731+00:00",
+      "topic": "Lesson 13"
+     },
+     {
+      "class_no": 2,
+      "completed": true,
+      "date": "2026-10-18T18:25:12.062731+00:00",
+      "topic": "Lesson 14"
+     },
+     {
+      "class_no": 3,
+      "completed": true,
+      "date": "2026-10-20T18:25:12.062731+00:00",
+      "topic": "Lesson 15"
+     },
+     {
+      "class_no": 4,
+      "completed": false,
+      "date": null,
+      "topic": ""
+     },
+     {
+      "class_no": 5,
+      "completed": false,
+      "date": null,
+      "topic": ""
+     },
+     {
+      "class_no": 6,
+      "completed": false,
+      "date": null,
+      "topic": ""
+     },
+     {
+      "class_no": 7,
+      "completed": false,
+      "date": null,
+      "topic": ""
+     },
+     {
+      "class_no": 8,
+      "completed": false,
+      "date": null,
+      "topic": ""
+     },
+     {
+      "class_no": 9,
+      "completed": false,
+      "date": null,
+      "topic": ""
+     },
+     {
+      "class_no": 10,
+      "completed": false,
+      "date": null,
+      "topic": ""
+     },
+     {
+      "class_no": 11,
+      "completed": false,
+      "date": null,
+      "topic": ""
+     },
+     {
+      "class_no": 12,
+      "completed": false,
+      "date": null,
+      "topic": ""
+     }
+    ],
+    "payment_status": "PENDING",
+    "paid_at": null,
+    "created_at": "2026-10-22T18:25:14.657227Z",
+    "updated_at": "2026-10-22T18:25:14.659453Z"
+   },
+   "pending_payments": [
+    {
+     "cycle_id": "234fbdc1-85c2-4f25-bf58-6781246675e8",
+     "cycle_number": 1,
+     "finished_at": "2026-10-22T18:25:14.654502Z"
+    }
+   ],
+   "created_at": "2026-10-22T18:25:14.613285Z"
+  },
+  {
+   "id": "1ee06117-da03-4eff-9659-61ccda053a74",
+   "tutor_id": "5314ab58-c2bc-462c-a9d1-65283d8f73b5",
+   "tutor_name": "Ashraful Islam",
+   "tutor_display_name": "Ashraful Sir",
+   "title": "Higher Math Weekend",
+   "name": "Higher Math Weekend",
+   "subject": "Higher Math",
+   "description": "",
+   "cycle_length": 8,
+   "routine": [
+    {
+     "day": "Saturday",
+     "start_time": "10:00",
+     "end_time": "11:30"
+    },
+    {
+     "day": "Wednesday",
+     "start_time": "10:00",
+     "end_time": "11:30"
+    }
+   ],
+   "weekly_routine": [
+    {
+     "day": "Saturday",
+     "start_time": "10:00",
+     "end_time": "11:30"
+    },
+    {
+     "day": "Wednesday",
+     "start_time": "10:00",
+     "end_time": "11:30"
+    }
+   ],
+   "enrolled_count": 1,
+   "active_cycle": {
+    "id": "46a845d8-d73d-41c7-b990-b862453587d2",
+    "tuition_id": "1ee06117-da03-4eff-9659-61ccda053a74",
+    "tuition_title": "Higher Math Weekend",
+    "cycle_number": 1,
+    "completed_classes": 3,
+    "total_classes": 8,
+    "progress_percent": 38,
+    "progress_percentage": 38,
+    "is_complete": false,
+    "status": "ACTIVE",
+    "classes_data": [
+     {
+      "class_no": 1,
+      "completed": true,
+      "date": "2026-10-16T18:25:12.062731+00:00",
+      "topic": "Chapter 1"
+     },
+     {
+      "class_no": 2,
+      "completed": true,
+      "date": "2026-10-19T18:25:12.062731+00:00",
+      "topic": "Chapter 2"
+     },
+     {
+      "class_no": 3,
+      "completed": true,
+      "date": "2026-10-22T18:25:12.062731+00:00",
+      "topic": "Chapter 3"
+     },
+     {
+      "class_no": 4,
+      "completed": false,
+      "date": null,
+      "topic": ""
+     },
+     {
+      "class_no": 5,
+      "completed": false,
+      "date": null,
+      "topic": ""
+     },
+     {
+      "class_no": 6,
+      "completed": false,
+      "date": null,
+      "topic": ""
+     },
+     {
+      "class_no": 7,
+      "completed": false,
+      "date": null,
+      "topic": ""
+     },
+     {
+      "class_no": 8,
+      "completed": false,
+      "date": null,
+      "topic": ""
+     }
+    ],
+    "payment_status": "PENDING",
+    "paid_at": null,
+    "created_at": "2026-10-22T18:25:14.625966Z",
+    "updated_at": "2026-10-22T18:25:14.650005Z"
+   },
+   "pending_payments": [],
+   "created_at": "2026-10-22T18:25:14.612004Z"
+  },
+  {
+   "id": "7f224607-d82e-4b5f-bb5c-d5cd601c2d45",
+   "tutor_id": "5314ab58-c2bc-462c-a9d1-65283d8f73b5",
+   "tutor_name": "Ashraful Islam",
+   "tutor_display_name": "Ashraful Sir",
+   "title": "SSC Physics Batch A",
+   "name": "SSC Physics Batch A",
+   "subject": "Physics",
+   "description": "",
+   "cycle_length": 12,
+   "routine": [
+    {
+     "day": "Friday",
+     "start_time": "02:00",
+     "end_time": "03:30"
+    },
+    {
+     "day": "Sunday",
+     "start_time": "17:00",
+     "end_time": "18:30"
+    },
+    {
+     "day": "Tuesday",
+     "start_time": "17:00",
+     "end_time": "18:30"
+    }
+   ],
+   "weekly_routine": [
+    {
+     "day": "Friday",
+     "start_time": "02:00",
+     "end_time": "03:30"
+    },
+    {
+     "day": "Sunday",
+     "start_time": "17:00",
+     "end_time": "18:30"
+    },
+    {
+     "day": "Tuesday",
+     "start_time": "17:00",
+     "end_time": "18:30"
+    }
+   ],
+   "enrolled_count": 5,
+   "active_cycle": {
+    "id": "7269ba85-89bb-4a9a-b7f4-e418ac0da160",
+    "tuition_id": "7f224607-d82e-4b5f-bb5c-d5cd601c2d45",
+    "tuition_title": "SSC Physics Batch A",
+    "cycle_number": 1,
+    "completed_classes": 7,
+    "total_classes": 12,
+    "progress_percent": 58,
+    "progress_percentage": 58,
+    "is_complete": false,
+    "status": "ACTIVE",
+    "classes_data": [
+     {
+      "class_no": 1,
+      "completed": true,
+      "date": "2026-10-08T18:25:12.062731+00:00",
+      "topic": "Motion"
+     },
+     {
+      "class_no": 2,
+      "completed": true,
+      "date": "2026-10-10T18:25:12.062731+00:00",
+      "topic": "Velocity"
+     },
+     {
+      "class_no": 3,
+      "completed": true,
+      "date": "2026-10-12T18:25:12.062731+00:00",
+      "topic": "Acceleration"
+     },
+     {
+      "class_no": 4,
+      "completed": true,
+      "date": "2026-10-14T18:25:12.062731+00:00",
+      "topic": "Newton's laws"
+     },
+     {
+      "class_no": 5,
+      "completed": true,
+      "date": "2026-10-16T18:25:12.062731+00:00",
+      "topic": "Friction"
+     },
+     {
+      "class_no": 6,
+      "completed": true,
+      "date": "2026-10-18T18:25:12.062731+00:00",
+      "topic": "Work"
+     },
+     {
+      "class_no": 7,
+      "completed": true,
+      "date": "2026-10-20T18:25:12.062731+00:00",
+      "topic": "Energy"
+     },
+     {
+      "class_no": 8,
+      "completed": false,
+      "date": null,
+      "topic": ""
+     },
+     {
+      "class_no": 9,
+      "completed": false,
+      "date": null,
+      "topic": ""
+     },
+     {
+      "class_no": 10,
+      "completed": false,
+      "date": null,
+      "topic": ""
+     },
+     {
+      "class_no": 11,
+      "completed": false,
+      "date": null,
+      "topic": ""
+     },
+     {
+      "class_no": 12,
+      "completed": false,
+      "date": null,
+      "topic": ""
+     }
+    ],
+    "payment_status": "PENDING",
+    "paid_at": null,
+    "created_at": "2026-10-22T18:25:14.620321Z",
+    "updated_at": "2026-10-22T18:25:14.647454Z"
+   },
+   "pending_payments": [],
+   "created_at": "2026-10-22T18:25:14.610504Z"
+  }
+ ]
+}

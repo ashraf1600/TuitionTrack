@@ -1,0 +1,18 @@
+{
+ "id": "5314ab58-c2bc-462c-a9d1-65283d8f73b5",
+ "username": "ashraf",
+ "name": "Ashraful Islam",
+ "email": "ashraf@example.com",
+ "first_name": "Ashraful",
+ "last_name": "Islam",
+ "role": "TUTOR",
+ "phone": "",
+ "tutor_id": null,
+ "must_change_password": false,
+ "tutor_code": "UMGC00",
+ "profile_picture_url": null,
+ "profile": null,
+ "created_at": "2026-10-22T18:25:12.359812Z",
+ "has_password": true,
+ "google_linked": false
+}
