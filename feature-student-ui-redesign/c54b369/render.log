@@ -1,0 +1,18 @@
+00:00 +0: loading /home/runner/work/TuitionTrack/TuitionTrack/mobile/screenshot_test/student_screens_test.dart
+00:00 +0: (setUpAll)
+00:00 +0: home
+00:01 +1: home, whole page
+00:02 +2: second tab
+00:02 +3: third tab
+00:03 +4: fourth tab
+00:03 +5: tests, results
+00:04 +6: tutor detail
+00:04 +7: exam result
+00:05 +8: notifications
+00:05 +9: menu
+00:06 +10: account
+00:06 +11: home, light theme
+00:07 +12: home, Bangla
+00:07 +13: sign in
+00:08 +14: (tearDownAll)
+00:08 +14: All tests passed!
