@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   ArrowLeft, GraduationCap, Calendar, BookOpen, Clock,
-  Loader2, RefreshCw, AlertCircle, Layers,
+  Loader2, RefreshCw, AlertCircle,
   FileText, Award, Check
 } from 'lucide-react';
 import { api, getMediaUrl } from '../../api/client';
@@ -15,6 +15,9 @@ const TABS = [
   { key: 'progress', label: '2. Class Progress Board', shortLabel: 'Class Progress', icon: Calendar },
   { key: 'assessments', label: '3. Assessments & Tasks', shortLabel: 'Assessments & Tasks', icon: BookOpen },
 ];
+
+/** What a student calls one of a tutor's groups: its subject, else "Class group 2". Never the tutor's own name for it. */
+const groupLabel = (tuition, index) => tuition?.subject || `Class group ${index + 1}`;
 
 const DAY_ORDER = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const DAY_ABBR = {
@@ -176,7 +179,6 @@ export default function TutorWorkspaceView({
         start_time: r.start_time,
         end_time: r.end_time,
         subject: r.subject || data.subjects?.[0] || 'Tuition',
-        tuition_title: r.tuition_title,
       });
     });
   } else {
@@ -184,7 +186,6 @@ export default function TutorWorkspaceView({
       (t.routine || []).forEach((slot) => {
         allRoutineSlots.push({
           ...slot,
-          tuition_title: t.title,
           tuition_subject: t.subject || data.subjects?.[0],
         });
       });
@@ -266,10 +267,7 @@ export default function TutorWorkspaceView({
 
               {data.tuitions?.length > 0 && (
                 <p className="text-[11px] text-slate-400 mt-1.5">
-                  {data.tuitions.length} batch{data.tuitions.length > 1 ? 'es' : ''}:{' '}
-                  <span className="font-medium text-slate-600">
-                    {data.tuitions.map((t) => t.title).join(', ')}
-                  </span>
+                  {data.tuitions.length} class group{data.tuitions.length > 1 ? 's' : ''}
                 </p>
               )}
             </div>
@@ -371,12 +369,7 @@ export default function TutorWorkspaceView({
                       {slot.end_time && <span>{slot.end_time}</span>}
                     </div>
 
-                    {slot.tuition_title && (
-                      <div className="text-xs text-slate-500 font-medium truncate pt-1 border-t border-slate-100 flex items-center gap-1.5">
-                        <Layers className="w-3.5 h-3.5 text-slate-400" />
-                        <span>{slot.tuition_title}</span>
-                      </div>
-                    )}
+                    {/* Students see the subject, never the name the tutor gave the tuition. */}
                   </div>
                 );
               })}
@@ -408,9 +401,9 @@ export default function TutorWorkspaceView({
               {tutorTuitions.length > 1 && (
                 <div className="flex items-center gap-2 overflow-x-auto pb-2">
                   <span className="text-xs font-bold text-slate-500 uppercase tracking-wider mr-1">
-                    Select Batch:
+                    Select class:
                   </span>
-                  {tutorTuitions.map((t) => (
+                  {tutorTuitions.map((t, i) => (
                     <button
                       key={t.id}
                       type="button"
@@ -421,7 +414,7 @@ export default function TutorWorkspaceView({
                           : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
                       }`}
                     >
-                      {t.title}
+                      {groupLabel(t, i)}
                     </button>
                   ))}
                 </div>
@@ -432,12 +425,10 @@ export default function TutorWorkspaceView({
                 <div className="rounded-2xl border border-slate-200/90 bg-white p-6 shadow-sm space-y-6">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-100">
                     <div>
-                      <h3 className="text-lg font-bold text-slate-900">{activeBatch.title}</h3>
+                      <h3 className="text-lg font-bold text-slate-900">
+                        {groupLabel(activeBatch, tutorTuitions.indexOf(activeBatch))}
+                      </h3>
                       <div className="flex items-center gap-2 text-xs text-slate-500 mt-1">
-                        {activeBatch.subject && (
-                          <span className="font-semibold text-indigo-600">{activeBatch.subject}</span>
-                        )}
-                        <span>·</span>
                         <span>{activeBatch.cycle_length || 12} Classes Per Cycle</span>
                         {activeBatch.enrolled_count && (
                           <>

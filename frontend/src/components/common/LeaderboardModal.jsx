@@ -1,4 +1,5 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { AuthContext } from '../../context/auth';
 import Modal from './Modal';
 import { api } from '../../api/client';
 import {
@@ -11,6 +12,8 @@ import {
 } from 'lucide-react';
 
 export default function LeaderboardModal({ isOpen, onClose, examId, examTitle }) {
+  // Students never see the name the tutor gave the tuition.
+  const isStudent = useContext(AuthContext)?.user?.role === 'STUDENT';
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -61,7 +64,7 @@ export default function LeaderboardModal({ isOpen, onClose, examId, examTitle })
                 <h3 className="font-bold text-slate-100 text-sm">
                   {data?.exam_title || 'Examination'}
                 </h3>
-                {data?.batch_name && (
+                {data?.batch_name && !isStudent && (
                   <span className="px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 text-[10px] font-semibold">
                     Batch: {data.batch_name}
                   </span>

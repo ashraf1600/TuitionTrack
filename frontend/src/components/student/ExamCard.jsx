@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Clock, Award, ArrowRight, CheckCircle2, Trophy, Layers, Timer, AlertTriangle, CalendarClock, Hourglass } from 'lucide-react';
+import { Clock, Award, ArrowRight, CheckCircle2, Trophy, Timer, AlertTriangle, CalendarClock, Hourglass } from 'lucide-react';
 import { api } from '../../api/client';
 import { useNow } from '../../hooks/useNow';
 
@@ -75,11 +75,6 @@ export default function ExamCard({ exam, onTakeExam, onViewResults, onViewLeader
         </div>
 
         <h4 className={`text-base font-bold line-clamp-2 ${light ? 'text-slate-900' : 'text-slate-100'}`}>{exam.title}</h4>
-        {exam.batch_name && (
-          <div className="flex items-center gap-1 text-xs text-slate-500 mt-0.5">
-            <Layers className="w-3.5 h-3.5" /> {exam.batch_name}
-          </div>
-        )}
 
         <div className={`mt-3 space-y-1 text-xs ${light ? 'text-slate-600' : 'text-slate-400'}`}>
           {upcoming && (
