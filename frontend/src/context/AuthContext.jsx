@@ -51,8 +51,7 @@ export function AuthProvider({ children }) {
     };
   }, [token, logout]);
 
-  const login = async (username, password) => {
-    const data = await api.login({ username, password });
+  const startSession = (data) => {
     localStorage.setItem('access_token', data.access);
     localStorage.setItem('refresh_token', data.refresh);
     localStorage.setItem('user_data', JSON.stringify(data.user));
@@ -60,6 +59,12 @@ export function AuthProvider({ children }) {
     setUser(data.user);
     return data.user;
   };
+
+  const login = async (username, password) => startSession(await api.login({ username, password }));
+
+  // Throws an Error with code 'google_account_not_found' when no account uses that Google email;
+  // calling again with a role ('TUTOR' | 'STUDENT') then creates one.
+  const loginWithGoogle = async (credential, role) => startSession(await api.googleLogin(credential, role));
 
   const registerTutor = async (formData) => {
     await api.registerTutor(formData);
@@ -87,6 +92,7 @@ export function AuthProvider({ children }) {
     isTutor: user?.role === 'TUTOR',
     isStudent: user?.role === 'STUDENT',
     login,
+    loginWithGoogle,
     registerTutor,
     registerStudent,
     logout,

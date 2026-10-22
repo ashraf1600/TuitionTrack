@@ -73,6 +73,13 @@ class Repo {
   Future<Json> removeProfilePhoto() async => _map(await api.delete('/auth/me/photo/'));
   Future<String> requestPasswordReset(String identifier) async =>
       _map(await api.post('/auth/password-reset/', {'identifier': identifier}))['message'] as String? ?? '';
+
+  /// Checks the 6-digit code from the reset email; answers {uid, token, username}.
+  Future<Json> verifyResetCode(String identifier, String code) async =>
+      _map(await api.post('/auth/password-reset/verify/', {'identifier': identifier, 'code': code}));
+
+  Future<void> confirmPasswordReset(String uid, String token, String newPassword) async =>
+      api.post('/auth/password-reset/confirm/', {'uid': uid, 'token': token, 'new_password': newPassword});
   Future<List<Json>> tutors([String search = '']) => api.list('/auth/tutors/', query: {'search': search});
   Future<List<Json>> notifications() async {
     final raw = await api.get('/notifications/');

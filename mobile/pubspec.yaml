@@ -53,6 +53,8 @@ dependencies:
   share_plus: ^13.3.1
   workmanager: ^0.10.10
   flutter_animate: ^4.5.0
+  # Sign in with Google (Android Credential Manager). Needs serverClientId, see lib/core/google_auth.dart.
+  google_sign_in: ^7.2.0
 
 dev_dependencies:
   flutter_test:

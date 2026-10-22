@@ -92,6 +92,18 @@ class CustomUser(AbstractUser):
         verbose_name='Profile Picture',
     )
 
+    # The Google account linked to this user ("sub" claim of a Google ID token).
+    # Set the first time the user signs in with Google; it identifies them even
+    # if the e-mail address on either side changes later.
+    google_sub = models.CharField(
+        max_length=255,
+        unique=True,
+        null=True,
+        blank=True,
+        editable=False,
+        verbose_name='Google account ID',
+    )
+
     # Timestamps
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -128,3 +140,27 @@ class CustomUser(AbstractUser):
         if self.profile_picture:
             return self.profile_picture.url
         return None
+
+
+class PasswordResetCode(models.Model):
+    """
+    A one-time 6-digit code e-mailed for a password reset, so it can be typed
+    in the mobile app or on the website without opening a link.
+
+    Only a hash of the code is stored. A code works once, expires after
+    PASSWORD_RESET_CODE_MINUTES, and stops working after
+    PASSWORD_RESET_CODE_ATTEMPTS wrong guesses. Asking again replaces it.
+    """
+    user = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='password_reset_codes')
+    code_hash = models.CharField(max_length=128)
+    expires_at = models.DateTimeField()
+    attempts = models.PositiveSmallIntegerField(default=0)
+    used_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [models.Index(fields=['user', 'used_at'])]
+
+    def __str__(self):
+        return f'Reset code for {self.user} (expires {self.expires_at:%Y-%m-%d %H:%M})'

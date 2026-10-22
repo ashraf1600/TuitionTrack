@@ -173,6 +173,8 @@ export function apiError(status, data) {
   error.status = status;
   error.code = (data && typeof data === 'object' && typeof data.code === 'string') ? data.code : 'error';
   error.fieldErrors = (data && typeof data === 'object' && data.errors && typeof data.errors === 'object') ? data.errors : {};
+  // The whole answer, for errors that carry more than a message (e.g. the Google account's email).
+  error.data = (data && typeof data === 'object') ? data : {};
   return error;
 }
 
@@ -237,10 +239,22 @@ export const api = {
     method: 'POST',
     body: JSON.stringify({ identifier }),
   }),
+  // Checks the 6-digit code from the reset email; answers {uid, token} for confirmPasswordReset.
+  verifyResetCode: (identifier, code) => apiRequest('/auth/password-reset/verify/', {
+    method: 'POST',
+    body: JSON.stringify({ identifier, code }),
+  }),
   confirmPasswordReset: (uid, token, newPassword) => apiRequest('/auth/password-reset/confirm/', {
     method: 'POST',
     body: JSON.stringify({ uid, token, new_password: newPassword }),
   }),
+  // Signs in with a Google ID token. `role` ('TUTOR' | 'STUDENT') only creates an account when none matches.
+  googleLogin: (credential, role) => apiRequest('/auth/google/', {
+    method: 'POST',
+    body: JSON.stringify(role ? { credential, role } : { credential }),
+  }),
+  // Public server facts; `auth` says whether Google sign-in and reset e-mails are set up.
+  getMeta: () => apiRequest('/meta/'),
   getNotifications: () => apiRequest('/notifications/'),
 
   // Students & Prospective Roster

@@ -203,6 +203,107 @@ If these are not set, TuitionTrack automatically uses local media storage.
 
 ---
 
+## 📧 Password-reset emails (Brevo, free)
+
+"Forgot password" emails a **6-digit code** (typed in the app or on the website) plus a link.
+Render's free plan **blocks SMTP** (ports 25/465/587 since Sept 2025), so Gmail SMTP will not work
+there. The API sends mail over HTTPS through **Brevo** instead (free: 300 emails/day, no domain needed).
+
+1. Sign up at [brevo.com](https://www.brevo.com/) (free plan).
+2. **Senders, domains & dedicated IPs → Senders → Add a sender**: use the address mail should come
+   from (your Gmail is fine) and click the confirmation link Brevo emails you.
+3. **SMTP & API → API keys → Generate a new API key**. Copy it (it starts with `xkeysib-`).
+4. Render → `tuitiontrack-api` → **Environment**:
+   - `EMAIL_BACKEND` = `config.email_backends.BrevoEmailBackend` (already in `render.yaml`)
+   - `BREVO_API_KEY` = the key from step 3
+   - `DEFAULT_FROM_EMAIL` = `TuitionTrack <the-sender-from-step-2@gmail.com>`
+5. Test it from Render → `tuitiontrack-api` → **Shell**:
+   ```bash
+   python manage.py sendtestemail you@example.com
+   ```
+   An error here says exactly what is wrong (bad key, unverified sender). Failed sends from the
+   website or app are also written to the service **Logs**.
+
+Notes
+- Only accounts that have an **email address** can reset by themselves. Students without one ask their
+  tutor for a temporary password (unchanged).
+- A code works once, expires after 15 minutes, and stops after 5 wrong tries. A new code can be
+  requested once a minute, at most 5 an hour per account.
+- Gmail may put the first emails in **Spam**; mark one "Not spam".
+- With your own domain you can use Resend instead: `EMAIL_BACKEND=config.email_backends.ResendEmailBackend`
+  and `RESEND_API_KEY`.
+
+---
+
+## 🔐 Sign in with Google (website + Android app)
+
+The website and the app both get a Google ID token and send it to `POST /api/v1/auth/google/`.
+An existing account is matched by its Google account, or by its email address. Someone with no
+account is asked "tutor or student?" and an account is created (turn that off with
+`GOOGLE_SIGNUP_ENABLED=False`). An account made with Google has no password until the user sets
+one in **My account → Password** (or uses "Forgot password").
+
+### 1. Google Cloud project and consent screen
+1. Open [console.cloud.google.com](https://console.cloud.google.com/) → create a project, e.g. *TuitionTrack*.
+2. **Google Auth Platform → Branding**: app name *TuitionTrack*, your support email.
+   **Audience**: *External*. While the app is in *Testing*, only the test users you add can sign in —
+   press **Publish app** to open it to everyone (the `email`/`profile` scopes need no review).
+
+### 2. Web client (used by the website **and** by the app's server check)
+**Google Auth Platform → Clients → Create client → Web application**
+- **Authorized JavaScript origins**:
+  `https://tuitiontrack-web.onrender.com`, `http://localhost:5173`, `http://localhost`
+- No redirect URIs are needed.
+
+Copy the **Client ID** (`…apps.googleusercontent.com`) and set it on Render → `tuitiontrack-api` →
+Environment → `GOOGLE_CLIENT_ID`. Both the website and the app read it from `/api/v1/meta/`, so
+this is the only place it is set. (The client *secret* is not used.)
+
+### 3. Android client (lets the APK use Google sign-in)
+Google only lets the app sign in if the **SHA-1 of the key that signed the APK** is registered.
+Every APK you hand out must be signed with the **same** key, so create one once and keep it safe:
+
+```bash
+keytool -genkey -v -keystore tuitiontrack-release.jks -keyalg RSA -keysize 2048 -validity 10000 -alias tuitiontrack
+keytool -list -v -keystore tuitiontrack-release.jks -alias tuitiontrack   # shows the SHA1 line
+```
+
+**Clients → Create client → Android**
+- Package name: `app.tuitiontrack.tuitiontrack`
+- SHA-1 certificate fingerprint: the `SHA1` from above
+
+Use that key everywhere you build:
+- **Your PC** (`build_apk.bat`): put the `.jks` in `mobile/android/app/` and create
+  `mobile/android/key.properties`:
+  ```
+  storeFile=tuitiontrack-release.jks
+  storePassword=…
+  keyAlias=tuitiontrack
+  keyPassword=…
+  ```
+- **GitHub Actions** (APK built on a `v*` tag): repository **Settings → Secrets → Actions**:
+  `ANDROID_KEYSTORE_BASE64` (`base64 -w0 tuitiontrack-release.jks`; on Windows
+  `certutil -encode` then remove the header/footer lines), `ANDROID_KEYSTORE_PASSWORD`,
+  `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`. The build log prints the SHA-1 it used.
+
+Both files are git-ignored. **Never commit the keystore**, and back it up: losing it means
+registering a new SHA-1 and everyone reinstalling the app.
+
+> Running from Android Studio / `flutter run` signs with your PC's *debug* key. To test Google
+> sign-in that way, add a second Android client with the debug SHA-1
+> (`keytool -list -v -keystore ~/.android/debug.keystore -alias androiddebugkey -storepass android`).
+
+### Troubleshooting
+| What you see | Why |
+| --- | --- |
+| No Google button | `GOOGLE_CLIENT_ID` not set on the API (or the server was asleep — reload). |
+| Website popup: "origin not allowed" / error 400 | The site's address is missing from *Authorized JavaScript origins*. |
+| App: picker closes and nothing happens | The APK's SHA-1 is not registered, or it was signed with a different key. |
+| "Access blocked: app not verified / not a test user" | Consent screen still in *Testing* — add the user or **Publish app**. |
+| "More than one TuitionTrack account uses this email" | Two accounts share that email; sign in with a username and change one. |
+
+---
+
 ## 📱 Connecting the Flutter Mobile App
 
 Release builds of the app already use `https://tuitiontrack-api.onrender.com`. To use another server,

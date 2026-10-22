@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/api.dart';
+import '../../core/google_auth.dart';
 import '../../core/i18n.dart';
 import '../../core/json.dart';
 import '../../core/repo.dart';
@@ -12,6 +13,7 @@ import '../../widgets/password_field.dart';
 import '../../widgets/theme.dart';
 import '../../widgets/tt_logo.dart';
 import '../../widgets/ui.dart';
+import 'forgot_password_screen.dart';
 
 enum _Mode { signIn, tutor, student }
 
@@ -30,6 +32,103 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _busy = false;
   String? _error;
   Json? _tutor; // the tutor a new student asks to join (optional)
+  String _googleClientId = ''; // from the server; empty hides the Google button
+  bool _googleSignup = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadGoogleSetup();
+  }
+
+  Future<void> _loadGoogleSetup() async {
+    if (!GoogleAuth.supported) return;
+    try {
+      final meta = await context.read<Repo>().meta();
+      final auth = meta['auth'];
+      if (!mounted || auth is! Map) return;
+      setState(() {
+        _googleClientId = (auth['google_client_id'] as String?) ?? '';
+        _googleSignup = auth['google_signup'] == true;
+      });
+    } catch (_) {
+      // Server asleep or offline: the button appears on the next visit.
+    }
+  }
+
+  Future<void> _google() async {
+    final session = context.read<Session>();
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      final idToken = await GoogleAuth.signIn(_googleClientId);
+      if (idToken == null || !mounted) return;
+      final role = switch (_mode) {
+        _Mode.tutor => 'TUTOR',
+        _Mode.student => 'STUDENT',
+        _Mode.signIn => null,
+      };
+      try {
+        await session.loginWithGoogle(idToken, role: role);
+      } on ApiException catch (error) {
+        if (error.code != 'google_account_not_found' || !mounted) rethrow;
+        if (error.data['signup_allowed'] != true || !_googleSignup) rethrow;
+        final chosen = await _chooseRole(error.data.str('email'));
+        if (chosen == null || !mounted) return;
+        await session.loginWithGoogle(idToken, role: chosen);
+      }
+    } on ApiException catch (error) {
+      if (mounted) setState(() => _error = error.message);
+    } on GoogleAuthException catch (error) {
+      if (mounted) setState(() => _error = error.message);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  /// "No account uses this Google email yet — tutor or student?" Null when cancelled.
+  Future<String?> _chooseRole(String email) => showModalBottomSheet<String>(
+        context: context,
+        showDragHandle: true,
+        builder: (context) => SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(tr('Create your account with Google'), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+                gap8,
+                Text(
+                  tr('No TuitionTrack account uses {p0} yet. Which kind of account is it?', {'p0': Raw(email)}),
+                  style: TextStyle(color: context.tt.textSecondary),
+                ),
+                gap16,
+                FilledButton.icon(
+                  onPressed: () => Navigator.pop(context, 'TUTOR'),
+                  icon: const Icon(Icons.co_present_outlined),
+                  label: Text(tr("I'm a tutor")),
+                  style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(50)),
+                ),
+                gap12,
+                FilledButton.tonalIcon(
+                  onPressed: () => Navigator.pop(context, 'STUDENT'),
+                  icon: const Icon(Icons.menu_book_outlined),
+                  label: Text(tr("I'm a student")),
+                  style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(50)),
+                ),
+                gap12,
+                Text(
+                  tr('Already have an account with another email? Cancel, sign in with your username, then add this email in your account.'),
+                  style: TextStyle(fontSize: 12, color: context.tt.textTertiary),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
 
   TextEditingController _ctl(String name) => _c.putIfAbsent(name, TextEditingController.new);
 
@@ -90,35 +189,16 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _forgotPassword() async {
-    final repo = context.read<Repo>();
-    final controller = TextEditingController(text: _v('username'));
-    final identifier = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(tr('Reset your password')),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              tr('Enter your username or email. If the account has an email address, a reset link is sent to it. Students without an email can ask their tutor for a new temporary password.'),
-              style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
-            ),
-            gap12,
-            TextField(controller: controller, autofocus: true, decoration: InputDecoration(labelText: tr('Username or email'))),
-          ],
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: Text(tr('Cancel'))),
-          FilledButton(onPressed: () => Navigator.pop(context, controller.text.trim()), child: Text(tr('Send link'))),
-        ],
-      ),
+    final username = await Navigator.push<String>(
+      context,
+      MaterialPageRoute(builder: (_) => ForgotPasswordScreen(initialIdentifier: _v('username'))),
     );
-    if (identifier == null || identifier.isEmpty || !mounted) return;
-    await attempt(context, () async {
-      final message = await repo.requestPasswordReset(identifier);
-      if (mounted) showToast(context, message.isEmpty ? tr('If that account has an email, a reset link has been sent.') : message);
-    });
+    if (username != null && username.isNotEmpty && mounted) {
+      _ctl('username').text = username;
+      _ctl('password').clear();
+      setState(() => _error = null);
+      showToast(context, tr('Password changed. Sign in with your new password.'));
+    }
   }
 
   Future<void> _changeServer() async {
@@ -366,6 +446,29 @@ class _LoginScreenState extends State<LoginScreen> {
                         gap8,
                         TextButton(onPressed: _forgotPassword, child: Text(tr('Forgot your password?'))),
                       ],
+                      if (_googleClientId.isNotEmpty && (!registering || _googleSignup)) ...[
+                        gap16,
+                        Row(
+                          children: [
+                            const Expanded(child: Divider()),
+                            Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 12),
+                              child: Text(tr('or'), style: TextStyle(color: context.tt.textTertiary)),
+                            ),
+                            const Expanded(child: Divider()),
+                          ],
+                        ),
+                        gap16,
+                        OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            minimumSize: const Size.fromHeight(52),
+                            textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+                          ),
+                          onPressed: _busy ? null : _google,
+                          icon: const _GoogleMark(),
+                          label: Text(registering ? tr('Sign up with Google') : tr('Continue with Google')),
+                        ),
+                      ],
                       const SizedBox(height: 32),
                       // The server, as a quiet footer (tap to change it).
                       TextButton.icon(
@@ -478,4 +581,38 @@ class _TutorPickerState extends State<_TutorPicker> {
       ),
     );
   }
+}
+
+
+/// Google's "G", drawn so no image asset is needed.
+class _GoogleMark extends StatelessWidget {
+  const _GoogleMark();
+
+  @override
+  Widget build(BuildContext context) => const SizedBox(width: 20, height: 20, child: CustomPaint(painter: _GoogleMarkPainter()));
+}
+
+class _GoogleMarkPainter extends CustomPainter {
+  const _GoogleMarkPainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final stroke = size.width * 0.2;
+    final rect = Rect.fromLTWH(stroke / 2, stroke / 2, size.width - stroke, size.height - stroke);
+    Paint arc(Color color) => Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = stroke;
+    // Clockwise from 3 o'clock; the gap at the upper right makes the "G".
+    const deg = 3.1415926535 / 180;
+    canvas.drawArc(rect, 0, 45 * deg, false, arc(const Color(0xFF4285F4))); // blue
+    canvas.drawArc(rect, 45 * deg, 90 * deg, false, arc(const Color(0xFF34A853))); // green
+    canvas.drawArc(rect, 135 * deg, 90 * deg, false, arc(const Color(0xFFFBBC05))); // yellow
+    canvas.drawArc(rect, 225 * deg, 90 * deg, false, arc(const Color(0xFFEA4335))); // red
+    final mid = size.height / 2;
+    canvas.drawLine(Offset(size.width / 2, mid), Offset(size.width - stroke / 2, mid), arc(const Color(0xFF4285F4)));
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

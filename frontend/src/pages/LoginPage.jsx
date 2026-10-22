@@ -2,9 +2,12 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/auth';
 import { api } from '../api/client';
+import GoogleSignInButton from '../components/common/GoogleSignInButton';
+import { useGoogleAvailable } from '../utils/googleClientId';
+import PasswordField from '../components/common/PasswordField';
 import {
   GraduationCap, Lock, User, Mail, Phone, ArrowRight, AlertCircle, Search, Eye, EyeOff,
-  CalendarCheck, Wallet, FileText, Check, Loader2, BookOpen, Presentation, Sparkles,
+  CalendarCheck, Wallet, FileText, Check, Loader2, BookOpen, Presentation, Sparkles, KeyRound, RotateCcw,
 } from 'lucide-react';
 
 const inputCls =
@@ -54,8 +57,11 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const { login, registerTutor, registerStudent } = useAuth();
+  const { login, loginWithGoogle, registerTutor, registerStudent } = useAuth();
   const navigate = useNavigate();
+  const googleAvailable = useGoogleAvailable();
+  // A Google sign-in that found no account: {credential, email, name} while the user picks tutor/student.
+  const [googlePending, setGooglePending] = useState(null);
 
   const isRegister = mode !== 'login';
   const isStudent = mode === 'register-student';
@@ -144,8 +150,40 @@ export default function LoginPage() {
     }
   };
 
+  const goHome = (signedIn) => navigate(signedIn.role === 'TUTOR' ? '/tutor' : '/student');
+
+  const handleGoogle = async (credential, role) => {
+    setError('');
+    setLoading(true);
+    try {
+      // On a sign-up tab the account type is already chosen, so a new account is made straight away.
+      const chosenRole = role || (mode === 'register-tutor' ? 'TUTOR' : mode === 'register-student' ? 'STUDENT' : undefined);
+      const signedIn = await loginWithGoogle(credential, chosenRole);
+      setGooglePending(null);
+      goHome(signedIn);
+    } catch (err) {
+      if (err.code === 'google_account_not_found' && err.data?.signup_allowed) {
+        setGooglePending({ credential, email: err.data.email, name: err.data.name });
+      } else {
+        setGooglePending(null);
+        setError(err.message || 'Google sign-in failed. Please try again.');
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
   if (mode === 'forgot') {
-    return <ForgotPassword onBack={() => switchMode('login')} initialIdentifier={username} />;
+    return (
+      <ForgotPassword
+        onBack={(signedInAs) => {
+          if (signedInAs) setUsername(signedInAs);
+          setPassword('');
+          switchMode('login');
+        }}
+        initialIdentifier={username}
+      />
+    );
   }
 
   const heading = mode === 'login' ? 'Welcome back' : isStudent ? 'Create your student account' : 'Create your tutor account';
@@ -252,6 +290,41 @@ export default function LoginPage() {
             <div role="alert" className="mt-6 p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-200 text-sm flex items-start gap-2.5">
               <AlertCircle className="w-5 h-5 flex-shrink-0 text-rose-400 mt-0.5" />
               <span>{error}</span>
+            </div>
+          )}
+
+          {googlePending && (
+            <div className="mt-6 p-4 rounded-2xl bg-indigo-500/10 border border-indigo-500/30">
+              <p className="text-sm text-slate-100 font-semibold">Create your account with Google</p>
+              <p className="mt-1 text-xs text-slate-300">
+                No TuitionTrack account uses <span className="font-semibold">{googlePending.email}</span> yet. Which kind of account is it?
+              </p>
+              <div className="mt-3 grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  disabled={loading}
+                  onClick={() => handleGoogle(googlePending.credential, 'TUTOR')}
+                  className="p-3 rounded-xl bg-slate-900 border border-slate-700 hover:border-indigo-500 text-left transition disabled:opacity-60"
+                >
+                  <Presentation className="w-5 h-5 mb-1 text-indigo-300" />
+                  <div className="text-sm font-semibold">I'm a tutor</div>
+                </button>
+                <button
+                  type="button"
+                  disabled={loading}
+                  onClick={() => handleGoogle(googlePending.credential, 'STUDENT')}
+                  className="p-3 rounded-xl bg-slate-900 border border-slate-700 hover:border-indigo-500 text-left transition disabled:opacity-60"
+                >
+                  <BookOpen className="w-5 h-5 mb-1 text-indigo-300" />
+                  <div className="text-sm font-semibold">I'm a student</div>
+                </button>
+              </div>
+              <p className="mt-3 text-[11px] text-slate-400">
+                Already have an account with another email? Cancel, sign in with your username, then add this email under My account.
+              </p>
+              <button type="button" onClick={() => setGooglePending(null)} className="mt-2 text-xs font-medium text-indigo-300 hover:text-white underline underline-offset-2">
+                Cancel
+              </button>
             </div>
           )}
 
@@ -460,6 +533,21 @@ export default function LoginPage() {
             </button>
           </form>
 
+          {googleAvailable && (
+            <>
+              <div className="my-6 flex items-center gap-3 text-xs text-slate-500" aria-hidden="true">
+                <span className="h-px flex-1 bg-slate-800" />
+                or
+                <span className="h-px flex-1 bg-slate-800" />
+              </div>
+              <GoogleSignInButton
+                onCredential={handleGoogle}
+                text={mode === 'login' ? 'signin_with' : 'signup_with'}
+                disabled={loading}
+              />
+            </>
+          )}
+
           <p className="mt-6 text-sm text-slate-400 text-center">
             {mode === 'login' ? (
               <>
@@ -483,24 +571,82 @@ export default function LoginPage() {
   );
 }
 
-function ForgotPassword({ onBack, initialIdentifier = '' }) {
-  const [identifier, setIdentifier] = useState(initialIdentifier);
-  const [sending, setSending] = useState(false);
-  const [message, setMessage] = useState('');
-  const [error, setError] = useState('');
+const RESEND_SECONDS = 60;
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+/** Forgot password: email → 6-digit code → new password. The link in the same email also works. */
+function ForgotPassword({ onBack, initialIdentifier = '' }) {
+  const [step, setStep] = useState('ask'); // 'ask' | 'code' | 'password' | 'done'
+  const [identifier, setIdentifier] = useState(initialIdentifier);
+  const [code, setCode] = useState('');
+  const [reset, setReset] = useState(null); // {uid, token, username}
+  const [password, setPassword] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  const [wait, setWait] = useState(0);
+  const [emailReady, setEmailReady] = useState(true);
+
+  useEffect(() => {
+    api.getMeta().then((meta) => setEmailReady(meta?.auth?.password_reset_email !== false)).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (wait <= 0) return undefined;
+    const id = setTimeout(() => setWait((w) => w - 1), 1000);
+    return () => clearTimeout(id);
+  }, [wait]);
+
+  const run = async (fn) => {
     setError('');
-    setSending(true);
+    setBusy(true);
     try {
-      const res = await api.requestPasswordReset(identifier.trim());
-      setMessage(res.message);
+      await fn();
     } catch (err) {
-      setError(err.message || 'Could not send the reset link.');
+      setError(err.message || 'Something went wrong. Please try again.');
     } finally {
-      setSending(false);
+      setBusy(false);
     }
+  };
+
+  const sendCode = (e) => {
+    e?.preventDefault();
+    return run(async () => {
+      const res = await api.requestPasswordReset(identifier.trim());
+      setNotice(res.message);
+      setCode('');
+      setWait(RESEND_SECONDS);
+      setStep('code');
+    });
+  };
+
+  const checkCode = (e) => {
+    e.preventDefault();
+    return run(async () => {
+      const res = await api.verifyResetCode(identifier.trim(), code);
+      setReset(res);
+      setStep('password');
+    });
+  };
+
+  const savePassword = (e) => {
+    e.preventDefault();
+    if (password !== confirm) {
+      setError('The two passwords do not match.');
+      return undefined;
+    }
+    return run(async () => {
+      await api.confirmPasswordReset(reset.uid, reset.token, password);
+      setStep('done');
+    });
+  };
+
+  const mismatch = confirm.length > 0 && password !== confirm;
+  const titles = {
+    ask: ['Forgot your password?', 'Enter your username or email. We will email you a 6-digit code.'],
+    code: ['Enter the code', 'Type the 6-digit code from the email. You can also open the link in that email instead.'],
+    password: ['Choose a new password', reset?.username ? `For the account “${reset.username}”.` : ''],
+    done: ['Password changed', 'You are signed out on all devices. Sign in with your new password.'],
   };
 
   return (
@@ -513,30 +659,33 @@ function ForgotPassword({ onBack, initialIdentifier = '' }) {
           <span className="text-xl font-bold tracking-tight">Tuition<span className="text-indigo-400">Track</span></span>
         </div>
 
-        <h1 className="text-2xl font-extrabold tracking-tight">Forgot your password?</h1>
-        <p className="mt-1.5 text-sm text-slate-400">
-          Enter your username or email and we will email you a link to choose a new one.
-        </p>
+        {step === 'done' && <Check className="w-10 h-10 text-emerald-400 mb-3" />}
+        <h1 className="text-2xl font-extrabold tracking-tight">{titles[step][0]}</h1>
+        {titles[step][1] && <p className="mt-1.5 text-sm text-slate-400">{titles[step][1]}</p>}
 
-        {message ? (
-          <div className="mt-6 p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-100 text-sm flex items-start gap-2.5">
-            <Check className="w-5 h-5 flex-shrink-0 text-emerald-400" />
-            <span>{message}</span>
+        {!emailReady && step === 'ask' && (
+          <div className="mt-5 p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-100 text-sm">
+            Email sending is not set up on this server yet, so the code may not arrive. Ask your tutor for a new temporary password.
           </div>
-        ) : (
-          <form onSubmit={handleSubmit} className="mt-6 space-y-4">
-            {error && (
-              <div role="alert" className="p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-200 text-sm flex items-start gap-2.5">
-                <AlertCircle className="w-5 h-5 flex-shrink-0 text-rose-400" />
-                <span>{error}</span>
-              </div>
-            )}
+        )}
+
+        {error && (
+          <div role="alert" className="mt-5 p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-200 text-sm flex items-start gap-2.5">
+            <AlertCircle className="w-5 h-5 flex-shrink-0 text-rose-400" />
+            <span>{error}</span>
+          </div>
+        )}
+
+        {step === 'ask' && (
+          <form onSubmit={sendCode} className="mt-6 space-y-4">
             <Field label="Username or email" htmlFor="reset-identifier">
               <input
                 id="reset-identifier"
                 type="text"
                 required
+                autoFocus
                 autoCapitalize="none"
+                autoComplete="username"
                 spellCheck={false}
                 value={identifier}
                 onChange={(e) => setIdentifier(e.target.value)}
@@ -545,21 +694,101 @@ function ForgotPassword({ onBack, initialIdentifier = '' }) {
             </Field>
             <button
               type="submit"
-              disabled={sending}
+              disabled={busy || !identifier.trim()}
               className="w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-sm flex items-center justify-center gap-2 transition disabled:opacity-60"
             >
-              {sending && <Loader2 className="w-4 h-4 animate-spin" />}
-              Email me a reset link
+              {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
+              Email me a code
             </button>
           </form>
         )}
 
-        <p className="mt-5 text-xs text-slate-400">
-          Student with no email on your account? Ask your tutor — they can give you a new temporary password.
-        </p>
-        <button type="button" onClick={onBack} className="mt-4 text-sm font-semibold text-indigo-300 hover:text-white underline underline-offset-2">
-          Back to sign in
-        </button>
+        {step === 'code' && (
+          <form onSubmit={checkCode} className="mt-6 space-y-4">
+            {notice && (
+              <div className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-100 text-sm flex items-start gap-2.5">
+                <Check className="w-5 h-5 flex-shrink-0 text-emerald-400" />
+                <span>{notice}</span>
+              </div>
+            )}
+            <Field label="6-digit code" htmlFor="reset-code">
+              <input
+                id="reset-code"
+                type="text"
+                required
+                autoFocus
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                pattern="[0-9 ]*"
+                maxLength={7}
+                value={code}
+                onChange={(e) => setCode(e.target.value.replace(/[^0-9]/g, '').slice(0, 6))}
+                placeholder="••••••"
+                className={`${inputCls} text-center text-2xl tracking-[0.5em] font-mono`}
+              />
+            </Field>
+            <button
+              type="submit"
+              disabled={busy || code.length !== 6}
+              className="w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-sm flex items-center justify-center gap-2 transition disabled:opacity-60"
+            >
+              {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <KeyRound className="w-4 h-4" />}
+              Continue
+            </button>
+            <div className="flex items-center justify-between text-xs">
+              <button type="button" onClick={() => { setStep('ask'); setError(''); }} className="text-slate-400 hover:text-white underline underline-offset-2">
+                Change username or email
+              </button>
+              <button
+                type="button"
+                disabled={busy || wait > 0}
+                onClick={() => sendCode()}
+                className="inline-flex items-center gap-1 font-medium text-indigo-300 hover:text-white disabled:text-slate-500 disabled:cursor-not-allowed"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                {wait > 0 ? `Send again in ${wait}s` : 'Send a new code'}
+              </button>
+            </div>
+          </form>
+        )}
+
+        {step === 'password' && (
+          <form onSubmit={savePassword} className="mt-6 space-y-4">
+            <PasswordField id="reset-new" label="New password" value={password} onChange={setPassword} minLength={8} hint="At least 8 characters, not only numbers." />
+            <PasswordField id="reset-confirm" label="New password again" value={confirm} onChange={setConfirm} error={mismatch ? 'The passwords do not match yet.' : ''} />
+            <button
+              type="submit"
+              disabled={busy}
+              className="w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-sm flex items-center justify-center gap-2 transition disabled:opacity-60"
+            >
+              {busy && <Loader2 className="w-4 h-4 animate-spin" />}
+              Save new password
+            </button>
+          </form>
+        )}
+
+        {step === 'done' && (
+          <button
+            type="button"
+            onClick={() => onBack(reset?.username)}
+            className="mt-6 w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-sm transition"
+          >
+            Go to sign in
+          </button>
+        )}
+
+        {step !== 'done' && (
+          <>
+            {step === 'ask' && (
+              <p className="mt-5 text-xs text-slate-400">
+                Student with no email on your account? Ask your tutor — they can give you a new temporary password.
+              </p>
+            )}
+            <button type="button" onClick={() => onBack()} className="mt-4 text-sm font-semibold text-indigo-300 hover:text-white underline underline-offset-2">
+              Back to sign in
+            </button>
+          </>
+        )}
       </div>
     </div>
   );

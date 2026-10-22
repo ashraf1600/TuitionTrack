@@ -82,8 +82,9 @@ export default function AccountModal({ isOpen, onClose }) {
     }
     setSaving(true);
     try {
-      await api.changePassword(current, next);
-      notify.success('Your password has been changed.');
+      await api.changePassword(hasPassword ? current : '', next);
+      if (!hasPassword) await refreshUser();
+      notify.success(hasPassword ? 'Your password has been changed.' : 'Password set. You can now also sign in with your username and password.');
       onClose();
     } catch (err) {
       setError(err.message || 'Could not change the password.');
@@ -93,6 +94,8 @@ export default function AccountModal({ isOpen, onClose }) {
   };
 
   const mismatch = confirm.length > 0 && next !== confirm;
+  // An account made with Google has no password until the user sets one here.
+  const hasPassword = user?.has_password !== false;
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="My account" maxWidth="max-w-xl">
@@ -175,10 +178,16 @@ export default function AccountModal({ isOpen, onClose }) {
         </form>
       ) : (
         <form onSubmit={savePassword} className="space-y-4">
-          <PasswordField id="acc-current" label="Current password" value={current} onChange={setCurrent} autoComplete="current-password" />
+          {hasPassword ? (
+            <PasswordField id="acc-current" label="Current password" value={current} onChange={setCurrent} autoComplete="current-password" />
+          ) : (
+            <p className="text-sm text-slate-400">
+              You sign in with Google. Set a password to also sign in with your username <span className="font-semibold text-slate-200">{user?.username}</span>.
+            </p>
+          )}
           <PasswordField id="acc-new" label="New password" value={next} onChange={setNext} minLength={8} hint="At least 8 characters, not only numbers." />
           <PasswordField id="acc-confirm" label="New password again" value={confirm} onChange={setConfirm} error={mismatch ? 'The passwords do not match yet.' : ''} />
-          <Actions onClose={onClose} saving={saving} label="Change password" />
+          <Actions onClose={onClose} saving={saving} label={hasPassword ? 'Change password' : 'Set password'} />
         </form>
       )}
     </Modal>
