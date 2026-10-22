@@ -14,6 +14,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:intl/date_symbol_data_local.dart';
 import 'package:provider/provider.dart';
 import 'package:tuitiontrack/core/api.dart';
 import 'package:tuitiontrack/core/app_keys.dart';
@@ -153,6 +154,7 @@ String _examId(String role, String title) {
 void main() {
   setUpAll(() async {
     autoUpdateGoldenFiles = true;
+    await initializeDateFormatting();
     _fixtures = jsonDecode(File('test_screens/fixtures.json').readAsStringSync()) as Map<String, dynamic>;
     _shift = DateTime.now().toUtc().difference(DateTime.parse(_fixtures['__captured_at'] as String));
     await _loadFonts();
