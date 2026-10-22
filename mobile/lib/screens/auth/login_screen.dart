@@ -436,7 +436,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       ],
                       gap24,
                       FilledButton(
-                        style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(54), textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                        style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(54), textStyle: uiText(16, FontWeight.w600)),
                         onPressed: _busy ? null : _submit,
                         child: _busy
                             ? SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: context.tt.onPrimary))
@@ -462,7 +462,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         OutlinedButton.icon(
                           style: OutlinedButton.styleFrom(
                             minimumSize: const Size.fromHeight(52),
-                            textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+                            textStyle: uiText(15, FontWeight.w600),
                           ),
                           onPressed: _busy ? null : _google,
                           icon: const _GoogleMark(),
@@ -478,7 +478,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             overflow: TextOverflow.ellipsis),
                         style: TextButton.styleFrom(
                           foregroundColor: context.tt.textTertiary,
-                          textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+                          textStyle: uiText(12, FontWeight.w500),
                         ),
                       ),
                     ],

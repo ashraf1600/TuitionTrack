@@ -146,11 +146,16 @@ class HeroCard extends StatelessWidget {
             ),
             child: Stack(
               children: [
-                // A large faint icon in the corner gives the card a shape of its own.
+                // The card's icon in a tinted badge, top right.
                 Positioned(
-                  right: -18,
-                  top: -18,
-                  child: Icon(icon, size: 128, color: ink.withValues(alpha: dark ? 0.08 : 0.07)),
+                  right: 16,
+                  top: 16,
+                  child: Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(color: ink.withValues(alpha: dark ? 0.16 : 0.12), borderRadius: BorderRadius.circular(14)),
+                    child: Icon(icon, size: 22, color: ink),
+                  ),
                 ),
                 Padding(
                   padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
@@ -170,11 +175,14 @@ class HeroCard extends StatelessWidget {
                         ],
                       ),
                       const SizedBox(height: 10),
-                      Text(
+                      Padding(
+                        padding: const EdgeInsets.only(right: 48),
+                        child: Text(
                         title,
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(fontSize: 21, fontWeight: FontWeight.w700, height: 1.25, letterSpacing: -0.3, color: tt.textPrimary),
+                        ),
                       ),
                       if (subtitle != null && subtitle!.isNotEmpty) ...[
                         const SizedBox(height: 4),

@@ -200,7 +200,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                       FilledButton(
                         style: FilledButton.styleFrom(
                           minimumSize: const Size.fromHeight(54),
-                          textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                          textStyle: uiText(16, FontWeight.w600),
                         ),
                         onPressed: _busy ? null : _submit,
                         child: _busy
