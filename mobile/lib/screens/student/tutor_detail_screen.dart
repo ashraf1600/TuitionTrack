@@ -8,6 +8,7 @@ import '../../core/format.dart';
 import '../../core/i18n.dart';
 import '../../core/json.dart';
 import '../../core/repo.dart';
+import '../../core/session.dart';
 import '../../widgets/theme.dart';
 import '../../widgets/ui.dart';
 import '../common/cycle_progress.dart';
@@ -47,6 +48,8 @@ class TutorDetailScreen extends StatefulWidget {
 class _TutorDetailScreenState extends State<TutorDetailScreen> {
   final _key = GlobalKey<LoaderState<_Detail>>();
   Timer? _refresh;
+  int _examCount = 0;
+  int _homeworkCount = 0;
 
   @override
   void initState() {
@@ -71,13 +74,21 @@ class _TutorDetailScreenState extends State<TutorDetailScreen> {
         if (a.isEvaluated != b.isEvaluated) return a.isEvaluated ? 1 : -1;
         return a.dueDate.compareTo(b.dueDate);
       });
+    final exams = (results[2] as List<Json>).where((e) => e.str('tutor') == widget.tutorId).toList();
+    if (mounted) {
+      final now = context.read<Session>().api.serverNow;
+      setState(() {
+        _examCount = pendingExamCount(exams, now);
+        _homeworkCount = pendingHomeworkCount(homework);
+      });
+    }
     return _Detail(
       tutor: Map<String, dynamic>.from(d['tutor'] as Map? ?? {}),
       tuitions: (results[1] as List<Json>).where((t) => t.str('tutor_id') == widget.tutorId).toList(),
       legacyRoutine: rows('weekly_routine').map(RoutineSlot.fromJson).toList(),
       upcoming: rows('upcoming_classes').map(ScheduledClass.fromJson).toList(),
       homework: homework,
-      exams: (results[2] as List<Json>).where((e) => e.str('tutor') == widget.tutorId).toList(),
+      exams: exams,
     );
   }
 
@@ -98,7 +109,12 @@ class _TutorDetailScreenState extends State<TutorDetailScreen> {
               ),
             ),
           ],
-          bottom: TabBar(tabs: [Tab(text: tr('Classes')), Tab(text: tr('Exams')), Tab(text: tr('Homework'))]),
+          // How many exams and homework are waiting, so the student knows where to tap.
+          bottom: TabBar(tabs: [
+            Tab(text: tr('Classes')),
+            Tab(child: countBadge(Text(tr('Exams')), _examCount, offset: const Offset(14, -6))),
+            Tab(child: countBadge(Text(tr('Homework')), _homeworkCount, offset: const Offset(14, -6))),
+          ]),
         ),
         body: Loader<_Detail>(
           key: _key,
@@ -107,8 +123,8 @@ class _TutorDetailScreenState extends State<TutorDetailScreen> {
           builder: (context, d, reload) => TabBarView(
             children: [
               RefreshIndicator(onRefresh: reload, child: _ClassesTab(detail: d)),
-              RefreshIndicator(onRefresh: reload, child: StudentExamsList(exams: d.exams, reload: reload)),
-              RefreshIndicator(onRefresh: reload, child: StudentHomeworkList(items: d.homework, reload: reload)),
+              RefreshIndicator(onRefresh: reload, child: StudentExamsList(exams: d.exams, reload: reload, showTutor: false)),
+              RefreshIndicator(onRefresh: reload, child: StudentHomeworkList(items: d.homework, reload: reload, showTutor: false)),
             ],
           ),
         ),
@@ -138,11 +154,11 @@ class _ClassesTab extends StatelessWidget {
     return PageBody(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
       children: [
-        for (final tuition in detail.tuitions) ...[
+        for (final (index, tuition) in detail.tuitions.indexed) ...[
           // Reminders first, but they never stop anything below from working.
           for (final p in tuition.maps('pending_payments')) ...[
             Banner2(
-              tr('Payment pending for cycle #{p0}{p1}. Classes go on as usual; this goes away when your tutor marks it paid.', {'p0': p.integer('cycle_number'), 'p1': detail.tuitions.length > 1 ? ' (${tuition.str('title')})' : ''}),
+              tr('Payment pending for cycle #{p0}{p1}. Classes go on as usual; this goes away when your tutor marks it paid.', {'p0': p.integer('cycle_number'), 'p1': ''}),
               color: AppColors.warning,
               icon: Icons.warning_amber_rounded,
             ),
@@ -152,9 +168,12 @@ class _ClassesTab extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Text(tuition.str('title'), style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
-                if (tuition.str('subject').isNotEmpty)
-                  Text(tuition.str('subject'), style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant)),
+                // The tuition's own name stays with the tutor; the student sees the subject only.
+                if (tuition.str('subject').isNotEmpty || detail.tuitions.length > 1)
+                  Text(
+                    tuition.str('subject').isNotEmpty ? tuition.str('subject') : tr('Class group {n}', {'n': index + 1}),
+                    style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
+                  ),
                 if (tuition.maps('routine').isNotEmpty) ...[
                   gap12,
                   Wrap(

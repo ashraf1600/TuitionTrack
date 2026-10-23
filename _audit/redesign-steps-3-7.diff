@@ -1,0 +1,2903 @@
+diff --git a/mobile/lib/core/i18n.dart b/mobile/lib/core/i18n.dart
+index 05dc15e..308d871 100644
+--- a/mobile/lib/core/i18n.dart
++++ b/mobile/lib/core/i18n.dart
+@@ -15,7 +15,7 @@ bool get isBangla => _language == 'bn';
+ void setAppLanguage(String code) => _language = code == 'bn' ? 'bn' : 'en';
+ 
+ String tr(String text, [Map<String, Object?> args = const {}]) {
+-  var out = isBangla ? (bnStrings[text] ?? text) : text;
++  var out = isBangla ? (bnStrings[text] ?? text) : (_enStrings[text] ?? text);
+   args.forEach((key, value) {
+     final filled = value is Raw ? value.text : localDigits('${value ?? ''}');
+     out = out.replaceAll('{$key}', filled);
+@@ -23,6 +23,12 @@ String tr(String text, [Map<String, Object?> args = const {}]) {
+   return out;
+ }
+ 
++/// English for keys that are not English text: "@…" names a word that means
++/// different things in different places (Bangla needs a different word each).
++const _enStrings = {
++  '@payment_due': 'Due',
++};
++
+ /// A [tr] argument inserted exactly as it is: digits are not turned into
+ /// Bangla digits (codes, passwords, links and addresses people copy or type).
+ class Raw {
+diff --git a/mobile/lib/screens/auth/login_screen.dart b/mobile/lib/screens/auth/login_screen.dart
+index 69671f3..931cc3c 100644
+--- a/mobile/lib/screens/auth/login_screen.dart
++++ b/mobile/lib/screens/auth/login_screen.dart
+@@ -186,9 +186,20 @@ class _LoginScreenState extends State<LoginScreen> {
+                   child: Column(
+                     crossAxisAlignment: CrossAxisAlignment.stretch,
+                     children: [
+-                      const Icon(Icons.school_rounded, size: 52, color: AppColors.primarySoft),
+-                      gap8,
+-                      Text(tr('TuitionTrack'), textAlign: TextAlign.center, style: TextStyle(fontSize: 26, fontWeight: FontWeight.w800)),
++                      Center(
++                        child: Container(
++                          width: 60,
++                          height: 60,
++                          alignment: Alignment.center,
++                          decoration: BoxDecoration(color: context.tt.primaryContainer, borderRadius: BorderRadius.circular(18)),
++                          child: Icon(Icons.school_outlined, size: 30, color: context.tt.onPrimaryContainer),
++                        ),
++                      ),
++                      gap16,
++                      Text(tr('TuitionTrack'),
++                          textAlign: TextAlign.center,
++                          style: TextStyle(fontSize: 30, height: 1.15, fontWeight: FontWeight.w700, letterSpacing: -0.6, color: context.tt.textPrimary)),
++                      const SizedBox(height: 4),
+                       Text(
+                         switch (_mode) {
+                           _Mode.signIn => tr('Sign in to continue'),
+@@ -196,23 +207,22 @@ class _LoginScreenState extends State<LoginScreen> {
+                           _Mode.student => tr('Create your student account'),
+                         },
+                         textAlign: TextAlign.center,
+-                        style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
++                        style: TextStyle(fontSize: 15, color: context.tt.textSecondary),
+                       ),
+-                      gap24,
+-                      SegmentedButton<_Mode>(
+-                        segments: [
+-                          ButtonSegment(value: _Mode.signIn, label: Text(tr('Sign in'))),
+-                          ButtonSegment(value: _Mode.tutor, label: Text(tr('New tutor'))),
+-                          ButtonSegment(value: _Mode.student, label: Text(tr('New student'))),
++                      const SizedBox(height: 32),
++                      PillToggle<_Mode>(
++                        options: [
++                          (_Mode.signIn, tr('Sign in'), null),
++                          (_Mode.tutor, tr('New tutor'), null),
++                          (_Mode.student, tr('New student'), null),
+                         ],
+-                        selected: {_mode},
+-                        showSelectedIcon: false,
+-                        onSelectionChanged: (value) => setState(() {
+-                          _mode = value.first;
++                        selected: _mode,
++                        onChanged: (mode) => setState(() {
++                          _mode = mode;
+                           _error = null;
+                         }),
+                       ),
+-                      gap16,
++                      gap24,
+                       if (session.notice != null) ...[Banner2(session.notice!, color: AppColors.warning), gap12],
+                       if (_error != null) ...[Banner2(_error!, color: AppColors.danger, icon: Icons.error_outline), gap12],
+                       if (registering) ...[
+@@ -238,21 +248,20 @@ class _LoginScreenState extends State<LoginScreen> {
+                         ),
+                         gap12,
+                       ],
++                      FieldLabel(registering ? tr('Choose a username') : tr('Username or email')),
+                       TextFormField(
+                         controller: _ctl('username'),
+                         autocorrect: false,
+                         autofillHints: const [AutofillHints.username],
+                         textInputAction: TextInputAction.next,
+-                        decoration: InputDecoration(
+-                          labelText: registering ? tr('Choose a username') : tr('Username or email'),
+-                          prefixIcon: const Icon(Icons.person_outline),
+-                        ),
++                        decoration: const InputDecoration(prefixIcon: Icon(Icons.person_outline_rounded)),
+                         validator: _required,
+                       ),
+-                      gap12,
++                      gap16,
+                       PasswordField(
+                         controller: _ctl('password'),
+                         label: tr('Password'),
++                        labelAbove: true,
+                         isNew: registering,
+                         helper: registering ? tr('At least 8 characters. Avoid common words and your own name.') : null,
+                         onSubmitted: registering ? null : (_) => _submit(),
+@@ -354,21 +363,29 @@ class _LoginScreenState extends State<LoginScreen> {
+                           ),
+                         ),
+                       ],
+-                      gap16,
++                      gap24,
+                       FilledButton(
++                        style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(54), textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                         onPressed: _busy ? null : _submit,
+                         child: _busy
+                             ? SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: context.tt.onPrimary))
+                             : Text(registering ? tr('Create account') : tr('Sign in')),
+                       ),
+-                      if (!registering)
++                      if (!registering) ...[
++                        gap8,
+                         TextButton(onPressed: _forgotPassword, child: Text(tr('Forgot your password?'))),
+-                      gap12,
++                      ],
++                      const SizedBox(height: 32),
++                      // The server, as a quiet footer (tap to change it).
+                       TextButton.icon(
+                         onPressed: _changeServer,
+                         icon: const Icon(Icons.dns_outlined, size: 16),
+-                        label: Text(tr('Server: {p0}', {'p0': Raw(session.api.baseUrl)}), overflow: TextOverflow.ellipsis),
+-                        style: TextButton.styleFrom(foregroundColor: Theme.of(context).colorScheme.onSurfaceVariant, textStyle: const TextStyle(fontSize: 12)),
++                        label: Text(tr('Server: {p0}', {'p0': Raw(session.api.baseUrl.replaceFirst(RegExp(r'^https?://'), ''))}),
++                            overflow: TextOverflow.ellipsis),
++                        style: TextButton.styleFrom(
++                          foregroundColor: context.tt.textTertiary,
++                          textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
++                        ),
+                       ),
+                     ],
+                   ),
+diff --git a/mobile/lib/screens/common/account_screen.dart b/mobile/lib/screens/common/account_screen.dart
+index 22a9602..222e9ea 100644
+--- a/mobile/lib/screens/common/account_screen.dart
++++ b/mobile/lib/screens/common/account_screen.dart
+@@ -213,6 +213,7 @@ class _AccountScreenState extends State<AccountScreen> {
+               photoBusy: _photoBusy,
+               onPhoto: session.isTutor ? () => _photo(user.str('profile_picture_url').isNotEmpty) : null,
+             ),
++            if (session.isTutor && user.str('tutor_code').isNotEmpty) ...[gap16, _InviteBlock(code: user.str('tutor_code'))],
+             gap16,
+             FlatGroup(children: [
+               _FieldRow(
+@@ -245,7 +246,7 @@ class _AccountScreenState extends State<AccountScreen> {
+             FlatGroup(children: [
+               _ActionRow(icon: Icons.lock_outline, label: tr('Change password'), onTap: _changePassword),
+               _ActionRow(icon: Icons.devices_other_outlined, label: tr('Sign out on all devices'), onTap: _signOutEverywhere),
+-              _ActionRow(icon: Icons.logout, label: tr('Sign out'), danger: true, onTap: () => session.logout()),
++              _ActionRow(icon: Icons.logout_rounded, label: tr('Sign out'), danger: true, onTap: () => session.logout()),
+             ]),
+             if (dirty) ...[
+               gap12,
+@@ -274,9 +275,8 @@ class _Header extends StatelessWidget {
+     final photo = context.read<Session>().api.mediaUrl(user.str('profile_picture_url'));
+     final initial = Text(
+       name.isEmpty ? '?' : name.characters.first.toUpperCase(),
+-      style: TextStyle(fontSize: 26, fontWeight: FontWeight.w800, color: tone(context, AppColors.primarySoft)),
++      style: TextStyle(fontSize: 28, fontWeight: FontWeight.w600, color: context.tt.onPrimaryContainer),
+     );
+-    final code = user.str('tutor_code');
+     return Row(
+       children: [
+         Semantics(
+@@ -288,11 +288,11 @@ class _Header extends StatelessWidget {
+               clipBehavior: Clip.none,
+               children: [
+                 CircleAvatar(
+-                  radius: 34,
+-                  backgroundColor: AppColors.primary.withValues(alpha: 0.22),
++                  radius: 36,
++                  backgroundColor: context.tt.primaryContainer,
+                   child: ClipOval(
+                     child: SizedBox.square(
+-                      dimension: 68,
++                      dimension: 72,
+                       child: photoBusy
+                           ? const Padding(padding: EdgeInsets.all(22), child: CircularProgressIndicator(strokeWidth: 2))
+                           : photo.isEmpty
+@@ -303,16 +303,18 @@ class _Header extends StatelessWidget {
+                 ),
+                 if (onPhoto != null)
+                   Positioned(
+-                    right: -2,
+-                    bottom: -2,
++                    right: -4,
++                    bottom: -4,
+                     child: Container(
+-                      padding: const EdgeInsets.all(5),
++                      width: 28,
++                      height: 28,
++                      alignment: Alignment.center,
+                       decoration: BoxDecoration(
+                         color: context.tt.primary,
+                         shape: BoxShape.circle,
+                         border: Border.all(color: Theme.of(context).scaffoldBackgroundColor, width: 2),
+                       ),
+-                      child: Icon(Icons.photo_camera, size: 13, color: context.tt.onPrimary),
++                      child: Icon(Icons.photo_camera_outlined, size: 15, color: context.tt.onPrimary),
+                     ),
+                   ),
+               ],
+@@ -324,42 +326,10 @@ class _Header extends StatelessWidget {
+           child: Column(
+             crossAxisAlignment: CrossAxisAlignment.start,
+             children: [
+-              Text(name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w800)),
+-              Text('@${user.str('username')} · ${isTutor ? tr('Tutor') : tr('Student')}', style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant)),
+-              if (isTutor && code.isNotEmpty)
+-                Padding(
+-                  padding: const EdgeInsets.only(top: 6),
+-                  child: InkWell(
+-                    borderRadius: BorderRadius.circular(8),
+-                    onTap: () async {
+-                      HapticFeedback.lightImpact();
+-                      await Clipboard.setData(ClipboardData(text: code));
+-                      if (context.mounted) showToast(context, tr('Invite code copied. Students enter it to connect with you.'));
+-                    },
+-                    child: Padding(
+-                      padding: const EdgeInsets.symmetric(vertical: 2),
+-                      child: Row(
+-                        mainAxisSize: MainAxisSize.min,
+-                        children: [
+-                          Text(tr('Invite code '), style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
+-                          Text(code,
+-                              style: TextStyle(
+-                                  fontSize: 14, fontWeight: FontWeight.w800, letterSpacing: 2, color: tone(context, AppColors.primarySoft))),
+-                          const SizedBox(width: 6),
+-                          Icon(Icons.copy_rounded, size: 15, color: scheme.onSurfaceVariant),
+-                          const SizedBox(width: 4),
+-                          IconButton(
+-                            tooltip: tr('Share invite code'),
+-                            visualDensity: VisualDensity.compact,
+-                            iconSize: 18,
+-                            icon: Icon(Icons.share_rounded, color: tone(context, AppColors.primarySoft)),
+-                            onPressed: () => shareInviteCode(context, code),
+-                          ),
+-                        ],
+-                      ),
+-                    ),
+-                  ),
+-                ),
++              Text(name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700, letterSpacing: -0.2)),
++              const SizedBox(height: 2),
++              Text('@${user.str('username')} · ${isTutor ? tr('Tutor') : tr('Student')}',
++                  maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 14, color: scheme.onSurfaceVariant)),
+             ],
+           ),
+         ),
+@@ -368,6 +338,68 @@ class _Header extends StatelessWidget {
+   }
+ }
+ 
++/// The tutor's invite code on its own tonal block, with 44 dp copy and share buttons.
++class _InviteBlock extends StatelessWidget {
++  const _InviteBlock({required this.code});
++  final String code;
++
++  @override
++  Widget build(BuildContext context) {
++    final tt = context.tt;
++    final buttonStyle = IconButton.styleFrom(
++      minimumSize: const Size(44, 44),
++      backgroundColor: tt.isDark ? tt.cardRaised : tt.primaryContainer,
++      foregroundColor: tt.onPrimaryContainer,
++      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
++    );
++    return Container(
++      padding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
++      decoration: BoxDecoration(color: tt.card, borderRadius: BorderRadius.circular(16), boxShadow: tt.cardShadow),
++      child: Row(
++        children: [
++          Expanded(
++            child: Column(
++              crossAxisAlignment: CrossAxisAlignment.start,
++              children: [
++                Text(tr('Invite code').toUpperCase(),
++                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, letterSpacing: 0.72, color: tt.textTertiary)),
++                const SizedBox(height: 4),
++                SelectableText(
++                  code,
++                  style: TextStyle(
++                    fontFamily: 'monospace',
++                    fontSize: 20,
++                    fontWeight: FontWeight.w700,
++                    letterSpacing: 2.8,
++                    color: tt.onPrimaryContainer,
++                  ),
++                ),
++              ],
++            ),
++          ),
++          IconButton(
++            tooltip: tr('Copy {p0}', {'p0': tr('Invite code')}),
++            style: buttonStyle,
++            icon: const Icon(Icons.copy_rounded, size: 20),
++            onPressed: () async {
++              HapticFeedback.lightImpact();
++              await Clipboard.setData(ClipboardData(text: code));
++              if (context.mounted) showToast(context, tr('Invite code copied. Students enter it to connect with you.'));
++            },
++          ),
++          const SizedBox(width: 8),
++          IconButton(
++            tooltip: tr('Share invite code'),
++            style: buttonStyle,
++            icon: const Icon(Icons.share_outlined, size: 20),
++            onPressed: () => shareInviteCode(context, code),
++          ),
++        ],
++      ),
++    );
++  }
++}
++
+ class _FieldRow extends StatelessWidget {
+   const _FieldRow({
+     required this.label,
+@@ -386,32 +418,31 @@ class _FieldRow extends StatelessWidget {
+ 
+   @override
+   Widget build(BuildContext context) {
+-    final scheme = Theme.of(context).colorScheme;
++    final tt = context.tt;
+     const none = InputBorder.none;
++    // A labelled row: a small label above the value, like a settings list.
+     return Padding(
+-      padding: const EdgeInsets.fromLTRB(16, 2, 12, 2),
+-      child: Row(
+-        crossAxisAlignment: CrossAxisAlignment.center,
++      padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
++      child: Column(
++        crossAxisAlignment: CrossAxisAlignment.stretch,
+         children: [
+-          SizedBox(width: 104, child: Text(label, style: TextStyle(fontSize: 14, color: scheme.onSurfaceVariant))),
+-          Expanded(
+-            child: TextFormField(
+-              controller: controller,
+-              keyboardType: type,
+-              textCapitalization: capitalization,
+-              validator: validator,
+-              style: const TextStyle(fontSize: 15),
+-              decoration: InputDecoration(
+-                hintText: hint,
+-                filled: false,
+-                isDense: true,
+-                contentPadding: const EdgeInsets.symmetric(vertical: 14),
+-                border: none,
+-                enabledBorder: none,
+-                focusedBorder: none,
+-                errorBorder: none,
+-                focusedErrorBorder: none,
+-              ),
++          Text(label, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: tt.textSecondary)),
++          TextFormField(
++            controller: controller,
++            keyboardType: type,
++            textCapitalization: capitalization,
++            validator: validator,
++            style: TextStyle(fontSize: 16, color: tt.textPrimary),
++            decoration: InputDecoration(
++              hintText: hint,
++              filled: false,
++              isDense: true,
++              contentPadding: const EdgeInsets.only(top: 4, bottom: 8),
++              border: none,
++              enabledBorder: none,
++              focusedBorder: none,
++              errorBorder: none,
++              focusedErrorBorder: none,
+             ),
+           ),
+         ],
+@@ -429,14 +460,13 @@ class _ActionRow extends StatelessWidget {
+ 
+   @override
+   Widget build(BuildContext context) {
+-    final scheme = Theme.of(context).colorScheme;
+-    final color = danger ? tone(context, AppColors.danger) : scheme.onSurface;
++    final tt = context.tt;
++    final color = danger ? tt.danger : tt.textPrimary;
+     return ListTile(
+-      dense: true,
+-      visualDensity: VisualDensity.compact,
+-      leading: Icon(icon, size: 20, color: danger ? color : scheme.onSurfaceVariant),
+-      title: Text(label, style: TextStyle(fontSize: 15, color: color)),
+-      trailing: danger ? null : Icon(Icons.chevron_right, size: 20, color: scheme.onSurfaceVariant),
++      minTileHeight: 56,
++      leading: Icon(icon, size: 20, color: danger ? color : tt.textTertiary),
++      title: Text(label, style: TextStyle(fontSize: 15, fontWeight: FontWeight.w500, color: color)),
++      trailing: danger ? null : Icon(Icons.chevron_right_rounded, size: 20, color: tt.textTertiary),
+       onTap: onTap,
+     );
+   }
+diff --git a/mobile/lib/screens/common/cycle_progress.dart b/mobile/lib/screens/common/cycle_progress.dart
+index a9d158a..fa6738a 100644
+--- a/mobile/lib/screens/common/cycle_progress.dart
++++ b/mobile/lib/screens/common/cycle_progress.dart
+@@ -62,8 +62,8 @@ class CycleProgress extends StatelessWidget {
+                   height: 30,
+                   alignment: Alignment.center,
+                   decoration: BoxDecoration(
+-                    color: c.flag('completed') ? AppColors.chartEarned.withValues(alpha: 0.16) : scheme.surfaceContainerHighest,
+-                    border: Border.all(color: c.flag('completed') ? AppColors.chartEarned : scheme.outline),
++                    color: c.flag('completed') ? context.tt.successContainer : scheme.surfaceContainerHighest,
++                    border: Border.all(color: c.flag('completed') ? tone(context, AppColors.chartEarned) : scheme.outline),
+                     borderRadius: BorderRadius.circular(8),
+                   ),
+                   child: c.flag('completed')
+diff --git a/mobile/lib/screens/common/notifications.dart b/mobile/lib/screens/common/notifications.dart
+index 398b466..123529d 100644
+--- a/mobile/lib/screens/common/notifications.dart
++++ b/mobile/lib/screens/common/notifications.dart
+@@ -68,7 +68,13 @@ class _NotificationBellState extends State<NotificationBell> with WidgetsBinding
+     final unseen = _items.where((n) => !seen.contains(n.str('id'))).length;
+     return IconButton(
+       tooltip: unseen == 0 ? tr('Notifications') : tr('{p0} new notifications', {'p0': unseen}),
+-      icon: Badge(isLabelVisible: unseen > 0, label: Text('$unseen'), child: Icon(Icons.notifications_outlined)),
++      icon: Badge(
++        isLabelVisible: unseen > 0,
++        backgroundColor: context.tt.warning,
++        textColor: context.tt.background,
++        label: Text(localDigits('$unseen')),
++        child: Icon(Icons.notifications_outlined, color: context.tt.textSecondary),
++      ),
+       onPressed: () async {
+         await Navigator.push(context, MaterialPageRoute<void>(builder: (_) => NotificationsScreen(items: _items)));
+         if (mounted) {
+@@ -140,7 +146,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
+                 ].join(' · ');
+                 final isNew = !_wasSeen.contains(item.str('id'));
+                 return ListTile(
+-                  leading: CircleAvatar(backgroundColor: color.withValues(alpha: 0.15), child: Icon(icon, color: color)),
++                  leading: CircleAvatar(backgroundColor: tonalContainer(context, color), child: Icon(icon, color: tone(context, color))),
+                   title: Text(item.str('title'), style: TextStyle(fontWeight: isNew ? FontWeight.w700 : FontWeight.w500)),
+                   subtitle: detail.isEmpty ? null : Text(detail, style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant)),
+                   trailing: isNew ? const Icon(Icons.circle, size: 10, color: AppColors.primary) : null,
+@@ -159,11 +165,11 @@ List<Widget> homeActions(BuildContext context) {
+     IconButton(
+       tooltip: tr('My account'),
+       icon: CircleAvatar(
+-        radius: 15,
+-        backgroundColor: AppColors.primary.withValues(alpha: 0.3),
++        radius: 16,
++        backgroundColor: context.tt.primaryContainer,
+         child: Text(
+           session.displayName.isEmpty ? '?' : session.displayName[0].toUpperCase(),
+-          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppColors.primarySoft),
++          style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: context.tt.onPrimaryContainer),
+         ),
+       ),
+       onPressed: () => Navigator.push(context, MaterialPageRoute<void>(builder: (_) => const AccountScreen())),
+diff --git a/mobile/lib/screens/student/connect_by_code.dart b/mobile/lib/screens/student/connect_by_code.dart
+index 610c856..0ed12d4 100644
+--- a/mobile/lib/screens/student/connect_by_code.dart
++++ b/mobile/lib/screens/student/connect_by_code.dart
+@@ -21,15 +21,8 @@ class ConnectByCodeCard extends StatefulWidget {
+ class _ConnectByCodeCardState extends State<ConnectByCodeCard> {
+   final _code = TextEditingController();
+   final _focus = FocusNode();
+-  bool _focused = false;
+   bool _busy = false;
+ 
+-  @override
+-  void initState() {
+-    super.initState();
+-    _focus.addListener(() => setState(() => _focused = _focus.hasFocus));
+-  }
+-
+   @override
+   void dispose() {
+     _code.dispose();
+@@ -66,52 +59,36 @@ class _ConnectByCodeCardState extends State<ConnectByCodeCard> {
+       child: Column(
+         crossAxisAlignment: CrossAxisAlignment.stretch,
+         children: [
+-          Text(tr('Connect with invite code'), style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
++          Text(tr('Connect with invite code'), style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: context.tt.textPrimary)),
+           const SizedBox(height: 4),
+-          Text(tr('Ask your tutor for their invite code.'), style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13)),
+-          gap12,
+-          AnimatedContainer(
+-            duration: const Duration(milliseconds: 220),
+-            decoration: BoxDecoration(
+-              borderRadius: BorderRadius.circular(16),
+-              boxShadow: [
+-                BoxShadow(
+-                  color: (_focused ? AppColors.primary : Theme.of(context).colorScheme.onSurfaceVariant).withValues(alpha: 0.25),
+-                  blurRadius: _focused ? 18 : 8,
+-                ),
+-              ],
+-            ),
+-            child: TextField(
+-              controller: _code,
+-              focusNode: _focus,
+-              maxLength: 8,
+-              textCapitalization: TextCapitalization.characters,
+-              inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[A-Za-z0-9]'))],
+-              decoration: InputDecoration(
+-                counterText: '',
+-                hintText: tr('e.g. KX7Q2M'),
+-                prefixIcon: Icon(Icons.key_rounded),
+-                border: OutlineInputBorder(
+-                  borderRadius: BorderRadius.all(Radius.circular(16)),
+-                  borderSide: BorderSide.none,
+-                ),
+-                filled: true,
+-              ),
+-              onSubmitted: (_) => _send(),
++          Text(tr('Ask your tutor for their invite code.'), style: TextStyle(color: context.tt.textSecondary, fontSize: 14, height: 1.5)),
++          gap16,
++          FieldLabel(tr('Invite code')),
++          TextField(
++            controller: _code,
++            focusNode: _focus,
++            maxLength: 8,
++            textCapitalization: TextCapitalization.characters,
++            inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[A-Za-z0-9]'))],
++            style: TextStyle(fontFamily: 'monospace', fontSize: 20, fontWeight: FontWeight.w600, letterSpacing: 2.8, color: context.tt.textPrimary),
++            decoration: InputDecoration(
++              counterText: '',
++              hintText: tr('e.g. KX7Q2M'),
++              hintStyle: TextStyle(fontFamily: 'monospace', fontSize: 20, letterSpacing: 2.8, color: context.tt.textTertiary),
++              prefixIcon: Icon(Icons.key_rounded, color: context.tt.textTertiary),
++              fillColor: context.tt.isDark ? context.tt.background : context.tt.cardRaised,
+             ),
++            onSubmitted: (_) => _send(),
+           ),
+-          gap12,
++          gap16,
+           SizedBox(
+-            height: 50,
++            height: 52,
+             child: _busy
+-                ? Center(child: SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2.5)))
++                ? const Center(child: SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2.5)))
+                 : FilledButton.icon(
+                     onPressed: _send,
+-                    icon: Icon(Icons.send),
++                    icon: const Icon(Icons.send_rounded, size: 18),
+                     label: Text(tr('Send Request')),
+-                    style: FilledButton.styleFrom(
+-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+-                    ),
+                   ),
+           ),
+         ],
+@@ -140,8 +117,8 @@ class PendingConnectionView extends StatelessWidget {
+             child: Column(
+               crossAxisAlignment: CrossAxisAlignment.start,
+               children: [
+-                Text(tr('Pending Connection'), style: TextStyle(fontWeight: FontWeight.w700)),
+-                Text(tr('Waiting for {p0} to accept.', {'p0': tutorName}), style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13)),
++                Text(tr('Pending Connection'), style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
++                Text(tr('Waiting for {p0} to accept.', {'p0': tutorName}), style: TextStyle(color: context.tt.textSecondary, fontSize: 13)),
+               ],
+             ),
+           ),
+diff --git a/mobile/lib/screens/student/connect_screen.dart b/mobile/lib/screens/student/connect_screen.dart
+index be3b36a..f7f7e5b 100644
+--- a/mobile/lib/screens/student/connect_screen.dart
++++ b/mobile/lib/screens/student/connect_screen.dart
+@@ -36,7 +36,7 @@ class ConnectScreen extends StatelessWidget {
+                 gap8,
+               ],
+               ConnectByCodeCard(onSent: reload),
+-              gap8,
++              gap16,
+               _TutorConnect(connections: connections, tuitions: tuitions, reload: reload),
+             ],
+           );
+@@ -69,7 +69,6 @@ class _TutorConnect extends StatelessWidget {
+       children: [
+         SectionTitle(
+           tr('My tutors'),
+-          icon: Icons.handshake_outlined,
+           trailing: TextButton.icon(onPressed: () => _find(context), icon: const Icon(Icons.search, size: 18), label: Text(tr('Find a tutor'))),
+         ),
+         // A tutor who added this student straight into a group never received a request from them.
+@@ -80,7 +79,11 @@ class _TutorConnect extends StatelessWidget {
+           AppCard(
+             padding: EdgeInsets.zero,
+             child: ListTile(
+-              leading: const CircleAvatar(child: Icon(Icons.person)),
++              leading: CircleAvatar(
++                radius: 20,
++                backgroundColor: context.tt.primaryContainer,
++                child: Icon(Icons.person_outline_rounded, color: context.tt.onPrimaryContainer),
++              ),
+               title: Text(name),
+               subtitle: Padding(
+                 padding: EdgeInsets.only(top: 4),
+@@ -91,10 +94,13 @@ class _TutorConnect extends StatelessWidget {
+           gap8,
+         ],
+         if (connections.isEmpty && tuitions.isEmpty)
+-          EmptyState(
+-            icon: Icons.person_search_outlined,
+-            title: tr('No tutor yet'),
+-            message: tr('Find your tutor and send a request. They decide whether to accept.'),
++          AppCard(
++            padding: EdgeInsets.zero,
++            child: EmptyState(
++              icon: Icons.person_search_outlined,
++              title: tr('No tutor yet'),
++              message: tr('Find your tutor and send a request. They decide whether to accept.'),
++            ),
+           )
+         else if (connections.isNotEmpty)
+           AppCard(
+@@ -102,7 +108,7 @@ class _TutorConnect extends StatelessWidget {
+             child: Column(
+               children: [
+                 for (var i = 0; i < connections.length; i++) ...[
+-                  if (i > 0) const Divider(),
++                  if (i > 0) Divider(height: 1, indent: 16, endIndent: 16, color: context.tt.border),
+                   Builder(builder: (context) {
+                     final c = connections[i];
+                     final status = c.str('status');
+@@ -112,7 +118,11 @@ class _TutorConnect extends StatelessWidget {
+                       _ => (tr('Waiting for the tutor'), AppColors.warning),
+                     };
+                     return ListTile(
+-                      leading: const CircleAvatar(child: Icon(Icons.person)),
++                      leading: CircleAvatar(
++                radius: 20,
++                backgroundColor: context.tt.primaryContainer,
++                child: Icon(Icons.person_outline_rounded, color: context.tt.onPrimaryContainer),
++              ),
+                       title: Text(c.str('tutor_name')),
+                       subtitle: Padding(
+                         padding: const EdgeInsets.only(top: 4),
+@@ -274,7 +284,11 @@ class _FindTutorSheetState extends State<_FindTutorSheet> {
+                                   return ListTile(
+                                     contentPadding: EdgeInsets.zero,
+                                     enabled: !blocked,
+-                                    leading: const CircleAvatar(child: Icon(Icons.person)),
++                                    leading: CircleAvatar(
++                radius: 20,
++                backgroundColor: context.tt.primaryContainer,
++                child: Icon(Icons.person_outline_rounded, color: context.tt.onPrimaryContainer),
++              ),
+                                     title: Text(tutor.str('name')),
+                                     subtitle: Text([
+                                       '@${tutor.str('username')}',
+diff --git a/mobile/lib/screens/student/exam_take_screen.dart b/mobile/lib/screens/student/exam_take_screen.dart
+index ef56ef3..a0e608d 100644
+--- a/mobile/lib/screens/student/exam_take_screen.dart
++++ b/mobile/lib/screens/student/exam_take_screen.dart
+@@ -249,7 +249,7 @@ class _ExamTakeScreenState extends State<ExamTakeScreen> {
+               liveRegion: _left.inSeconds % 60 == 0,
+               child: Container(
+                 width: double.infinity,
+-                color: timerColor.withValues(alpha: 0.12),
++                color: tonalContainer(context, timerColor),
+                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                 child: Row(
+                   children: [
+@@ -395,8 +395,8 @@ class _ExamTakeScreenState extends State<ExamTakeScreen> {
+             children: [
+               CircleAvatar(
+                 radius: 13,
+-                backgroundColor: AppColors.primary.withValues(alpha: 0.25),
+-                child: Text('${index + 1}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: AppColors.primarySoft)),
++                backgroundColor: context.tt.primaryContainer,
++                child: Text(localDigits('${index + 1}'), style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: context.tt.onPrimaryContainer)),
+               ),
+               const SizedBox(width: 10),
+               Expanded(
+@@ -417,10 +417,10 @@ class _ExamTakeScreenState extends State<ExamTakeScreen> {
+                 inMutuallyExclusiveGroup: true,
+                 checked: chosen == i,
+                 child: Material(
+-                  color: chosen == i ? AppColors.primary.withValues(alpha: 0.2) : Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
++                  color: chosen == i ? context.tt.primaryContainer : context.tt.cardRaised,
+                   shape: RoundedRectangleBorder(
+                     borderRadius: BorderRadius.circular(12),
+-                    side: BorderSide(color: chosen == i ? AppColors.primary : Theme.of(context).colorScheme.outline),
++                    side: BorderSide(color: chosen == i ? context.tt.primary : Colors.transparent),
+                   ),
+                   clipBehavior: Clip.antiAlias,
+                   child: InkWell(
+diff --git a/mobile/lib/screens/student/homework_card.dart b/mobile/lib/screens/student/homework_card.dart
+index 98ffdad..6e8dff5 100644
+--- a/mobile/lib/screens/student/homework_card.dart
++++ b/mobile/lib/screens/student/homework_card.dart
+@@ -17,11 +17,14 @@ import '../../widgets/ui.dart';
+ /// Student sees Upload + "Pending Tutor Review"/"Marked as Done".
+ /// Tutor sees "Mark as Done" (the only writer of is_evaluated=true).
+ class HomeworkCard extends StatefulWidget {
+-  const HomeworkCard({super.key, required this.hw, required this.isTutor, required this.onChanged});
++  const HomeworkCard({super.key, required this.hw, required this.isTutor, required this.onChanged, this.trailing});
+   final HomeworkItem hw;
+   final bool isTutor;
+   final Future<void> Function() onChanged;
+ 
++  /// A small action at the card's top right (the tutor's delete button).
++  final Widget? trailing;
++
+   @override
+   State<HomeworkCard> createState() => _HomeworkCardState();
+ }
+@@ -138,81 +141,74 @@ class _HomeworkCardState extends State<HomeworkCard> {
+   Widget build(BuildContext context) {
+     final hw = widget.hw;
+     final urgent = !hw.isEvaluated && _left.inSeconds > 0 && _left.inSeconds <= 7200;
++    final tt = context.tt;
+     return AppCard(
+-      borderColor: urgent ? AppColors.danger.withValues(alpha: 0.6) : null,
+       child: Column(
+         crossAxisAlignment: CrossAxisAlignment.start,
+         children: [
+           if (urgent)
+             Container(
+-              margin: const EdgeInsets.only(bottom: 10),
+-              padding: const EdgeInsets.all(10),
+-              decoration: BoxDecoration(color: AppColors.danger.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(12)),
++              margin: const EdgeInsets.only(bottom: 12),
++              padding: const EdgeInsets.all(12),
++              decoration: BoxDecoration(color: tt.dangerContainer, borderRadius: BorderRadius.circular(12)),
+               child: Row(
+                 children: [
+-                  Icon(Icons.alarm, color: AppColors.danger, size: 18),
+-                  SizedBox(width: 8),
++                  Icon(Icons.alarm, color: tt.danger, size: 18),
++                  const SizedBox(width: 8),
+                   Expanded(
+                     child: Text(tr('Hurry! Homework due in less than 2 hours!'),
+-                        style: TextStyle(color: AppColors.danger, fontWeight: FontWeight.w700, fontSize: 13)),
++                        style: TextStyle(color: tt.danger, fontWeight: FontWeight.w600, fontSize: 14)),
+                   ),
+                 ],
+               ),
+             ),
+-          Text(hw.title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
++          Row(
++            crossAxisAlignment: CrossAxisAlignment.start,
++            children: [
++              Expanded(child: Text(hw.title, style: TextStyle(fontSize: 17, height: 1.3, fontWeight: FontWeight.w600, color: tt.textPrimary))),
++              if (widget.trailing != null) widget.trailing!,
++            ],
++          ),
+           if (hw.sourceLabel.isNotEmpty)
+             Padding(
+-              padding: const EdgeInsets.only(top: 2),
+-              child: Text(hw.sourceLabel, style: const TextStyle(fontSize: 12, color: AppColors.primarySoft)),
++              padding: const EdgeInsets.only(top: 4),
++              child: Text(hw.sourceLabel, style: TextStyle(fontSize: 13, color: tt.textSecondary)),
+             ),
+-          if (hw.description.isNotEmpty) ...[gap8, Text(hw.description, style: const TextStyle(fontSize: 13))],
+-          gap8,
+-          Row(
++          if (hw.description.isNotEmpty) ...[gap8, Text(hw.description, style: const TextStyle(fontSize: 14, height: 1.5))],
++          gap12,
++          // Status as icon + word chips: the time left, and where the work stands.
++          Wrap(
++            spacing: 8,
++            runSpacing: 8,
+             children: [
+-              const Icon(Icons.timer_outlined, size: 16, color: AppColors.primarySoft),
+-              const SizedBox(width: 6),
+-              Text(_countdown,
+-                  style: TextStyle(
+-                      fontWeight: FontWeight.w700,
+-                      color: _left.isNegative || urgent ? AppColors.danger : AppColors.primarySoft)),
++              Pill(_countdown,
++                  color: _left.isNegative || urgent ? AppColors.danger : AppColors.primarySoft,
++                  icon: _left.isNegative ? Icons.schedule_rounded : Icons.timer_outlined),
++              if (hw.isPending)
++                Pill(tr('Waiting to sync'), color: AppColors.primarySoft, icon: Icons.cloud_upload_outlined)
++              else
++                Pill(hw.isEvaluated ? tr('Marked as Done') : tr('Pending Tutor Review'),
++                    color: hw.isEvaluated ? AppColors.success : AppColors.warning,
++                    icon: hw.isEvaluated ? Icons.check_rounded : Icons.hourglass_empty_rounded),
+             ],
+           ),
+-          gap8,
+-          if (hw.isPending)
+-            Pill(tr('Waiting to sync'), color: AppColors.primarySoft, icon: Icons.cloud_upload_outlined)
+-          else
+-            Pill(hw.isEvaluated ? tr('Marked as Done') : tr('Pending Tutor Review'),
+-                color: hw.isEvaluated ? AppColors.success : AppColors.warning, icon: hw.isEvaluated ? Icons.verified : Icons.hourglass_empty),
+-          if (hw.feedback.isNotEmpty) ...[gap8, Text(tr('Feedback: {p0}', {'p0': hw.feedback}), style: const TextStyle(fontSize: 13))],
++          if (hw.feedback.isNotEmpty) ...[gap12, Text(tr('Feedback: {p0}', {'p0': hw.feedback}), style: const TextStyle(fontSize: 14, height: 1.5))],
+           // What the student handed in, for the tutor to review (and for the student to check).
+           if (hw.submittedUrl.isNotEmpty || hw.submissionFileUrl.isNotEmpty) ...[
+-            gap8,
+-            Wrap(
+-              spacing: 8,
+-              runSpacing: 4,
+-              children: [
+-                if (hw.submittedUrl.isNotEmpty)
+-                  OutlinedButton.icon(
+-                    onPressed: () => openExternal(context, hw.submittedUrl),
+-                    icon: const Icon(Icons.link, size: 16),
+-                    label: Text(tr('Open submitted link')),
+-                  ),
+-                if (hw.submissionFileUrl.isNotEmpty)
+-                  OutlinedButton.icon(
+-                    onPressed: () => openExternal(context, hw.submissionFileUrl),
+-                    icon: const Icon(Icons.attach_file, size: 16),
+-                    label: Text(tr('Open submitted file')),
+-                  ),
+-              ],
+-            ),
++            gap12,
++            if (hw.submittedUrl.isNotEmpty)
++              _QuietButton(icon: Icons.link_rounded, label: tr('Open submitted link'), onPressed: () => openExternal(context, hw.submittedUrl)),
++            if (hw.submittedUrl.isNotEmpty && hw.submissionFileUrl.isNotEmpty) gap8,
++            if (hw.submissionFileUrl.isNotEmpty)
++              _QuietButton(icon: Icons.attach_file_rounded, label: tr('Open submitted file'), onPressed: () => openExternal(context, hw.submissionFileUrl)),
+           ] else if (widget.isTutor && hw.isSubmitted) ...[
+             gap8,
+-            Text(tr('Marked as submitted (no link or file).'), style: TextStyle(fontSize: 12, color: AppColors.muted)),
++            Text(tr('Marked as submitted (no link or file).'), style: TextStyle(fontSize: 13, color: tt.textSecondary)),
+           ],
+           gap12,
+           if (hw.isPending)
+             Text(tr('Assigned on this phone while offline. It reaches your students once you are back online.'),
+-                style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant))
++                style: TextStyle(fontSize: 13, color: tt.textSecondary))
+           else if (!widget.isTutor) ...[
+             // Checked work is closed: the server refuses changes after the tutor marks it done.
+             if (!hw.isEvaluated) ...[
+@@ -240,14 +236,29 @@ class _HomeworkCardState extends State<HomeworkCard> {
+                 ),
+               ),
+             ],
+-          ] else
++          ] else if (hw.isEvaluated)
++            // Rest state: nothing left to do on this one.
++            Container(
++              height: 48,
++              alignment: Alignment.center,
++              decoration: BoxDecoration(color: tt.isDark ? tt.background : tt.cardRaised, borderRadius: BorderRadius.circular(12)),
++              child: Row(
++                mainAxisSize: MainAxisSize.min,
++                children: [
++                  Icon(Icons.check_rounded, size: 18, color: tt.textSecondary),
++                  const SizedBox(width: 8),
++                  Text(tr('Evaluated ✓').replaceAll('✓', '').trim(),
++                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: tt.textSecondary)),
++                ],
++              ),
++            )
++          else
+             SizedBox(
+               width: double.infinity,
+               child: BusyButton(
+-                label: hw.isEvaluated ? tr('Evaluated ✓') : tr('Mark as Done'),
+-                icon: Icons.verified,
+-                color: AppColors.successDeep,
+-                onPressed: (hw.isEvaluated || _busy)
++                label: tr('Mark as Done'),
++                icon: Icons.check_rounded,
++                onPressed: _busy
+                     ? null
+                     : () async {
+                         HapticFeedback.lightImpact();
+@@ -260,3 +271,29 @@ class _HomeworkCardState extends State<HomeworkCard> {
+     );
+   }
+ }
++
++/// A full-width, quiet 48 dp button for secondary actions on a card.
++class _QuietButton extends StatelessWidget {
++  const _QuietButton({required this.icon, required this.label, required this.onPressed});
++  final IconData icon;
++  final String label;
++  final VoidCallback onPressed;
++
++  @override
++  Widget build(BuildContext context) {
++    final tt = context.tt;
++    return SizedBox(
++      width: double.infinity,
++      child: TextButton.icon(
++        style: TextButton.styleFrom(
++          backgroundColor: tt.isDark ? tt.background : tt.cardRaised,
++          foregroundColor: tt.textPrimary,
++          minimumSize: const Size.fromHeight(48),
++        ),
++        onPressed: onPressed,
++        icon: Icon(icon, size: 18),
++        label: Text(label),
++      ),
++    );
++  }
++}
+diff --git a/mobile/lib/screens/student/student_home.dart b/mobile/lib/screens/student/student_home.dart
+index baae8a3..a22a701 100644
+--- a/mobile/lib/screens/student/student_home.dart
++++ b/mobile/lib/screens/student/student_home.dart
+@@ -232,7 +232,7 @@ class _Flashcard extends StatelessWidget {
+           crossAxisAlignment: CrossAxisAlignment.stretch,
+           children: [
+             // A thin accent along the top makes each card read as a card in a deck.
+-            Container(height: 4, color: pendingCycles.isEmpty ? AppColors.chartPending : AppColors.warning),
++            Container(height: 4, color: pendingCycles.isEmpty ? context.tt.primary : context.tt.warning),
+             Padding(
+               padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+               child: Column(
+@@ -242,7 +242,7 @@ class _Flashcard extends StatelessWidget {
+                     children: [
+                       CircleAvatar(
+                         radius: 22,
+-                        backgroundColor: AppColors.primary.withValues(alpha: 0.2),
++                        backgroundColor: context.tt.primaryContainer,
+                         child: ClipOval(
+                           child: SizedBox.square(
+                             dimension: 44,
+@@ -375,7 +375,7 @@ class _PaymentPendingChip extends StatelessWidget {
+     final ink = tone(context, AppColors.warning);
+     return Container(
+       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+-      decoration: BoxDecoration(color: AppColors.warning.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(12)),
++      decoration: BoxDecoration(color: context.tt.warningContainer, borderRadius: BorderRadius.circular(12)),
+       child: Row(
+         children: [
+           Icon(Icons.warning_amber_rounded, size: 18, color: ink),
+diff --git a/mobile/lib/screens/tutor/exam_editor_screen.dart b/mobile/lib/screens/tutor/exam_editor_screen.dart
+index 30c998a..7f6ba7b 100644
+--- a/mobile/lib/screens/tutor/exam_editor_screen.dart
++++ b/mobile/lib/screens/tutor/exam_editor_screen.dart
+@@ -504,20 +504,12 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> {
+     if (picked != null) onPicked(picked);
+   }
+ 
++  /// Choices as a 44 dp tonal segmented control.
+   Widget _chips<T>(List<(T, String)> options, T selected, ValueChanged<T> onSelect) {
+-    return Wrap(
+-      spacing: 8,
+-      runSpacing: 8,
+-      children: [
+-        for (final (value, label) in options)
+-          ChoiceChip(
+-            label: Text(label),
+-            selected: value == selected,
+-            showCheckmark: false,
+-            visualDensity: VisualDensity.compact,
+-            onSelected: (_) => setState(() => onSelect(value)),
+-          ),
+-      ],
++    return PillToggle<T>(
++      options: [for (final (value, label) in options) (value, label, null)],
++      selected: selected,
++      onChanged: (value) => setState(() => onSelect(value)),
+     );
+   }
+ 
+@@ -526,24 +518,24 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> {
+     return Column(
+       crossAxisAlignment: CrossAxisAlignment.stretch,
+       children: [
+-        FlatGroup(children: [
+-          FlatField(
+-            controller: _title,
+-            hint: tr('Title, e.g. Chapter 3 quiz — Polynomials'),
+-            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+-            onChanged: (_) => setState(() {}),
+-          ),
+-        ]),
+-        gap12,
++        _Label(tr('Title')),
++        TextField(
++          controller: _title,
++          textCapitalization: TextCapitalization.sentences,
++          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
++          decoration: InputDecoration(hintText: tr('Title, e.g. Chapter 3 quiz — Polynomials')),
++          onChanged: (_) => setState(() {}),
++        ),
++        gap16,
+         _Label(tr('Type'), info: tr('Timed exam: open between a start and an end time, with an optional time limit per student.\n\nAssignment: homework with a deadline and no stopwatch.')),
+         _chips<String>([('EXAM', tr('Timed exam')), ('ASSIGNMENT', tr('Assignment'))], _category, (v) => _category = v),
+-        gap12,
++        gap16,
+         _Label(tr('Questions'), info: tr('MCQ: multiple choice, marked automatically.\n\nWritten: creative questions you mark yourself.\n\nBoth: a mix of the two.')),
+         _chips<String>([('HYBRID', tr('Both')), ('MCQ', tr('MCQ only')), ('CQ', tr('Written only'))], _type, (v) => _type = v),
+-        gap12,
++        gap16,
+         _Label(tr('For')),
+         _chips<bool>([(true, tr('A tuition')), (false, tr('One student'))], _forGroup, (v) => _forGroup = v),
+-        gap8,
++        gap12,
+         FlatGroup(children: [
+           PickerRow(
+             leading: InitialAvatar(_targetName, radius: 14, icon: _forGroup ? Icons.class_outlined : null),
+@@ -552,7 +544,7 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> {
+             onTap: (_forGroup ? _tuitions.isEmpty : _students.isEmpty) ? null : _chooseTarget,
+           ),
+           PickerRow(
+-            leading: Icon(Icons.play_circle_outline, size: 22, color: tone(context, AppColors.primarySoft)),
++            leading: Icon(Icons.play_circle_outline, size: 22, color: context.tt.textTertiary),
+             label: tr('Opens'),
+             value: fmtDateTime(_start),
+             onTap: () => _pickInto(tr('Opens'), _start, (value) => setState(() {
+@@ -562,7 +554,7 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> {
+                 })),
+           ),
+           PickerRow(
+-            leading: Icon(Icons.flag_outlined, size: 22, color: tone(context, AppColors.primarySoft)),
++            leading: Icon(Icons.flag_outlined, size: 22, color: context.tt.textTertiary),
+             label: isExam ? tr('Closes') : tr('Deadline'),
+             value: fmtDateTime(_end),
+             onTap: () => _pickInto(isExam ? tr('Closes') : tr('Deadline'), _end, (value) => setState(() => _end = value)),
+@@ -587,7 +579,7 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> {
+       children: [
+         FlatGroup(children: [
+           PickerRow(
+-            leading: Icon(Icons.schedule_send_outlined, size: 22, color: tone(context, AppColors.primarySoft)),
++            leading: Icon(Icons.schedule_send_outlined, size: 22, color: context.tt.textTertiary),
+             label: tr('Late work until'),
+             value: _lateUntil == null ? tr('Not accepted') : fmtDateTime(_lateUntil),
+             onTap: () => _pickInto(tr('Accept late work until'), _lateUntil, (value) => setState(() => _lateUntil = value)),
+@@ -645,7 +637,7 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> {
+           gap8,
+           FlatGroup(children: [
+             PickerRow(
+-              leading: Icon(Icons.event_available_outlined, size: 22, color: tone(context, AppColors.primarySoft)),
++              leading: Icon(Icons.event_available_outlined, size: 22, color: context.tt.textTertiary),
+               label: tr('Publish at'),
+               value: _resultsAt == null ? tr('Choose') : fmtDateTime(_resultsAt),
+               onTap: () => _pickInto(tr('Publish results at'), _resultsAt, (value) => setState(() => _resultsAt = value)),
+@@ -697,7 +689,7 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> {
+       if (_lateUntil != null) tr('late work until {p0}', {'p0': fmtShortDate(_lateUntil)}),
+       tr('grace {p0} min', {'p0': _grace.text.trim().isEmpty ? '0' : _grace.text.trim()}),
+       if (_type != 'CQ' && (num.tryParse(_negative.text.trim()) ?? 0) > 0) tr('negative marking'),
+-      if (_type != 'CQ' && _shuffle) 'shuffled',
++      if (_type != 'CQ' && _shuffle) tr('shuffled'),
+     ];
+     return parts.join(' · ');
+   }
+@@ -709,7 +701,7 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> {
+     final last = index == 3;
+     return Padding(
+       key: _sectionKeys[index],
+-      padding: const EdgeInsets.only(bottom: 10),
++      padding: const EdgeInsets.only(bottom: 12),
+       child: _Step(
+         number: index + 1,
+         title: title,
+@@ -723,17 +715,21 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> {
+           children: [
+             body,
+             if (!last) ...[
+-              gap12,
+-              Align(
+-                alignment: Alignment.centerRight,
+-                child: FilledButton.tonalIcon(
+-                  onPressed: () {
+-                    FocusScope.of(context).unfocus();
+-                    setState(() => _open = index + 1);
+-                    _reveal(index + 1);
+-                  },
+-                  icon: const Icon(Icons.arrow_downward, size: 18),
+-                  label: Text(tr('Continue')),
++              gap16,
++              FilledButton.tonal(
++                style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(52)),
++                onPressed: () {
++                  FocusScope.of(context).unfocus();
++                  setState(() => _open = index + 1);
++                  _reveal(index + 1);
++                },
++                child: Row(
++                  mainAxisSize: MainAxisSize.min,
++                  children: [
++                    Text(tr('Continue')),
++                    const SizedBox(width: 8),
++                    const Icon(Icons.arrow_downward_rounded, size: 18),
++                  ],
+                 ),
+               ),
+             ],
+@@ -747,6 +743,8 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> {
+   Widget build(BuildContext context) {
+     final noun = _category == 'ASSIGNMENT' ? 'assignment' : 'exam';
+     final hasQuestions = (_type != 'CQ' && _mcq.isNotEmpty) || (_type != 'MCQ' && (_keepPaper || _written.text.trim().isNotEmpty));
++    // Publishing needs a title and a question; until then the button shows it is not ready.
++    final canPublish = _wasPublished || (_title.text.trim().isNotEmpty && hasQuestions);
+     return Scaffold(
+       appBar: AppBar(
+         title: Text(_editing
+@@ -770,20 +768,39 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> {
+           _step(1, tr('Questions'), _questionsSummary, _questionsSection(), done: hasQuestions),
+           _step(2, tr('Extra rules'), _rulesSummary, _rulesSection(), optional: true),
+           _step(3, tr('Results & solution'), _resultsSummary, _resultsSection(), done: true),
++          if (!canPublish)
++            Padding(
++              padding: const EdgeInsets.fromLTRB(4, 4, 4, 0),
++              child: Text(tr('Add a title and at least one question before you publish.'),
++                  style: TextStyle(fontSize: 14, height: 1.5, color: context.tt.textSecondary)),
++            ),
+         ],
+       ),
+-      bottomNavigationBar: SafeArea(
++      bottomNavigationBar: Container(
++        color: context.tt.surface,
++        child: SafeArea(
+         child: Padding(
+-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
++          padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+           child: Row(
+             children: [
+               if (!_wasPublished) ...[
+-                Expanded(child: OutlinedButton(onPressed: _saving ? null : () => _save(false), child: Text(tr('Save draft')))),
++                Expanded(
++                  child: FilledButton(
++                    style: FilledButton.styleFrom(
++                      minimumSize: const Size.fromHeight(52),
++                      backgroundColor: context.tt.cardRaised,
++                      foregroundColor: context.tt.textPrimary,
++                    ),
++                    onPressed: _saving ? null : () => _save(false),
++                    child: Text(tr('Save draft')),
++                  ),
++                ),
+                 const SizedBox(width: 12),
+               ],
+               Expanded(
+                 child: FilledButton.icon(
+-                  onPressed: _saving ? null : () => _save(true),
++                  style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(52)),
++                  onPressed: _saving || !canPublish ? null : () => _save(true),
+                   icon: _saving
+                       ? SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: context.tt.onPrimary))
+                       : const Icon(Icons.send, size: 18),
+@@ -793,6 +810,7 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> {
+             ],
+           ),
+         ),
++        ),
+       ),
+     );
+   }
+@@ -822,11 +840,17 @@ class _Step extends StatelessWidget {
+ 
+   @override
+   Widget build(BuildContext context) {
+-    final scheme = Theme.of(context).colorScheme;
+     final tt = context.tt;
+-    final accent = done && !open ? tt.success : tt.primary;
++    // Badge: open = primary with its number; finished = green check; otherwise a quiet number.
++    final Color badgeFill = open ? tt.primary : (done ? tt.successContainer : tt.cardRaised);
++    final Widget badge = done && !open
++        ? Icon(Icons.check_rounded, size: 18, color: tt.success)
++        : Text(localDigits('$number'),
++            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: open ? tt.onPrimary : tt.textSecondary));
++    // An unfinished required step says so in the warning colour.
++    final summaryColor = !done && !optional ? tt.warning : tt.textSecondary;
+     return Material(
+-      color: open ? scheme.surface : scheme.surface.withValues(alpha: 0.6),
++      color: tt.card,
+       borderRadius: BorderRadius.circular(16),
+       clipBehavior: Clip.antiAlias,
+       child: Column(
+@@ -834,46 +858,51 @@ class _Step extends StatelessWidget {
+         children: [
+           InkWell(
+             onTap: onToggle,
+-            child: Padding(
+-              padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
+-              child: Row(
+-                children: [
+-                  Container(
+-                    width: 26,
+-                    height: 26,
+-                    alignment: Alignment.center,
+-                    decoration: BoxDecoration(
+-                      color: open || done ? accent : Colors.transparent,
+-                      shape: BoxShape.circle,
+-                      border: Border.all(color: open || done ? accent : scheme.outlineVariant),
++            child: ConstrainedBox(
++              constraints: const BoxConstraints(minHeight: 64),
++              child: Padding(
++                padding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
++                child: Row(
++                  children: [
++                    Container(
++                      width: 32,
++                      height: 32,
++                      alignment: Alignment.center,
++                      decoration: BoxDecoration(color: badgeFill, shape: BoxShape.circle),
++                      child: badge,
+                     ),
+-                    child: done && !open
+-                        ? Icon(Icons.check, size: 15, color: tt.onPrimary)
+-                        : Text('$number',
+-                            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: open ? tt.onPrimary : scheme.onSurfaceVariant)),
+-                  ),
+-                  const SizedBox(width: 12),
+-                  Expanded(
+-                    child: Column(
+-                      crossAxisAlignment: CrossAxisAlignment.start,
+-                      children: [
+-                        Row(
+-                          children: [
+-                            Text(title, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
+-                            if (optional) Text(tr('  optional'), style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
+-                          ],
+-                        ),
+-                        if (!open && summary.isNotEmpty)
+-                          Text(summary, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
+-                      ],
++                    const SizedBox(width: 12),
++                    Expanded(
++                      child: Column(
++                        crossAxisAlignment: CrossAxisAlignment.start,
++                        children: [
++                          Text.rich(
++                            TextSpan(children: [
++                              TextSpan(text: title),
++                              if (optional)
++                                TextSpan(
++                                  text: ' · ${tr('  optional').trim()}',
++                                  style: TextStyle(fontWeight: FontWeight.w400, color: tt.textTertiary),
++                                ),
++                            ]),
++                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: tt.textPrimary),
++                          ),
++                          if (!open && summary.isNotEmpty)
++                            Padding(
++                              padding: const EdgeInsets.only(top: 2),
++                              child: Text(summary,
++                                  maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 13, color: summaryColor)),
++                            ),
++                        ],
++                      ),
+                     ),
+-                  ),
+-                  AnimatedRotation(
+-                    turns: open ? 0.5 : 0,
+-                    duration: const Duration(milliseconds: 200),
+-                    child: Icon(Icons.expand_more, color: scheme.onSurfaceVariant),
+-                  ),
+-                ],
++                    AnimatedRotation(
++                      turns: open ? 0.5 : 0,
++                      duration: const Duration(milliseconds: 200),
++                      child: Icon(Icons.expand_more_rounded, color: tt.textTertiary),
++                    ),
++                  ],
++                ),
+               ),
+             ),
+           ),
+@@ -882,7 +911,7 @@ class _Step extends StatelessWidget {
+             curve: Curves.easeOut,
+             alignment: Alignment.topCenter,
+             child: open
+-                ? Padding(padding: const EdgeInsets.fromLTRB(14, 0, 14, 14), child: child)
++                ? Padding(padding: const EdgeInsets.fromLTRB(16, 4, 16, 16), child: child)
+                 : const SizedBox(width: double.infinity),
+           ),
+         ],
+@@ -904,7 +933,7 @@ class _Label extends StatelessWidget {
+       padding: const EdgeInsets.only(left: 2, bottom: 4),
+       child: Row(
+         children: [
+-          Text(text, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Theme.of(context).colorScheme.onSurfaceVariant)),
++          Text(text, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: context.tt.textSecondary)),
+           if (info != null) InfoTip(info!, title: text) else const SizedBox(height: 36),
+           const Spacer(),
+           if (trailing != null) trailing!,
+diff --git a/mobile/lib/screens/tutor/exams_view.dart b/mobile/lib/screens/tutor/exams_view.dart
+index e4f92d9..ccb5900 100644
+--- a/mobile/lib/screens/tutor/exams_view.dart
++++ b/mobile/lib/screens/tutor/exams_view.dart
+@@ -5,6 +5,7 @@ import '../../core/format.dart';
+ import '../../core/i18n.dart';
+ import '../../core/json.dart';
+ import '../../core/repo.dart';
++import '../../widgets/charts.dart';
+ import '../../widgets/theme.dart';
+ import '../../widgets/ui.dart';
+ import '../common/leaderboard_screen.dart';
+@@ -38,7 +39,16 @@ class ExamsView extends StatelessWidget {
+         Widget group(String title, List<Json> items) => Column(
+               crossAxisAlignment: CrossAxisAlignment.stretch,
+               children: [
+-                SectionTitle('$title (${items.length})'),
++                Padding(
++                  padding: const EdgeInsets.fromLTRB(2, 16, 2, 12),
++                  child: Text.rich(
++                    TextSpan(children: [
++                      TextSpan(text: title),
++                      TextSpan(text: ' · ${localDigits('${items.length}')}', style: TextStyle(fontWeight: FontWeight.w500, color: context.tt.textTertiary)),
++                    ]),
++                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: context.tt.textPrimary),
++                  ),
++                ),
+                 for (final exam in items) ...[_ExamCard(exam: exam, tuitions: data.tuitions, reload: reload), gap12],
+               ],
+             );
+@@ -186,102 +196,146 @@ class _ExamCard extends StatelessWidget {
+     final assigned = exam.numberOrNull('assigned_count')?.toInt();
+     final toGrade = submitted - graded;
+ 
++    final tt = context.tt;
++    final start = exam.date('start_time');
++    final end = exam.date('end_time');
++    final sameDay = start != null && end != null && dayKey(start) == dayKey(end);
++    final window = sameDay ? '${fmtDateTime(start)}  →  ${fmtTime(end)}' : '${fmtDateTime(start)}  →  ${fmtDateTime(end)}';
++    final menu = PopupMenuButton<String>(
++      tooltip: tr('More options'),
++      icon: Icon(Icons.more_vert_rounded, color: tt.textTertiary),
++      style: IconButton.styleFrom(minimumSize: const Size(44, 44)),
++      onSelected: (value) => switch (value) {
++        'edit' => _edit(context),
++        'copy' => _copy(context),
++        'board' => Navigator.push(
++            context,
++            MaterialPageRoute<void>(builder: (_) => LeaderboardScreen(examId: _id, title: exam.str('title'))),
++          ),
++        _ => _delete(context),
++      },
++      itemBuilder: (_) => [
++        PopupMenuItem(value: 'edit', child: Text(tr('Edit'))),
++        PopupMenuItem(value: 'copy', child: Text(tr('Copy (reuse)'))),
++        if (published) PopupMenuItem(value: 'board', child: Text(tr('Leaderboard'))),
++        PopupMenuItem(value: 'delete', child: Text(tr('Delete'), style: TextStyle(color: tt.danger))),
++      ],
++    );
++
+     return AppCard(
++      padding: const EdgeInsets.fromLTRB(16, 12, 8, 16),
+       child: Column(
+         crossAxisAlignment: CrossAxisAlignment.start,
+         children: [
+-          Wrap(
+-            spacing: 6,
+-            runSpacing: 6,
+-            children: [
+-              Pill(isAssignment ? tr('Assignment') : tr('Exam'), color: isAssignment ? AppColors.purple : AppColors.primarySoft),
+-              Pill(statusLabel, color: statusColor),
+-              if (exam.integer('duration_minutes') > 0 && !isAssignment) Pill(tr('{p0} min', {'p0': exam.integer('duration_minutes')}), icon: Icons.timer_outlined),
+-              if (toGrade > 0) Pill(tr('{p0} to grade', {'p0': toGrade}), color: AppColors.warning, icon: Icons.rate_review_outlined),
+-            ],
+-          ),
+-          gap8,
+-          Text(exam.str('title'), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+-          Text(
+-            [
+-              exam.str('student_name'),
+-              tr('{n} marks', {'n': trimNumber(exam.number('total_marks'))}),
+-              if (exam.integer('mcq_count') > 0) tr('{n} MCQ', {'n': exam.integer('mcq_count')}),
+-            ].join(' · '),
+-            style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
+-          ),
+-          SizedBox(height: 4),
+-          Text(
+-            '${fmtDateTime(exam.date('start_time'))}  →  ${fmtDateTime(exam.date('end_time'))}',
+-            style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
+-          ),
+-          if (published)
+-            Padding(
+-              padding: const EdgeInsets.only(top: 4),
+-              child: Text(
+-                tr('{p0}{p1} submitted · {p2} graded', {'p0': submitted, 'p1': assigned != null ? tr(' of {n}', {'n': assigned}) : '', 'p2': graded}),
+-                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+-              ),
+-            ),
+-          gap12,
+           Row(
++            crossAxisAlignment: CrossAxisAlignment.start,
+             children: [
+               Expanded(
+-                child: published
+-                    ? FilledButton.tonalIcon(
+-                        onPressed: () async {
+-                          await Navigator.push(context, MaterialPageRoute<void>(builder: (_) => SubmissionsScreen(examId: _id, title: exam.str('title'))));
+-                          await reload();
+-                        },
+-                        icon: const Icon(Icons.fact_check_outlined, size: 18),
+-                        label: Text(tr('Submissions')),
+-                      )
+-                    : BusyButton(
+-                        icon: Icons.send,
+-                        label: tr('Publish'),
+-                        onPressed: () async {
+-                          if (await attempt(context, () => repo.updateExam(_id, {'is_published': true}), success: tr('Published. Students have been notified.'))) {
+-                            await reload();
+-                          }
+-                        },
+-                      ),
++                child: Padding(
++                  padding: const EdgeInsets.only(top: 8),
++                  child: Wrap(
++                    spacing: 8,
++                    runSpacing: 8,
++                    children: [
++                      Pill(isAssignment ? tr('Assignment') : tr('Exam'), color: isAssignment ? AppColors.purple : AppColors.primarySoft),
++                      Pill(statusLabel, color: statusColor),
++                      if (exam.integer('duration_minutes') > 0 && !isAssignment)
++                        Pill(tr('{p0} min', {'p0': exam.integer('duration_minutes')}), icon: Icons.timer_outlined),
++                      if (toGrade > 0) Pill(tr('{p0} to grade', {'p0': toGrade}), color: AppColors.warning, icon: Icons.rate_review_outlined),
++                    ],
++                  ),
++                ),
+               ),
+-              if (published) ...[
+-                const SizedBox(width: 8),
+-                Expanded(
+-                  child: Tooltip(
+-                    message: resultsHint,
+-                    child: OutlinedButton.icon(
+-                      onPressed: () => _toggleResults(context),
+-                      icon: Icon(
+-                        exam.flag('results_released') ? Icons.visibility : Icons.visibility_off_outlined,
+-                        size: 18,
+-                        color: exam.flag('results_released') ? AppColors.success : null,
++              menu,
++            ],
++          ),
++          Padding(
++            padding: const EdgeInsets.only(right: 8),
++            child: Column(
++              crossAxisAlignment: CrossAxisAlignment.stretch,
++              children: [
++                const SizedBox(height: 12),
++                Text(exam.str('title'), style: TextStyle(fontSize: 17, height: 1.3, fontWeight: FontWeight.w600, color: tt.textPrimary)),
++                const SizedBox(height: 4),
++                Text(
++                  [
++                    exam.str('student_name'),
++                    tr('{n} marks', {'n': trimNumber(exam.number('total_marks'))}),
++                    if (exam.integer('mcq_count') > 0) tr('{n} MCQ', {'n': exam.integer('mcq_count')}),
++                  ].where((part) => part.isNotEmpty).join(' · '),
++                  style: TextStyle(color: tt.textSecondary, fontSize: 13, height: 1.4),
++                ),
++                const SizedBox(height: 12),
++                Divider(height: 1, color: tt.border),
++                Padding(
++                  padding: const EdgeInsets.symmetric(vertical: 12),
++                  child: Row(
++                    children: [
++                      Icon(Icons.calendar_today_outlined, size: 18, color: tt.textTertiary),
++                      const SizedBox(width: 12),
++                      Expanded(
++                        child: Text(window, style: TextStyle(color: tt.textSecondary, fontSize: 14, fontFeatures: tabular)),
+                       ),
+-                      label: Text(resultsLabel, overflow: TextOverflow.ellipsis),
+-                    ),
++                    ],
+                   ),
+                 ),
+-              ],
+-              PopupMenuButton<String>(
+-                tooltip: tr('More options'),
+-                onSelected: (value) => switch (value) {
+-                  'edit' => _edit(context),
+-                  'copy' => _copy(context),
+-                  'board' => Navigator.push(
+-                      context,
+-                      MaterialPageRoute<void>(builder: (_) => LeaderboardScreen(examId: _id, title: exam.str('title'))),
+-                    ),
+-                  _ => _delete(context),
+-                },
+-                itemBuilder: (_) => [
+-                  PopupMenuItem(value: 'edit', child: Text(tr('Edit'))),
+-                  PopupMenuItem(value: 'copy', child: Text(tr('Copy (reuse)'))),
+-                  if (published) PopupMenuItem(value: 'board', child: Text(tr('Leaderboard'))),
+-                  PopupMenuItem(value: 'delete', child: Text(tr('Delete'), style: TextStyle(color: AppColors.danger))),
++                Divider(height: 1, color: tt.border),
++                if (published) ...[
++                  const SizedBox(height: 12),
++                  Text(
++                    tr('{p0}{p1} submitted · {p2} graded', {'p0': submitted, 'p1': assigned != null ? tr(' of {n}', {'n': assigned}) : '', 'p2': graded}),
++                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: tt.textPrimary),
++                  ),
++                  const SizedBox(height: 8),
++                  ProgressLine(
++                    value: submitted <= 0 ? 0 : graded / submitted,
++                    height: 6,
++                    label: tr('{p0}{p1} submitted · {p2} graded', {'p0': submitted, 'p1': assigned != null ? tr(' of {n}', {'n': assigned}) : '', 'p2': graded}),
++                  ),
+                 ],
+-              ),
+-            ],
++                const SizedBox(height: 16),
++                Row(
++                  children: [
++                    Expanded(
++                      child: published
++                          ? FilledButton.icon(
++                              onPressed: () async {
++                                await Navigator.push(context, MaterialPageRoute<void>(builder: (_) => SubmissionsScreen(examId: _id, title: exam.str('title'))));
++                                await reload();
++                              },
++                              icon: const Icon(Icons.fact_check_outlined, size: 18),
++                              label: Text(tr('Submissions'), overflow: TextOverflow.ellipsis),
++                            )
++                          : BusyButton(
++                              icon: Icons.send,
++                              label: tr('Publish'),
++                              onPressed: () async {
++                                if (await attempt(context, () => repo.updateExam(_id, {'is_published': true}), success: tr('Published. Students have been notified.'))) {
++                                  await reload();
++                                }
++                              },
++                            ),
++                    ),
++                    if (published) ...[
++                      const SizedBox(width: 8),
++                      Expanded(
++                        child: Tooltip(
++                          message: resultsHint,
++                          child: FilledButton.tonalIcon(
++                            onPressed: () => _toggleResults(context),
++                            icon: Icon(
++                              exam.flag('results_released') ? Icons.visibility_outlined : Icons.visibility_off_outlined,
++                              size: 18,
++                            ),
++                            label: Text(resultsLabel, overflow: TextOverflow.ellipsis),
++                          ),
++                        ),
++                      ),
++                    ],
++                  ],
++                ),
++              ],
++            ),
+           ),
+         ],
+       ),
+diff --git a/mobile/lib/screens/tutor/home_tab.dart b/mobile/lib/screens/tutor/home_tab.dart
+index ef8276b..42e80ee 100644
+--- a/mobile/lib/screens/tutor/home_tab.dart
++++ b/mobile/lib/screens/tutor/home_tab.dart
+@@ -311,52 +311,64 @@ class _WalletStrip extends StatelessWidget {
+ 
+   @override
+   Widget build(BuildContext context) {
+-    final scheme = Theme.of(context).colorScheme;
+     final earned = wallet.number('total_earned');
+     final pending = wallet.number('total_pending');
+     final total = earned + pending;
+     final share = total <= 0 ? 0.0 : earned / total;
++    final tt = context.tt;
+     return AppCard(
+-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
++      padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+       child: Column(
+         crossAxisAlignment: CrossAxisAlignment.stretch,
+         children: [
++          Text(tr('Earned in current cycles'), style: TextStyle(fontSize: 13, height: 1.4, color: tt.textSecondary)),
++          const SizedBox(height: 4),
+           Row(
+-            crossAxisAlignment: CrossAxisAlignment.end,
++            crossAxisAlignment: CrossAxisAlignment.baseline,
++            textBaseline: TextBaseline.alphabetic,
+             children: [
+               Expanded(
+-                child: Column(
+-                  crossAxisAlignment: CrossAxisAlignment.start,
+-                  children: [
+-                    Text(tr('Earned in current cycles'), style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
+-                    const SizedBox(height: 2),
+-                    Text(taka(earned), style: TextStyle(fontSize: 26, fontWeight: FontWeight.w800, color: tone(context, AppColors.success))),
+-                  ],
++                child: FittedBox(
++                  fit: BoxFit.scaleDown,
++                  alignment: Alignment.centerLeft,
++                  child: Text(
++                    taka(earned),
++                    style: TextStyle(
++                      fontSize: 30,
++                      height: 1.15,
++                      letterSpacing: -0.6,
++                      fontWeight: FontWeight.w700,
++                      fontFeatures: tabular,
++                      color: tt.success,
++                    ),
++                  ),
+                 ),
+               ),
+-              Text(tr('of {p0}', {'p0': taka(total)}), style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
++              const SizedBox(width: 8),
++              Text(tr('of {p0}', {'p0': taka(total)}),
++                  style: TextStyle(fontSize: 13, fontFeatures: tabular, color: tt.textTertiary)),
+             ],
+           ),
+-          const SizedBox(height: 10),
+-          ProgressLine(value: share, height: 5, label: tr('Share of the current cycles already earned')),
++          const SizedBox(height: 12),
++          ProgressLine(value: share, height: 8, label: tr('Share of the current cycles already earned')),
+           if (wallet.integer('unpaid_cycles') > 0) ...[
+-            const SizedBox(height: 10),
++            const SizedBox(height: 8),
+             InkWell(
+-              borderRadius: BorderRadius.circular(8),
++              borderRadius: BorderRadius.circular(12),
+               onTap: () => Navigator.push(context, MaterialPageRoute<void>(builder: (_) => const PaymentsScreen())),
+-              child: Padding(
+-                padding: const EdgeInsets.symmetric(vertical: 4),
++              child: ConstrainedBox(
++                constraints: const BoxConstraints(minHeight: 44),
+                 child: Row(
+                   children: [
+-                    Icon(Icons.warning_amber_rounded, size: 16, color: tone(context, AppColors.warning)),
+-                    const SizedBox(width: 6),
++                    Icon(Icons.warning_amber_rounded, size: 18, color: tt.warning),
++                    const SizedBox(width: 8),
+                     Expanded(
+                       child: Text(
+                         tr('{p0} to collect · {p1} unpaid cycle{p2}', {'p0': taka(wallet.number('unpaid_total')), 'p1': wallet.integer('unpaid_cycles'), 'p2': wallet.integer('unpaid_cycles') == 1 ? '' : 's'}),
+-                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: tone(context, AppColors.warning)),
++                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: tt.warning),
+                       ),
+                     ),
+-                    Icon(Icons.chevron_right, size: 16, color: tone(context, AppColors.warning)),
++                    Icon(Icons.chevron_right_rounded, size: 20, color: tt.warning),
+                   ],
+                 ),
+               ),
+@@ -809,7 +821,7 @@ class _TuitionGrid extends StatelessWidget {
+   Widget build(BuildContext context) {
+     return LayoutBuilder(
+       builder: (context, constraints) {
+-        const spacing = 10.0;
++        const spacing = 12.0;
+         final columns = constraints.maxWidth >= 560 ? 3 : 2;
+         final width = (constraints.maxWidth - spacing * (columns - 1)) / columns;
+         return Wrap(
+@@ -836,46 +848,70 @@ class _TuitionCard extends StatelessWidget {
+ 
+   @override
+   Widget build(BuildContext context) {
+-    final scheme = Theme.of(context).colorScheme;
++    final tt = context.tt;
+     final cycle = tuition.obj('active_cycle');
+     final done = cycle?.integer('completed_classes') ?? 0;
+     final total = cycle?.integer('total_classes') ?? tuition.integer('cycle_length');
+     final cycleNo = cycle?.integer('cycle_number') ?? 1;
+-    final complete = total > 0 && done >= total;
++    final students = tuition.integer('enrolled_count');
++    final due = tuition.maps('pending_payments').isNotEmpty;
+     return AppCard(
+       onTap: onTap,
+       onLongPress: onLongPress,
+-      padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+-      child: Column(
+-        crossAxisAlignment: CrossAxisAlignment.start,
+-        children: [
+-          SizedBox(
+-            height: 38,
+-            child: Text(tuition.str('title'),
+-                maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, height: 1.3)),
+-          ),
+-          const SizedBox(height: 6),
+-          Row(
+-            children: [
+-              Text(tr('Cycle {p0}', {'p0': cycleNo}), style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant)),
+-              if (tuition.maps('pending_payments').isNotEmpty) ...[
+-                const SizedBox(width: 6),
+-                Tooltip(
+-                  message: tr('Payment pending'),
+-                  child: Icon(Icons.warning_amber_rounded, size: 14, color: tone(context, AppColors.warning)),
+-                ),
+-              ],
+-              const Spacer(),
+-              Text('$done/$total',
+-                  style: TextStyle(
+-                      fontSize: 12,
+-                      fontWeight: FontWeight.w800,
+-                      color: complete ? tone(context, AppColors.success) : scheme.onSurface)),
+-            ],
+-          ),
+-          const SizedBox(height: 6),
+-          ProgressLine(value: total == 0 ? 0.0 : done / total, height: 4, label: tr('{p0} of {p1} classes done', {'p0': done, 'p1': total})),
+-        ],
++      padding: const EdgeInsets.fromLTRB(16, 16, 12, 16),
++      child: ConstrainedBox(
++        constraints: BoxConstraints(minHeight: isBangla ? 116 : 104),
++        child: Row(
++          crossAxisAlignment: CrossAxisAlignment.start,
++          children: [
++            Expanded(
++              child: Column(
++                crossAxisAlignment: CrossAxisAlignment.start,
++                children: [
++                  Text(tuition.str('title'),
++                      maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: tt.textPrimary)),
++                  const SizedBox(height: 4),
++                  Text(
++                    '${tr('{p0} student{p1}', {'p0': students, 'p1': students == 1 ? '' : 's'})} · ${tr('Cycle {p0}', {'p0': cycleNo})}',
++                    style: TextStyle(fontSize: 12, height: 1.4, color: tt.textSecondary),
++                  ),
++                  if (due) ...[
++                    const SizedBox(height: 8),
++                    _DueChip(tt: tt),
++                  ],
++                ],
++              ),
++            ),
++            const SizedBox(width: 8),
++            ProgressRing(done: done, total: total, size: 52, thickness: 4),
++          ],
++        ),
++      ),
++    );
++  }
++}
++
++/// Amber "Due" badge: a cycle of this tuition waits for payment. Word + dot, never colour alone.
++class _DueChip extends StatelessWidget {
++  const _DueChip({required this.tt});
++  final TtTokens tt;
++
++  @override
++  Widget build(BuildContext context) {
++    return Semantics(
++      label: tr('Payment pending'),
++      excludeSemantics: true,
++      child: Container(
++        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
++        decoration: BoxDecoration(color: tt.warningContainer, borderRadius: BorderRadius.circular(8)),
++        child: Row(
++          mainAxisSize: MainAxisSize.min,
++          children: [
++            Container(width: 6, height: 6, decoration: BoxDecoration(color: tt.warning, shape: BoxShape.circle)),
++            const SizedBox(width: 6),
++            Text(tr('@payment_due'), style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tt.onWarningContainer)),
++          ],
++        ),
+       ),
+     );
+   }
+diff --git a/mobile/lib/screens/tutor/homework_tab.dart b/mobile/lib/screens/tutor/homework_tab.dart
+index ec1ee25..3cb04e8 100644
+--- a/mobile/lib/screens/tutor/homework_tab.dart
++++ b/mobile/lib/screens/tutor/homework_tab.dart
+@@ -117,33 +117,25 @@ class _HomeworkTabState extends State<HomeworkTab> {
+         }).toList();
+         return PageBody(
+           children: [
+-            Row(
+-              children: [
+-                Expanded(
+-                  child: SegmentedButton<String>(
+-                    segments: [
+-                      for (final f in const ['all', 'pending', 'evaluated'])
+-                        ButtonSegment(
+-                          value: f,
+-                          label: Text('${tr(_filterLabels[f]!)} (${localDigits('${counts[f] ?? 0}')})'),
+-                        ),
+-                    ],
+-                    selected: {_filter},
+-                    onSelectionChanged: (s) => setState(() => _filter = s.first),
+-                  ),
+-                ),
++            PillToggle<String>(
++              options: [
++                for (final f in const ['all', 'pending', 'evaluated'])
++                  (f, '${tr(_filterLabels[f]!)} ${localDigits('${counts[f] ?? 0}')}', null),
+               ],
++              selected: _filter,
++              onChanged: (f) => setState(() => _filter = f),
+             ),
+             gap12,
+-            FilledButton.icon(
++            FilledButton.tonalIcon(
++              style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(52)),
+               onPressed: () {
+                 HapticFeedback.lightImpact();
+                 _create(data);
+               },
+-              icon: const Icon(Icons.add),
++              icon: const Icon(Icons.add_rounded),
+               label: Text(tr('Assign homework')),
+             ),
+-            gap12,
++            gap8,
+             if (filtered.isEmpty)
+               EmptyState(
+                 icon: Icons.assignment_outlined,
+@@ -153,9 +145,11 @@ class _HomeworkTabState extends State<HomeworkTab> {
+                     : (_filter == 'pending' ? tr('No pending homework right now.') : tr('No evaluated homework right now.')),
+               )
+             else
+-              for (final hw in filtered) ...[
++              for (final (i, hw) in filtered.indexed) ...[
+                 _TutorHomeworkRow(
+                   hw: hw,
++                  // Work for the same student (or tuition) sits under one header.
++                  showHeader: i == 0 || _targetOf(filtered[i - 1]) != _targetOf(hw),
+                   onChanged: () async {
+                     await _key.currentState?.reload();
+                   },
+@@ -171,60 +165,73 @@ class _HomeworkTabState extends State<HomeworkTab> {
+   }
+ }
+ 
++String _targetOf(HomeworkItem hw) => hw.studentName.isNotEmpty ? hw.studentName : hw.tuitionTitle;
++
+ class _TutorHomeworkRow extends StatelessWidget {
+-  const _TutorHomeworkRow({required this.hw, required this.onChanged, required this.onDelete, this.onSplit});
++  const _TutorHomeworkRow({required this.hw, required this.onChanged, required this.onDelete, this.onSplit, this.showHeader = true});
+   final HomeworkItem hw;
+   final Future<void> Function() onChanged;
+   final VoidCallback onDelete;
+   final VoidCallback? onSplit;
++  final bool showHeader;
+ 
+   @override
+   Widget build(BuildContext context) {
+-    final target = hw.studentName.isNotEmpty ? hw.studentName : hw.tuitionTitle;
++    final tt = context.tt;
++    final target = _targetOf(hw);
+     return Column(
+       crossAxisAlignment: CrossAxisAlignment.stretch,
+       children: [
+-        if (target.isNotEmpty)
++        if (target.isNotEmpty && showHeader)
+           Padding(
+-            padding: const EdgeInsets.only(left: 4, bottom: 4),
++            padding: const EdgeInsets.fromLTRB(4, 12, 4, 8),
+             child: Row(
+               children: [
+-                Icon(hw.studentName.isNotEmpty ? Icons.person_outline : Icons.class_outlined,
+-                    size: 14, color: tone(context, AppColors.primarySoft)),
+-                const SizedBox(width: 4),
++                CircleAvatar(
++                  radius: 12,
++                  backgroundColor: tt.primaryContainer,
++                  child: hw.studentName.isNotEmpty
++                      ? Text(target.characters.first.toUpperCase(),
++                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tt.onPrimaryContainer))
++                      : Icon(Icons.groups_outlined, size: 14, color: tt.onPrimaryContainer),
++                ),
++                const SizedBox(width: 8),
+                 Expanded(
+                   child: Text(target,
+-                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tone(context, AppColors.primarySoft)),
+-                      overflow: TextOverflow.ellipsis),
++                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: tt.textSecondary), overflow: TextOverflow.ellipsis),
+                 ),
+                 if (hw.isSharedGroupTask)
+-                  Text(tr('shared'), style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurfaceVariant)),
++                  Text(tr('shared'), style: TextStyle(fontSize: 12, color: tt.textTertiary)),
+               ],
+             ),
+           ),
+-        HomeworkCard(hw: hw, isTutor: true, onChanged: onChanged),
+-        if (!hw.isPending)
+-          Row(
+-            mainAxisAlignment: MainAxisAlignment.end,
+-            children: [
+-              if (onSplit != null)
+-                TextButton.icon(
++        HomeworkCard(
++          hw: hw,
++          isTutor: true,
++          onChanged: onChanged,
++          trailing: hw.isPending
++              ? null
++              : IconButton(
++                  tooltip: tr('Delete homework'),
++                  visualDensity: VisualDensity.compact,
++                  icon: Icon(Icons.delete_outline_rounded, size: 20, color: tt.textTertiary),
+                   onPressed: () {
+                     HapticFeedback.lightImpact();
+-                    onSplit!();
++                    onDelete();
+                   },
+-                  icon: const Icon(Icons.call_split_outlined, size: 16),
+-                  label: Text(tr('Split per student')),
+                 ),
+-              IconButton(
+-                tooltip: tr('Delete homework'),
+-                icon: const Icon(Icons.delete_outline, size: 20),
+-                onPressed: () {
+-                  HapticFeedback.lightImpact();
+-                  onDelete();
+-                },
+-              ),
+-            ],
++        ),
++        if (!hw.isPending && onSplit != null)
++          Align(
++            alignment: Alignment.centerRight,
++            child: TextButton.icon(
++              onPressed: () {
++                HapticFeedback.lightImpact();
++                onSplit!();
++              },
++              icon: const Icon(Icons.call_split_outlined, size: 16),
++              label: Text(tr('Split per student')),
++            ),
+           ),
+       ],
+     );
+diff --git a/mobile/lib/screens/tutor/mcq_builder.dart b/mobile/lib/screens/tutor/mcq_builder.dart
+index ddf492d..226a28f 100644
+--- a/mobile/lib/screens/tutor/mcq_builder.dart
++++ b/mobile/lib/screens/tutor/mcq_builder.dart
+@@ -175,8 +175,8 @@ class _QuestionCard extends StatelessWidget {
+                 padding: const EdgeInsets.only(top: 4),
+                 child: CircleAvatar(
+                   radius: 13,
+-                  backgroundColor: AppColors.primary.withValues(alpha: 0.25),
+-                  child: Text('${index + 1}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: AppColors.primarySoft)),
++                  backgroundColor: context.tt.primaryContainer,
++                  child: Text(localDigits('${index + 1}'), style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: context.tt.onPrimaryContainer)),
+                 ),
+               ),
+               SizedBox(width: 10),
+@@ -221,10 +221,10 @@ class _QuestionCard extends StatelessWidget {
+                 checked: correct == i,
+                 label: tr('Option {p0}{p1}', {'p0': _letters[i], 'p1': correct == i ? tr(', correct answer') : ''}),
+                 child: Material(
+-                  color: correct == i ? AppColors.success.withValues(alpha: 0.14) : Colors.transparent,
++                  color: correct == i ? context.tt.successContainer : Colors.transparent,
+                   shape: RoundedRectangleBorder(
+                     borderRadius: BorderRadius.circular(10),
+-                    side: BorderSide(color: correct == i ? AppColors.success.withValues(alpha: 0.6) : Theme.of(context).colorScheme.outline),
++                    side: BorderSide(color: correct == i ? context.tt.success : Theme.of(context).colorScheme.outline),
+                   ),
+                   clipBehavior: Clip.antiAlias,
+                   child: InkWell(
+diff --git a/mobile/lib/screens/tutor/students_tab.dart b/mobile/lib/screens/tutor/students_tab.dart
+index d900961..67e558f 100644
+--- a/mobile/lib/screens/tutor/students_tab.dart
++++ b/mobile/lib/screens/tutor/students_tab.dart
+@@ -108,11 +108,8 @@ class _StudentsTabState extends State<StudentsTab> {
+           padding: const EdgeInsets.fromLTRB(16, 12, 16, 96),
+           children: [
+             if (data.students.length > 5) ...[
+-              TextField(
+-                decoration: InputDecoration(labelText: tr('Search students'), prefixIcon: Icon(Icons.search)),
+-                onChanged: (value) => setState(() => _search = value.trim()),
+-              ),
+-              gap12,
++              _SearchField(hint: tr('Search students'), onChanged: (value) => setState(() => _search = value.trim())),
++              gap16,
+             ],
+             if (data.students.isEmpty)
+               EmptyState(
+@@ -123,17 +120,26 @@ class _StudentsTabState extends State<StudentsTab> {
+             else if (students.isEmpty)
+               Text(tr('No students match that search.'), style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant))
+             else
+-              for (final student in students) ...[
+-                _StudentCard(
+-                  student: student,
+-                  groups: groupsOf[student.str('id')] ?? const [],
+-                  pendingRequest: pendingIds.contains(student.str('id')),
+-                  unassigned: unassignedIds.contains(student.str('id')),
+-                  tuitions: data.tuitions,
+-                  reload: reload,
++              // One card, students separated by hairlines.
++              Container(
++                clipBehavior: Clip.antiAlias,
++                decoration: BoxDecoration(color: context.tt.card, borderRadius: BorderRadius.circular(16), boxShadow: context.tt.cardShadow),
++                child: Column(
++                  children: [
++                    for (final (i, student) in students.indexed) ...[
++                      if (i > 0) Divider(height: 1, indent: 16, endIndent: 16, color: context.tt.border),
++                      _StudentCard(
++                        student: student,
++                        groups: groupsOf[student.str('id')] ?? const [],
++                        pendingRequest: pendingIds.contains(student.str('id')),
++                        unassigned: unassignedIds.contains(student.str('id')),
++                        tuitions: data.tuitions,
++                        reload: reload,
++                      ),
++                    ],
++                  ],
+                 ),
+-                gap8,
+-              ],
++              ),
+           ],
+         );
+       },
+@@ -172,14 +178,14 @@ class _StudentCard extends StatelessWidget {
+             child: ListView(
+               shrinkWrap: true,
+               children: [
+-                ListTile(title: Text('Add $name to which tuition?', style: const TextStyle(fontWeight: FontWeight.w700))),
+-                if (tuitions.isEmpty) ListTile(title: Text('Create a tuition first.', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant))),
++                ListTile(title: Text(tr('Add {p0} to which tuition?', {'p0': name}), style: const TextStyle(fontWeight: FontWeight.w700))),
++                if (tuitions.isEmpty) ListTile(title: Text(tr('Create a tuition first.'), style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant))),
+                 for (final t in tuitions)
+                   ListTile(
+                     leading: Icon(Icons.groups_outlined),
+                     title: Text(t.str('title')),
+                     enabled: !groups.contains(t.str('title')),
+-                    subtitle: groups.contains(t.str('title')) ? Text('Already in this tuition') : null,
++                    subtitle: groups.contains(t.str('title')) ? Text(tr('Already in this tuition')) : null,
+                     onTap: () => Navigator.pop(context, t.str('id')),
+                   ),
+               ],
+@@ -187,13 +193,13 @@ class _StudentCard extends StatelessWidget {
+           ),
+         );
+         if (tuitionId == null || !context.mounted) return;
+-        if (await attempt(context, () => repo.enroll(tuitionId, [id]), success: '$name added to the tuition.')) await reload();
++        if (await attempt(context, () => repo.enroll(tuitionId, [id]), success: tr('{name} added to the tuition.', {'name': name}))) await reload();
+       case 'reset':
+         final ok = await confirm(
+           context,
+-          title: 'Reset $name\'s password?',
+-          message: 'A new temporary password is created and shown to you once. The current password stops working and $name is signed out everywhere.',
+-          confirmLabel: 'Reset password',
++          title: tr('Reset the password of {name}?', {'name': name}),
++          message: tr('A new temporary password is created and shown to you once. The current password stops working and {name} is signed out everywhere.', {'name': name}),
++          confirmLabel: tr('Reset password'),
+         );
+         if (!ok || !context.mounted) return;
+         Json? result;
+@@ -206,74 +212,117 @@ class _StudentCard extends StatelessWidget {
+         final active = student.flag('is_active');
+         final ok = await confirm(
+           context,
+-          title: active ? 'Deactivate $name?' : 'Reactivate $name?',
++          title: active ? tr('Deactivate {name}?', {'name': name}) : tr('Reactivate {name}?', {'name': name}),
+           message: active
+-              ? '$name will not be able to sign in and is taken off your active lists. Their history is kept and you can reactivate them at any time.'
+-              : '$name will be able to sign in again.',
+-          confirmLabel: active ? 'Deactivate' : 'Reactivate',
++              ? tr('{name} will not be able to sign in and is taken off your active lists. Their history is kept and you can reactivate them at any time.', {'name': name})
++              : tr('{name} will be able to sign in again.', {'name': name}),
++          confirmLabel: active ? tr('Deactivate') : tr('Reactivate'),
+           danger: active,
+         );
+         if (!ok || !context.mounted) return;
+-        if (await attempt(context, () => repo.toggleStudentActive(id), success: active ? '$name deactivated.' : '$name reactivated.')) await reload();
++        if (await attempt(context, () => repo.toggleStudentActive(id), success: active ? tr('{name} deactivated.', {'name': name}) : tr('{name} reactivated.', {'name': name}))) await reload();
+     }
+   }
+ 
+   @override
+   Widget build(BuildContext context) {
++    final tt = context.tt;
+     final profile = student.obj('profile') ?? {};
+     final active = student.flag('is_active');
+-    return AppCard(
+-      padding: const EdgeInsets.fromLTRB(14, 10, 4, 10),
+-      child: Row(
+-        crossAxisAlignment: CrossAxisAlignment.start,
+-        children: [
+-          Padding(
+-            padding: const EdgeInsets.only(top: 4),
+-            child: CircleAvatar(child: Text(student.str('full_name', '?').characters.first.toUpperCase())),
+-          ),
+-          SizedBox(width: 12),
+-          Expanded(
+-            child: Column(
+-              crossAxisAlignment: CrossAxisAlignment.start,
+-              children: [
+-                Text(student.str('full_name'), style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15, color: active ? Theme.of(context).colorScheme.onSurface : Theme.of(context).colorScheme.outlineVariant)),
+-                Text(
+-                  [
+-                    '@${student.str('username')}',
+-                    if (profile.str('grade_level').isNotEmpty) profile.str('grade_level'),
+-                    if (student.str('phone').isNotEmpty) student.str('phone'),
+-                  ].join(' · '),
+-                  style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
+-                ),
+-                const SizedBox(height: 6),
+-                Wrap(
+-                  spacing: 6,
+-                  runSpacing: 6,
+-                  children: [
+-                    for (final group in groups) Pill(group, color: AppColors.primarySoft, icon: Icons.class_outlined),
+-                    if (pendingRequest)
+-                      Pill(tr('Asked to join — answer on Overview'), color: AppColors.warning)
+-                    else if (groups.isEmpty && unassigned && active)
+-                      Pill(tr('Not in a tuition'), color: AppColors.warning),
+-                    if (student.flag('must_change_password')) Pill(tr('Temporary password'), color: AppColors.warning, icon: Icons.key),
+-                    if (!active) Pill(tr('Deactivated'), color: AppColors.danger),
+-                  ],
+-                ),
+-              ],
++    final name = student.str('full_name', '?');
++    return ConstrainedBox(
++      constraints: const BoxConstraints(minHeight: 76),
++      child: Padding(
++        padding: const EdgeInsets.fromLTRB(16, 12, 4, 12),
++        child: Row(
++          crossAxisAlignment: CrossAxisAlignment.start,
++          children: [
++            CircleAvatar(
++              radius: 20,
++              backgroundColor: tt.primaryContainer,
++              child: Text(name.characters.first.toUpperCase(),
++                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: tt.onPrimaryContainer)),
+             ),
+-          ),
+-          if (!pendingRequest)
+-            PopupMenuButton<String>(
+-              tooltip: tr('Options for {p0}', {'p0': student.str('full_name')}),
+-              onSelected: (value) => _action(context, value),
+-              itemBuilder: (_) => [
+-                PopupMenuItem(value: 'edit', child: Text(tr('Edit details'))),
+-                if (active) PopupMenuItem(value: 'group', child: Text(tr('Add to a tuition'))),
+-                PopupMenuItem(value: 'reset', child: Text(tr('Reset password'))),
+-                PopupMenuItem(value: 'toggle', child: Text(active ? tr('Deactivate') : tr('Reactivate'))),
+-              ],
++            const SizedBox(width: 12),
++            Expanded(
++              child: Column(
++                crossAxisAlignment: CrossAxisAlignment.start,
++                children: [
++                  Text(name,
++                      maxLines: 1,
++                      overflow: TextOverflow.ellipsis,
++                      style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15, color: active ? tt.textPrimary : tt.textTertiary)),
++                  const SizedBox(height: 2),
++                  Text(
++                    [
++                      '@${student.str('username')}',
++                      if (profile.str('grade_level').isNotEmpty) profile.str('grade_level'),
++                      if (student.str('phone').isNotEmpty) student.str('phone'),
++                    ].join(' · '),
++                    style: TextStyle(color: tt.textSecondary, fontSize: 12, height: 1.4),
++                  ),
++                  const SizedBox(height: 8),
++                  Wrap(
++                    spacing: 6,
++                    runSpacing: 6,
++                    children: [
++                      for (final group in groups) Pill(group, color: AppColors.primarySoft),
++                      if (pendingRequest)
++                        Pill(tr('Asked to join — answer on Overview'), color: AppColors.warning, icon: Icons.person_add_alt_1_outlined)
++                      else if (groups.isEmpty && unassigned && active)
++                        Pill(tr('Not in a tuition'), color: AppColors.warning, icon: Icons.error_outline_rounded),
++                      if (student.flag('must_change_password')) Pill(tr('Temporary password'), color: AppColors.warning, icon: Icons.key),
++                      if (!active) Pill(tr('Deactivated'), color: AppColors.danger, icon: Icons.block_rounded),
++                    ],
++                  ),
++                ],
++              ),
+             ),
+-        ],
++            if (!pendingRequest)
++              PopupMenuButton<String>(
++                tooltip: tr('Options for {p0}', {'p0': name}),
++                icon: Icon(Icons.more_vert_rounded, color: tt.textTertiary),
++                style: IconButton.styleFrom(minimumSize: const Size(44, 44)),
++                onSelected: (value) => _action(context, value),
++                itemBuilder: (_) => [
++                  PopupMenuItem(value: 'edit', child: Text(tr('Edit details'))),
++                  if (active) PopupMenuItem(value: 'group', child: Text(tr('Add to a tuition'))),
++                  PopupMenuItem(value: 'reset', child: Text(tr('Reset password'))),
++                  PopupMenuItem(value: 'toggle', child: Text(active ? tr('Deactivate') : tr('Reactivate'))),
++                ],
++              ),
++          ],
++        ),
++      ),
++    );
++  }
++}
++
++/// A 48 dp search box on the card colour.
++class _SearchField extends StatelessWidget {
++  const _SearchField({required this.hint, required this.onChanged});
++  final String hint;
++  final ValueChanged<String> onChanged;
++
++  @override
++  Widget build(BuildContext context) {
++    final tt = context.tt;
++    final border = OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none);
++    return SizedBox(
++      height: 48,
++      child: TextField(
++        onChanged: onChanged,
++        textAlignVertical: TextAlignVertical.center,
++        decoration: InputDecoration(
++          hintText: hint,
++          prefixIcon: Icon(Icons.search_rounded, color: tt.textTertiary),
++          filled: true,
++          fillColor: tt.card,
++          contentPadding: EdgeInsets.zero,
++          border: border,
++          enabledBorder: border,
++          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: tt.primary, width: 1.5)),
++        ),
+       ),
+     );
+   }
+diff --git a/mobile/lib/screens/tutor/tuition_screen.dart b/mobile/lib/screens/tutor/tuition_screen.dart
+index 861309d..780dd00 100644
+--- a/mobile/lib/screens/tutor/tuition_screen.dart
++++ b/mobile/lib/screens/tutor/tuition_screen.dart
+@@ -649,7 +649,7 @@ class _ClassesTab extends StatelessWidget {
+                   if (i > 0) const Divider(indent: 64),
+                   ListTile(
+                     leading: CircleAvatar(
+-                      backgroundColor: AppColors.chartEarned.withValues(alpha: 0.15),
++                      backgroundColor: context.tt.successContainer,
+                       child: Text('${classNoOf(doneClasses[i])}',
+                           style: TextStyle(fontWeight: FontWeight.w800, color: tone(context, AppColors.success))),
+                     ),
+@@ -723,11 +723,11 @@ class _ClassTile extends StatelessWidget {
+     final done = entry.flag('completed');
+     final no = classNoOf(entry);
+     final Color fill = done
+-        ? AppColors.chartEarned.withValues(alpha: 0.16)
++        ? context.tt.successContainer
+         : isNext
+-            ? AppColors.chartPending.withValues(alpha: 0.14)
++            ? context.tt.primaryContainer
+             : scheme.surfaceContainerHighest;
+-    final Color edge = done ? AppColors.chartEarned : (isNext ? AppColors.chartPending : scheme.outline);
++    final Color edge = done ? context.tt.chartEarned : (isNext ? context.tt.primary : scheme.outline);
+     return Tooltip(
+       message: done ? tr('Class {p0} · {p1}', {'p0': no, 'p1': fmtShortDate(entry.date('date'))}) : (isNext ? tr('Class {p0} · next', {'p0': no}) : tr('Class {p0} · not yet', {'p0': no})),
+       child: Semantics(
+diff --git a/mobile/lib/widgets/app_drawer.dart b/mobile/lib/widgets/app_drawer.dart
+index 0e9d3fe..46fef10 100644
+--- a/mobile/lib/widgets/app_drawer.dart
++++ b/mobile/lib/widgets/app_drawer.dart
+@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
+ import 'package:provider/provider.dart';
+ import 'package:url_launcher/url_launcher.dart';
+ 
++import '../core/app_info.dart';
+ import '../core/i18n.dart';
+ import '../core/reminders.dart';
+ import '../core/session.dart';
+@@ -14,7 +15,6 @@ import 'ui.dart';
+ 
+ /// Change this to the official Facebook page. Used by the drawer's follow link.
+ const facebookPageUrl = 'https://www.facebook.com/tuitiontrack';
+-const appVersion = '1.0.0';
+ 
+ /// Left-side menu: appearance (dark/light), account, server, about,
+ /// Facebook page, and sign out. Add as `drawer:` on home screens —
+@@ -35,7 +35,7 @@ class AppDrawer extends StatelessWidget {
+           children: [
+             Text(
+               tr('The address of your TuitionTrack server, for example https://tuitiontrack.example.com or http://192.168.0.10:8000 on your own network.'),
+-              style: TextStyle(color: AppColors.muted, fontSize: 13),
++              style: TextStyle(color: context.tt.textSecondary, fontSize: 14, height: 1.5),
+             ),
+             gap12,
+             TextField(
+@@ -74,9 +74,9 @@ class AppDrawer extends StatelessWidget {
+       builder: (context) => AlertDialog(
+         title: Row(
+           children: [
+-            Icon(Icons.school_rounded, color: AppColors.primarySoft),
+-            SizedBox(width: 10),
+-            Text(tr('About TuitionTrack')),
++            Icon(Icons.school_outlined, color: context.tt.primary),
++            const SizedBox(width: 10),
++            Flexible(child: Text(tr('About TuitionTrack'))),
+           ],
+         ),
+         content: Column(
+@@ -85,12 +85,12 @@ class AppDrawer extends StatelessWidget {
+           children: [
+             Text(
+               tr('TuitionTrack helps private tutors run tuitions, track classes and earnings, set exams and homework — and helps students follow their classes, submit work and see results.'),
+-              style: TextStyle(fontSize: 13, height: 1.5),
++              style: const TextStyle(fontSize: 14, height: 1.5),
+             ),
+             gap12,
+-            Text(tr('Version {p0}', {'p0': appVersion}), style: const TextStyle(color: AppColors.muted, fontSize: 12)),
++            Text(tr('Version {p0}', {'p0': appVersion}), style: TextStyle(color: context.tt.textTertiary, fontSize: 12)),
+             Text(tr('Made for tutors, coaching centres and students.'),
+-                style: TextStyle(color: AppColors.muted, fontSize: 12)),
++                style: TextStyle(color: context.tt.textTertiary, fontSize: 12)),
+           ],
+         ),
+         actions: [
+@@ -110,162 +110,160 @@ class AppDrawer extends StatelessWidget {
+   @override
+   Widget build(BuildContext context) {
+     final session = context.watch<Session>();
++    final tt = context.tt;
+     final u = Map<String, dynamic>.from(session.user ?? {});
+     final rawName = (u['name'] as String? ?? '').trim();
+     final rawUsername = (u['username'] as String? ?? '').trim();
+     final name = rawName.isNotEmpty ? rawName : rawUsername;
++    void open(Widget screen) {
++      HapticFeedback.lightImpact();
++      Navigator.pop(context);
++      Navigator.push(context, MaterialPageRoute<void>(builder: (_) => screen));
++    }
++
+     return Drawer(
++      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.horizontal(right: Radius.circular(20))),
+       child: SafeArea(
+-        child: ListView(
+-          padding: EdgeInsets.zero,
++        child: Column(
++          crossAxisAlignment: CrossAxisAlignment.stretch,
+           children: [
+-            DrawerHeader(
+-              decoration: BoxDecoration(color: Theme.of(context).colorScheme.surface),
+-              child: Column(
+-                crossAxisAlignment: CrossAxisAlignment.start,
+-                mainAxisAlignment: MainAxisAlignment.end,
++            Expanded(
++              child: ListView(
++                padding: const EdgeInsets.fromLTRB(20, 24, 20, 8),
+                 children: [
+-                  const Icon(Icons.school_rounded, size: 40, color: AppColors.primarySoft),
+-                  gap8,
+-                  Text(tr('TuitionTrack'), style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800)),
++                  Container(
++                    width: 44,
++                    height: 44,
++                    alignment: Alignment.center,
++                    decoration: BoxDecoration(color: tt.primaryContainer, borderRadius: BorderRadius.circular(14)),
++                    child: Icon(Icons.school_outlined, size: 24, color: tt.onPrimaryContainer),
++                  ),
++                  const SizedBox(height: 16),
++                  Text(tr('TuitionTrack'), style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700, letterSpacing: -0.4, color: tt.textPrimary)),
++                  const SizedBox(height: 2),
+                   Text(
+                     '$name · ${session.isTutor ? tr('Tutor') : tr('Student')}',
+-                    style: const TextStyle(color: AppColors.muted, fontSize: 13),
++                    maxLines: 1,
++                    overflow: TextOverflow.ellipsis,
++                    style: TextStyle(color: tt.textSecondary, fontSize: 14),
++                  ),
++                  _SectionLabel(tr('APPEARANCE')),
++                  PillToggle<ThemeMode>(
++                    options: [
++                      (ThemeMode.dark, tr('Dark'), Icons.dark_mode_outlined),
++                      (ThemeMode.light, tr('Light'), Icons.light_mode_outlined),
++                    ],
++                    selected: session.themeMode,
++                    onChanged: (mode) {
++                      HapticFeedback.lightImpact();
++                      session.setThemeMode(mode);
++                    },
++                  ),
++                  _SectionLabel(tr('LANGUAGE')),
++                  PillToggle<String>(
++                    options: [('en', tr('English'), null), ('bn', 'বাংলা', null)],
++                    selected: session.language,
++                    onChanged: (code) {
++                      HapticFeedback.lightImpact();
++                      session.setLanguage(code);
++                    },
++                  ),
++                  const SizedBox(height: 16),
++                  if (Reminders.instance.available)
++                    StatefulBuilder(
++                      builder: (context, setLocal) => SwitchListTile(
++                        contentPadding: EdgeInsets.zero,
++                        secondary: Icon(Icons.notifications_none_rounded, size: 20, color: tt.textTertiary),
++                        title: Text(tr('Reminders')),
++                        subtitle: Text(
++                          session.isTutor ? tr('Before and after your classes') : tr('Before classes and homework deadlines'),
++                        ),
++                        value: Reminders.enabledIn(session.settings),
++                        onChanged: (on) async {
++                          HapticFeedback.lightImpact();
++                          await Reminders.instance.setEnabled(session.settings, on);
++                          // Screens set the reminders again when they next load.
++                          session.api.dataVersion.value++;
++                          setLocal(() {});
++                        },
++                      ),
++                    ),
++                  Divider(height: 17, color: tt.border),
++                  _DrawerItem(
++                    icon: Icons.person_outline_rounded,
++                    title: tr('My account'),
++                    onTap: () => open(const AccountScreen()),
++                  ),
++                  if (session.isStudent)
++                    _DrawerItem(
++                      icon: Icons.key_rounded,
++                      title: tr('Connect to a tutor'),
++                      subtitle: tr('Invite code, requests, find a tutor'),
++                      onTap: () => open(const ConnectScreen()),
++                    ),
++                  _DrawerItem(
++                    icon: Icons.receipt_long_outlined,
++                    title: session.isTutor ? tr('Payments') : tr('Payment history'),
++                    onTap: () => open(const PaymentsScreen()),
++                  ),
++                  _DrawerItem(
++                    icon: Icons.dns_outlined,
++                    title: tr('Server address'),
++                    subtitle: session.api.baseUrl.replaceFirst(RegExp(r'^https?://'), ''),
++                    onTap: () {
++                      HapticFeedback.lightImpact();
++                      Navigator.pop(context);
++                      _changeServer(context);
++                    },
++                  ),
++                  _DrawerItem(
++                    icon: Icons.info_outline_rounded,
++                    title: tr('About TuitionTrack'),
++                    onTap: () {
++                      Navigator.pop(context);
++                      _openAbout(context);
++                    },
++                  ),
++                  _DrawerItem(
++                    icon: Icons.facebook,
++                    title: tr('Facebook page'),
++                    subtitle: tr('Follow us for updates'),
++                    trailing: Icons.open_in_new_rounded,
++                    onTap: () {
++                      Navigator.pop(context);
++                      _openFacebook(context);
++                    },
+                   ),
+                 ],
+               ),
+             ),
++            // Sign out stays at the bottom, after a hairline.
+             Padding(
+-              padding: EdgeInsets.fromLTRB(16, 8, 16, 4),
+-              child: Text(tr('APPEARANCE'), style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.muted)),
+-            ),
+-            SegmentedButton<ThemeMode>(
+-              style: const ButtonStyle(visualDensity: VisualDensity.compact),
+-              segments: [
+-                ButtonSegment(value: ThemeMode.dark, label: Text(tr('Dark')), icon: Icon(Icons.dark_mode_outlined, size: 16)),
+-                ButtonSegment(value: ThemeMode.light, label: Text(tr('Light')), icon: Icon(Icons.light_mode_outlined, size: 16)),
+-              ],
+-              selected: {session.themeMode},
+-              showSelectedIcon: false,
+-              onSelectionChanged: (value) {
+-                HapticFeedback.lightImpact();
+-                session.setThemeMode(value.first);
+-              },
++              padding: const EdgeInsets.symmetric(horizontal: 20),
++              child: Divider(height: 1, color: tt.border),
+             ),
+             Padding(
+-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+-              child: Text(tr('LANGUAGE'), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.muted)),
+-            ),
+-            SegmentedButton<String>(
+-              style: const ButtonStyle(visualDensity: VisualDensity.compact),
+-              segments: [
+-                ButtonSegment(value: 'en', label: Text(tr('English'))),
+-                ButtonSegment(value: 'bn', label: Text('বাংলা')),
+-              ],
+-              selected: {session.language},
+-              showSelectedIcon: false,
+-              onSelectionChanged: (value) {
+-                HapticFeedback.lightImpact();
+-                session.setLanguage(value.first);
+-              },
+-            ),
+-            if (Reminders.instance.available)
+-              StatefulBuilder(
+-                builder: (context, setLocal) => SwitchListTile(
+-                  secondary: const Icon(Icons.notifications_active_outlined),
+-                  title: Text(tr('Reminders')),
+-                  subtitle: Text(
+-                    session.isTutor ? tr('Before and after your classes') : tr('Before classes and homework deadlines'),
+-                    style: const TextStyle(fontSize: 12),
+-                  ),
+-                  value: Reminders.enabledIn(session.settings),
+-                  onChanged: (on) async {
+-                    HapticFeedback.lightImpact();
+-                    await Reminders.instance.setEnabled(session.settings, on);
+-                    // Screens set the reminders again when they next load.
+-                    session.api.dataVersion.value++;
+-                    setLocal(() {});
+-                  },
+-                ),
+-              ),
+-            const Padding(
+-              padding: EdgeInsets.symmetric(horizontal: 16),
+-              child: Divider(),
+-            ),
+-            ListTile(
+-              leading: const Icon(Icons.manage_accounts_outlined),
+-              title: Text(tr('My account')),
+-              onTap: () {
+-                HapticFeedback.lightImpact();
+-                Navigator.pop(context);
+-                Navigator.push(context, MaterialPageRoute<void>(builder: (_) => const AccountScreen()));
+-              },
+-            ),
+-            if (session.isStudent)
+-              ListTile(
+-                leading: const Icon(Icons.key_rounded),
+-                title: Text(tr('Connect to a tutor')),
+-                subtitle: Text(tr('Invite code, requests, find a tutor'), style: TextStyle(fontSize: 12)),
+-                onTap: () {
++              padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
++              child: _DrawerItem(
++                icon: Icons.logout_rounded,
++                title: tr('Sign out'),
++                color: tt.danger,
++                chevron: false,
++                onTap: () async {
+                   HapticFeedback.lightImpact();
+                   Navigator.pop(context);
+-                  Navigator.push(context, MaterialPageRoute<void>(builder: (_) => const ConnectScreen()));
++                  final ok = await confirm(
++                    context,
++                    title: tr('Sign out?'),
++                    message: session.outbox.isEmpty
++                        ? tr('You will need your username and password to sign back in.')
++                        : tr('{p0} change{p1} not been sent yet. Signing out deletes {p2} from this phone.', {'p0': session.outbox.length, 'p1': session.outbox.length == 1 ? tr(' made offline has') : tr('s made offline have'), 'p2': session.outbox.length == 1 ? tr('it') : tr('them')}),
++                    confirmLabel: tr('Sign out'),
++                    danger: session.outbox.isNotEmpty,
++                  );
++                  if (ok) await session.logout();
+                 },
+               ),
+-            ListTile(
+-              leading: const Icon(Icons.receipt_long_outlined),
+-              title: Text(session.isTutor ? tr('Payments') : tr('Payment history')),
+-              onTap: () {
+-                HapticFeedback.lightImpact();
+-                Navigator.pop(context);
+-                Navigator.push(context, MaterialPageRoute<void>(builder: (_) => const PaymentsScreen()));
+-              },
+-            ),
+-            ListTile(
+-              leading: const Icon(Icons.dns_outlined),
+-              title: Text(tr('Server address')),
+-              subtitle: Text(session.api.baseUrl, style: const TextStyle(fontSize: 12)),
+-              onTap: () {
+-                HapticFeedback.lightImpact();
+-                Navigator.pop(context);
+-                _changeServer(context);
+-              },
+-            ),
+-            ListTile(
+-              leading: const Icon(Icons.info_outline),
+-              title: Text(tr('About TuitionTrack')),
+-              onTap: () {
+-                Navigator.pop(context);
+-                _openAbout(context);
+-              },
+-            ),
+-            ListTile(
+-              leading: const Icon(Icons.thumb_up_outlined),
+-              title: Text(tr('Facebook page')),
+-              subtitle: Text(tr('Follow us for updates'), style: TextStyle(fontSize: 12)),
+-              onTap: () {
+-                Navigator.pop(context);
+-                _openFacebook(context);
+-              },
+-            ),
+-            const Divider(),
+-            ListTile(
+-              leading: const Icon(Icons.logout, color: AppColors.danger),
+-              title: Text(tr('Sign out'), style: TextStyle(color: AppColors.danger)),
+-              onTap: () async {
+-                HapticFeedback.lightImpact();
+-                Navigator.pop(context);
+-                final ok = await confirm(
+-                  context,
+-                  title: tr('Sign out?'),
+-                  message: session.outbox.isEmpty
+-                      ? tr('You will need your username and password to sign back in.')
+-                      : tr('{p0} change{p1} not been sent yet. Signing out deletes {p2} from this phone.', {'p0': session.outbox.length, 'p1': session.outbox.length == 1 ? tr(' made offline has') : tr('s made offline have'), 'p2': session.outbox.length == 1 ? tr('it') : tr('them')}),
+-                  confirmLabel: tr('Sign out'),
+-                  danger: session.outbox.isNotEmpty,
+-                );
+-                if (ok) await session.logout();
+-              },
+             ),
+           ],
+         ),
+@@ -273,3 +271,76 @@ class AppDrawer extends StatelessWidget {
+     );
+   }
+ }
++
++/// Small caps label above a group in the drawer.
++class _SectionLabel extends StatelessWidget {
++  const _SectionLabel(this.text);
++  final String text;
++
++  @override
++  Widget build(BuildContext context) {
++    return Padding(
++      padding: const EdgeInsets.fromLTRB(0, 24, 0, 8),
++      child: Text(
++        text.toUpperCase(),
++        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, letterSpacing: 0.72, color: context.tt.textTertiary),
++      ),
++    );
++  }
++}
++
++/// A 56 dp drawer row: tertiary icon, title (and a quiet subtitle), chevron.
++class _DrawerItem extends StatelessWidget {
++  const _DrawerItem({
++    required this.icon,
++    required this.title,
++    required this.onTap,
++    this.subtitle,
++    this.color,
++    this.trailing = Icons.chevron_right_rounded,
++    this.chevron = true,
++  });
++  final IconData icon;
++  final String title;
++  final String? subtitle;
++  final VoidCallback onTap;
++  final Color? color;
++  final IconData trailing;
++  final bool chevron;
++
++  @override
++  Widget build(BuildContext context) {
++    final tt = context.tt;
++    return InkWell(
++      borderRadius: BorderRadius.circular(12),
++      onTap: onTap,
++      child: ConstrainedBox(
++        constraints: const BoxConstraints(minHeight: 56),
++        child: Padding(
++          padding: const EdgeInsets.symmetric(vertical: 8),
++          child: Row(
++            children: [
++              Icon(icon, size: 20, color: color ?? tt.textTertiary),
++              const SizedBox(width: 16),
++              Expanded(
++                child: Column(
++                  crossAxisAlignment: CrossAxisAlignment.start,
++                  mainAxisSize: MainAxisSize.min,
++                  children: [
++                    Text(title, style: TextStyle(fontSize: 15, fontWeight: FontWeight.w500, color: color ?? tt.textPrimary)),
++                    if (subtitle != null)
++                      Text(subtitle!,
++                          maxLines: 1,
++                          overflow: TextOverflow.ellipsis,
++                          style: TextStyle(fontSize: 13, height: 1.4, color: tt.textSecondary)),
++                  ],
++                ),
++              ),
++              if (chevron) Icon(trailing, size: 20, color: tt.textTertiary),
++            ],
++          ),
++        ),
++      ),
++    );
++  }
++}
+diff --git a/mobile/lib/widgets/charts.dart b/mobile/lib/widgets/charts.dart
+index dfd046e..04dc99b 100644
+--- a/mobile/lib/widgets/charts.dart
++++ b/mobile/lib/widgets/charts.dart
+@@ -54,8 +54,8 @@ class ProgressRing extends StatelessWidget {
+                     children: [
+                       Text.rich(
+                         TextSpan(children: [
+-                          TextSpan(text: '$done', style: TextStyle(fontWeight: FontWeight.w700, color: scheme.onSurface)),
+-                          TextSpan(text: '/$total', style: TextStyle(fontWeight: FontWeight.w600, color: scheme.onSurfaceVariant)),
++                          TextSpan(text: localDigits('$done'), style: TextStyle(fontWeight: FontWeight.w700, color: scheme.onSurface)),
++                          TextSpan(text: localDigits('/$total'), style: TextStyle(fontWeight: FontWeight.w600, color: scheme.onSurfaceVariant)),
+                         ]),
+                         style: TextStyle(fontSize: size * 0.24),
+                       ),
+diff --git a/mobile/lib/widgets/password_field.dart b/mobile/lib/widgets/password_field.dart
+index cb18fe0..9ad0a20 100644
+--- a/mobile/lib/widgets/password_field.dart
++++ b/mobile/lib/widgets/password_field.dart
+@@ -1,6 +1,7 @@
+ import 'package:flutter/material.dart';
+ 
+ import '../core/i18n.dart';
++import 'ui.dart';
+ 
+ /// A password box with a show/hide button.
+ class PasswordField extends StatefulWidget {
+@@ -12,6 +13,7 @@ class PasswordField extends StatefulWidget {
+     this.validator,
+     this.onSubmitted,
+     this.isNew = false,
++    this.labelAbove = false,
+   });
+ 
+   final TextEditingController controller;
+@@ -23,6 +25,9 @@ class PasswordField extends StatefulWidget {
+   /// True for a password being chosen (so password managers offer to save it).
+   final bool isNew;
+ 
++  /// Shows [label] as a small label above the box instead of inside it.
++  final bool labelAbove;
++
+   @override
+   State<PasswordField> createState() => _PasswordFieldState();
+ }
+@@ -32,7 +37,7 @@ class _PasswordFieldState extends State<PasswordField> {
+ 
+   @override
+   Widget build(BuildContext context) {
+-    return TextFormField(
++    final field = TextFormField(
+       controller: widget.controller,
+       obscureText: _hidden,
+       autocorrect: false,
+@@ -41,7 +46,7 @@ class _PasswordFieldState extends State<PasswordField> {
+       validator: widget.validator,
+       onFieldSubmitted: widget.onSubmitted,
+       decoration: InputDecoration(
+-        labelText: widget.label,
++        labelText: widget.labelAbove ? null : widget.label,
+         helperText: widget.helper,
+         prefixIcon: const Icon(Icons.lock_outline),
+         suffixIcon: IconButton(
+@@ -51,5 +56,10 @@ class _PasswordFieldState extends State<PasswordField> {
+         ),
+       ),
+     );
++    if (!widget.labelAbove) return field;
++    return Column(
++      crossAxisAlignment: CrossAxisAlignment.stretch,
++      children: [FieldLabel(widget.label), field],
++    );
+   }
+ }
+diff --git a/mobile/lib/widgets/ui.dart b/mobile/lib/widgets/ui.dart
+index 1f2d1c4..fc449df 100644
+--- a/mobile/lib/widgets/ui.dart
++++ b/mobile/lib/widgets/ui.dart
+@@ -321,7 +321,7 @@ class SectionTitle extends StatelessWidget {
+ 
+ /// The tonal container behind an accent: the token container for success,
+ /// warning, danger and primary, a light tint of anything else.
+-Color _container(BuildContext context, Color accent) {
++Color tonalContainer(BuildContext context, Color accent) {
+   final tt = context.tt;
+   if (accent == AppColors.success || accent == AppColors.chartEarned) return tt.successContainer;
+   if (accent == AppColors.warning) return tt.warningContainer;
+@@ -344,7 +344,7 @@ class Pill extends StatelessWidget {
+     return Container(
+       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+       decoration: BoxDecoration(
+-        color: _container(context, color),
++        color: tonalContainer(context, color),
+         borderRadius: BorderRadius.circular(8),
+       ),
+       child: Row(
+@@ -373,7 +373,7 @@ class Banner2 extends StatelessWidget {
+       width: double.infinity,
+       padding: const EdgeInsets.all(12),
+       decoration: BoxDecoration(
+-        color: _container(context, color),
++        color: tonalContainer(context, color),
+         borderRadius: BorderRadius.circular(12),
+       ),
+       child: Row(
+@@ -629,25 +629,29 @@ class PickerRow extends StatelessWidget {
+ 
+   @override
+   Widget build(BuildContext context) {
+-    final scheme = Theme.of(context).colorScheme;
++    final tt = context.tt;
+     return InkWell(
+       onTap: onTap,
+-      child: Padding(
+-        padding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
+-        child: Row(
+-          children: [
+-            if (leading != null) ...[leading!, const SizedBox(width: 12)],
+-            Text(label, style: TextStyle(fontSize: 14, color: scheme.onSurfaceVariant)),
+-            const SizedBox(width: 12),
+-            Expanded(
+-              child: Text(value,
+-                  textAlign: TextAlign.right,
+-                  maxLines: 1,
+-                  overflow: TextOverflow.ellipsis,
+-                  style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+-            ),
+-            trailing ?? Icon(Icons.chevron_right, size: 20, color: scheme.onSurfaceVariant),
+-          ],
++      child: ConstrainedBox(
++        constraints: const BoxConstraints(minHeight: 56),
++        child: Padding(
++          padding: const EdgeInsets.fromLTRB(16, 8, 12, 8),
++          child: Row(
++            children: [
++              if (leading != null) ...[leading!, const SizedBox(width: 12)],
++              Text(label, style: TextStyle(fontSize: 15, color: tt.textSecondary)),
++              const SizedBox(width: 12),
++              Expanded(
++                child: Text(value,
++                    textAlign: TextAlign.right,
++                    maxLines: 1,
++                    overflow: TextOverflow.ellipsis,
++                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, fontFeatures: tabular, color: tt.textPrimary)),
++              ),
++              const SizedBox(width: 4),
++              trailing ?? Icon(Icons.chevron_right_rounded, size: 20, color: tt.textTertiary),
++            ],
++          ),
+         ),
+       ),
+     );
+@@ -667,7 +671,7 @@ class InfoTip extends StatelessWidget {
+       visualDensity: VisualDensity.compact,
+       iconSize: 18,
+       constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+-      icon: Icon(Icons.info_outline, color: Theme.of(context).colorScheme.onSurfaceVariant),
++      icon: Icon(Icons.info_outline_rounded, color: context.tt.textTertiary),
+       onPressed: () => showModalBottomSheet<void>(
+         context: context,
+         builder: (context) => SafeArea(
+@@ -833,3 +837,80 @@ class _SkeletonBoxState extends State<SkeletonBox> with SingleTickerProviderStat
+     );
+   }
+ }
++
++/// A tonal segmented control: one 44 dp pill per option inside a soft track,
++/// the selected one filled with the primary container.
++class PillToggle<T> extends StatelessWidget {
++  const PillToggle({super.key, required this.options, required this.selected, required this.onChanged});
++
++  /// (value, label, optional icon)
++  final List<(T, String, IconData?)> options;
++  final T selected;
++  final ValueChanged<T> onChanged;
++
++  @override
++  Widget build(BuildContext context) {
++    final tt = context.tt;
++    return Container(
++      padding: const EdgeInsets.all(4),
++      decoration: BoxDecoration(color: tt.isDark ? tt.card : tt.background, borderRadius: BorderRadius.circular(14)),
++      child: Row(
++        children: [
++          for (final (value, label, icon) in options)
++            Expanded(
++              child: Semantics(
++                button: true,
++                selected: value == selected,
++                child: Material(
++                  color: value == selected ? tt.primaryContainer : Colors.transparent,
++                  borderRadius: BorderRadius.circular(10),
++                  child: InkWell(
++                    borderRadius: BorderRadius.circular(10),
++                    onTap: value == selected ? null : () => onChanged(value),
++                    child: SizedBox(
++                      height: 44,
++                      child: Row(
++                        mainAxisAlignment: MainAxisAlignment.center,
++                        children: [
++                          if (icon != null) ...[
++                            Icon(icon, size: 18, color: value == selected ? tt.onPrimaryContainer : tt.textSecondary),
++                            const SizedBox(width: 8),
++                          ],
++                          Flexible(
++                            child: Text(
++                              label,
++                              maxLines: 1,
++                              overflow: TextOverflow.ellipsis,
++                              style: TextStyle(
++                                fontSize: 14,
++                                fontWeight: value == selected ? FontWeight.w600 : FontWeight.w500,
++                                color: value == selected ? tt.onPrimaryContainer : tt.textSecondary,
++                              ),
++                            ),
++                          ),
++                        ],
++                      ),
++                    ),
++                  ),
++                ),
++              ),
++            ),
++        ],
++      ),
++    );
++  }
++}
++
++/// A small label above a form field (instead of relying on placeholder text).
++class FieldLabel extends StatelessWidget {
++  const FieldLabel(this.text, {super.key});
++  final String text;
++
++  @override
++  Widget build(BuildContext context) {
++    return Padding(
++      padding: const EdgeInsets.only(left: 2, bottom: 8),
++      child: Text(text, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: context.tt.textSecondary)),
++    );
++  }
++}

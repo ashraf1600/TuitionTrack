@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/api.dart';
+import '../../core/app_info.dart';
 import '../../core/format.dart';
 import '../../core/i18n.dart';
 import '../../core/json.dart';
@@ -12,6 +13,7 @@ import '../../core/repo.dart';
 import '../../core/session.dart';
 import '../../widgets/theme.dart';
 import '../../widgets/ui.dart';
+import '../../widgets/update_banner.dart';
 import 'account_screen.dart';
 
 const _seenKey = 'seen_notifications';
@@ -109,6 +111,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   static (IconData, Color) _look(String kind) => switch (kind) {
         'request' => (Icons.person_add_alt_1_outlined, AppColors.primarySoft),
         'grade' => (Icons.rate_review_outlined, AppColors.warning),
+        'class' => (Icons.task_alt_outlined, AppColors.success),
         'cycle' => (Icons.event_available_outlined, AppColors.success),
         'open' => (Icons.play_circle_outline, AppColors.success),
         'late' => (Icons.warning_amber_outlined, AppColors.warning),
@@ -173,6 +176,26 @@ List<Widget> homeActions(BuildContext context) {
         ),
       ),
       onPressed: () => Navigator.push(context, MaterialPageRoute<void>(builder: (_) => const AccountScreen())),
+    ),
+    // Three dots: things that are not needed every day.
+    PopupMenuButton<String>(
+      tooltip: tr('More'),
+      icon: const Icon(Icons.more_vert_rounded),
+      onSelected: (value) {
+        if (value == 'update') checkForUpdate(context);
+      },
+      itemBuilder: (context) => [
+        PopupMenuItem<String>(
+          value: 'update',
+          child: ListTile(
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.system_update_rounded),
+            title: Text(tr('Check for update')),
+            subtitle: Text(tr('Version {v}', {'v': Raw(appVersion)})),
+          ),
+        ),
+      ],
     ),
     const SizedBox(width: 4),
   ];

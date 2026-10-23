@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../core/api.dart';
 import '../core/app_info.dart';
 import '../core/i18n.dart';
 import '../core/json.dart';
@@ -84,5 +85,55 @@ class _UpdateBannerState extends State<UpdateBanner> {
         ),
       ),
     );
+  }
+}
+
+/// "Check for update" in the three-dot menu: asks the server right now and
+/// says what it found. A newer version opens the download link.
+Future<void> checkForUpdate(BuildContext context) async {
+  final session = context.read<Session>();
+  final repo = context.read<Repo>();
+  showToast(context, tr('Checking for updates…'));
+  Json meta;
+  try {
+    meta = await repo.meta();
+  } on ApiException catch (error) {
+    if (context.mounted) showToast(context, error.message, error: true);
+    return;
+  } catch (_) {
+    if (context.mounted) showToast(context, tr('Could not check for updates. Please try again.'), error: true);
+    return;
+  }
+  if (!context.mounted) return;
+  // Offline, the answer above is the one saved earlier: it says nothing new.
+  if (session.api.offline.value) {
+    showToast(context, tr('Cannot reach the server. Connect to the internet and try again.'), error: true);
+    return;
+  }
+  final app = meta.obj('app');
+  final latest = app?.str('latest_version') ?? '';
+  final url = app?.str('download_url') ?? '';
+  if (latest.isEmpty || compareVersions(appVersion, latest) >= 0) {
+    showToast(context, tr('You have the latest version ({v}).', {'v': Raw(appVersion)}));
+    return;
+  }
+  if (url.isEmpty) {
+    showToast(context, tr('Version {v} is available, but its download link has not been set up yet.', {'v': Raw(latest)}), error: true);
+    return;
+  }
+  final notes = app?.str('release_notes') ?? '';
+  final update = await confirm(
+    context,
+    title: tr('Update available'),
+    message: [
+      tr('Version {v} is available. You have {current}.', {'v': Raw(latest), 'current': Raw(appVersion)}),
+      if (notes.isNotEmpty) notes,
+    ].join('\n\n'),
+    confirmLabel: tr('Update'),
+  );
+  if (!update || !context.mounted) return;
+  final uri = Uri.tryParse(url);
+  if (uri == null || !await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+    if (context.mounted) showToast(context, tr('Could not open the download link.'), error: true);
   }
 }

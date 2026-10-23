@@ -1,0 +1,30 @@
+From e0323dce41e78d40a838571a8bb41341ff766f8f Mon Sep 17 00:00:00 2001
+From: "Claude (audit)" <noreply@anthropic.com>
+Date: Sun, 11 Oct 2026 00:29:27 +0600
+Subject: [PATCH 14/14] settings: keep *.onrender.com in ALLOWED_HOSTS for
+ Render's health check
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_011d4mgSxngjRmAXosGe4ry4
+---
+ backend/config/settings.py | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/backend/config/settings.py b/backend/config/settings.py
+index 7f51d62..a3903e5 100644
+--- a/backend/config/settings.py
++++ b/backend/config/settings.py
+@@ -75,6 +75,10 @@ else:
+ # Render provides its own public hostname.
+ if os.getenv('RENDER_EXTERNAL_HOSTNAME'):
+     ALLOWED_HOSTS.append(os.environ['RENDER_EXTERNAL_HOSTNAME'])
++# Kept from the original deploy so Render's health check keeps passing. (Host names only:
++# CORS/CSRF below do not trust other onrender.com sites.)
++if (os.getenv('RENDER') or os.getenv('RENDER_EXTERNAL_HOSTNAME')) and '.onrender.com' not in ALLOWED_HOSTS:
++    ALLOWED_HOSTS.append('.onrender.com')
+ 
+ # ─── Application Definition ───────────────────────────────────────────────────
+ DJANGO_APPS = [
+-- 
+2.43.0
+

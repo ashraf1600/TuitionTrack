@@ -1,0 +1,166 @@
+From fb5c5e7e922b251b4f97ea36252344acf7c96eb5 Mon Sep 17 00:00:00 2001
+From: "Claude (audit)" <noreply@anthropic.com>
+Date: Sun, 11 Oct 2026 00:29:13 +0600
+Subject: [PATCH 13/14] students: second-pass fixes (tutor detail copies,
+ private notes)
+
+- /my-tutors/<id>/ still listed a shared group task next to the student's own
+  copy; homework scoping for students lives in one helper now.
+- A student's profile notes, fee and cycle length (written by the tutor who
+  owns the account, labelled 'only you see these' in the app) were returned to
+  every other tutor the student was connected to.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_011d4mgSxngjRmAXosGe4ry4
+---
+ backend/apps/students/serializers.py | 13 +++++++++++++
+ backend/apps/students/services.py    | 16 ++++++++++++++++
+ backend/apps/students/views.py       | 23 ++++++++---------------
+ backend/tests/test_audit_fixes.py    | 22 ++++++++++++++++++++++
+ 4 files changed, 59 insertions(+), 15 deletions(-)
+
+diff --git a/backend/apps/students/serializers.py b/backend/apps/students/serializers.py
+index a1cd4ae..933cb3e 100644
+--- a/backend/apps/students/serializers.py
++++ b/backend/apps/students/serializers.py
+@@ -28,6 +28,19 @@ class StudentProfileSerializer(serializers.ModelSerializer):
+         ]
+         read_only_fields = ['id', 'created_at', 'updated_at']
+ 
++    # Written by the tutor who owns the account; a second tutor the student is
++    # connected to must not read them.
++    OWNER_ONLY_FIELDS = ('notes', 'tuition_fee', 'cycle_length')
++
++    def to_representation(self, instance):
++        data = super().to_representation(instance)
++        request = self.context.get('request')
++        viewer_id = getattr(getattr(request, 'user', None), 'id', None)
++        if viewer_id is None or instance.user.tutor_id != viewer_id:
++            for field in self.OWNER_ONLY_FIELDS:
++                data.pop(field, None)
++        return data
++
+ 
+ class StudentListSerializer(serializers.ModelSerializer):
+     """
+diff --git a/backend/apps/students/services.py b/backend/apps/students/services.py
+index e221297..ddc955f 100644
+--- a/backend/apps/students/services.py
++++ b/backend/apps/students/services.py
+@@ -69,3 +69,19 @@ def unenroll_student(tuition, student):
+         enrollment.left_at = timezone.now()
+         enrollment.save(update_fields=['is_active', 'left_at'])
+     return enrollment
++
++
++def student_homework(student):
++    """
++    Homework a student sees: their own rows, plus shared group tasks of groups
++    they are in now — except group tasks they already have a personal copy of
++    (that copy replaces the shared row for them).
++    """
++    from .models import Homework
++    tuition_ids = TuitionEnrollment.objects.filter(student=student, is_active=True).values_list('tuition_id', flat=True)
++    copied_group_ids = Homework.objects.filter(
++        student=student, group_source__isnull=False
++    ).values_list('group_source_id', flat=True)
++    return Homework.objects.filter(
++        Q(student=student) | Q(student__isnull=True, tuition_id__in=tuition_ids)
++    ).exclude(id__in=copied_group_ids)
+diff --git a/backend/apps/students/views.py b/backend/apps/students/views.py
+index 93f10ba..dc10d1b 100644
+--- a/backend/apps/students/views.py
++++ b/backend/apps/students/views.py
+@@ -648,7 +648,7 @@ class TutorDetailForStudentView(APIView):
+     permission_classes = [IsAuthenticated]
+ 
+     def get(self, request, tutor_id):
+-        from .models import ConnectionRequest, Homework, WeeklyRoutine, ClassSchedule
++        from .models import ConnectionRequest, WeeklyRoutine, ClassSchedule
+         from .serializers import ConnectedTutorSerializer, HomeworkSerializer
+ 
+         if request.user.role != "STUDENT":
+@@ -681,11 +681,11 @@ class TutorDetailForStudentView(APIView):
+             tutor=tutor, scheduled_at__gte=timezone.now(), is_cancelled=False
+         ).filter(scope).order_by("scheduled_at")[:20]
+ 
+-        # Homework assigned to this student (by this tutor) or their tuition groups.
+-        homework_qs = Homework.objects.filter(
++        # Homework from this tutor: the student's own rows and their groups' shared
++        # tasks (a shared task they already handed in shows as their own copy).
++        from .services import student_homework
++        homework_qs = student_homework(request.user).filter(
+             tutor=tutor,
+-        ).filter(
+-            Q(student=request.user) | Q(tuition_id__in=enrolled_tuition_ids)
+         ).select_related("tutor", "student", "tuition").order_by("due_date")
+ 
+         homework_data = HomeworkSerializer(
+@@ -729,21 +729,14 @@ class HomeworkViewSet(viewsets.GenericViewSet):
+     permission_classes = [IsAuthenticated, IsTutorOrStudent]
+ 
+     def get_queryset(self):
+-        from .models import Homework, TuitionEnrollment
++        from .models import Homework
+         user = self.request.user
+         qs = Homework.objects.select_related("tutor", "student", "tuition")
+         if user.role == "TUTOR":
+             return qs.filter(tutor=user)
+         if user.role == "STUDENT":
+-            enrolled_tuition_ids = TuitionEnrollment.objects.filter(
+-                student=user, is_active=True
+-            ).values_list("tuition_id", flat=True)
+-            copied_group_ids = Homework.objects.filter(
+-                student=user, group_source__isnull=False
+-            ).values_list("group_source_id", flat=True)
+-            return qs.filter(
+-                Q(student=user) | Q(student__isnull=True, tuition_id__in=enrolled_tuition_ids)
+-            ).exclude(id__in=copied_group_ids)
++            from .services import student_homework
++            return student_homework(user).select_related("tutor", "student", "tuition")
+         return Homework.objects.none()
+ 
+     def _tutor_only(self, request, verb):
+diff --git a/backend/tests/test_audit_fixes.py b/backend/tests/test_audit_fixes.py
+index 1807338..92dd549 100644
+--- a/backend/tests/test_audit_fixes.py
++++ b/backend/tests/test_audit_fixes.py
+@@ -163,6 +163,15 @@ class HomeworkTenancyTests(AuditBase):
+         self.assertEqual(again.data['homework']['id'], copy_id)
+         self.assertEqual(Homework.objects.filter(group_source=group).count(), 1)
+ 
++    def test_tutor_detail_shows_the_copy_instead_of_the_shared_row(self):
++        group = self._homework(tuition=self.tuition)
++        ConnectionRequest.objects.create(student=self.student, tutor=self.tutor,
++                                         status=ConnectionRequest.Status.ACCEPTED)
++        self.as_user(self.student)
++        self.client.post(f'/api/v1/homework/{group.id}/submit/', {'submitted_online_url': 'https://x.io'}, format='json')
++        detail = self.client.get(f'/api/v1/my-tutors/{self.tutor.id}/').data
++        self.assertEqual([h['group_source_id'] for h in detail['homework']], [group.id])
++
+     def test_split_is_one_atomic_server_step_and_keeps_existing_work(self):
+         group = self._homework(tuition=self.tuition)
+         group.personal_copy_for(self.student)
+@@ -313,6 +322,19 @@ class StudentVisibilityTests(AuditBase):
+         cards = self.client.get('/api/v1/my-tutors/').data
+         self.assertEqual([t['title'] for t in cards[0]['tuitions']], ['Physics'])
+ 
++    def test_owner_notes_and_fee_are_hidden_from_a_second_tutor(self):
++        from apps.students.models import StudentProfile
++        StudentProfile.objects.create(user=self.outsider, notes='Pays late', tuition_fee=1500)
++        ConnectionRequest.objects.create(student=self.outsider, tutor=self.tutor,
++                                         status=ConnectionRequest.Status.ACCEPTED)
++        self.as_user(self.tutor)
++        row = next(s for s in self.client.get('/api/v1/students/').data['results'] if s['id'] == str(self.outsider.id))
++        self.assertNotIn('notes', row['profile'])
++        self.assertNotIn('tuition_fee', row['profile'])
++        self.as_user(self.other_tutor)
++        own = self.client.get(f'/api/v1/students/{self.outsider.id}/').data
++        self.assertEqual(own['profile']['notes'], 'Pays late')
++
+     def test_second_tutor_can_open_but_not_edit_a_connected_student(self):
+         ConnectionRequest.objects.create(student=self.outsider, tutor=self.tutor,
+                                          status=ConnectionRequest.Status.ACCEPTED)
+-- 
+2.43.0
+

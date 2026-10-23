@@ -245,6 +245,44 @@ class StudentNotificationPrivacyTests(AuditBase):
         self.assertNotIn('৳', due[0]['body'])
 
 
+class ClassDoneNotificationTests(AuditBase):
+    def _class_items(self):
+        self.as_user(self.student)
+        items = self.client.get('/api/v1/notifications/').data['notifications']
+        return [i for i in items if i['kind'] == 'class']
+
+    def test_marking_a_class_notifies_the_enrolled_student(self):
+        cycle = AttendanceCycle.ensure_active(self.tuition)
+        cycle.mark_class(1, True, topic='Newton\'s laws')
+        cycle.save()
+        items = self._class_items()
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]['title'], 'Amin Sir: class 1 done')
+        self.assertNotIn(self.tuition.title, items[0]['title'])
+        self.assertEqual(items[0]['body'], "Newton's laws")
+        # The id is stable between polls, so the phone shows the pop-up once.
+        self.assertEqual(items[0]['id'], self._class_items()[0]['id'])
+
+    def test_undone_and_old_classes_do_not_notify(self):
+        cycle = AttendanceCycle.ensure_active(self.tuition)
+        cycle.mark_class(1, True)
+        cycle.mark_class(1, False)
+        cycle.save()
+        self.assertEqual(self._class_items(), [])
+        cycle.mark_class(2, True, date=timezone.now() - timedelta(days=10))
+        cycle.save()
+        self.assertEqual(self._class_items(), [])
+
+    def test_other_students_are_not_notified(self):
+        stranger = User.objects.create_user(username='cls_stranger', password='x', role=User.Role.STUDENT)
+        cycle = AttendanceCycle.ensure_active(self.tuition)
+        cycle.mark_class(1, True)
+        cycle.save()
+        self.as_user(stranger)
+        items = self.client.get('/api/v1/notifications/').data['notifications']
+        self.assertEqual([i for i in items if i['kind'] == 'class'], [])
+
+
 class ExamSubmitImageUrlTests(AuditBase):
     def test_only_web_or_media_paths_are_accepted(self):
         now = timezone.now()

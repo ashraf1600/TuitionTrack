@@ -1,0 +1,214 @@
+From 86b0d2a58476c1b72ec301a18339c1181a08c8e0 Mon Sep 17 00:00:00 2001
+From: "Claude (audit)" <noreply@anthropic.com>
+Date: Sun, 11 Oct 2026 00:26:52 +0600
+Subject: [PATCH 12/14] frontend: fixes found in the browser smoke test
+
+- Navbar and the student workspace tabs overflowed a 390px phone screen
+  (horizontal scroll); both now fit.
+- Student homework cards used see-through dark tints on the light page, which
+  made their text unreadable; solid dark cards now.
+- Tutors can open a student's uploaded homework file; 'nothing submitted' and
+  'marked as submitted without a link' are told apart.
+- Dashboard header counted students still waiting for a group as enrolled.
+- Tutor-directory search on sign-up ignores replies for an older search.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_011d4mgSxngjRmAXosGe4ry4
+---
+ frontend/src/components/common/Navbar.jsx      | 10 +++++-----
+ .../src/components/student/HomeworkCard.jsx    | 12 +++++++-----
+ .../components/student/TutorWorkspaceView.jsx  |  4 ++--
+ .../src/components/tutor/HomeworkManager.jsx   | 18 +++++++++++++++---
+ frontend/src/pages/LoginPage.jsx               | 16 +++++++++++-----
+ frontend/src/pages/TutorDashboard.jsx          |  9 ++++++++-
+ 6 files changed, 48 insertions(+), 21 deletions(-)
+
+diff --git a/frontend/src/components/common/Navbar.jsx b/frontend/src/components/common/Navbar.jsx
+index 850cc43..99bbb8c 100644
+--- a/frontend/src/components/common/Navbar.jsx
++++ b/frontend/src/components/common/Navbar.jsx
+@@ -14,8 +14,8 @@ export default function Navbar() {
+   return (
+     <>
+       <header className="sticky top-0 z-40 w-full border-b border-slate-800/80 bg-slate-950/80 backdrop-blur-xl">
+-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
+-          <div className="flex items-center gap-3">
++        <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-2 sm:gap-4">
++          <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+             <Link
+               to={user ? home : '/login'}
+               className="flex items-center gap-2.5 rounded-xl group focus-visible:ring-2 focus-visible:ring-indigo-500"
+@@ -33,7 +33,7 @@ export default function Navbar() {
+ 
+             {user && (
+               <span
+-                className={`inline-flex items-center gap-1.5 px-2 sm:px-2.5 py-0.5 rounded-full text-[10px] sm:text-[11px] font-semibold border ${
++                className={`hidden min-[420px]:inline-flex items-center gap-1.5 px-2 sm:px-2.5 py-0.5 rounded-full text-[10px] sm:text-[11px] font-semibold border ${
+                   isTutor
+                     ? 'bg-indigo-500/10 text-indigo-300 border-indigo-500/25'
+                     : 'bg-emerald-500/10 text-emerald-300 border-emerald-500/25'
+@@ -47,7 +47,7 @@ export default function Navbar() {
+           </div>
+ 
+           {user && (
+-            <div className="flex items-center gap-2 sm:gap-3">
++            <div className="flex shrink-0 items-center gap-1.5 sm:gap-3">
+               <NotificationBell />
+ 
+               <button
+@@ -78,7 +78,7 @@ export default function Navbar() {
+                 type="button"
+                 onClick={logout}
+                 title="Sign out of TuitionTrack"
+-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium text-slate-400 hover:text-rose-300 hover:bg-rose-500/10 border border-slate-800 hover:border-rose-500/30 transition-all"
++                className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-medium text-slate-400 hover:text-rose-300 hover:bg-rose-500/10 border border-slate-800 hover:border-rose-500/30 transition-all"
+               >
+                 <LogOut className="w-3.5 h-3.5" />
+                 <span className="hidden sm:inline">Sign out</span>
+diff --git a/frontend/src/components/student/HomeworkCard.jsx b/frontend/src/components/student/HomeworkCard.jsx
+index eee7143..405d083 100644
+--- a/frontend/src/components/student/HomeworkCard.jsx
++++ b/frontend/src/components/student/HomeworkCard.jsx
+@@ -41,11 +41,13 @@ function formatCountdown(ms) {
+ }
+ 
+ function urgencyStyle(ms) {
+-  if (ms <= 0) return { bg: 'bg-slate-800/60', border: 'border-slate-700', badge: 'bg-slate-700 text-slate-400', dot: 'bg-slate-500', ring: '' };
+-  if (ms <= 3_600_000) return { bg: 'bg-rose-950/40', border: 'border-rose-500/40', badge: 'bg-rose-500/20 text-rose-300', dot: 'bg-rose-500 animate-ping', ring: 'ring-2 ring-rose-500/20' };
+-  if (ms <= 7_200_000) return { bg: 'bg-orange-950/30', border: 'border-orange-500/40', badge: 'bg-orange-500/15 text-orange-300', dot: 'bg-orange-400', ring: 'ring-1 ring-orange-500/20' };
+-  if (ms <= 86_400_000) return { bg: 'bg-amber-950/20', border: 'border-amber-500/30', badge: 'bg-amber-500/15 text-amber-300', dot: 'bg-amber-400', ring: '' };
+-  return { bg: 'bg-slate-900/60', border: 'border-slate-800', badge: 'bg-slate-800 text-slate-400', dot: 'bg-indigo-400', ring: '' };
++  // Solid dark cards: they sit on the light student page, where see-through
++  // dark tints turned into a muddy grey with unreadable text.
++  if (ms <= 0) return { bg: 'bg-slate-800', border: 'border-slate-700', badge: 'bg-slate-700 text-slate-300', dot: 'bg-slate-500', ring: '' };
++  if (ms <= 3_600_000) return { bg: 'bg-rose-950', border: 'border-rose-500/50', badge: 'bg-rose-500/20 text-rose-200', dot: 'bg-rose-500 animate-ping', ring: 'ring-2 ring-rose-500/20' };
++  if (ms <= 7_200_000) return { bg: 'bg-orange-950', border: 'border-orange-500/50', badge: 'bg-orange-500/20 text-orange-200', dot: 'bg-orange-400', ring: 'ring-1 ring-orange-500/20' };
++  if (ms <= 86_400_000) return { bg: 'bg-slate-900', border: 'border-amber-500/40', badge: 'bg-amber-500/15 text-amber-200', dot: 'bg-amber-400', ring: '' };
++  return { bg: 'bg-slate-900', border: 'border-slate-800', badge: 'bg-slate-800 text-slate-300', dot: 'bg-indigo-400', ring: '' };
+ }
+ 
+ // ─── 2-Hour Alert Modal ───────────────────────────────────────────────────────
+diff --git a/frontend/src/components/student/TutorWorkspaceView.jsx b/frontend/src/components/student/TutorWorkspaceView.jsx
+index 4f61c1d..1e99845 100644
+--- a/frontend/src/components/student/TutorWorkspaceView.jsx
++++ b/frontend/src/components/student/TutorWorkspaceView.jsx
+@@ -299,13 +299,13 @@ export default function TutorWorkspaceView({
+               key={key}
+               type="button"
+               onClick={() => setActiveTab(key)}
+-              className={`flex-1 flex items-center justify-center gap-2 py-2.5 sm:py-3 px-3 rounded-xl text-xs sm:text-sm font-bold transition-all duration-150 ${
++              className={`flex-1 min-w-0 flex items-center justify-center gap-1.5 sm:gap-2 py-2.5 sm:py-3 px-2 sm:px-3 rounded-xl text-xs sm:text-sm font-bold leading-tight text-center transition-all duration-150 ${
+                 isActive
+                   ? 'bg-indigo-600 text-white shadow-sm'
+                   : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+               }`}
+             >
+-              <Icon className="w-4 h-4 flex-shrink-0" />
++              <Icon className="hidden min-[420px]:block w-4 h-4 flex-shrink-0" />
+               <span className="hidden md:inline">{label}</span>
+               <span className="md:hidden">{shortLabel}</span>
+               {badgeCount !== null && badgeCount > 0 && (
+diff --git a/frontend/src/components/tutor/HomeworkManager.jsx b/frontend/src/components/tutor/HomeworkManager.jsx
+index c93f919..b5befc0 100644
+--- a/frontend/src/components/tutor/HomeworkManager.jsx
++++ b/frontend/src/components/tutor/HomeworkManager.jsx
+@@ -4,7 +4,7 @@ import {
+   Trash2, Loader2, RefreshCw, X, Calendar, User, Users,
+   Check
+ } from 'lucide-react';
+-import { api } from '../../api/client';
++import { api, getMediaUrl } from '../../api/client';
+ import { notify } from '../../utils/toast';
+ import { confirmAction } from '../common/ConfirmDialog';
+ import { ErrorState } from '../common/States';
+@@ -275,12 +275,24 @@ export default function HomeworkManager({ tuitions = [], students = [] }) {
+                           Open Link
+                         </a>
+                       </div>
+-                    ) : (
++                    ) : !hw.submission_file_url && (
+                       <div className="text-[11px] text-slate-500 italic">
+-                        No online submission link submitted yet
++                        {hw.is_submitted ? 'Marked as submitted (no link or file)' : 'Nothing submitted yet'}
+                       </div>
+                     )}
+ 
++                    {hw.submission_file_url && (
++                      <a
++                        href={getMediaUrl(hw.submission_file_url)}
++                        target="_blank"
++                        rel="noopener noreferrer"
++                        className="flex items-center gap-2 bg-slate-800/60 rounded-xl px-3 py-2 border border-slate-700/60 text-[11px] font-bold text-indigo-400 hover:text-indigo-300"
++                      >
++                        <ExternalLink className="w-3.5 h-3.5 flex-shrink-0" />
++                        Open submitted file
++                      </a>
++                    )}
++
+                     {hw.tutor_feedback && (
+                       <div className="bg-emerald-950/20 border border-emerald-500/20 rounded-xl p-2.5 text-xs text-emerald-300">
+                         <span className="font-semibold block text-[10px] text-emerald-400 uppercase tracking-wider">Your Feedback:</span>
+diff --git a/frontend/src/pages/LoginPage.jsx b/frontend/src/pages/LoginPage.jsx
+index 25d0fb5..5247c53 100644
+--- a/frontend/src/pages/LoginPage.jsx
++++ b/frontend/src/pages/LoginPage.jsx
+@@ -65,18 +65,24 @@ export default function LoginPage() {
+   // Tutor directory for student sign-up
+   useEffect(() => {
+     if (!isStudent) return undefined;
++    // Only the answer for the latest search may land: typing fast must not let a
++    // slow reply for an older search overwrite the list.
++    let cancelled = false;
+     const timeoutId = setTimeout(async () => {
+       try {
+         setLoadingTutors(true);
+         const res = await api.getTutors(tutorSearch);
+-        setTutorList(Array.isArray(res) ? res : res.results || []);
+-      } catch (err) {
+-        console.error('Failed to load tutor directory:', err);
++        if (!cancelled) setTutorList(Array.isArray(res) ? res : res.results || []);
++      } catch {
++        // Picking a tutor is optional; the list simply stays as it was.
+       } finally {
+-        setLoadingTutors(false);
++        if (!cancelled) setLoadingTutors(false);
+       }
+     }, 250);
+-    return () => clearTimeout(timeoutId);
++    return () => {
++      cancelled = true;
++      clearTimeout(timeoutId);
++    };
+   }, [isStudent, tutorSearch]);
+ 
+   const switchMode = (next) => {
+diff --git a/frontend/src/pages/TutorDashboard.jsx b/frontend/src/pages/TutorDashboard.jsx
+index d1b767d..a1f0d90 100644
+--- a/frontend/src/pages/TutorDashboard.jsx
++++ b/frontend/src/pages/TutorDashboard.jsx
+@@ -263,6 +263,13 @@ export default function TutorDashboard() {
+     return students.filter((s) => enrolledSet.has(normId(s)));
+   }, [students, selectedTuition]);
+ 
++  // Students currently in at least one group (people still waiting for a group are counted separately).
++  const enrolledCount = useMemo(() => {
++    const ids = new Set();
++    tuitions.forEach((t) => (t.enrollments || []).forEach((e) => ids.add(String(e.student_id ?? e.id))));
++    return ids.size;
++  }, [tuitions]);
++
+   // DAYS_ORDER is defined once at module top (Sat-first canonical order).
+   const weeklyScheduleByDay = useMemo(() => {
+     const schedule = {};
+@@ -317,7 +324,7 @@ export default function TutorDashboard() {
+               Welcome back, {user?.name || user?.username || 'Tutor'}
+             </h1>
+             <p className="text-xs sm:text-sm text-slate-400 mt-1">
+-              {tuitions.length} tuition group{tuitions.length === 1 ? '' : 's'} · {students.length} student{students.length === 1 ? '' : 's'} enrolled
++              {tuitions.length} tuition group{tuitions.length === 1 ? '' : 's'} · {enrolledCount} student{enrolledCount === 1 ? '' : 's'} enrolled
+               {unassignedStudents.length > 0 && (
+                 <span className="text-amber-300 font-semibold"> · {unassignedStudents.length} waiting for a group</span>
+               )}
+-- 
+2.43.0
+

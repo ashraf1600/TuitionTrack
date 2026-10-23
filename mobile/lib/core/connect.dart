@@ -8,6 +8,15 @@ String formatTutorName(String raw) {
   return t.endsWith('Sir') ? t : '$t Sir';
 }
 
+/// How a student sees a tutor on anything they were given: "Ashraf Sir".
+/// Uses the server's `tutor_display_name`, else the first word of `tutor_name`.
+String tutorSirName(Json j) {
+  final display = j.str('tutor_display_name').trim();
+  if (display.isNotEmpty) return formatTutorName(display);
+  final full = j.str('tutor_name').trim();
+  return full.isEmpty ? '' : formatTutorName(full.split(RegExp(r'\s+')).first);
+}
+
 class ConnectedTutor {
   ConnectedTutor({required this.id, required this.displayName, required this.username, this.photo});
   final String id;

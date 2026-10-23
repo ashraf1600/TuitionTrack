@@ -13,6 +13,8 @@ from django.utils import timezone
 from django.contrib.auth import get_user_model
 
 from .models import Exam, ExamAttempt, ExamSubmission
+from apps.authentication.naming import sir_name
+
 from .sanitizer import sanitize_exam_html
 
 User = get_user_model()
@@ -155,6 +157,7 @@ class ExamListSerializer(serializers.ModelSerializer):
     assigned_count = serializers.SerializerMethodField()
     my_result = serializers.SerializerMethodField()
     tutor_name = serializers.SerializerMethodField()
+    tutor_display_name = serializers.SerializerMethodField()
     tuition_id = serializers.UUIDField(source='tuition.id', read_only=True, allow_null=True)
     tuition_title = serializers.CharField(source='tuition.title', read_only=True, allow_null=True)
     student_name = serializers.SerializerMethodField()
@@ -176,6 +179,7 @@ class ExamListSerializer(serializers.ModelSerializer):
             'exam_type',
             'tutor',
             'tutor_name',
+            'tutor_display_name',
             'tuition_id',
             'tuition_title',
             'student',
@@ -210,6 +214,10 @@ class ExamListSerializer(serializers.ModelSerializer):
 
     def get_tutor_name(self, obj):
         return obj.tutor.get_full_name() or obj.tutor.username
+
+    def get_tutor_display_name(self, obj):
+        # What students see: "Ashraf Sir", never the tuition's own name.
+        return sir_name(obj.tutor)
 
     def get_student_name(self, obj):
         if obj.student:
@@ -292,6 +300,7 @@ class ExamDetailSerializer(serializers.ModelSerializer):
     results_released = serializers.SerializerMethodField()
     results_release_time = serializers.ReadOnlyField()
     tutor_name = serializers.SerializerMethodField()
+    tutor_display_name = serializers.SerializerMethodField()
     tuition_id = serializers.UUIDField(source='tuition.id', read_only=True, allow_null=True)
     tuition_title = serializers.CharField(source='tuition.title', read_only=True, allow_null=True)
     student_name = serializers.SerializerMethodField()
@@ -322,6 +331,7 @@ class ExamDetailSerializer(serializers.ModelSerializer):
             'solution_media_url',
             'tutor',
             'tutor_name',
+            'tutor_display_name',
             'tuition_id',
             'tuition_title',
             'student',
@@ -409,6 +419,10 @@ class ExamDetailSerializer(serializers.ModelSerializer):
 
     def get_tutor_name(self, obj):
         return obj.tutor.get_full_name() or obj.tutor.username
+
+    def get_tutor_display_name(self, obj):
+        # What students see: "Ashraf Sir", never the tuition's own name.
+        return sir_name(obj.tutor)
 
     def get_student_name(self, obj):
         if obj.student:

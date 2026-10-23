@@ -1,0 +1,469 @@
+From dc4400e2a4120545c3bca41164722f8610316b1c Mon Sep 17 00:00:00 2001
+From: "Claude (audit)" <noreply@anthropic.com>
+Date: Sun, 11 Oct 2026 00:20:11 +0600
+Subject: [PATCH 10/14] mobile: homework review/split via the API, https-only
+ release, safer exam drafts
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_011d4mgSxngjRmAXosGe4ry4
+
+- Tutors could not see what a student handed in: the card now opens the
+  submitted link or file (new submission_file_url from the API).
+- 'Split per student' calls POST /homework/<id>/split/ (atomic) instead of
+  N creates + delete; the success toast was never shown (computed before the
+  loop ran).
+- Students cannot resubmit checked homework (matches the server rule); clearer
+  'Submit homework' / 'Update submission' labels.
+- Release builds no longer allow cleartext http (debug/profile still do, for a
+  server on the local network); release default server is the hosted https
+  API, overridable with --dart-define=API_BASE_URL.
+- A typed server address without a scheme gets https unless it is local.
+- Exam drafts are keyed per account (shared phones leaked answers between
+  students); an unexpected error no longer leaves 'Turn in' stuck.
+- setState/context after awaits guarded where they were not.
+- New offline tests: test/contract_test.dart.
+---
+ .../android/app/src/debug/AndroidManifest.xml |  2 +
+ .../android/app/src/main/AndroidManifest.xml  |  6 +-
+ .../app/src/profile/AndroidManifest.xml       |  2 +
+ mobile/lib/core/api.dart                      |  7 +-
+ mobile/lib/core/connect.dart                  |  8 +-
+ mobile/lib/core/repo.dart                     | 10 ++-
+ mobile/lib/main.dart                          |  9 ++-
+ .../lib/screens/student/exam_take_screen.dart | 13 +++-
+ mobile/lib/screens/student/homework_card.dart | 73 +++++++++++++------
+ .../lib/screens/tutor/exam_editor_screen.dart |  4 +-
+ mobile/lib/screens/tutor/homework_tab.dart    | 39 ++++------
+ mobile/test/contract_test.dart                | 62 ++++++++++++++++
+ 12 files changed, 177 insertions(+), 58 deletions(-)
+ create mode 100644 mobile/test/contract_test.dart
+
+diff --git a/mobile/android/app/src/debug/AndroidManifest.xml b/mobile/android/app/src/debug/AndroidManifest.xml
+index 399f698..9a07bd0 100644
+--- a/mobile/android/app/src/debug/AndroidManifest.xml
++++ b/mobile/android/app/src/debug/AndroidManifest.xml
+@@ -4,4 +4,6 @@
+          to allow setting breakpoints, to provide hot reload, etc.
+     -->
+     <uses-permission android:name="android.permission.INTERNET"/>
++    <!-- Lets a development build reach the Django server on this computer or the local network over http. -->
++    <application android:usesCleartextTraffic="true"/>
+ </manifest>
+diff --git a/mobile/android/app/src/main/AndroidManifest.xml b/mobile/android/app/src/main/AndroidManifest.xml
+index f542400..892c04a 100644
+--- a/mobile/android/app/src/main/AndroidManifest.xml
++++ b/mobile/android/app/src/main/AndroidManifest.xml
+@@ -1,11 +1,11 @@
+ <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+     <!-- Talks to the TuitionTrack server. -->
+     <uses-permission android:name="android.permission.INTERNET"/>
+-    <!-- usesCleartextTraffic lets the app reach a server on the local network over plain http
+-         (http://192.168.x.x:8000) while developing. Remove it once the server has https. -->
++    <!-- Release builds talk https only, so sign-in tokens never cross the network in clear text.
++         Plain http to a computer on the local network (http://192.168.x.x:8000) is allowed in
++         debug and profile builds only: see src/debug and src/profile. -->
+     <application
+         android:label="TuitionTrack"
+-        android:usesCleartextTraffic="true"
+         android:name="${applicationName}"
+         android:icon="@mipmap/ic_launcher">
+         <activity
+diff --git a/mobile/android/app/src/profile/AndroidManifest.xml b/mobile/android/app/src/profile/AndroidManifest.xml
+index 399f698..9a07bd0 100644
+--- a/mobile/android/app/src/profile/AndroidManifest.xml
++++ b/mobile/android/app/src/profile/AndroidManifest.xml
+@@ -4,4 +4,6 @@
+          to allow setting breakpoints, to provide hot reload, etc.
+     -->
+     <uses-permission android:name="android.permission.INTERNET"/>
++    <!-- Lets a development build reach the Django server on this computer or the local network over http. -->
++    <application android:usesCleartextTraffic="true"/>
+ </manifest>
+diff --git a/mobile/lib/core/api.dart b/mobile/lib/core/api.dart
+index 44703c4..8466fbb 100644
+--- a/mobile/lib/core/api.dart
++++ b/mobile/lib/core/api.dart
+@@ -84,7 +84,12 @@ class ApiClient {
+     while (value.endsWith('/')) {
+       value = value.substring(0, value.length - 1);
+     }
+-    if (value.isNotEmpty && !value.startsWith('http://') && !value.startsWith('https://')) value = 'http://$value';
++    if (value.isNotEmpty && !value.startsWith('http://') && !value.startsWith('https://')) {
++      // A typed address without a scheme: https for a real host, http only for this
++      // computer or the local network (release builds refuse plain http anyway).
++      final local = RegExp(r'^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)').hasMatch(value);
++      value = '${local ? 'http' : 'https'}://$value';
++    }
+     return value;
+   }
+ 
+diff --git a/mobile/lib/core/connect.dart b/mobile/lib/core/connect.dart
+index 4424d7d..3017782 100644
+--- a/mobile/lib/core/connect.dart
++++ b/mobile/lib/core/connect.dart
+@@ -80,6 +80,7 @@ class HomeworkItem {
+     required this.isEvaluated,
+     required this.isSubmitted,
+     this.sourceLabel = '',
++    this.submissionFileUrl = '',
+     this.tuitionId = '',
+     this.tuitionTitle = '',
+     required this.studentId,
+@@ -91,6 +92,8 @@ class HomeworkItem {
+   final DateTime dueDate;
+   final String tutorDisplay;
+   final String submittedUrl;
++  /// The uploaded file the student handed in, if any (absolute URL).
++  final String submissionFileUrl;
+   final String feedback;
+   final bool isEvaluated;
+   final bool isSubmitted;
+@@ -112,9 +115,12 @@ class HomeworkItem {
+         dueDate: j.date('due_date') ?? DateTime.now().add(const Duration(days: 7)),
+         tutorDisplay: formatTutorName(j.str('tutor_display_name')),
+         submittedUrl: j.str('submitted_online_url'),
++        submissionFileUrl: j.str('submission_file_url'),
+         feedback: j.str('tutor_feedback'),
+         isEvaluated: j.flag('is_evaluated'),
+-        isSubmitted: j.flag('is_submitted') || j.str('submitted_online_url').isNotEmpty,
++        isSubmitted: j.flag('is_submitted') ||
++            j.str('submitted_online_url').isNotEmpty ||
++            j.str('submission_file_url').isNotEmpty,
+         sourceLabel: j.str('source_label'),
+         tuitionId: j.str('tuition_id'),
+         tuitionTitle: j.str('tuition_title'),
+diff --git a/mobile/lib/core/repo.dart b/mobile/lib/core/repo.dart
+index d68fa64..07e8ff2 100644
+--- a/mobile/lib/core/repo.dart
++++ b/mobile/lib/core/repo.dart
+@@ -123,7 +123,15 @@ class Repo {
+   }
+   Future<Json> updateHomework(String id, Json changes) async => _map(await api.patch('/homework/$id/', changes));
+   Future<void> deleteHomework(String id) async => api.delete('/homework/$id/');
+-  /// Student upload: URL only — never sends is_evaluated.
++  /// Tutor: turn a shared group task into one row per enrolled student, in one
++  /// server step. Work already handed in is kept. Returns the per-student rows.
++  Future<List<Json>> splitHomework(String id) async {
++    final data = _map(await api.post('/homework/$id/split/'));
++    return (data['homework'] as List? ?? const []).whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
++  }
++
++  /// Student upload: URL only — never sends is_evaluated. On a shared group
++  /// task the server answers with the student's own copy (a different id).
+   Future<Json> submitHomework(String id, String url) async {
+     final data = _map(await api.post('/homework/$id/submit/', {'submitted_online_url': url}));
+     return data.containsKey('homework') ? _map(data['homework']) : data;
+diff --git a/mobile/lib/main.dart b/mobile/lib/main.dart
+index f4f261a..702653c 100644
+--- a/mobile/lib/main.dart
++++ b/mobile/lib/main.dart
+@@ -14,8 +14,13 @@ import 'screens/tutor/tutor_home.dart';
+ import 'widgets/theme.dart';
+ 
+ /// The server the app talks to until the user sets another one on the sign-in screen.
+-/// 10.0.2.2 is how an Android emulator reaches the computer it runs on.
+-const defaultServer = String.fromEnvironment('API_BASE_URL', defaultValue: 'http://10.0.2.2:8000');
++/// Override at build time with --dart-define=API_BASE_URL=https://… . Release builds
++/// default to the hosted API (https); development builds to the computer they run on
++/// (10.0.2.2 is how an Android emulator reaches it).
++const defaultServer = String.fromEnvironment(
++  'API_BASE_URL',
++  defaultValue: kReleaseMode ? 'https://tuitiontrack-api.onrender.com' : 'http://10.0.2.2:8000',
++);
+ 
+ Future<void> main() async {
+   WidgetsFlutterBinding.ensureInitialized();
+diff --git a/mobile/lib/screens/student/exam_take_screen.dart b/mobile/lib/screens/student/exam_take_screen.dart
+index 4a09dcf..5d03b70 100644
+--- a/mobile/lib/screens/student/exam_take_screen.dart
++++ b/mobile/lib/screens/student/exam_take_screen.dart
+@@ -49,7 +49,9 @@ class _ExamTakeScreenState extends State<ExamTakeScreen> {
+   String? _error;
+ 
+   Json get exam => widget.exam;
+-  String get _draftKey => 'exam_draft_${exam.str('id')}';
++
++  /// Drafts are per exam and per account, so two students sharing a phone never see each other's answers.
++  late final String _draftKey;
+   List<Json> get _questions => exam.maps('mcq_data');
+   bool get _mcqOnly => exam.str('exam_type') == 'MCQ';
+   bool get _isAssignment => exam.str('category') == 'ASSIGNMENT';
+@@ -61,6 +63,8 @@ class _ExamTakeScreenState extends State<ExamTakeScreen> {
+   @override
+   void initState() {
+     super.initState();
++    final userId = context.read<Session>().user?.str('id') ?? '';
++    _draftKey = 'exam_draft_${exam.str('id')}_$userId';
+     _restoreDraft();
+     _text.addListener(_saveDraft);
+     _tick();
+@@ -191,6 +195,13 @@ class _ExamTakeScreenState extends State<ExamTakeScreen> {
+         _submitting = false;
+         _error = auto ? 'Time is up, and your answers could not be sent: ${error.message} Tap "Turn in" to try again.' : error.message;
+       });
++    } catch (_) {
++      // Never leave the button stuck on "sending": the answers are still saved on the device.
++      if (!mounted) return;
++      setState(() {
++        _submitting = false;
++        _error = 'Your answers could not be sent. They are saved on this phone; tap "Turn in" to try again.';
++      });
+     }
+   }
+ 
+diff --git a/mobile/lib/screens/student/homework_card.dart b/mobile/lib/screens/student/homework_card.dart
+index 8201c7b..d77da4e 100644
+--- a/mobile/lib/screens/student/homework_card.dart
++++ b/mobile/lib/screens/student/homework_card.dart
+@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
+ 
+ import '../../core/connect.dart';
+ import '../../core/repo.dart';
++import '../../widgets/media.dart';
+ import '../../widgets/theme.dart';
+ import '../../widgets/ui.dart';
+ 
+@@ -104,7 +105,7 @@ class _HomeworkCardState extends State<HomeworkCard> {
+     final repo = context.read<Repo>();
+     final ok = await confirm(context,
+         title: 'Mark as done?', message: 'This sets is_evaluated = true for the student.');
+-    if (!ok) return;
++    if (!ok || !mounted) return;
+     setState(() => _busy = true);
+     try {
+       final done = await attempt(context, () async {
+@@ -163,31 +164,59 @@ class _HomeworkCardState extends State<HomeworkCard> {
+           Pill(hw.isEvaluated ? 'Marked as Done' : 'Pending Tutor Review',
+               color: hw.isEvaluated ? AppColors.success : AppColors.warning, icon: hw.isEvaluated ? Icons.verified : Icons.hourglass_empty),
+           if (hw.feedback.isNotEmpty) ...[gap8, Text('Feedback: ${hw.feedback}', style: const TextStyle(fontSize: 13))],
++          // What the student handed in, for the tutor to review (and for the student to check).
++          if (hw.submittedUrl.isNotEmpty || hw.submissionFileUrl.isNotEmpty) ...[
++            gap8,
++            Wrap(
++              spacing: 8,
++              runSpacing: 4,
++              children: [
++                if (hw.submittedUrl.isNotEmpty)
++                  OutlinedButton.icon(
++                    onPressed: () => openExternal(context, hw.submittedUrl),
++                    icon: const Icon(Icons.link, size: 16),
++                    label: const Text('Open submitted link'),
++                  ),
++                if (hw.submissionFileUrl.isNotEmpty)
++                  OutlinedButton.icon(
++                    onPressed: () => openExternal(context, hw.submissionFileUrl),
++                    icon: const Icon(Icons.attach_file, size: 16),
++                    label: const Text('Open submitted file'),
++                  ),
++              ],
++            ),
++          ] else if (widget.isTutor && hw.isSubmitted) ...[
++            gap8,
++            const Text('Marked as submitted (no link or file).', style: TextStyle(fontSize: 12, color: AppColors.muted)),
++          ],
+           gap12,
+           if (!widget.isTutor) ...[
+-            TextField(
+-              controller: _url,
+-              keyboardType: TextInputType.url,
+-              decoration: const InputDecoration(
+-                labelText: 'Submission link (optional)',
+-                hintText: 'https://docs.google.com/...',
+-                prefixIcon: Icon(Icons.link),
++            // Checked work is closed: the server refuses changes after the tutor marks it done.
++            if (!hw.isEvaluated) ...[
++              TextField(
++                controller: _url,
++                keyboardType: TextInputType.url,
++                decoration: const InputDecoration(
++                  labelText: 'Submission link (optional)',
++                  hintText: 'https://docs.google.com/...',
++                  prefixIcon: Icon(Icons.link),
++                ),
+               ),
+-            ),
+-            gap8,
+-            SizedBox(
+-              width: double.infinity,
+-              child: BusyButton(
+-                label: _busy ? 'Uploading...' : 'Upload Homework',
+-                icon: Icons.upload,
+-                onPressed: _busy
+-                    ? null
+-                    : () async {
+-                        HapticFeedback.lightImpact();
+-                        await _submit();
+-                      },
++              gap8,
++              SizedBox(
++                width: double.infinity,
++                child: BusyButton(
++                  label: _busy ? 'Submitting...' : (hw.isSubmitted ? 'Update submission' : 'Submit homework'),
++                  icon: Icons.upload,
++                  onPressed: _busy
++                      ? null
++                      : () async {
++                          HapticFeedback.lightImpact();
++                          await _submit();
++                        },
++                ),
+               ),
+-            ),
++            ],
+           ] else
+             SizedBox(
+               width: double.infinity,
+diff --git a/mobile/lib/screens/tutor/exam_editor_screen.dart b/mobile/lib/screens/tutor/exam_editor_screen.dart
+index 8765f7f..e3ffcb0 100644
+--- a/mobile/lib/screens/tutor/exam_editor_screen.dart
++++ b/mobile/lib/screens/tutor/exam_editor_screen.dart
+@@ -436,7 +436,7 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> with SingleTickerPr
+                   message: 'The text and pictures are kept. Tables, bold text and lists become plain paragraphs.',
+                   confirmLabel: 'Rewrite',
+                 );
+-                if (ok) setState(() => _keepPaper = false);
++                if (ok && mounted) setState(() => _keepPaper = false);
+               },
+               icon: const Icon(Icons.edit_outlined),
+               label: const Text('Rewrite on this phone'),
+@@ -462,7 +462,7 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> with SingleTickerPr
+                 OutlinedButton.icon(
+                   onPressed: () async {
+                     final urls = await pickAndUpload(context);
+-                    if (urls.isEmpty) return;
++                    if (urls.isEmpty || !mounted) return;
+                     setState(() => _written.text = '${_written.text.trimRight()}\n\n${urls.map((u) => '[picture: $u]').join('\n\n')}\n\n'.trimLeft());
+                   },
+                   icon: const Icon(Icons.add_photo_alternate_outlined, size: 18),
+diff --git a/mobile/lib/screens/tutor/homework_tab.dart b/mobile/lib/screens/tutor/homework_tab.dart
+index ad013e4..32e4732 100644
+--- a/mobile/lib/screens/tutor/homework_tab.dart
++++ b/mobile/lib/screens/tutor/homework_tab.dart
+@@ -70,42 +70,31 @@ class _HomeworkTabState extends State<HomeworkTab> {
+   }
+ 
+   /// Turn one shared group row into one row per enrolled student so each
+-  /// submission is reviewed and marked done individually.
++  /// submission is reviewed and marked done individually. One server call:
++  /// either every copy is made and the shared row goes, or nothing changes.
+   Future<void> _split(HomeworkItem hw, List<Json> tuitions) async {
+     final tuition = _firstOrNull(tuitions, (t) => t.str('id') == hw.tuitionId);
+-    final roster = (tuition?.maps('enrollments') ?? const [])
+-        .where((e) => e['is_active'] != false)
+-        .map((e) => (id: e.str('student_id'), name: e.str('student_name')))
+-        .where((s) => s.id.isNotEmpty)
+-        .toList();
+-    if (roster.isEmpty) {
++    final members = (tuition?.maps('enrollments') ?? const []).where((e) => e['is_active'] != false).length;
++    if (members == 0) {
+       showToast(context, 'No enrolled students found in this group to split across.', error: true);
+       return;
+     }
+     final ok = await confirm(
+       context,
+       title: 'Split into per-student copies?',
+-      message:
+-          '"${hw.title}" becomes ${roster.length} individual rows (one per student). The shared row is removed.',
+-      confirmLabel: 'Split (${roster.length})',
++      message: '"${hw.title}" becomes $members individual rows (one per student). '
++          'Work already handed in is kept. The shared row is removed.',
++      confirmLabel: 'Split ($members)',
+     );
+     if (!ok || !mounted) return;
+     final repo = context.read<Repo>();
+-    var done = 0;
+-    final ok2 = await attempt(context, () async {
+-      for (final s in roster) {
+-        await repo.createHomework(
+-          title: hw.title,
+-          description: hw.description,
+-          dueDate: hw.dueDate,
+-          studentId: s.id,
+-          sourceLabel: hw.sourceLabel,
+-        );
+-        done++;
+-      }
+-      await repo.deleteHomework(hw.id);
+-    }, success: done == roster.length ? 'Split into $done individual copies.' : null);
+-    if (ok2) await _key.currentState?.reload();
++    var made = 0;
++    final done = await attempt(context, () async {
++      made = (await repo.splitHomework(hw.id)).length;
++    });
++    if (!done || !mounted) return;
++    showToast(context, 'Split into $made individual copies.');
++    await _key.currentState?.reload();
+   }
+ 
+   @override
+diff --git a/mobile/test/contract_test.dart b/mobile/test/contract_test.dart
+new file mode 100644
+index 0000000..f6b741d
+--- /dev/null
++++ b/mobile/test/contract_test.dart
+@@ -0,0 +1,62 @@
++// Offline tests for the app <-> API contract changed in the audit branch:
++// homework personal copies / file submissions and how a typed server address
++// is turned into a URL.
++import 'package:flutter_test/flutter_test.dart';
++
++import 'package:tuitiontrack/core/api.dart';
++import 'package:tuitiontrack/core/connect.dart';
++
++void main() {
++  group('HomeworkItem.fromJson', () {
++    test('reads the submitted file and counts it as submitted', () {
++      final hw = HomeworkItem.fromJson({
++        'id': 'copy-1',
++        'title': 'Chapter 1',
++        'due_date': '2030-01-01T10:00:00Z',
++        'student_id': 'stu-1',
++        'student_name': 'Rafi',
++        'tuition_id': null,
++        'group_source_id': 'group-1',
++        'submitted_online_url': '',
++        'submission_file_url': 'https://api.example.com/media/homework/2030/01/a.pdf',
++        'is_submitted': false,
++        'is_evaluated': false,
++      });
++      expect(hw.submissionFileUrl, 'https://api.example.com/media/homework/2030/01/a.pdf');
++      expect(hw.isSubmitted, isTrue);
++      expect(hw.isSharedGroupTask, isFalse);
++    });
++
++    test('a group task has a tuition and no student', () {
++      final hw = HomeworkItem.fromJson({
++        'id': 'group-1',
++        'title': 'Chapter 1',
++        'due_date': '2030-01-01T10:00:00Z',
++        'tuition_id': 'tuition-1',
++        'student_id': null,
++        'is_group': true,
++      });
++      expect(hw.isSharedGroupTask, isTrue);
++      expect(hw.submissionFileUrl, '');
++    });
++  });
++
++  group('server address', () {
++    ApiClient client(String url) => ApiClient(baseUrl: url, tokens: MemoryTokenStore());
++
++    test('a bare host name gets https', () {
++      expect(client('tuitiontrack-api.onrender.com').baseUrl, 'https://tuitiontrack-api.onrender.com');
++    });
++
++    test('this computer or the local network gets http', () {
++      expect(client('192.168.0.10:8000').baseUrl, 'http://192.168.0.10:8000');
++      expect(client('10.0.2.2:8000/').baseUrl, 'http://10.0.2.2:8000');
++      expect(client('localhost:8000').baseUrl, 'http://localhost:8000');
++    });
++
++    test('an explicit scheme is kept and trailing slashes dropped', () {
++      expect(client('http://example.com//').baseUrl, 'http://example.com');
++      expect(client(' https://example.com/ ').baseUrl, 'https://example.com');
++    });
++  });
++}
+-- 
+2.43.0
+

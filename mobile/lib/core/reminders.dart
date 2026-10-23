@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/painting.dart' show Color;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/data/latest.dart' as tz_data;
 import 'package:timezone/timezone.dart' as tz;
@@ -38,7 +39,7 @@ class Reminders {
     if (_ready || !available) return;
     tz_data.initializeTimeZones();
     await _plugin.initialize(
-      settings: const InitializationSettings(android: AndroidInitializationSettings('@mipmap/ic_launcher')),
+      settings: const InitializationSettings(android: AndroidInitializationSettings('@drawable/ic_stat_tt')),
       onDidReceiveNotificationResponse: (response) => onResponse?.call(response),
     );
     final launch = await _plugin.getNotificationAppLaunchDetails();
@@ -147,6 +148,8 @@ class Reminders {
         classes ? 'reminders' : 'updates',
         classes ? tr('Class and homework reminders') : tr('Updates from TuitionTrack'),
         channelDescription: classes ? tr('Before and after your classes, and before homework is due.') : tr('New homework, payments, exams and requests.'),
+        icon: '@drawable/ic_stat_tt',
+        color: const Color(0xFF3F7CB5),
         importance: Importance.high,
         priority: Priority.high,
         category: classes ? AndroidNotificationCategory.reminder : AndroidNotificationCategory.event,

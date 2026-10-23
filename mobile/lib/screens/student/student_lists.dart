@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../../core/connect.dart' show HomeworkItem;
+import '../../core/connect.dart' show HomeworkItem, tutorSirName;
 import '../../core/format.dart';
 import '../../core/i18n.dart';
 import '../../core/json.dart';
 import '../../core/repo.dart';
 import '../../core/session.dart';
+import '../../widgets/student_kit.dart';
 import '../../widgets/theme.dart';
 import '../../widgets/ui.dart';
 import '../common/leaderboard_screen.dart';
@@ -17,11 +18,29 @@ import 'homework_card.dart';
 /// Lists a student sees in more than one place: on the home tabs (everything)
 /// and inside one tutor's page (only that tutor's work).
 
+// ── Counts for the badges ───────────────────────────────────────────────────
+
+/// Exams and assignments still waiting for this student: open now or coming up, not turned in.
+int pendingExamCount(List<Json> exams, DateTime now) => exams
+    .where((e) => !e.flag('has_submission') && (e.flag('can_submit') || (e.date('start_time')?.isAfter(now) ?? false)))
+    .length;
+
+/// Homework not handed in yet (and not already closed by the tutor).
+int pendingHomeworkCount(List<HomeworkItem> items) => items.where((h) => !h.isSubmitted && !h.isEvaluated).length;
+
+/// A tab or menu label with a small red count beside it when [count] is above zero.
+/// [offset] moves the count clear of a text label (icons can use the default).
+Widget countBadge(Widget child, int count, {Offset? offset}) =>
+    Badge(isLabelVisible: count > 0, label: Text(localDigits('$count')), offset: offset, child: child);
+
 // ── Exams ────────────────────────────────────────────────────────────────────
 
 /// A student's exams and assignments, grouped into To do, Upcoming and Done.
 class StudentExamsList extends StatelessWidget {
-  const StudentExamsList({super.key, required this.exams, required this.reload});
+  const StudentExamsList({super.key, required this.exams, required this.reload, this.showTutor = true});
+
+  /// Name the tutor ("Ashraf Sir") on each card. Off on one tutor's own page, where it goes without saying.
+  final bool showTutor;
   final List<Json> exams;
   final Future<void> Function() reload;
 
@@ -50,11 +69,13 @@ class StudentExamsList extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             SectionTitle('$title (${items.length})', subtitle: subtitle, icon: icon),
-            for (final exam in items) ...[StudentExamCard(exam: exam, reload: reload), gap12],
+            for (final exam in items) ...[StudentExamCard(exam: exam, reload: reload, showTutor: showTutor), gap12],
           ],
         );
+    final percents = resultPercents(exams);
     return PageBody(
       children: [
+        if (percents.length >= 2) ...[ScoreTrend(percents: percents.length > 8 ? percents.sublist(percents.length - 8) : percents), gap12],
         if (todo.isNotEmpty) group(tr('To do'), tr('Open now'), Icons.play_circle_outline, todo),
         if (upcoming.isNotEmpty) group(tr('Upcoming'), tr('Not open yet'), Icons.schedule, upcoming),
         if (done.isNotEmpty) group(tr('Done'), tr('Turned in or finished'), Icons.check_circle_outline, done),
@@ -63,47 +84,53 @@ class StudentExamsList extends StatelessWidget {
   }
 }
 
+/// Starts (or opens) [exam] for the student, then shows what happens to the answers.
+Future<void> takeExam(BuildContext context, Json exam, Future<void> Function() reload) async {
+  final repo = context.read<Repo>();
+  final isAssignment = exam.str('category') == 'ASSIGNMENT';
+  final minutes = exam.integer('duration_minutes');
+  if (minutes > 0 && !isAssignment) {
+    final ok = await confirm(
+      context,
+      title: tr('Start the timed exam?'),
+      message: tr('You get {p0} minutes from the moment you start, and the clock keeps running if you leave the app.', {'p0': minutes}),
+      confirmLabel: tr('Start now'),
+    );
+    if (!ok || !context.mounted) return;
+  }
+  Json? started;
+  await attempt(context, () async => started = await repo.startExam(exam.str('id')));
+  if (started == null || !context.mounted) return;
+  final response = await Navigator.push<Json>(
+    context,
+    MaterialPageRoute(builder: (_) => ExamTakeScreen(exam: started!.obj('exam') ?? {})),
+  );
+  await reload();
+  if (response == null || !context.mounted) return;
+  final status = response.obj('result_status') ?? {};
+  if (response.flag('results_released')) {
+    showToast(context, tr('Submitted. Here is your result.'));
+    openExamResult(context, exam);
+  } else if (status.str('mode') == 'SCHEDULED' && status.date('publish_at') != null) {
+    showToast(context, tr('Submitted. Results will be published on {p0}.', {'p0': fmtDateTime(status.date('publish_at'))}));
+  } else {
+    showToast(context, tr('Submitted. Your tutor will publish the results.'));
+  }
+}
+
+void openExamResult(BuildContext context, Json exam) {
+  Navigator.push(context, MaterialPageRoute<void>(builder: (_) => ExamResultScreen(examId: exam.str('id'), title: exam.str('title'))));
+}
+
 class StudentExamCard extends StatelessWidget {
-  const StudentExamCard({super.key, required this.exam, required this.reload});
+  const StudentExamCard({super.key, required this.exam, required this.reload, this.showTutor = true});
   final Json exam;
+  final bool showTutor;
   final Future<void> Function() reload;
 
-  Future<void> _take(BuildContext context) async {
-    final repo = context.read<Repo>();
-    final isAssignment = exam.str('category') == 'ASSIGNMENT';
-    final minutes = exam.integer('duration_minutes');
-    if (minutes > 0 && !isAssignment) {
-      final ok = await confirm(
-        context,
-        title: tr('Start the timed exam?'),
-        message: tr('You get {p0} minutes from the moment you start, and the clock keeps running if you leave the app.', {'p0': minutes}),
-        confirmLabel: tr('Start now'),
-      );
-      if (!ok || !context.mounted) return;
-    }
-    Json? started;
-    await attempt(context, () async => started = await repo.startExam(exam.str('id')));
-    if (started == null || !context.mounted) return;
-    final response = await Navigator.push<Json>(
-      context,
-      MaterialPageRoute(builder: (_) => ExamTakeScreen(exam: started!.obj('exam') ?? {})),
-    );
-    await reload();
-    if (response == null || !context.mounted) return;
-    final status = response.obj('result_status') ?? {};
-    if (response.flag('results_released')) {
-      showToast(context, tr('Submitted. Here is your result.'));
-      _openResult(context);
-    } else if (status.str('mode') == 'SCHEDULED' && status.date('publish_at') != null) {
-      showToast(context, tr('Submitted. Results will be published on {p0}.', {'p0': fmtDateTime(status.date('publish_at'))}));
-    } else {
-      showToast(context, tr('Submitted. Your tutor will publish the results.'));
-    }
-  }
+  Future<void> _take(BuildContext context) => takeExam(context, exam, reload);
 
-  void _openResult(BuildContext context) {
-    Navigator.push(context, MaterialPageRoute<void>(builder: (_) => ExamResultScreen(examId: exam.str('id'), title: exam.str('title'))));
-  }
+  void _openResult(BuildContext context) => openExamResult(context, exam);
 
   @override
   Widget build(BuildContext context) {
@@ -128,16 +155,30 @@ class StudentExamCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Pill(isAssignment ? tr('Assignment') : tr('Exam'), color: AppColors.primarySoft),
-              if (minutes > 0 && !isAssignment) ...[SizedBox(width: 6), Pill(tr('{p0} min', {'p0': minutes}), icon: Icons.timer_outlined)],
-              Spacer(),
+              // Type, length and the time left, wrapping onto a second line on small phones.
+              Expanded(
+                child: Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: [
+                    Pill(isAssignment ? tr('Assignment') : tr('Exam'), color: AppColors.primarySoft),
+                    if (minutes > 0 && !isAssignment) Pill(tr('{p0} min', {'p0': minutes}), icon: Icons.timer_outlined),
+                    if (open && !isLate) DeadlineChip(at: end, now: now, kind: isAssignment ? DeadlineKind.due : DeadlineKind.closes),
+                    if (upcoming) DeadlineChip(at: start, now: now, kind: DeadlineKind.opens),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
               Text(tr('{p0} marks', {'p0': trimNumber(exam.number('total_marks'))}), style: TextStyle(fontWeight: FontWeight.w700, color: AppColors.success)),
             ],
           ),
           gap8,
           Text(exam.str('title'), style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
-          if (exam.str('batch_name').isNotEmpty) Text(exam.str('batch_name'), style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13)),
+          // Who set it ("Ashraf Sir"); the tuition's own name is the tutor's business.
+          if (showTutor && tutorSirName(exam).isNotEmpty)
+            Text(tutorSirName(exam), style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13)),
           gap8,
           if (upcoming)
             Text(tr('Opens {p0} · {p1}', {'p0': relativeFromNow(start.difference(now)), 'p1': fmtDateTime(start)}), style: TextStyle(color: AppColors.primarySoft))
@@ -227,7 +268,10 @@ class StudentExamCard extends StatelessWidget {
 
 /// Student homework dashboard: pending + done, ordered by due date.
 class StudentHomeworkList extends StatelessWidget {
-  const StudentHomeworkList({super.key, required this.items, required this.reload});
+  const StudentHomeworkList({super.key, required this.items, required this.reload, this.showTutor = true});
+
+  /// Name the tutor on each card (off on one tutor's own page).
+  final bool showTutor;
   final List<HomeworkItem> items;
   final Future<void> Function() reload;
 
@@ -266,7 +310,7 @@ class StudentHomeworkList extends StatelessWidget {
           ),
         if (pending > 0) gap12,
         for (final hw in items) ...[
-          HomeworkCard(hw: hw, isTutor: false, onChanged: reload),
+          HomeworkCard(hw: hw, isTutor: false, onChanged: reload, showTutor: showTutor),
           gap12,
         ],
       ],

@@ -42,6 +42,28 @@ class ExamSanitizerTests(APITestCase):
         self.assertIn('<th>x</th>', cleaned)
         self.assertIn('data-latex="x^2"', cleaned)
 
+    def test_math_cannot_smuggle_live_tags_back_in(self):
+        """Escaped markup inside $…$, $$…$$ and data-latex must stay escaped (was stored XSS)."""
+        payloads = [
+            '<p>$&lt;img src=x onerror=alert(1)&gt;$</p>',
+            '<p>$$&lt;script&gt;alert(1)&lt;/script&gt;$$</p>',
+            '<span class="math-inline" data-latex="&lt;img src=x onerror=alert(1)&gt;">x</span>',
+        ]
+        for payload in payloads:
+            cleaned = sanitize_exam_html(payload)
+            self.assertNotIn('<img', cleaned, payload)
+            self.assertNotIn('<script', cleaned, payload)
+            self.assertNotIn('onerror=alert(1)>', cleaned, payload)
+            # Stable: sanitising the stored value again changes nothing.
+            self.assertEqual(sanitize_exam_html(cleaned), cleaned)
+
+    def test_math_with_comparison_and_matrix_survives(self):
+        html = r'<p>$a &lt; b$ and $$\begin{bmatrix}1&amp;2\\3&amp;4\end{bmatrix}$$</p>'
+        cleaned = sanitize_exam_html(html)
+        self.assertIn('a &lt; b', cleaned)
+        self.assertIn(r'\begin{bmatrix}1', cleaned)
+        self.assertEqual(sanitize_exam_html(cleaned), cleaned)
+
 
 class ExamLifecycleTests(APITestCase):
     def setUp(self):

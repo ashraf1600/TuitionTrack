@@ -10,6 +10,7 @@ import '../../core/rich_clipboard.dart';
 import '../../widgets/math_text.dart';
 import '../../widgets/media.dart';
 import '../../widgets/science_paste.dart';
+import '../../widgets/science_toolbar.dart';
 import '../../widgets/theme.dart';
 import '../../widgets/ui.dart';
 
@@ -320,7 +321,7 @@ class _PasteScreenState extends State<_PasteScreen> {
         title: Text(tr('Paste questions')),
         actions: [TextButton(onPressed: () => _text.text = pasteExample, child: Text(tr('Example')))],
       ),
-      body: SafeArea(
+      body: Column(children: [Expanded(child: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Column(
@@ -367,7 +368,7 @@ class _PasteScreenState extends State<_PasteScreen> {
             ],
           ),
         ),
-      ),
+      )), const ScienceToolbar()]),
     );
   }
 }
@@ -441,7 +442,7 @@ class _QuestionEditorScreenState extends State<QuestionEditorScreen> {
         title: Text(tr('Question {p0}', {'p0': widget.number})),
         actions: [TextButton(onPressed: () => Navigator.pop(context, _value), child: Text(tr('Done')))],
       ),
-      body: PageBody(
+      body: Column(children: [Expanded(child: PageBody(
         children: [
           TextField(
             controller: _question,
@@ -573,7 +574,7 @@ class _QuestionEditorScreenState extends State<QuestionEditorScreen> {
           gap16,
           FilledButton.icon(onPressed: () => Navigator.pop(context, _value), icon: const Icon(Icons.check), label: Text(tr('Done'))),
         ],
-      ),
+      )), const ScienceToolbar()]),
     );
   }
 }

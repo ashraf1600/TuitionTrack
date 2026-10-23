@@ -1,0 +1,56 @@
+From 51dec79053c4ef75ba525999b9115caf8748e021 Mon Sep 17 00:00:00 2001
+From: "Claude (audit)" <noreply@anthropic.com>
+Date: Sun, 11 Oct 2026 00:06:42 +0600
+Subject: [PATCH 06/14] exams: solution attachment must be a stored file or web
+ link
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_011d4mgSxngjRmAXosGe4ry4
+---
+ backend/apps/exams/serializers.py |  7 +++++++
+ backend/tests/test_audit_fixes.py | 14 ++++++++++++++
+ 2 files changed, 21 insertions(+)
+
+diff --git a/backend/apps/exams/serializers.py b/backend/apps/exams/serializers.py
+index 9b3f39f..bccdeef 100644
+--- a/backend/apps/exams/serializers.py
++++ b/backend/apps/exams/serializers.py
+@@ -618,6 +618,13 @@ class ExamCreateUpdateSerializer(serializers.ModelSerializer):
+             return ''
+         return sanitize_exam_html(value)
+ 
++    def validate_solution_media_url(self, value):
++        """Shown to students as a link: only a stored file (/media/…) or a web address."""
++        value = (value or '').strip()
++        if value and not (value.startswith('/media/') or value.lower().startswith(('http://', 'https://'))):
++            raise serializers.ValidationError('Use an uploaded file or a link that starts with https://.')
++        return value
++
+     def validate_written_scheme(self, value):
+         """Normalise to [{id, label, marks}] with server-made ids and positive marks."""
+         import uuid
+diff --git a/backend/tests/test_audit_fixes.py b/backend/tests/test_audit_fixes.py
+index e06ac09..1807338 100644
+--- a/backend/tests/test_audit_fixes.py
++++ b/backend/tests/test_audit_fixes.py
+@@ -353,3 +353,17 @@ class SettingsHardeningTests(AuditBase):
+         data = self.client.get('/api/v1/meta/').data
+         self.assertEqual(data['uploads']['extensions'], ['.jpeg', '.jpg', '.pdf', '.png', '.webp'])
+ 
++
++
++class SolutionLinkTests(AuditBase):
++    def test_solution_link_must_be_a_file_or_web_address(self):
++        self.as_user(self.tutor)
++        now = timezone.now()
++        payload = {
++            'title': 'Quiz', 'exam_type': 'CQ', 'tuition_id': str(self.tuition.id),
++            'start_time': (now + timedelta(hours=1)).isoformat(), 'end_time': (now + timedelta(hours=2)).isoformat(),
++        }
++        bad = self.client.post('/api/v1/exams/', {**payload, 'solution_media_url': 'javascript:alert(1)'}, format='json')
++        self.assertEqual(bad.status_code, status.HTTP_400_BAD_REQUEST)
++        good = self.client.post('/api/v1/exams/', {**payload, 'solution_media_url': '/media/uploads/a.pdf'}, format='json')
++        self.assertEqual(good.status_code, status.HTTP_201_CREATED, good.data)
+-- 
+2.43.0
+

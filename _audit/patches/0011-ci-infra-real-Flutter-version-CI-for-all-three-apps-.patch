@@ -1,0 +1,239 @@
+From 9a7de26701b810d493d06f09f02ba881460305e2 Mon Sep 17 00:00:00 2001
+From: "Claude (audit)" <noreply@anthropic.com>
+Date: Sun, 11 Oct 2026 00:20:11 +0600
+Subject: [PATCH 11/14] ci/infra: real Flutter version, CI for all three apps,
+ reproducible web build
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_011d4mgSxngjRmAXosGe4ry4
+
+- build-apk.yml pinned Flutter 3.27.4 (Dart 3.6) while pubspec needs Dart
+  >= 3.13.5, so 'pub get' could not succeed; use current stable. Analyze no
+  longer '|| true', tests run, and the APK is built with API_BASE_URL.
+- New ci.yml: backend (ruff, check, migrations check, tests), frontend
+  (lint, tests, build) and mobile (analyze, test) on every push.
+- render.yaml: 'npm ci' with the committed lockfile instead of deleting it;
+  CORS comment matches the new settings.
+- README/guide: frontend and test commands, correct Flutter version.
+---
+ .github/workflows/build-apk.yml | 11 ++++--
+ .github/workflows/ci.yml        | 63 +++++++++++++++++++++++++++++++++
+ README.md                       | 29 ++++++++++++---
+ RENDER_DEPLOYMENT_GUIDE.md      |  4 +--
+ render.yaml                     |  8 +++--
+ 5 files changed, 103 insertions(+), 12 deletions(-)
+ create mode 100644 .github/workflows/ci.yml
+
+diff --git a/.github/workflows/build-apk.yml b/.github/workflows/build-apk.yml
+index 11d14e5..853e6e2 100644
+--- a/.github/workflows/build-apk.yml
++++ b/.github/workflows/build-apk.yml
+@@ -24,8 +24,8 @@ jobs:
+       - name: Set up Flutter
+         uses: subosito/flutter-action@v2
+         with:
++          # pubspec.yaml needs Dart >= 3.13.5 (Flutter >= 3.44); the old 3.27.4 pin could not resolve packages.
+           channel: stable
+-          flutter-version: 3.27.4
+ 
+       - name: Cache Flutter packages
+         uses: actions/cache@v4
+@@ -42,11 +42,16 @@ jobs:
+ 
+       - name: Analyze
+         working-directory: mobile
+-        run: flutter analyze --no-fatal-infos || true
++        run: flutter analyze --no-fatal-infos
++
++      - name: Test
++        working-directory: mobile
++        run: flutter test
+ 
+       - name: Build release APK
+         working-directory: mobile
+-        run: flutter build apk --release
++        # The app's default server; set the repository variable API_BASE_URL to change it.
++        run: flutter build apk --release --dart-define=API_BASE_URL=${{ vars.API_BASE_URL || 'https://tuitiontrack-api.onrender.com' }}
+ 
+       - name: Sign APK (placeholder — replace with your keystore)
+         # NOTE: This step signs with the debug key so the workflow runs without
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+new file mode 100644
+index 0000000..7dd891c
+--- /dev/null
++++ b/.github/workflows/ci.yml
+@@ -0,0 +1,63 @@
++name: CI
++
++on:
++  push:
++    branches: ['**']
++  pull_request:
++
++jobs:
++  backend:
++    name: Backend (Django)
++    runs-on: ubuntu-latest
++    defaults:
++      run:
++        working-directory: backend
++    env:
++      DEBUG: 'True'
++      SECRET_KEY: ci-only-not-secret
++    steps:
++      - uses: actions/checkout@v4
++      - uses: actions/setup-python@v5
++        with:
++          python-version-file: backend/.python-version
++          cache: pip
++          cache-dependency-path: backend/requirements.txt
++      - run: pip install -r requirements.txt ruff
++      - run: ruff check .
++      - run: python manage.py check
++      - run: python manage.py makemigrations --check --dry-run
++      - run: python manage.py test --parallel 4
++
++  frontend:
++    name: Frontend (React)
++    runs-on: ubuntu-latest
++    defaults:
++      run:
++        working-directory: frontend
++    steps:
++      - uses: actions/checkout@v4
++      - uses: actions/setup-node@v4
++        with:
++          node-version-file: frontend/.nvmrc
++          cache: npm
++          cache-dependency-path: frontend/package-lock.json
++      - run: npm ci
++      - run: npm run lint
++      - run: npm test
++      - run: npm run build
++
++  mobile:
++    name: Mobile (Flutter)
++    runs-on: ubuntu-latest
++    defaults:
++      run:
++        working-directory: mobile
++    steps:
++      - uses: actions/checkout@v4
++      - uses: subosito/flutter-action@v2
++        with:
++          channel: stable
++          cache: true
++      - run: flutter pub get
++      - run: flutter analyze --no-fatal-infos
++      - run: flutter test
+diff --git a/README.md b/README.md
+index 1281bd8..727e402 100644
+--- a/README.md
++++ b/README.md
+@@ -1,6 +1,6 @@
+ # TuitionTrack
+ 
+-Multi-tenant tuition management — Django REST backend + Flutter (Android, iOS, web) app.
++Multi-tenant tuition management — Django REST backend, React web app and Flutter (Android, iOS, web) app.
+ 
+ ## Download the Android APK
+ 
+@@ -13,25 +13,46 @@ https://github.com/<owner>/<repo>/releases/download/<tag>/app-release.apk
+ 
+ ## Building from source
+ 
+-Prereqs: Flutter 3.27+ with Dart 3.13+, Android SDK, JDK 17.
++Prereqs: Flutter 3.44+ (Dart 3.13.5+), Android SDK, JDK 17.
+ 
+ ```bash
+ cd mobile
+ flutter pub get
+ flutter analyze
+-flutter build apk --release
++flutter test
++flutter build apk --release --dart-define=API_BASE_URL=https://tuitiontrack-api.onrender.com
+ # Output: build/app/outputs/flutter-apk/app-release.apk
+ ```
+ 
++Release builds only talk https. Debug builds (`flutter run`) may use plain http to a
++computer on your network, e.g. `http://192.168.0.10:8000`.
++
+ The Django backend is in `backend/`. It expects a `.env` (see `backend/.env.example`) and runs migrations on first boot.
+ 
++```bash
++cd backend
++pip install -r requirements.txt ruff
++ruff check . && python manage.py check && python manage.py test
++```
++
++The React web app is in `frontend/` (Node 22):
++
++```bash
++cd frontend
++npm ci
++npm run lint && npm test && npm run build
++```
++
++`.github/workflows/ci.yml` runs all three on every push.
++
+ ## Repository layout
+ 
+ ```
+ backend/        Django REST API (auth, students, tuitions, cycles, exams, homework)
++frontend/       React + Vite web app
+ mobile/         Flutter app (Android / iOS / web)
+ .github/        CI workflows
+-docs/           Phase 1-5 design specs
++0*_*.md         Design specs (overview, PRD, schema, API, UI)
+ ```
+ 
+ ## Tagging a new release
+diff --git a/RENDER_DEPLOYMENT_GUIDE.md b/RENDER_DEPLOYMENT_GUIDE.md
+index 17afa98..01eea4f 100644
+--- a/RENDER_DEPLOYMENT_GUIDE.md
++++ b/RENDER_DEPLOYMENT_GUIDE.md
+@@ -104,7 +104,7 @@ If you prefer to configure each component individually in the Render dashboard:
+ 3. Configure the settings:
+    - **Name**: `tuitiontrack-web`
+    - **Root Directory**: `frontend`
+-   - **Build Command**: `rm -f package-lock.json && npm install --include=optional && npm run build`
++   - **Build Command**: `npm ci && npm run build`
+    - **Publish Directory**: `dist`
+ 4. Under **Redirects/Rewrites**:
+    - **Type**: `Rewrite`
+@@ -181,5 +181,5 @@ https://tuitiontrack-api.onrender.com
+ - [x] WhiteNoise configured for instant, zero-configuration admin static asset serving
+ - [x] `render.yaml` configured with free plan, Singapore region, and health check
+ - [x] `frontend/vite.config.js` and `frontend/src/api/client.js` support dynamic backend origins
+-- [x] CORS and CSRF configurations pre-allow all `*.onrender.com` subdomains
++- [x] CORS and CSRF trust exactly `FRONTEND_URL` (plus anything listed in `CORS_ALLOWED_ORIGINS` / `CSRF_TRUSTED_ORIGINS`); other `*.onrender.com` sites are not trusted
+ - [x] Client-side SPA routing rewrite (`/* -> /index.html`) configured
+diff --git a/render.yaml b/render.yaml
+index 777f4cf..f941f72 100644
+--- a/render.yaml
++++ b/render.yaml
+@@ -44,8 +44,9 @@ services:
+           property: connectionString
+ 
+       # ── Frontend & CORS ──
+-      # Settings automatically permit all *.onrender.com domains for CORS & CSRF.
+-      # Set FRONTEND_URL to your deployed web app address (used for password reset links in emails):
++      # FRONTEND_URL is the one web origin allowed to call the API from a browser (CORS) and the
++      # address used in password-reset emails. Other origins: CORS_ALLOWED_ORIGINS (comma-separated).
++      # Other *.onrender.com sites are NOT trusted automatically.
+       - key: FRONTEND_URL
+         value: https://tuitiontrack-web.onrender.com
+ 
+@@ -83,7 +84,8 @@ services:
+     name: tuitiontrack-web
+     runtime: static
+     rootDir: frontend
+-    buildCommand: rm -f package-lock.json && npm install --include=optional && npm run build
++    # The lockfile carries the native build tools for every platform, so a clean install is reproducible.
++    buildCommand: npm ci && npm run build
+     staticPublishPath: ./dist
+     routes:
+       # Rewrites all requests to /index.html so React Router client-side routes work on reload
+-- 
+2.43.0
+

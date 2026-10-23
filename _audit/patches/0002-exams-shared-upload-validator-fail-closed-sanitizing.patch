@@ -1,0 +1,400 @@
+From 801d7f9e8cbdfe0cdfe7d73ab5aa035c8a96395a Mon Sep 17 00:00:00 2001
+From: "Claude (audit)" <noreply@anthropic.com>
+Date: Sun, 11 Oct 2026 00:06:22 +0600
+Subject: [PATCH 02/14] exams: shared upload validator, fail-closed sanitizing,
+ escaped emails
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_011d4mgSxngjRmAXosGe4ry4
+
+- New apps/exams/uploads.py: one size/extension/content check for every
+  upload; magic bytes must match the extension (a PDF named .png or a WAV
+  named .webp is refused).
+- Exam.save no longer swallows sanitizer errors (it used to store raw HTML).
+- Exam notification emails escape tutor-entered text in the HTML body.
+- Submitted answer-sheet URLs must be http(s) or a server path.
+- Re-grading after an answer-key edit runs in the same transaction as the edit.
+- Tutor exam list counts group members in the list query (no query per exam).
+---
+ backend/apps/exams/admin.py       |  1 -
+ backend/apps/exams/models.py      | 16 +++---
+ backend/apps/exams/serializers.py | 31 ++++++----
+ backend/apps/exams/tests.py       |  1 -
+ backend/apps/exams/uploads.py     | 64 +++++++++++++++++++++
+ backend/apps/exams/views.py       | 96 ++++++++++++++-----------------
+ 6 files changed, 132 insertions(+), 77 deletions(-)
+ create mode 100644 backend/apps/exams/uploads.py
+
+diff --git a/backend/apps/exams/admin.py b/backend/apps/exams/admin.py
+index 9d744fc..4e68979 100644
+--- a/backend/apps/exams/admin.py
++++ b/backend/apps/exams/admin.py
+@@ -1,6 +1,5 @@
+ """Exams Admin Configuration"""
+ from django.contrib import admin
+-from django.utils.html import format_html
+ from .models import Exam, ExamSubmission
+ 
+ 
+diff --git a/backend/apps/exams/models.py b/backend/apps/exams/models.py
+index 385a336..2940c8b 100644
+--- a/backend/apps/exams/models.py
++++ b/backend/apps/exams/models.py
+@@ -2,7 +2,7 @@
+ Exams App — Exam & ExamSubmission Models
+ 
+ Key design principles:
+-- content_html is ALWAYS sanitized via nh3 before saving (see signals.py).
++- content_html is ALWAYS sanitized via nh3 before saving (Exam.save and the serializers).
+ - Dynamic exam status is computed in Python (not stored) using server UTC time.
+ - ExamSubmission has a unique constraint (exam, student) to prevent duplicates.
+ - Grace period allows late CQ image upload submissions to be marked DELAYED.
+@@ -233,14 +233,12 @@ class Exam(models.Model):
+     def save(self, *args, **kwargs):
+         # Defence-in-depth: sanitize even on direct ORM/admin/shell writes
+         # (serializers sanitize too, but must not be the only gate).
+-        try:
+-            from .sanitizer import sanitize_exam_html
+-            if self.content_html:
+-                self.content_html = sanitize_exam_html(self.content_html)
+-            if self.solution_html:
+-                self.solution_html = sanitize_exam_html(self.solution_html)
+-        except Exception:
+-            pass
++        # Fails closed: if sanitizing ever raised, the save must not go ahead with raw HTML.
++        from .sanitizer import sanitize_exam_html
++        if self.content_html:
++            self.content_html = sanitize_exam_html(self.content_html)
++        if self.solution_html:
++            self.solution_html = sanitize_exam_html(self.solution_html)
+         super().save(*args, **kwargs)
+ 
+     # ── Dynamic Status Computation ───────────────────────────────────────────
+diff --git a/backend/apps/exams/serializers.py b/backend/apps/exams/serializers.py
+index dae6d67..9b3f39f 100644
+--- a/backend/apps/exams/serializers.py
++++ b/backend/apps/exams/serializers.py
+@@ -129,6 +129,9 @@ def _result_status(exam, submission):
+ def _assigned_student_count(exam):
+     if exam.student_id:
+         return 1
++    annotated = getattr(exam, 'assigned_active_count', None)
++    if annotated is not None:
++        return annotated
+     if exam.tuition_id:
+         return exam.tuition.enrollments.filter(is_active=True, student__is_active=True).count()
+     return 0
+@@ -632,7 +635,7 @@ class ExamCreateUpdateSerializer(serializers.ModelSerializer):
+             try:
+                 marks = round(float(item.get('marks')), 2)
+             except (TypeError, ValueError):
+-                raise serializers.ValidationError(f'"{label}" needs a number of marks.')
++                raise serializers.ValidationError(f'"{label}" needs a number of marks.') from None
+             if marks <= 0:
+                 raise serializers.ValidationError(f'"{label}" must be worth more than 0 marks.')
+             item_id = str(item.get('id') or '')
+@@ -718,7 +721,7 @@ class ExamCreateUpdateSerializer(serializers.ModelSerializer):
+                 try:
+                     points = round(float(raw_points), 2)
+                 except (TypeError, ValueError):
+-                    raise serializers.ValidationError({'mcq_data': f'Question #{idx+1} needs a number of marks.'})
++                    raise serializers.ValidationError({'mcq_data': f'Question #{idx+1} needs a number of marks.'}) from None
+                 if points <= 0:
+                     raise serializers.ValidationError({'mcq_data': f'Question #{idx+1} must be worth more than 0 marks.'})
+ 
+@@ -747,7 +750,7 @@ class ExamCreateUpdateSerializer(serializers.ModelSerializer):
+                     except (ValueError, TypeError):
+                         raise serializers.ValidationError({
+                             'mcq_data': f'Question #{idx+1} has invalid correct_answer key: {raw_ans}'
+-                        })
++                        }) from None
+                     if correct_idx < 0 or correct_idx >= len(options):
+                         raise serializers.ValidationError({
+                             'mcq_data': f'Question #{idx+1} correct_answer index ({correct_idx}) is out of bounds for {len(options)} options.'
+@@ -845,7 +848,7 @@ class ExamCreateUpdateSerializer(serializers.ModelSerializer):
+             try:
+                 tuition = Tuition.objects.get(id=tuition_id, tutor=request.user)
+             except Tuition.DoesNotExist:
+-                raise serializers.ValidationError({'tuition_id': 'Selected tuition does not exist.'})
++                raise serializers.ValidationError({'tuition_id': 'Selected tuition does not exist.'}) from None
+             attrs['tuition'] = tuition
+             attrs['student'] = None
+         elif student_id:
+@@ -853,7 +856,7 @@ class ExamCreateUpdateSerializer(serializers.ModelSerializer):
+                 from apps.students.services import manageable_students
+                 student = manageable_students(request.user).get(id=student_id)
+             except User.DoesNotExist:
+-                raise serializers.ValidationError({'student_id': 'Selected student does not exist or belongs to another tutor.'})
++                raise serializers.ValidationError({'student_id': 'Selected student does not exist or belongs to another tutor.'}) from None
+             attrs['student'] = student
+             attrs['tuition'] = None
+ 
+@@ -861,13 +864,16 @@ class ExamCreateUpdateSerializer(serializers.ModelSerializer):
+ 
+     def update(self, instance, validated_data):
+         """Save the edit, then re-mark MCQs so existing submissions match the new answer key."""
++        from django.db import transaction
+         regrade = any(key in validated_data for key in ('mcq_data', 'negative_marks_per_wrong', 'total_marks', 'exam_type'))
+-        exam = super().update(instance, validated_data)
+-        if regrade:
+-            for submission in exam.submissions.exclude(status=ExamSubmission.Status.MISSED):
+-                submission.exam = exam
+-                submission.calculate_mcq_score()
+-                submission.save(update_fields=['mcq_score', 'obtained_marks', 'is_graded', 'graded_at', 'updated_at'])
++        # The edit and the re-marking land together, so marks never disagree with the key.
++        with transaction.atomic():
++            exam = super().update(instance, validated_data)
++            if regrade:
++                for submission in exam.submissions.exclude(status=ExamSubmission.Status.MISSED):
++                    submission.exam = exam
++                    submission.calculate_mcq_score()
++                    submission.save(update_fields=['mcq_score', 'obtained_marks', 'is_graded', 'graded_at', 'updated_at'])
+         return exam
+ 
+ 
+@@ -900,7 +906,8 @@ class SubmitExamSerializer(serializers.Serializer):
+                 if not u:
+                     raise serializers.ValidationError({key: 'Empty URL is not allowed.'})
+                 low = u.lower()
+-                if low.startswith(('javascript:', 'data:text/html', 'vbscript:')):
++                # Only files this API stored ("/media/…") or plain web addresses.
++                if not (low.startswith(('http://', 'https://')) or (low.startswith('/') and not low.startswith('//'))):
+                     raise serializers.ValidationError({key: 'Unsafe URL scheme.'})
+                 if len(u) > 500:
+                     raise serializers.ValidationError({key: 'URL too long.'})
+diff --git a/backend/apps/exams/tests.py b/backend/apps/exams/tests.py
+index 4adf1b2..70f0abe 100644
+--- a/backend/apps/exams/tests.py
++++ b/backend/apps/exams/tests.py
+@@ -1,6 +1,5 @@
+ """Tests for Exams app — Sanitization, Lifecycle, Submission, Grading & Media Upload"""
+ from datetime import timedelta
+-import io
+ from django.urls import reverse
+ from django.utils import timezone
+ from django.core.files.uploadedfile import SimpleUploadedFile
+diff --git a/backend/apps/exams/uploads.py b/backend/apps/exams/uploads.py
+new file mode 100644
+index 0000000..c96029c
+--- /dev/null
++++ b/backend/apps/exams/uploads.py
+@@ -0,0 +1,64 @@
++"""
++One set of rules for every file a user can upload (exam media, answer sheets,
++homework submissions): allowed type, size, and content that really is what its
++name says. Keeping it in one place means a new upload path cannot forget a check.
++"""
++import os
++
++from django.conf import settings
++
++ALLOWED_EXTENSIONS = {'.png', '.jpg', '.jpeg', '.webp', '.pdf'}
++ALLOWED_CONTENT_TYPES = {'image/png', 'image/jpeg', 'image/webp', 'application/pdf'}
++
++
++class UploadRejected(ValueError):
++    """The file must not be stored; the message is safe to show to the user."""
++
++
++def _matches_extension(ext, header):
++    if ext == '.png':
++        return header.startswith(b'\x89PNG\r\n\x1a\n')
++    if ext in ('.jpg', '.jpeg'):
++        return header.startswith(b'\xff\xd8\xff')
++    if ext == '.webp':
++        return header.startswith(b'RIFF') and header[8:12] == b'WEBP'
++    if ext == '.pdf':
++        return header.startswith(b'%PDF')
++    return False
++
++
++def max_upload_bytes():
++    return int(getattr(settings, 'MAX_UPLOAD_SIZE_MB', 10)) * 1024 * 1024
++
++
++def validate_upload(uploaded_file):
++    """
++    Raise UploadRejected unless the file is a non-empty PNG/JPEG/WebP/PDF within
++    the size limit whose first bytes match its extension (this blocks HTML or
++    script files renamed to .png). Leaves the file positioned at the start.
++    """
++    if uploaded_file is None:
++        raise UploadRejected('No file provided.')
++    max_mb = int(getattr(settings, 'MAX_UPLOAD_SIZE_MB', 10))
++    if not uploaded_file.size:
++        raise UploadRejected('Empty file is not allowed.')
++    if uploaded_file.size > max_upload_bytes():
++        raise UploadRejected(f'File exceeds maximum size limit of {max_mb}MB ({uploaded_file.size} bytes).')
++
++    _, ext = os.path.splitext(uploaded_file.name or '')
++    ext = ext.lower()
++    if ext not in ALLOWED_EXTENSIONS:
++        allowed = ', '.join(sorted(ALLOWED_EXTENSIONS))
++        raise UploadRejected(f'Invalid file format "{ext}". Allowed formats: {allowed}')
++
++    content_type = (getattr(uploaded_file, 'content_type', '') or '').split(';')[0].strip().lower()
++    # Some phones send a generic type; the content check below is what really counts.
++    if content_type and content_type != 'application/octet-stream' and content_type not in ALLOWED_CONTENT_TYPES:
++        raise UploadRejected(f'Invalid content type "{content_type}".')
++
++    uploaded_file.seek(0)
++    header = uploaded_file.read(16)
++    uploaded_file.seek(0)
++    if not _matches_extension(ext, header):
++        raise UploadRejected('File content does not match its extension.')
++    return uploaded_file
+diff --git a/backend/apps/exams/views.py b/backend/apps/exams/views.py
+index 9223ee4..5f6b967 100644
+--- a/backend/apps/exams/views.py
++++ b/backend/apps/exams/views.py
+@@ -33,6 +33,7 @@ from rest_framework.parsers import MultiPartParser, FormParser
+ 
+ from apps.authentication.permissions import IsTutor, IsStudent, IsTutorOrStudent
+ from .models import Exam, ExamAttempt, ExamSubmission
++from .uploads import ALLOWED_CONTENT_TYPES, ALLOWED_EXTENSIONS, UploadRejected, validate_upload
+ from .serializers import (
+     ExamListSerializer,
+     ExamDetailSerializer,
+@@ -42,7 +43,7 @@ from .serializers import (
+     ExamSubmissionSerializer,
+     SubmitExamSerializer,
+     GradeSubmissionSerializer,
+-    LeaderboardEntrySerializer,
++
+ )
+ 
+ logger = logging.getLogger(__name__)
+@@ -73,7 +74,17 @@ class ExamViewSet(viewsets.ModelViewSet):
+         qs = Exam.objects.select_related('tutor', 'student', 'tuition').prefetch_related('submissions')
+ 
+         if user.role == 'TUTOR':
+-            qs = qs.filter(models.Q(tutor=user) | models.Q(tuition__tutor=user))
++            qs = qs.filter(models.Q(tutor=user) | models.Q(tuition__tutor=user)).annotate(
++                # Members of the target group, counted in the same query instead of once per exam.
++                assigned_active_count=models.Count(
++                    'tuition__enrollments',
++                    filter=models.Q(
++                        tuition__enrollments__is_active=True,
++                        tuition__enrollments__student__is_active=True,
++                    ),
++                    distinct=True,
++                )
++            )
+             student_id = self.request.query_params.get('student_id')
+             batch_id = self.request.query_params.get('batch_id')
+             tuition_id = self.request.query_params.get('tuition_id')
+@@ -176,21 +187,34 @@ class ExamViewSet(viewsets.ModelViewSet):
+                 f"Please log in to TuitionTrack before the deadline.\n\n"
+                 f"— TuitionTrack Team"
+             )
++            from django.utils.html import escape
++            tutor_name = exam.tutor.get_full_name() or exam.tutor.username
++            # Everything below comes from user input; escape it before it goes into HTML.
++            h = {
++                'title': escape(exam.title),
++                'tutor': escape(tutor_name),
++                'category': escape(exam.category),
++                'target': escape(target_desc),
++                'type': escape(exam.get_exam_type_display()),
++                'marks': escape(str(exam.total_marks)),
++                'start': escape(start_str),
++                'end': escape(end_str),
++            }
+             html_body = f"""
+             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #0f172a; color: #f8fafc; border-radius: 16px; padding: 24px; border: 1px solid #334155;">
+                 <div style="text-align: center; margin-bottom: 20px;">
+                     <h2 style="color: #818cf8; margin: 0;">TuitionTrack Assessment Alert</h2>
+-                    <p style="color: #94a3b8; font-size: 13px; margin: 4px 0 0 0;">New Assessment Published by {exam.tutor.get_full_name() or exam.tutor.username}</p>
++                    <p style="color: #94a3b8; font-size: 13px; margin: 4px 0 0 0;">New Assessment Published by {h['tutor']}</p>
+                 </div>
+                 <div style="background: #1e293b; border-radius: 12px; padding: 20px; border: 1px solid #334155; margin-bottom: 20px;">
+-                    <h3 style="color: #ffffff; margin-top: 0; font-size: 18px;">{exam.title}</h3>
++                    <h3 style="color: #ffffff; margin-top: 0; font-size: 18px;">{h['title']}</h3>
+                     <table style="width: 100%; border-collapse: collapse; font-size: 13px; color: #cbd5e1;">
+-                        <tr><td style="padding: 6px 0; color: #94a3b8;"><strong>Category:</strong></td><td style="color: #818cf8;">{exam.category}</td></tr>
+-                        <tr><td style="padding: 6px 0; color: #94a3b8;"><strong>Target:</strong></td><td style="color: #ffffff;">{target_desc}</td></tr>
+-                        <tr><td style="padding: 6px 0; color: #94a3b8;"><strong>Type:</strong></td><td>{exam.get_exam_type_display()}</td></tr>
+-                        <tr><td style="padding: 6px 0; color: #94a3b8;"><strong>Total Marks:</strong></td><td style="color: #34d399; font-weight: bold;">{exam.total_marks}</td></tr>
+-                        <tr><td style="padding: 6px 0; color: #94a3b8;"><strong>Start Window:</strong></td><td>{start_str}</td></tr>
+-                        <tr><td style="padding: 6px 0; color: #94a3b8;"><strong>End / Deadline:</strong></td><td style="color: #f87171;">{end_str}</td></tr>
++                        <tr><td style="padding: 6px 0; color: #94a3b8;"><strong>Category:</strong></td><td style="color: #818cf8;">{h['category']}</td></tr>
++                        <tr><td style="padding: 6px 0; color: #94a3b8;"><strong>Target:</strong></td><td style="color: #ffffff;">{h['target']}</td></tr>
++                        <tr><td style="padding: 6px 0; color: #94a3b8;"><strong>Type:</strong></td><td>{h['type']}</td></tr>
++                        <tr><td style="padding: 6px 0; color: #94a3b8;"><strong>Total Marks:</strong></td><td style="color: #34d399; font-weight: bold;">{h['marks']}</td></tr>
++                        <tr><td style="padding: 6px 0; color: #94a3b8;"><strong>Start Window:</strong></td><td>{h['start']}</td></tr>
++                        <tr><td style="padding: 6px 0; color: #94a3b8;"><strong>End / Deadline:</strong></td><td style="color: #f87171;">{h['end']}</td></tr>
+                         <tr><td style="padding: 6px 0; color: #94a3b8;"><strong>Grace Period:</strong></td><td>{exam.grace_period_minutes} min</td></tr>
+                     </table>
+                 </div>
+@@ -209,8 +233,8 @@ class ExamViewSet(viewsets.ModelViewSet):
+                         html_message=html_body,
+                         fail_silently=True,
+                     )
+-                except Exception as exc:
+-                    logger.warning(f'Failed to send exam notification email to {recipient}: {exc}')
++                except Exception as exc:  # noqa: BLE001 - one bad address must not stop the others
++                    logger.warning('Failed to send exam notification email to %s: %s', recipient, exc)
+ 
+     def create(self, request, *args, **kwargs):
+         if request.user.role != 'TUTOR':
+@@ -750,51 +774,15 @@ class MediaUploadView(APIView):
+     permission_classes = [IsAuthenticated]
+     parser_classes = [MultiPartParser, FormParser]
+ 
+-    ALLOWED_EXTENSIONS = {'.png', '.jpg', '.jpeg', '.webp', '.pdf'}
+-    ALLOWED_CONTENT_TYPES = {'image/png', 'image/jpeg', 'image/webp', 'application/pdf'}
++    ALLOWED_EXTENSIONS = ALLOWED_EXTENSIONS
++    ALLOWED_CONTENT_TYPES = ALLOWED_CONTENT_TYPES
+ 
+     def post(self, request):
+         uploaded_file = request.FILES.get('file')
+-        if not uploaded_file:
+-            return Response({'error': 'No file provided.'}, status=status.HTTP_400_BAD_REQUEST)
+-
+-        max_mb = getattr(settings, 'MAX_UPLOAD_SIZE_MB', 10)
+-        max_bytes = max_mb * 1024 * 1024
+-        # Validate file size (reject empty too)
+-        if uploaded_file.size == 0:
+-            return Response({'error': 'Empty file is not allowed.'}, status=status.HTTP_400_BAD_REQUEST)
+-        if uploaded_file.size > max_bytes:
+-            return Response(
+-                {'error': f'File exceeds maximum size limit of {max_mb}MB ({uploaded_file.size} bytes).'},
+-                status=status.HTTP_400_BAD_REQUEST
+-            )
+-
+-        # Validate extension
+-        _, ext = os.path.splitext(uploaded_file.name)
+-        ext = ext.lower()
+-        if ext not in self.ALLOWED_EXTENSIONS:
+-            return Response(
+-                {'error': f'Invalid file format "{ext}". Allowed formats: {", ".join(self.ALLOWED_EXTENSIONS)}'},
+-                status=status.HTTP_400_BAD_REQUEST
+-            )
+-        # Validate MIME type + magic bytes (blocks polyglot HTML/JS in .png/.pdf)
+-        content_type = getattr(uploaded_file, 'content_type', '')
+-        if content_type and content_type not in self.ALLOWED_CONTENT_TYPES:
+-            return Response(
+-                {'error': f'Invalid content type "{content_type}".'},
+-                status=status.HTTP_400_BAD_REQUEST
+-            )
+-        header = uploaded_file.read(12)
+-        uploaded_file.seek(0)
+-        valid_magic = (
+-            header.startswith(b'\x89PNG') or header.startswith(b'\xff\xd8\xff')
+-            or header.startswith(b'RIFF') or header.startswith(b'%PDF')
+-        )
+-        if not valid_magic:
+-            return Response(
+-                {'error': 'File content does not match its extension.'},
+-                status=status.HTTP_400_BAD_REQUEST
+-            )
++        try:
++            validate_upload(uploaded_file)
++        except UploadRejected as exc:
++            return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+ 
+         # Generate unique filename to avoid overwrites (sanitized, no traversal)
+         from django.utils.text import get_valid_filename
+-- 
+2.43.0
+

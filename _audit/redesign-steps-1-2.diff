@@ -1,0 +1,2101 @@
+diff --git a/mobile/lib/core/format.dart b/mobile/lib/core/format.dart
+index c94f952..53451ce 100644
+--- a/mobile/lib/core/format.dart
++++ b/mobile/lib/core/format.dart
+@@ -41,12 +41,24 @@ String countdown(Duration left) {
+   return d > 0 ? '${d}d $hms' : hms;
+ }
+ 
+-/// "18:00" -> "6:00 PM".
++/// "18:00" -> "6:00 PM"; in Bangla "সন্ধ্যা ৬:০০" (the part of the day comes first).
+ String to12h(String? time) {
+   final match = RegExp(r'^(\d{1,2}):(\d{2})').firstMatch(time ?? '');
+   if (match == null) return time ?? '';
+   final h = int.parse(match[1]!);
+-  return localDigits('${h % 12 == 0 ? 12 : h % 12}:${match[2]} ${h < 12 ? 'AM' : 'PM'}');
++  final clock = '${h % 12 == 0 ? 12 : h % 12}:${match[2]}';
++  if (isBangla) return '${_banglaDayPart(h)} ${localDigits(clock)}';
++  return '$clock ${h < 12 ? 'AM' : 'PM'}';
++}
++
++/// ভোর, সকাল, দুপুর, বিকাল, সন্ধ্যা, রাত — how Bangla speakers say the time of day.
++String _banglaDayPart(int hour) {
++  if (hour >= 4 && hour < 6) return 'ভোর';
++  if (hour >= 6 && hour < 12) return 'সকাল';
++  if (hour >= 12 && hour < 15) return 'দুপুর';
++  if (hour >= 15 && hour < 18) return 'বিকাল';
++  if (hour >= 18 && hour < 19) return 'সন্ধ্যা';
++  return 'রাত';
+ }
+ 
+ /// yyyy-MM-dd in local time; used to compare calendar days.
+diff --git a/mobile/lib/core/week_plan.dart b/mobile/lib/core/week_plan.dart
+new file mode 100644
+index 0000000..4817d06
+--- /dev/null
++++ b/mobile/lib/core/week_plan.dart
+@@ -0,0 +1,110 @@
++import 'format.dart';
++import 'json.dart';
++
++/// The Bangladesh week, as the "This week" section shows it.
++const weekOrder = ['Saturday', 'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
++
++/// A week this busy folds its past days into one summary row.
++const busyWeekClasses = 15;
++
++/// One weekly class time of a tuition, placed in the current week.
++class WeekClass {
++  const WeekClass({
++    required this.tuition,
++    required this.day,
++    required this.start,
++    required this.end,
++    required this.past,
++    this.isNext = false,
++  });
++
++  final Json tuition;
++
++  /// English weekday name, e.g. "Saturday".
++  final String day;
++
++  /// "18:00"; [end] is empty when the routine has no end time.
++  final String start;
++  final String end;
++
++  /// Already over: an earlier day, or earlier today and finished.
++  final bool past;
++
++  /// The first class that is not over yet (it may be going on now).
++  final bool isNext;
++
++  WeekClass markNext() => WeekClass(tuition: tuition, day: day, start: start, end: end, past: past, isNext: true);
++}
++
++/// Every class of the week, grouped by day (Saturday first), with today,
++/// the next class and what is already over worked out.
++class WeekPlan {
++  WeekPlan._(this.today, this.byDay);
++
++  /// English name of today, e.g. "Thursday".
++  final String today;
++  final Map<String, List<WeekClass>> byDay;
++
++  int get todayIndex => weekOrder.indexOf(today);
++  int get total => byDay.values.fold(0, (sum, list) => sum + list.length);
++  bool get isEmpty => total == 0;
++  bool get isBusy => total >= busyWeekClasses;
++
++  bool isPastDay(String day) => weekOrder.indexOf(day) < todayIndex;
++
++  /// Days before today that had classes, in week order.
++  List<String> get pastDaysWithClasses => [for (final d in weekOrder) if (isPastDay(d) && byDay[d]!.isNotEmpty) d];
++  int get pastDayClasses => pastDaysWithClasses.fold(0, (sum, d) => sum + byDay[d]!.length);
++
++  /// Days to list, in week order: every day with classes when [whole],
++  /// otherwise only today and the days after it.
++  List<String> daysToShow({required bool whole}) => [
++        for (final d in weekOrder)
++          if (byDay[d]!.isNotEmpty && (whole || !isPastDay(d))) d,
++      ];
++
++  WeekClass? get next {
++    for (final d in weekOrder) {
++      for (final c in byDay[d]!) {
++        if (c.isNext) return c;
++      }
++    }
++    return null;
++  }
++}
++
++/// Builds the week from the tuitions' routines, as of [now].
++WeekPlan buildWeekPlan(List<Json> tuitions, DateTime now) {
++  final today = weekdayName(now);
++  final todayIndex = weekOrder.indexOf(today);
++  final nowMinutes = now.hour * 60 + now.minute;
++  final byDay = {for (final d in weekOrder) d: <WeekClass>[]};
++  for (final tuition in tuitions) {
++    for (final slot in tuition.maps('routine')) {
++      final day = normalizeDay('${slot['day'] ?? slot['day_of_week'] ?? ''}');
++      if (day.isEmpty) continue;
++      final start = slotStart(slot);
++      final end = '${slot['end_time'] ?? ''}';
++      final index = weekOrder.indexOf(day);
++      final startMinutes = minutesOf(start);
++      final endMinutes = end.isEmpty ? startMinutes + 60 : minutesOf(end);
++      final past = index < todayIndex || (index == todayIndex && endMinutes <= nowMinutes);
++      byDay[day]!.add(WeekClass(tuition: tuition, day: day, start: start, end: end, past: past));
++    }
++  }
++  for (final list in byDay.values) {
++    list.sort((a, b) => minutesOf(a.start).compareTo(minutesOf(b.start)));
++  }
++  // The first class that is not over yet, from today on.
++  outer:
++  for (final d in weekOrder.skip(todayIndex)) {
++    final list = byDay[d]!;
++    for (var i = 0; i < list.length; i++) {
++      if (!list[i].past) {
++        list[i] = list[i].markNext();
++        break outer;
++      }
++    }
++  }
++  return WeekPlan._(today, byDay);
++}
+diff --git a/mobile/lib/main.dart b/mobile/lib/main.dart
+index 4ffefad..309e7ad 100644
+--- a/mobile/lib/main.dart
++++ b/mobile/lib/main.dart
+@@ -171,8 +171,8 @@ class _TuitionTrackAppState extends State<TuitionTrackApp> with WidgetsBindingOb
+         builder: (context, _) => MaterialApp(
+           title: 'TuitionTrack',
+           debugShowCheckedModeBanner: false,
+-          theme: buildLightTheme(),
+-          darkTheme: buildTheme(),
++          theme: ttTheme(isDark: false, isBangla: widget.session.language == 'bn'),
++          darkTheme: ttTheme(isDark: true, isBangla: widget.session.language == 'bn'),
+           themeMode: widget.session.themeMode,
+           navigatorKey: _navigator,
+           scaffoldMessengerKey: rootMessengerKey,
+diff --git a/mobile/lib/screens/auth/login_screen.dart b/mobile/lib/screens/auth/login_screen.dart
+index c597d5a..69671f3 100644
+--- a/mobile/lib/screens/auth/login_screen.dart
++++ b/mobile/lib/screens/auth/login_screen.dart
+@@ -358,7 +358,7 @@ class _LoginScreenState extends State<LoginScreen> {
+                       FilledButton(
+                         onPressed: _busy ? null : _submit,
+                         child: _busy
+-                            ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
++                            ? SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: context.tt.onPrimary))
+                             : Text(registering ? tr('Create account') : tr('Sign in')),
+                       ),
+                       if (!registering)
+diff --git a/mobile/lib/screens/common/account_screen.dart b/mobile/lib/screens/common/account_screen.dart
+index 6542036..22a9602 100644
+--- a/mobile/lib/screens/common/account_screen.dart
++++ b/mobile/lib/screens/common/account_screen.dart
+@@ -308,11 +308,11 @@ class _Header extends StatelessWidget {
+                     child: Container(
+                       padding: const EdgeInsets.all(5),
+                       decoration: BoxDecoration(
+-                        color: AppColors.primary,
++                        color: context.tt.primary,
+                         shape: BoxShape.circle,
+                         border: Border.all(color: Theme.of(context).scaffoldBackgroundColor, width: 2),
+                       ),
+-                      child: const Icon(Icons.photo_camera, size: 13, color: Colors.white),
++                      child: Icon(Icons.photo_camera, size: 13, color: context.tt.onPrimary),
+                     ),
+                   ),
+               ],
+diff --git a/mobile/lib/screens/common/leaderboard_screen.dart b/mobile/lib/screens/common/leaderboard_screen.dart
+index 22647ea..a0c1c22 100644
+--- a/mobile/lib/screens/common/leaderboard_screen.dart
++++ b/mobile/lib/screens/common/leaderboard_screen.dart
+@@ -63,9 +63,10 @@ class _Row extends StatelessWidget {
+   Widget build(BuildContext context) {
+     final rank = row.integer('rank');
+     final missed = row.str('status') == 'MISSED';
+-    final medal = switch (rank) { 1 => const Color(0xFFFBBF24), 2 => const Color(0xFFCBD5E1), 3 => const Color(0xFFD97706), _ => null };
++    final tt = context.tt;
++    final medal = switch (rank) { 1 => tt.warning, 2 => tt.textSecondary, 3 => TtColors.bronze, _ => null };
+     return Container(
+-      color: mine ? AppColors.primary.withValues(alpha: 0.12) : null,
++      color: mine ? tt.primaryContainer : null,
+       child: ListTile(
+         leading: CircleAvatar(
+           backgroundColor: (medal ?? Theme.of(context).colorScheme.surfaceContainerHighest).withValues(alpha: medal == null ? 1 : 0.2),
+diff --git a/mobile/lib/screens/student/exam_take_screen.dart b/mobile/lib/screens/student/exam_take_screen.dart
+index 8e32dd7..ef56ef3 100644
+--- a/mobile/lib/screens/student/exam_take_screen.dart
++++ b/mobile/lib/screens/student/exam_take_screen.dart
+@@ -338,11 +338,11 @@ class _ExamTakeScreenState extends State<ExamTakeScreen> {
+                                   child: IconButton.filled(
+                                     tooltip: tr('Remove page {p0}', {'p0': i + 1}),
+                                     style: IconButton.styleFrom(
+-                                      backgroundColor: const Color(0xFFBE123C),
++                                      backgroundColor: context.tt.danger,
+                                       minimumSize: const Size(28, 28),
+                                       padding: EdgeInsets.zero,
+                                     ),
+-                                    icon: const Icon(Icons.close, size: 16, color: Colors.white),
++                                    icon: Icon(Icons.close, size: 16, color: context.tt.background),
+                                     onPressed: () {
+                                       setState(() => _images.removeAt(i));
+                                       _saveDraft();
+@@ -357,10 +357,14 @@ class _ExamTakeScreenState extends State<ExamTakeScreen> {
+                   ],
+                   gap24,
+                   FilledButton.icon(
+-                    style: FilledButton.styleFrom(backgroundColor: const Color(0xFF059669), minimumSize: const Size.fromHeight(52)),
++                    style: FilledButton.styleFrom(
++                      backgroundColor: context.tt.success,
++                      foregroundColor: context.tt.background,
++                      minimumSize: const Size.fromHeight(52),
++                    ),
+                     onPressed: (_submitting || _uploading || _phase == _Phase.over) ? null : () => _submit(),
+                     icon: _submitting
+-                        ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
++                        ? SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: context.tt.background))
+                         : const Icon(Icons.send),
+                     label: Text(_submitting ? tr('Sending…') : (_isAssignment ? tr('Turn in assignment') : tr('Turn in exam'))),
+                   ),
+@@ -430,10 +434,10 @@ class _ExamTakeScreenState extends State<ExamTakeScreen> {
+                         children: [
+                           CircleAvatar(
+                             radius: 12,
+-                            backgroundColor: chosen == i ? AppColors.primary : Theme.of(context).colorScheme.outline,
++                            backgroundColor: chosen == i ? context.tt.primary : context.tt.cardRaised,
+                             child: Text(
+                               i < _letters.length ? _letters[i] : '${i + 1}',
+-                              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Colors.white),
++                              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: chosen == i ? context.tt.onPrimary : context.tt.textSecondary),
+                             ),
+                           ),
+                           const SizedBox(width: 12),
+diff --git a/mobile/lib/screens/student/tutors_screen.dart b/mobile/lib/screens/student/tutors_screen.dart
+index b862f26..892d2c8 100644
+--- a/mobile/lib/screens/student/tutors_screen.dart
++++ b/mobile/lib/screens/student/tutors_screen.dart
+@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
+ import '../../core/connect.dart';
+ import '../../core/i18n.dart';
+ import '../../core/repo.dart';
++import '../../widgets/theme.dart';
+ import '../../widgets/ui.dart';
+ import 'tutor_detail_screen.dart';
+ 
+@@ -79,7 +80,7 @@ class _TutorCard extends StatelessWidget {
+       decoration: BoxDecoration(
+         color: Theme.of(context).cardColor,
+         borderRadius: BorderRadius.circular(16),
+-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.07), blurRadius: 18, offset: const Offset(0, 8))],
++        boxShadow: context.tt.cardShadow,
+       ),
+       child: ListTile(
+         contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+diff --git a/mobile/lib/screens/tutor/exam_editor_screen.dart b/mobile/lib/screens/tutor/exam_editor_screen.dart
+index aaaf13f..30c998a 100644
+--- a/mobile/lib/screens/tutor/exam_editor_screen.dart
++++ b/mobile/lib/screens/tutor/exam_editor_screen.dart
+@@ -785,7 +785,7 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> {
+                 child: FilledButton.icon(
+                   onPressed: _saving ? null : () => _save(true),
+                   icon: _saving
+-                      ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
++                      ? SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: context.tt.onPrimary))
+                       : const Icon(Icons.send, size: 18),
+                   label: Text(_wasPublished ? tr('Save changes') : tr('Publish')),
+                 ),
+@@ -823,7 +823,8 @@ class _Step extends StatelessWidget {
+   @override
+   Widget build(BuildContext context) {
+     final scheme = Theme.of(context).colorScheme;
+-    final accent = done && !open ? AppColors.chartEarned : AppColors.primary;
++    final tt = context.tt;
++    final accent = done && !open ? tt.success : tt.primary;
+     return Material(
+       color: open ? scheme.surface : scheme.surface.withValues(alpha: 0.6),
+       borderRadius: BorderRadius.circular(16),
+@@ -847,9 +848,9 @@ class _Step extends StatelessWidget {
+                       border: Border.all(color: open || done ? accent : scheme.outlineVariant),
+                     ),
+                     child: done && !open
+-                        ? const Icon(Icons.check, size: 15, color: Colors.white)
++                        ? Icon(Icons.check, size: 15, color: tt.onPrimary)
+                         : Text('$number',
+-                            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: open ? Colors.white : scheme.onSurfaceVariant)),
++                            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: open ? tt.onPrimary : scheme.onSurfaceVariant)),
+                   ),
+                   const SizedBox(width: 12),
+                   Expanded(
+diff --git a/mobile/lib/screens/tutor/home_tab.dart b/mobile/lib/screens/tutor/home_tab.dart
+index fa3fec4..ef8276b 100644
+--- a/mobile/lib/screens/tutor/home_tab.dart
++++ b/mobile/lib/screens/tutor/home_tab.dart
+@@ -1,4 +1,5 @@
+ import 'dart:async';
++import 'dart:math' show pi;
+ 
+ import 'package:flutter/material.dart';
+ import 'package:provider/provider.dart';
+@@ -11,6 +12,7 @@ import '../../core/reminder_plan.dart';
+ import '../../core/reminders.dart';
+ import '../../core/repo.dart';
+ import '../../core/session.dart';
++import '../../core/week_plan.dart';
+ import '../../widgets/charts.dart';
+ import '../../widgets/share.dart';
+ import '../../widgets/theme.dart';
+@@ -287,16 +289,15 @@ class _Heading extends StatelessWidget {
+ 
+   @override
+   Widget build(BuildContext context) {
+-    final scheme = Theme.of(context).colorScheme;
++    final tt = context.tt;
+     return Padding(
+-      padding: const EdgeInsets.fromLTRB(2, 18, 2, 8),
++      padding: const EdgeInsets.fromLTRB(2, 24, 2, 12),
+       child: Row(
++        crossAxisAlignment: CrossAxisAlignment.baseline,
++        textBaseline: TextBaseline.alphabetic,
+         children: [
+-          Expanded(
+-            child: Text(title.toUpperCase(),
+-                style: TextStyle(fontSize: 12, letterSpacing: 0.8, fontWeight: FontWeight.w700, color: scheme.onSurfaceVariant)),
+-          ),
+-          if (trailing != null) Text(trailing!, style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
++          Expanded(child: Text(title, style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: tt.textPrimary))),
++          if (trailing != null) Text(trailing!, style: TextStyle(fontSize: 13, color: tt.textSecondary)),
+         ],
+       ),
+     );
+@@ -407,113 +408,58 @@ class _RequestsBanner extends StatelessWidget {
+   }
+ }
+ 
+-class _Slot {
+-  _Slot(this.tuition, this.slot);
+-  final Json tuition;
+-  final Json slot;
+-  String get start => slotStart(slot);
+-  String get end => '${slot['end_time'] ?? ''}';
+-}
+-
+-/// The whole week without scrolling: a strip of seven days (a dot for a free
+-/// day, the number of classes for a busy one), then one slim line per class,
+-/// grouped by day, Saturday first. Today stands out.
+-class _WeekAtAGlance extends StatelessWidget {
++/// "This week": a strip of the seven days (Saturday first), then the classes
++/// grouped by day. Today sits on a raised block, the next class is marked, and
++/// days already over are quieter. By default only today and what is still to
++/// come are listed; the rest of the week is one tap away.
++class _WeekAtAGlance extends StatefulWidget {
+   const _WeekAtAGlance({required this.tuitions, required this.onOpen});
+   final List<Json> tuitions;
+   final Future<void> Function(String tuitionId) onOpen;
+ 
+-  static const _order = ['Saturday', 'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
++  @override
++  State<_WeekAtAGlance> createState() => _WeekAtAGlanceState();
++}
++
++class _WeekAtAGlanceState extends State<_WeekAtAGlance> {
++  bool _whole = false;
+ 
+   @override
+   Widget build(BuildContext context) {
+-    final scheme = Theme.of(context).colorScheme;
+-    final today = weekdayName(DateTime.now());
+-    final byDay = {for (final d in _order) d: <_Slot>[]};
+-    for (final tuition in tuitions) {
+-      for (final slot in tuition.maps('routine')) {
+-        final day = normalizeDay('${slot['day'] ?? slot['day_of_week'] ?? ''}');
+-        if (day.isNotEmpty) byDay[day]!.add(_Slot(tuition, slot));
+-      }
+-    }
+-    for (final slots in byDay.values) {
+-      slots.sort((a, b) => minutesOf(a.start).compareTo(minutesOf(b.start)));
+-    }
+-    final busyDays = _order.where((d) => byDay[d]!.isNotEmpty).toList();
+-    final accent = tone(context, AppColors.primarySoft);
+-
+-    return AppCard(
+-      padding: const EdgeInsets.fromLTRB(12, 12, 12, 6),
++    final tt = context.tt;
++    final plan = buildWeekPlan(widget.tuitions, DateTime.now());
++    final days = plan.daysToShow(whole: _whole);
++    final hasPast = plan.pastDaysWithClasses.isNotEmpty;
++    // A busy week folds its past days into one row instead of listing them.
++    final foldPast = !_whole && plan.isBusy && hasPast;
++
++    return Container(
++      decoration: BoxDecoration(color: tt.card, borderRadius: BorderRadius.circular(20), boxShadow: tt.cardShadow),
++      padding: const EdgeInsets.fromLTRB(8, 16, 8, 8),
+       child: Column(
+         crossAxisAlignment: CrossAxisAlignment.stretch,
+         children: [
+-          // Seven days in a row.
+-          Row(
+-            children: [
+-              for (final day in _order)
+-                Expanded(
+-                  child: Semantics(
+-                    label: '${dayLabel(day, short: false)}: ${byDay[day]!.isEmpty ? tr('no classes') : tr('{n} classes', {'n': byDay[day]!.length})}${day == today ? tr(', today') : ''}',
+-                    excludeSemantics: true,
+-                    child: Column(
+-                      children: [
+-                        Text(isBangla ? dayLabel(day) : day.substring(0, 2),
+-                            style: TextStyle(
+-                                fontSize: 11,
+-                                fontWeight: day == today ? FontWeight.w800 : FontWeight.w500,
+-                                color: day == today ? accent : scheme.onSurfaceVariant)),
+-                        const SizedBox(height: 4),
+-                        SizedBox(
+-                          height: 22,
+-                          child: Center(
+-                            child: byDay[day]!.isEmpty
+-                                ? Container(
+-                                    width: 5,
+-                                    height: 5,
+-                                    decoration: BoxDecoration(color: scheme.outlineVariant.withValues(alpha: 0.5), shape: BoxShape.circle),
+-                                  )
+-                                : Container(
+-                                    width: 22,
+-                                    height: 22,
+-                                    alignment: Alignment.center,
+-                                    decoration: BoxDecoration(
+-                                      color: day == today ? AppColors.chartPending : AppColors.chartPending.withValues(alpha: 0.18),
+-                                      shape: BoxShape.circle,
+-                                    ),
+-                                    child: Text('${byDay[day]!.length}',
+-                                        style: TextStyle(
+-                                            fontSize: 11,
+-                                            fontWeight: FontWeight.w800,
+-                                            color: day == today ? Colors.white : accent)),
+-                                  ),
+-                          ),
+-                        ),
+-                      ],
+-                    ),
+-                  ),
+-                ),
+-            ],
+-          ),
+-          if (busyDays.isEmpty)
+-            Padding(
+-              padding: const EdgeInsets.fromLTRB(4, 12, 4, 8),
+-              child: Text(
+-                tuitions.isEmpty ? tr('Your class days appear here.') : tr('No class days set yet. Add them when you edit a tuition.'),
+-                style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+-              ),
+-            )
++          Padding(padding: const EdgeInsets.symmetric(horizontal: 8), child: _DayStrip(plan: plan)),
++          const SizedBox(height: 12),
++          Padding(padding: const EdgeInsets.symmetric(horizontal: 8), child: Divider(height: 1, color: tt.border)),
++          if (plan.isEmpty)
++            _WeekEmpty(hasTuitions: widget.tuitions.isNotEmpty)
+           else ...[
+             const SizedBox(height: 8),
+-            Divider(height: 1, color: scheme.outline.withValues(alpha: 0.6)),
+-            const SizedBox(height: 4),
+-            for (final day in busyDays)
+-              for (var i = 0; i < byDay[day]!.length; i++)
+-                _SlotLine(
+-                  day: i == 0 ? dayLabel(day) : '',
+-                  isToday: day == today,
+-                  slot: byDay[day]![i],
+-                  onTap: () => onOpen(byDay[day]![i].tuition.str('id')),
++            if (foldPast)
++              _PastSummary(plan: plan, onTap: () => setState(() => _whole = true)),
++            for (final day in days)
++              _DayGroup(plan: plan, day: day, onOpen: widget.onOpen),
++            if (hasPast)
++              TextButton(
++                onPressed: () => setState(() => _whole = !_whole),
++                child: Text(
++                  _whole
++                      ? tr('Show today and upcoming only')
++                      : tr('Show whole week · {n} classes', {'n': plan.total}),
++                  textAlign: TextAlign.center,
+                 ),
++              ),
+           ],
+         ],
+       ),
+@@ -521,51 +467,337 @@ class _WeekAtAGlance extends StatelessWidget {
+   }
+ }
+ 
+-class _SlotLine extends StatelessWidget {
+-  const _SlotLine({required this.day, required this.isToday, required this.slot, required this.onTap});
++/// Seven equal cells: day name, a marker, and a bar under today.
++class _DayStrip extends StatelessWidget {
++  const _DayStrip({required this.plan});
++  final WeekPlan plan;
++
++  @override
++  Widget build(BuildContext context) {
++    final tt = context.tt;
++    return Row(
++      children: [
++        for (final (i, day) in weekOrder.indexed) ...[
++          if (i > 0) const SizedBox(width: 2),
++          Expanded(child: _DayCell(day: day, count: plan.byDay[day]!.length, isToday: day == plan.today, isPast: plan.isPastDay(day), tt: tt)),
++        ],
++      ],
++    );
++  }
++}
++
++class _DayCell extends StatelessWidget {
++  const _DayCell({required this.day, required this.count, required this.isToday, required this.isPast, required this.tt});
+   final String day;
++  final int count;
+   final bool isToday;
+-  final _Slot slot;
++  final bool isPast;
++  final TtTokens tt;
++
++  @override
++  Widget build(BuildContext context) {
++    final name = isBangla ? dayLabel(day) : day.substring(0, 2);
++    final countText = Text(
++      localDigits('$count'),
++      style: TextStyle(
++        fontSize: 13,
++        height: 1,
++        fontWeight: isToday ? FontWeight.w700 : FontWeight.w600,
++        fontFeatures: tabular,
++        color: isToday ? tt.onPrimary : (isPast ? tt.textTertiary : tt.onPrimaryContainer),
++      ),
++    );
++    final Widget marker;
++    if (isToday) {
++      marker = Container(
++        decoration: BoxDecoration(color: tt.primary, shape: BoxShape.circle),
++        alignment: Alignment.center,
++        child: countText,
++      );
++    } else if (count == 0) {
++      // A free day: dashed outline and a dash, so it never depends on colour.
++      marker = CustomPaint(
++        painter: _DashedCircle(tt.textTertiary),
++        child: Center(child: Text('–', style: TextStyle(fontSize: 13, height: 1, color: tt.textTertiary))),
++      );
++    } else {
++      marker = Container(
++        decoration: BoxDecoration(
++          color: isPast ? tt.pastDayFill : tt.primaryContainer,
++          shape: BoxShape.circle,
++          border: Border.all(color: isPast ? tt.border : tt.primary.withValues(alpha: 0.35)),
++        ),
++        alignment: Alignment.center,
++        child: countText,
++      );
++    }
++    return Semantics(
++      label: '${dayLabel(day, short: false)}: '
++          '${count == 0 ? tr('no classes') : tr('{n} classes', {'n': count})}'
++          '${isToday ? tr(', today') : ''}',
++      excludeSemantics: true,
++      child: Column(
++        children: [
++          Text(
++            name,
++            maxLines: 1,
++            overflow: TextOverflow.clip,
++            style: TextStyle(
++              fontSize: 12,
++              height: 1.4,
++              fontWeight: isToday ? FontWeight.w700 : FontWeight.w500,
++              color: isToday ? tt.primary : tt.textSecondary,
++            ),
++          ),
++          const SizedBox(height: 6),
++          SizedBox(width: 30, height: 30, child: marker),
++          const SizedBox(height: 6),
++          Container(
++            width: 16,
++            height: 3,
++            decoration: BoxDecoration(
++              color: isToday ? tt.primary : Colors.transparent,
++              borderRadius: BorderRadius.circular(2),
++            ),
++          ),
++        ],
++      ),
++    );
++  }
++}
++
++class _DashedCircle extends CustomPainter {
++  _DashedCircle(this.color);
++  final Color color;
++
++  @override
++  void paint(Canvas canvas, Size size) {
++    const dashes = 14;
++    const sweep = 2 * pi / dashes;
++    final paint = Paint()
++      ..color = color
++      ..style = PaintingStyle.stroke
++      ..strokeWidth = 1;
++    final rect = Rect.fromLTWH(0.5, 0.5, size.width - 1, size.height - 1);
++    for (var i = 0; i < dashes; i++) {
++      canvas.drawArc(rect, i * sweep, sweep * 0.55, false, paint);
++    }
++  }
++
++  @override
++  bool shouldRepaint(_DashedCircle old) => old.color != color;
++}
++
++/// A busy week's past days in one row; tapping it shows them.
++class _PastSummary extends StatelessWidget {
++  const _PastSummary({required this.plan, required this.onTap});
++  final WeekPlan plan;
+   final VoidCallback onTap;
+ 
+   @override
+   Widget build(BuildContext context) {
+-    final scheme = Theme.of(context).colorScheme;
+-    final accent = tone(context, AppColors.primarySoft);
+-    final time = slot.end.isEmpty ? to12h(slot.start) : '${to12h(slot.start)} – ${to12h(slot.end)}';
++    final tt = context.tt;
++    final days = plan.pastDaysWithClasses;
++    final range = days.length == 1 ? dayLabel(days.first) : '${dayLabel(days.first)} – ${dayLabel(days.last)}';
+     return InkWell(
+-      borderRadius: BorderRadius.circular(10),
++      borderRadius: BorderRadius.circular(12),
+       onTap: onTap,
+-      child: Container(
+-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
+-        decoration: isToday
+-            ? BoxDecoration(color: AppColors.chartPending.withValues(alpha: 0.10), borderRadius: BorderRadius.circular(10))
+-            : null,
+-        child: Row(
+-          children: [
+-            SizedBox(
+-              width: 34,
+-              child: Text(day,
+-                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: isToday ? accent : scheme.onSurfaceVariant)),
+-            ),
+-            Container(
+-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+-              decoration: BoxDecoration(color: scheme.surfaceContainerHighest, borderRadius: BorderRadius.circular(6)),
+-              child: Text(time, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: scheme.onSurface)),
+-            ),
+-            const SizedBox(width: 10),
+-            Expanded(
+-              child: Text(slot.tuition.str('title'),
+-                  maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
++      child: ConstrainedBox(
++        constraints: const BoxConstraints(minHeight: 48),
++        child: Padding(
++          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
++          child: Row(
++            children: [
++              Expanded(
++                child: Text(
++                  tr('{days} · {n} classes done', {'days': range, 'n': plan.pastDayClasses}),
++                  style: TextStyle(fontSize: 14, color: tt.textSecondary, fontFeatures: tabular),
++                ),
++              ),
++              Icon(Icons.keyboard_arrow_down_rounded, size: 22, color: tt.textTertiary),
++            ],
++          ),
++        ),
++      ),
++    );
++  }
++}
++
++/// One day's classes under its header; today's group sits on a raised block.
++class _DayGroup extends StatelessWidget {
++  const _DayGroup({required this.plan, required this.day, required this.onOpen});
++  final WeekPlan plan;
++  final String day;
++  final Future<void> Function(String tuitionId) onOpen;
++
++  @override
++  Widget build(BuildContext context) {
++    final tt = context.tt;
++    final isToday = day == plan.today;
++    final isPast = plan.isPastDay(day);
++    final header = isToday
++        ? tr('Today · {day}', {'day': dayLabel(day, short: !isBangla)})
++        : dayLabel(day, short: !isBangla);
++    final group = Column(
++      crossAxisAlignment: CrossAxisAlignment.stretch,
++      children: [
++        Padding(
++          padding: const EdgeInsets.fromLTRB(12, 10, 12, 2),
++          child: Text(
++            header,
++            style: TextStyle(
++              fontSize: 13,
++              height: 1.4,
++              fontWeight: isToday ? FontWeight.w700 : FontWeight.w600,
++              color: isToday ? tt.primary : (isPast ? tt.textTertiary : tt.textSecondary),
+             ),
+-            Icon(Icons.chevron_right, size: 16, color: scheme.onSurfaceVariant),
+-          ],
++          ),
++        ),
++        for (final c in plan.byDay[day]!) _ClassRow(item: c, onTap: () => onOpen(c.tuition.str('id'))),
++      ],
++    );
++    if (!isToday) return group;
++    return Container(
++      margin: const EdgeInsets.symmetric(vertical: 4),
++      padding: const EdgeInsets.only(bottom: 4),
++      decoration: BoxDecoration(color: tt.cardRaised, borderRadius: BorderRadius.circular(12)),
++      child: group,
++    );
++  }
++}
++
++/// [ start / end ] [ dot ] [ tuition name ] [ Next ] [ > ] — the whole row opens the tuition.
++class _ClassRow extends StatelessWidget {
++  const _ClassRow({required this.item, required this.onTap});
++  final WeekClass item;
++  final VoidCallback onTap;
++
++  @override
++  Widget build(BuildContext context) {
++    final tt = context.tt;
++    final ink = item.past ? tt.textSecondary : tt.textPrimary;
++    return InkWell(
++      borderRadius: BorderRadius.circular(12),
++      onTap: onTap,
++      child: ConstrainedBox(
++        constraints: BoxConstraints(minHeight: isBangla ? 64 : 56),
++        child: Padding(
++          padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
++          child: Row(
++            children: [
++              SizedBox(
++                width: isBangla ? 86 : 70,
++                child: Column(
++                  crossAxisAlignment: CrossAxisAlignment.start,
++                  mainAxisSize: MainAxisSize.min,
++                  children: [
++                    Text(to12h(item.start),
++                        maxLines: 1,
++                        style: TextStyle(fontSize: 14, height: 1.3, fontWeight: FontWeight.w600, fontFeatures: tabular, color: ink)),
++                    if (item.end.isNotEmpty)
++                      Text(to12h(item.end),
++                          maxLines: 1,
++                          style: TextStyle(fontSize: 12, height: 1.3, fontFeatures: tabular, color: tt.textTertiary)),
++                  ],
++                ),
++              ),
++              const SizedBox(width: 8),
++              _Dot(item: item, tt: tt),
++              const SizedBox(width: 10),
++              Expanded(
++                child: Text(
++                  item.tuition.str('title'),
++                  maxLines: 1,
++                  overflow: TextOverflow.ellipsis,
++                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w500, height: isBangla ? 1.55 : 1.45, color: ink),
++                ),
++              ),
++              if (item.isNext) ...[
++                const SizedBox(width: 8),
++                Container(
++                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
++                  decoration: BoxDecoration(color: tt.primaryContainer, borderRadius: BorderRadius.circular(8)),
++                  child: Text(tr('Next'),
++                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tt.onPrimaryContainer)),
++                ),
++              ],
++              const SizedBox(width: 4),
++              Icon(Icons.chevron_right_rounded, size: 22, color: tt.textTertiary),
++            ],
++          ),
++        ),
++      ),
++    );
++  }
++}
++
++/// Next class: filled primary with a ring. Other upcoming: hollow. Past: solid grey.
++class _Dot extends StatelessWidget {
++  const _Dot({required this.item, required this.tt});
++  final WeekClass item;
++  final TtTokens tt;
++
++  @override
++  Widget build(BuildContext context) {
++    if (item.isNext) {
++      // A 9 dp dot with a 3 dp ring around it: 15 dp in all, like the others' box.
++      return Container(
++        width: 9,
++        height: 9,
++        margin: const EdgeInsets.all(3),
++        decoration: BoxDecoration(
++          color: tt.primary,
++          shape: BoxShape.circle,
++          border: Border.all(color: tt.primaryContainer, width: 3, strokeAlign: BorderSide.strokeAlignOutside),
++        ),
++      );
++    }
++    return SizedBox(
++      width: 15,
++      height: 15,
++      child: Center(
++        child: Container(
++          width: 9,
++          height: 9,
++          decoration: BoxDecoration(
++            color: item.past ? tt.dotPast : Colors.transparent,
++            shape: BoxShape.circle,
++            border: item.past ? null : Border.all(color: tt.dotUpcoming, width: 2),
++          ),
+         ),
+       ),
+     );
+   }
+ }
+ 
++/// No class days anywhere this week.
++class _WeekEmpty extends StatelessWidget {
++  const _WeekEmpty({required this.hasTuitions});
++  final bool hasTuitions;
++
++  @override
++  Widget build(BuildContext context) {
++    final tt = context.tt;
++    return Padding(
++      padding: const EdgeInsets.fromLTRB(16, 32, 16, 24),
++      child: Column(
++        children: [
++          Icon(Icons.calendar_today_outlined, size: 32, color: tt.textTertiary),
++          const SizedBox(height: 12),
++          Text(tr('No classes this week'),
++              textAlign: TextAlign.center, style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: tt.textPrimary)),
++          const SizedBox(height: 4),
++          Text(
++            hasTuitions ? tr('No class days set yet. Add them when you edit a tuition.') : tr('Your class days appear here.'),
++            textAlign: TextAlign.center,
++            style: TextStyle(fontSize: 14, height: 1.5, color: tt.textSecondary),
++          ),
++        ],
++      ),
++    );
++  }
++}
++
+ /// Every tuition as a small card, two per row: name, cycle, classes done.
+ class _TuitionGrid extends StatelessWidget {
+   const _TuitionGrid({required this.tuitions, required this.onOpen, required this.onActions});
+diff --git a/mobile/lib/theme/tt_theme.dart b/mobile/lib/theme/tt_theme.dart
+new file mode 100644
+index 0000000..04e6d18
+--- /dev/null
++++ b/mobile/lib/theme/tt_theme.dart
+@@ -0,0 +1,441 @@
++import 'package:flutter/material.dart';
++
++/// Colour tokens from the calm redesign handoff (`d` = dark theme, `l` = light).
++/// Every text token clears WCAG AA (4.5:1) on the surface it sits on.
++class TtColors {
++  // Dark
++  static const dBackground = Color(0xFF10151B);
++  static const dSurface = Color(0xFF161C24);
++  static const dCard = Color(0xFF1C242E);
++  static const dCardRaised = Color(0xFF232C38);
++  static const dBorder = Color(0xFF2C3542);
++  static const dTextPrimary = Color(0xFFE7EBF0);
++  static const dTextSecond = Color(0xFFA7B2BF);
++  static const dTextTertiary = Color(0xFF8A94A1);
++  static const dPrimary = Color(0xFF7FA9D8);
++  static const dOnPrimary = Color(0xFF0E1319);
++  static const dPrimaryCont = Color(0xFF22303F);
++  static const dOnPrimaryCont = Color(0xFFA8C8E8);
++  static const dSuccess = Color(0xFF74C79A);
++  static const dSuccessCont = Color(0xFF1B2E25);
++  static const dWarning = Color(0xFFE0B468);
++  static const dWarningCont = Color(0xFF342B1B);
++  static const dDanger = Color(0xFFE18C86);
++  static const dDangerCont = Color(0xFF3A2422);
++  static const dChartEarned = Color(0xFF5EB489);
++  static const dChartTrack = Color(0xFF2A3442);
++  // "This week" markers (handoff §4).
++  static const dPastDayFill = Color(0xFF1E2630);
++  static const dDotUpcoming = Color(0xFF4A5765);
++  static const dDotPast = Color(0xFF333F4C);
++
++  // Light
++  static const lBackground = Color(0xFFF4F1EC);
++  static const lSurface = Color(0xFFFBF9F6);
++  static const lCard = Color(0xFFFFFCF8);
++  static const lCardRaised = Color(0xFFEDF1F6);
++  static const lBorder = Color(0xFFE6E1D8);
++  static const lTextPrimary = Color(0xFF262B33);
++  static const lTextSecond = Color(0xFF5A6472);
++  static const lTextTertiary = Color(0xFF646D7B);
++  static const lPrimary = Color(0xFF35648F);
++  static const lOnPrimary = Color(0xFFFFFCF8);
++  static const lPrimaryCont = Color(0xFFE4EBF2);
++  static const lOnPrimaryCont = Color(0xFF27506F);
++  static const lSuccess = Color(0xFF246B4D);
++  static const lSuccessCont = Color(0xFFE0EDE5);
++  static const lOnSuccessCont = Color(0xFF1F6248);
++  static const lWarning = Color(0xFF8A6316);
++  static const lWarningCont = Color(0xFFF7ECD8);
++  static const lOnWarningCont = Color(0xFF7A5610);
++  static const lDanger = Color(0xFFA8453E);
++  // Not in the handoff table: the light counterpart of dDangerCont (lDanger on it is 5.0:1).
++  static const lDangerCont = Color(0xFFF6E3E0);
++  static const lChartEarned = Color(0xFF2E8A63);
++  static const lChartTrack = Color(0xFFE7E2D9);
++  // Light versions of the "This week" markers, picked to match the light mockup.
++  static const lPastDayFill = Color(0xFFECE8E1);
++  static const lDotUpcoming = Color(0xFF8C95A1);
++  static const lDotPast = Color(0xFFC2C8D0);
++
++  // Bronze for the leaderboard's third place (gold = warning, silver = text secondary).
++  static const bronze = Color(0xFFB87A45);
++}
++
++/// The tokens for the current theme: `context.tt.cardRaised`, `context.tt.textTertiary`…
++/// Use these instead of fixed colours so both themes stay right.
++@immutable
++class TtTokens extends ThemeExtension<TtTokens> {
++  const TtTokens({
++    required this.isDark,
++    required this.background,
++    required this.surface,
++    required this.card,
++    required this.cardRaised,
++    required this.border,
++    required this.textPrimary,
++    required this.textSecondary,
++    required this.textTertiary,
++    required this.primary,
++    required this.onPrimary,
++    required this.primaryContainer,
++    required this.onPrimaryContainer,
++    required this.success,
++    required this.successContainer,
++    required this.onSuccessContainer,
++    required this.warning,
++    required this.warningContainer,
++    required this.onWarningContainer,
++    required this.danger,
++    required this.dangerContainer,
++    required this.chartEarned,
++    required this.chartTrack,
++    required this.pastDayFill,
++    required this.dotUpcoming,
++    required this.dotPast,
++  });
++
++  final bool isDark;
++  final Color background, surface, card, cardRaised, border;
++  final Color textPrimary, textSecondary, textTertiary;
++  final Color primary, onPrimary, primaryContainer, onPrimaryContainer;
++  final Color success, successContainer, onSuccessContainer;
++  final Color warning, warningContainer, onWarningContainer;
++  final Color danger, dangerContainer;
++  final Color chartEarned, chartTrack;
++  final Color pastDayFill, dotUpcoming, dotPast;
++
++  /// Dark theme has no shadows (depth comes from tonal layers); light gets one soft shadow.
++  List<BoxShadow> get cardShadow =>
++      isDark ? const [] : const [BoxShadow(color: Color(0x0D262B33), blurRadius: 2, offset: Offset(0, 1))];
++
++  static const dark = TtTokens(
++    isDark: true,
++    background: TtColors.dBackground,
++    surface: TtColors.dSurface,
++    card: TtColors.dCard,
++    cardRaised: TtColors.dCardRaised,
++    border: TtColors.dBorder,
++    textPrimary: TtColors.dTextPrimary,
++    textSecondary: TtColors.dTextSecond,
++    textTertiary: TtColors.dTextTertiary,
++    primary: TtColors.dPrimary,
++    onPrimary: TtColors.dOnPrimary,
++    primaryContainer: TtColors.dPrimaryCont,
++    onPrimaryContainer: TtColors.dOnPrimaryCont,
++    success: TtColors.dSuccess,
++    successContainer: TtColors.dSuccessCont,
++    onSuccessContainer: TtColors.dSuccess,
++    warning: TtColors.dWarning,
++    warningContainer: TtColors.dWarningCont,
++    onWarningContainer: TtColors.dWarning,
++    danger: TtColors.dDanger,
++    dangerContainer: TtColors.dDangerCont,
++    chartEarned: TtColors.dChartEarned,
++    chartTrack: TtColors.dChartTrack,
++    pastDayFill: TtColors.dPastDayFill,
++    dotUpcoming: TtColors.dDotUpcoming,
++    dotPast: TtColors.dDotPast,
++  );
++
++  static const light = TtTokens(
++    isDark: false,
++    background: TtColors.lBackground,
++    surface: TtColors.lSurface,
++    card: TtColors.lCard,
++    cardRaised: TtColors.lCardRaised,
++    border: TtColors.lBorder,
++    textPrimary: TtColors.lTextPrimary,
++    textSecondary: TtColors.lTextSecond,
++    textTertiary: TtColors.lTextTertiary,
++    primary: TtColors.lPrimary,
++    onPrimary: TtColors.lOnPrimary,
++    primaryContainer: TtColors.lPrimaryCont,
++    onPrimaryContainer: TtColors.lOnPrimaryCont,
++    success: TtColors.lSuccess,
++    successContainer: TtColors.lSuccessCont,
++    onSuccessContainer: TtColors.lOnSuccessCont,
++    warning: TtColors.lWarning,
++    warningContainer: TtColors.lWarningCont,
++    onWarningContainer: TtColors.lOnWarningCont,
++    danger: TtColors.lDanger,
++    dangerContainer: TtColors.lDangerCont,
++    chartEarned: TtColors.lChartEarned,
++    chartTrack: TtColors.lChartTrack,
++    pastDayFill: TtColors.lPastDayFill,
++    dotUpcoming: TtColors.lDotUpcoming,
++    dotPast: TtColors.lDotPast,
++  );
++
++  @override
++  TtTokens copyWith() => this;
++
++  // The two themes are swapped whole, never animated between token by token.
++  @override
++  TtTokens lerp(ThemeExtension<TtTokens>? other, double t) => t < 0.5 || other is! TtTokens ? this : other;
++}
++
++extension TtContext on BuildContext {
++  /// The redesign tokens of the current theme.
++  TtTokens get tt => Theme.of(this).extension<TtTokens>() ?? TtTokens.dark;
++}
++
++/// Tabular figures, so times and counts line up in columns.
++const tabular = [FontFeature.tabularFigures()];
++
++/// Type scale (handoff §2). Bangla gets a taller line box.
++TextTheme ttTextTheme(Color primary, Color secondary, {bool isBangla = false}) {
++  final b = isBangla ? 1.55 : 1.45; // body
++  final t = isBangla ? 1.40 : 1.30; // titles
++  return TextTheme(
++    displaySmall: TextStyle(fontSize: 30, fontWeight: FontWeight.w700, height: 1.15, letterSpacing: -0.6, color: primary),
++    titleLarge: TextStyle(fontSize: 17, fontWeight: FontWeight.w600, height: t, letterSpacing: -0.2, color: primary),
++    titleMedium: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, height: isBangla ? 1.45 : 1.35, color: primary),
++    bodyLarge: TextStyle(fontSize: 15, fontWeight: FontWeight.w500, height: b, color: primary),
++    // The default style for any Text without its own: primary ink, so plain
++    // text never turns grey. Help text sets textSecondary explicitly.
++    bodyMedium: TextStyle(fontSize: 14, fontWeight: FontWeight.w400, height: isBangla ? 1.55 : 1.50, color: primary),
++    bodySmall: TextStyle(fontSize: 12, fontWeight: FontWeight.w400, height: 1.40, color: secondary),
++    labelLarge: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, height: 1.40),
++    labelMedium: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, height: 1.40, color: secondary),
++    labelSmall: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, height: 1.40, color: secondary),
++  );
++}
++
++/// The app theme for both modes. Notes on the colour scheme roles, chosen so
++/// existing screens keep their meaning:
++/// - `surface` is the card colour (screens paint cards and grouped lists with it);
++///   bars and sheets get the `surface` token through their component themes.
++/// - `surfaceContainerHighest` is cardRaised: fills nested inside a card.
++/// - `outline` is the hairline border; `outlineVariant` is the tertiary ink
++///   used for faint icons and hints.
++ThemeData ttTheme({required bool isDark, bool isBangla = false}) {
++  final tt = isDark ? TtTokens.dark : TtTokens.light;
++  final scheme = ColorScheme(
++    brightness: isDark ? Brightness.dark : Brightness.light,
++    primary: tt.primary,
++    onPrimary: tt.onPrimary,
++    primaryContainer: tt.primaryContainer,
++    onPrimaryContainer: tt.onPrimaryContainer,
++    secondary: tt.success,
++    onSecondary: tt.background,
++    // Selected segments and tonal buttons.
++    secondaryContainer: tt.primaryContainer,
++    onSecondaryContainer: tt.onPrimaryContainer,
++    tertiary: tt.warning,
++    onTertiary: tt.background,
++    tertiaryContainer: tt.warningContainer,
++    onTertiaryContainer: tt.onWarningContainer,
++    error: tt.danger,
++    onError: tt.background,
++    errorContainer: tt.dangerContainer,
++    onErrorContainer: tt.danger,
++    surface: tt.card,
++    onSurface: tt.textPrimary,
++    onSurfaceVariant: tt.textSecondary,
++    surfaceDim: tt.background,
++    surfaceBright: tt.cardRaised,
++    surfaceContainerLowest: tt.background,
++    surfaceContainerLow: tt.surface,
++    surfaceContainer: tt.surface,
++    surfaceContainerHigh: tt.card,
++    surfaceContainerHighest: tt.cardRaised,
++    surfaceTint: Colors.transparent,
++    outline: tt.border,
++    outlineVariant: tt.textTertiary,
++    inverseSurface: tt.textPrimary,
++    onInverseSurface: tt.background,
++    inversePrimary: isDark ? TtColors.lPrimary : TtColors.dPrimary,
++    shadow: isDark ? Colors.transparent : const Color(0x14262B33),
++    scrim: Colors.black54,
++  );
++  final fieldBorder = OutlineInputBorder(
++    borderRadius: BorderRadius.circular(14),
++    borderSide: BorderSide(color: tt.border),
++  );
++  final textTheme = ttTextTheme(tt.textPrimary, tt.textSecondary, isBangla: isBangla);
++  return ThemeData(
++    useMaterial3: true,
++    brightness: scheme.brightness,
++    colorScheme: scheme,
++    extensions: [tt],
++    scaffoldBackgroundColor: tt.background,
++    canvasColor: tt.background,
++    fontFamily: 'HankenGrotesk',
++    fontFamilyFallback: const ['HindSiliguri'],
++    textTheme: textTheme,
++    iconTheme: IconThemeData(color: tt.textSecondary),
++    appBarTheme: AppBarTheme(
++      backgroundColor: tt.background,
++      foregroundColor: tt.textPrimary,
++      surfaceTintColor: Colors.transparent,
++      elevation: 0,
++      scrolledUnderElevation: 0,
++      toolbarHeight: 56,
++      titleTextStyle: textTheme.titleLarge!.copyWith(fontFamily: 'HankenGrotesk', fontFamilyFallback: const ['HindSiliguri']),
++      iconTheme: IconThemeData(color: tt.textPrimary),
++      actionsIconTheme: IconThemeData(color: tt.textSecondary),
++    ),
++    cardTheme: CardThemeData(
++      color: tt.card,
++      elevation: 0,
++      margin: EdgeInsets.zero,
++      shadowColor: scheme.shadow,
++      surfaceTintColor: Colors.transparent,
++      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
++    ),
++    dividerTheme: DividerThemeData(color: tt.border, thickness: 1, space: 1),
++    inputDecorationTheme: InputDecorationTheme(
++      filled: true,
++      fillColor: tt.cardRaised,
++      border: fieldBorder,
++      enabledBorder: fieldBorder,
++      focusedBorder: fieldBorder.copyWith(borderSide: BorderSide(color: tt.primary, width: 1.5)),
++      errorBorder: fieldBorder.copyWith(borderSide: BorderSide(color: tt.danger)),
++      focusedErrorBorder: fieldBorder.copyWith(borderSide: BorderSide(color: tt.danger, width: 1.5)),
++      labelStyle: TextStyle(color: tt.textSecondary),
++      floatingLabelStyle: TextStyle(color: tt.primary),
++      hintStyle: TextStyle(color: tt.textTertiary),
++      helperStyle: TextStyle(color: tt.textSecondary),
++      errorStyle: TextStyle(color: tt.danger),
++      prefixIconColor: tt.textTertiary,
++      suffixIconColor: tt.textTertiary,
++      helperMaxLines: 3,
++      errorMaxLines: 3,
++      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
++    ),
++    filledButtonTheme: FilledButtonThemeData(
++      style: FilledButton.styleFrom(
++        minimumSize: const Size(48, 48),
++        textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
++        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
++      ),
++    ),
++    outlinedButtonTheme: OutlinedButtonThemeData(
++      style: OutlinedButton.styleFrom(
++        minimumSize: const Size(48, 48),
++        foregroundColor: tt.textPrimary,
++        side: BorderSide(color: tt.border),
++        textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
++        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
++      ),
++    ),
++    // Size(48, 48), not fromHeight: a full-width minimum would break text buttons inside rows.
++    textButtonTheme: TextButtonThemeData(
++      style: TextButton.styleFrom(
++        minimumSize: const Size(48, 48),
++        foregroundColor: isDark ? tt.onPrimaryContainer : tt.primary,
++        textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
++        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
++      ),
++    ),
++    iconButtonTheme: IconButtonThemeData(style: IconButton.styleFrom(minimumSize: const Size(44, 44))),
++    segmentedButtonTheme: SegmentedButtonThemeData(
++      style: ButtonStyle(
++        minimumSize: const WidgetStatePropertyAll(Size(44, 44)),
++        side: WidgetStatePropertyAll(BorderSide(color: tt.border)),
++        shape: WidgetStatePropertyAll(RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
++        backgroundColor: WidgetStateProperty.resolveWith((s) => s.contains(WidgetState.selected) ? tt.primaryContainer : Colors.transparent),
++        foregroundColor: WidgetStateProperty.resolveWith((s) => s.contains(WidgetState.selected) ? tt.onPrimaryContainer : tt.textSecondary),
++        textStyle: const WidgetStatePropertyAll(TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
++      ),
++    ),
++    floatingActionButtonTheme: FloatingActionButtonThemeData(
++      backgroundColor: tt.primary,
++      foregroundColor: tt.onPrimary,
++      elevation: isDark ? 0 : 2,
++      focusElevation: isDark ? 0 : 2,
++      hoverElevation: isDark ? 0 : 3,
++      highlightElevation: isDark ? 0 : 3,
++      extendedSizeConstraints: const BoxConstraints.tightFor(height: 52),
++      extendedTextStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
++      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
++    ),
++    navigationBarTheme: NavigationBarThemeData(
++      backgroundColor: tt.surface,
++      surfaceTintColor: Colors.transparent,
++      height: 64,
++      elevation: 0,
++      indicatorColor: tt.primaryContainer,
++      indicatorShape: const StadiumBorder(),
++      iconTheme: WidgetStateProperty.resolveWith(
++        (s) => IconThemeData(color: s.contains(WidgetState.selected) ? tt.onPrimaryContainer : tt.textSecondary),
++      ),
++      labelTextStyle: WidgetStateProperty.resolveWith(
++        (s) => TextStyle(
++          fontSize: 12,
++          fontWeight: s.contains(WidgetState.selected) ? FontWeight.w600 : FontWeight.w500,
++          color: s.contains(WidgetState.selected) ? tt.primary : tt.textSecondary,
++        ),
++      ),
++    ),
++    drawerTheme: DrawerThemeData(backgroundColor: tt.surface, surfaceTintColor: Colors.transparent),
++    snackBarTheme: SnackBarThemeData(
++      behavior: SnackBarBehavior.floating,
++      backgroundColor: tt.textPrimary,
++      contentTextStyle: TextStyle(color: tt.background, fontSize: 14),
++      actionTextColor: scheme.inversePrimary,
++      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
++    ),
++    dialogTheme: DialogThemeData(
++      backgroundColor: tt.card,
++      surfaceTintColor: Colors.transparent,
++      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
++    ),
++    bottomSheetTheme: BottomSheetThemeData(
++      backgroundColor: tt.surface,
++      surfaceTintColor: Colors.transparent,
++      showDragHandle: true,
++      dragHandleColor: tt.textTertiary,
++      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
++    ),
++    popupMenuTheme: PopupMenuThemeData(
++      color: tt.cardRaised,
++      surfaceTintColor: Colors.transparent,
++      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
++    ),
++    chipTheme: ChipThemeData(
++      backgroundColor: tt.primaryContainer,
++      selectedColor: tt.primaryContainer,
++      labelStyle: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tt.onPrimaryContainer),
++      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
++      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
++      side: BorderSide.none,
++    ),
++    listTileTheme: ListTileThemeData(
++      iconColor: tt.textTertiary,
++      minVerticalPadding: 10,
++      minTileHeight: 56,
++      titleTextStyle: textTheme.bodyLarge,
++      subtitleTextStyle: TextStyle(fontSize: 13, height: 1.4, color: tt.textSecondary),
++    ),
++    progressIndicatorTheme: ProgressIndicatorThemeData(
++      color: tt.chartEarned,
++      linearTrackColor: tt.chartTrack,
++      circularTrackColor: tt.chartTrack,
++      linearMinHeight: 8,
++    ),
++    tabBarTheme: TabBarThemeData(
++      labelColor: tt.textPrimary,
++      unselectedLabelColor: tt.textSecondary,
++      indicatorColor: tt.primary,
++      dividerColor: tt.border,
++      labelStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
++      unselectedLabelStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
++    ),
++    switchTheme: SwitchThemeData(
++      thumbColor: WidgetStateProperty.resolveWith((s) => s.contains(WidgetState.selected) ? tt.onPrimary : tt.textTertiary),
++      trackColor: WidgetStateProperty.resolveWith((s) => s.contains(WidgetState.selected) ? tt.primary : tt.cardRaised),
++      trackOutlineColor: WidgetStateProperty.resolveWith((s) => s.contains(WidgetState.selected) ? tt.primary : tt.border),
++    ),
++    checkboxTheme: CheckboxThemeData(
++      fillColor: WidgetStateProperty.resolveWith((s) => s.contains(WidgetState.selected) ? tt.primary : Colors.transparent),
++      checkColor: WidgetStatePropertyAll(tt.onPrimary),
++      side: BorderSide(color: tt.textTertiary, width: 1.5),
++    ),
++    radioTheme: RadioThemeData(
++      fillColor: WidgetStateProperty.resolveWith((s) => s.contains(WidgetState.selected) ? tt.primary : tt.textTertiary),
++    ),
++    textSelectionTheme: TextSelectionThemeData(cursorColor: tt.primary, selectionHandleColor: tt.primary),
++  );
++}
+diff --git a/mobile/lib/widgets/charts.dart b/mobile/lib/widgets/charts.dart
+index 1ff79d2..dfd046e 100644
+--- a/mobile/lib/widgets/charts.dart
++++ b/mobile/lib/widgets/charts.dart
+@@ -41,8 +41,8 @@ class ProgressRing extends StatelessWidget {
+               value: value,
+               strokeWidth: thickness,
+               strokeCap: StrokeCap.round,
+-              color: color,
+-              backgroundColor: scheme.surfaceContainerHighest,
++              color: tone(context, color),
++              backgroundColor: context.tt.chartTrack,
+             ),
+             Center(
+               child: Padding(
+@@ -54,7 +54,7 @@ class ProgressRing extends StatelessWidget {
+                     children: [
+                       Text.rich(
+                         TextSpan(children: [
+-                          TextSpan(text: '$done', style: TextStyle(fontWeight: FontWeight.w800, color: scheme.onSurface)),
++                          TextSpan(text: '$done', style: TextStyle(fontWeight: FontWeight.w700, color: scheme.onSurface)),
+                           TextSpan(text: '/$total', style: TextStyle(fontWeight: FontWeight.w600, color: scheme.onSurfaceVariant)),
+                         ]),
+                         style: TextStyle(fontSize: size * 0.24),
+@@ -88,8 +88,8 @@ class ProgressLine extends StatelessWidget {
+       child: LinearProgressIndicator(
+         value: value.isNaN ? 0 : value.clamp(0.0, 1.0),
+         minHeight: height,
+-        color: color,
+-        backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
++        color: tone(context, color),
++        backgroundColor: context.tt.chartTrack,
+         semanticsLabel: label,
+       ),
+     );
+diff --git a/mobile/lib/widgets/share.dart b/mobile/lib/widgets/share.dart
+index 3932330..1cf950c 100644
+--- a/mobile/lib/widgets/share.dart
++++ b/mobile/lib/widgets/share.dart
+@@ -11,6 +11,7 @@ import '../core/i18n.dart';
+ import '../core/json.dart';
+ import '../core/repo.dart';
+ import '../core/session.dart';
++import '../theme/tt_theme.dart';
+ import 'ui.dart';
+ 
+ /// Where the app can be downloaded, as the server announces it (empty when unknown).
+@@ -95,10 +96,10 @@ Future<List<int>> _receiptImage(String title, List<(String, String)> rows) async
+   final recorder = ui.PictureRecorder();
+   final canvas = Canvas(recorder, Rect.fromLTWH(0, 0, width, height));
+ 
+-  canvas.drawRect(Rect.fromLTWH(0, 0, width, height), Paint()..color = Colors.white);
+-  canvas.drawRect(const Rect.fromLTWH(0, 0, width, 14), Paint()..color = const Color(0xFF059669));
++  canvas.drawRect(Rect.fromLTWH(0, 0, width, height), Paint()..color = TtColors.lCard);
++  canvas.drawRect(const Rect.fromLTWH(0, 0, width, 14), Paint()..color = TtColors.lChartEarned);
+ 
+-  void text(String value, double x, double y, {double size = 30, FontWeight weight = FontWeight.w400, Color color = const Color(0xFF0F172A), double maxWidth = width - pad * 2, TextAlign align = TextAlign.left}) {
++  void text(String value, double x, double y, {double size = 30, FontWeight weight = FontWeight.w400, Color color = TtColors.lTextPrimary, double maxWidth = width - pad * 2, TextAlign align = TextAlign.left}) {
+     final painter = TextPainter(
+       text: TextSpan(text: value, style: TextStyle(fontSize: size, fontWeight: weight, color: color)),
+       textDirection: TextDirection.ltr,
+@@ -110,23 +111,23 @@ Future<List<int>> _receiptImage(String title, List<(String, String)> rows) async
+     painter.paint(canvas, Offset(dx, y));
+   }
+ 
+-  text('TuitionTrack', pad, pad, size: 28, weight: FontWeight.w700, color: const Color(0xFF4F46E5));
++  text('TuitionTrack', pad, pad, size: 28, weight: FontWeight.w700, color: TtColors.lPrimary);
+   text(title, pad, pad + 44, size: 44, weight: FontWeight.w800);
+-  final paidPaint = Paint()..color = const Color(0xFFD1FAE5);
++  final paidPaint = Paint()..color = TtColors.lSuccessCont;
+   canvas.drawRRect(RRect.fromRectAndRadius(Rect.fromLTWH(width - pad - 170, pad + 44, 170, 56), const Radius.circular(28)), paidPaint);
+-  text(tr('PAID'), width - pad - 170, pad + 54, size: 28, weight: FontWeight.w800, color: const Color(0xFF047857), maxWidth: 170, align: TextAlign.center);
++  text(tr('PAID'), width - pad - 170, pad + 54, size: 28, weight: FontWeight.w800, color: TtColors.lOnSuccessCont, maxWidth: 170, align: TextAlign.center);
+ 
+   var y = pad + 150;
+   final line = Paint()
+-    ..color = const Color(0xFFE2E8F0)
++    ..color = TtColors.lBorder
+     ..strokeWidth = 2;
+   for (final (label, value) in rows) {
+     canvas.drawLine(Offset(pad, y - 14), Offset(width - pad, y - 14), line);
+-    text(label, pad, y, size: 28, color: const Color(0xFF64748B), maxWidth: 330);
++    text(label, pad, y, size: 28, color: TtColors.lTextSecond, maxWidth: 330);
+     text(value, pad + 340, y, size: 30, weight: FontWeight.w700, maxWidth: width - pad * 2 - 340, align: TextAlign.right);
+     y += rowHeight;
+   }
+-  text(tr('Sent from the TuitionTrack app'), pad, height - pad - 10, size: 22, color: const Color(0xFF94A3B8));
++  text(tr('Sent from the TuitionTrack app'), pad, height - pad - 10, size: 22, color: TtColors.lTextTertiary);
+ 
+   final image = await recorder.endRecording().toImage(width.toInt(), height.toInt());
+   final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
+diff --git a/mobile/lib/widgets/theme.dart b/mobile/lib/widgets/theme.dart
+index 86ee0f9..8db7877 100644
+--- a/mobile/lib/widgets/theme.dart
++++ b/mobile/lib/widgets/theme.dart
+@@ -1,263 +1,52 @@
+ import 'package:flutter/material.dart';
+ 
+-/// The same dark slate and indigo palette as the website.
+-/// Surface/body tokens below are theme-aware — use Theme.of(context).colorScheme
+-/// (onSurface, onSurfaceVariant, surface, outline…) instead of these in screens.
+-/// Accent tokens (primary, success, warning, danger) work on both themes as
+-/// fills and borders; for text/icons on light backgrounds use [tone].
++import '../theme/tt_theme.dart';
++
++export '../theme/tt_theme.dart';
++
++/// Accent names the screens use, now pointing at the calm redesign tokens
++/// (lib/theme/tt_theme.dart). The values are the DARK theme tokens; [tone]
++/// gives the light-theme counterpart for text and icons. New code should
++/// prefer `context.tt` (theme-aware) over these.
+ class AppColors {
+-  static const background = Color(0xFF020617); // slate-950
+-  static const surface = Color(0xFF0F172A); // slate-900
+-  static const card = Color(0xFF1E293B); // slate-800
+-  static const border = Color(0xFF334155); // slate-700
+-  static const muted = Color(0xFF94A3B8); // slate-400
+-  static const faint = Color(0xFF64748B); // slate-500
+-  static const text = Color(0xFFF1F5F9); // slate-100
+-  static const primary = Color(0xFF6366F1); // indigo-500
+-  static const primarySoft = Color(0xFFA5B4FC); // indigo-300
+-  static const success = Color(0xFF34D399); // emerald-400
+-  static const successDeep = Color(0xFF059669); // emerald-600: filled buttons with white text
+-  static const warning = Color(0xFFFBBF24); // amber-400
+-  static const warningDeep = Color(0xFFB45309); // amber-700: filled buttons with white text
+-  static const danger = Color(0xFFFB7185); // rose-400
+-  static const purple = Color(0xFFC084FC);
++  static const background = TtColors.dBackground;
++  static const surface = TtColors.dSurface;
++  static const card = TtColors.dCard;
++  static const border = TtColors.dBorder;
++  static const muted = TtColors.dTextSecond;
++  static const faint = TtColors.dTextTertiary;
++  static const text = TtColors.dTextPrimary;
++  static const primary = TtColors.dPrimary;
++  static const primarySoft = TtColors.dOnPrimaryCont;
++  static const success = TtColors.dSuccess;
++  static const successDeep = TtColors.lSuccess; // filled buttons with light text
++  static const warning = TtColors.dWarning;
++  static const warningDeep = TtColors.lWarning; // filled buttons with light text
++  static const danger = TtColors.dDanger;
++  // No extra hue in the calm palette: "Assignment" is told apart by its label.
++  static const purple = TtColors.dTextSecond;
+ 
+-  // Chart series. Checked for colour-blind separation and contrast on both
+-  // the dark (slate-900) and light (white) surfaces; always shown with a legend.
+-  static const chartEarned = Color(0xFF059669); // emerald-600: money earned, classes done
+-  static const chartPending = Color(0xFF6366F1); // indigo-500: still to earn, classes left
++  // Charts: earned / done on a neutral track; the next class uses the primary blue.
++  static const chartEarned = TtColors.dChartEarned;
++  static const chartPending = TtColors.dPrimary;
+ }
+ 
+-/// Accent color readable as text/icon on the current background.
+-/// Dark theme returns the accent unchanged; light theme returns a deeper
+-/// shade with proper contrast on white.
++/// Accent colour readable as text/icon on the current background: the dark
++/// token as is in the dark theme, its light-theme counterpart otherwise.
+ Color tone(BuildContext context, Color accent) {
+   if (Theme.of(context).brightness == Brightness.dark) return accent;
+-  if (accent == AppColors.primarySoft) return const Color(0xFF4338CA); // indigo-700
+-  if (accent == AppColors.primary) return const Color(0xFF4F46E5); // indigo-600
+-  if (accent == AppColors.success) return const Color(0xFF047857); // emerald-700
+-  if (accent == AppColors.warning) return const Color(0xFFB45309); // amber-700
+-  if (accent == AppColors.danger) return const Color(0xFFBE123C); // rose-700
+-  if (accent == AppColors.muted) return const Color(0xFF64748B); // slate-500
+-  if (accent == AppColors.faint) return const Color(0xFF64748B); // slate-500
++  if (accent == AppColors.primarySoft) return TtColors.lOnPrimaryCont;
++  if (accent == AppColors.primary) return TtColors.lPrimary;
++  if (accent == AppColors.success) return TtColors.lSuccess;
++  if (accent == AppColors.warning) return TtColors.lWarning;
++  if (accent == AppColors.danger) return TtColors.lDanger;
++  if (accent == AppColors.muted) return TtColors.lTextSecond;
++  if (accent == AppColors.faint) return TtColors.lTextTertiary;
++  if (accent == AppColors.text) return TtColors.lTextPrimary;
++  if (accent == AppColors.chartEarned) return TtColors.lChartEarned;
++  if (accent == AppColors.border) return TtColors.lBorder;
++  if (accent == AppColors.card) return TtColors.lCard;
++  if (accent == AppColors.surface) return TtColors.lSurface;
++  if (accent == AppColors.background) return TtColors.lBackground;
+   return accent;
+ }
+-
+-ThemeData buildTheme() {
+-  const scheme = ColorScheme.dark(
+-    primary: AppColors.primary,
+-    onPrimary: Colors.white,
+-    secondary: AppColors.success,
+-    onSecondary: Colors.black,
+-    // Selected segments and tonal buttons: indigo, like the website's active tabs.
+-    secondaryContainer: Color(0xFF3730A3),
+-    onSecondaryContainer: Colors.white,
+-    surface: AppColors.surface,
+-    onSurface: AppColors.text,
+-    onSurfaceVariant: AppColors.muted,
+-    surfaceContainerHighest: AppColors.card,
+-    outline: AppColors.border,
+-    outlineVariant: AppColors.faint,
+-    error: AppColors.danger,
+-    onError: Colors.black,
+-  );
+-  final border = OutlineInputBorder(
+-    borderRadius: BorderRadius.circular(12),
+-    borderSide: const BorderSide(color: AppColors.border),
+-  );
+-  return ThemeData(
+-    useMaterial3: true,
+-    brightness: Brightness.dark,
+-    colorScheme: scheme,
+-    scaffoldBackgroundColor: AppColors.background,
+-    appBarTheme: const AppBarTheme(
+-      backgroundColor: AppColors.surface,
+-      foregroundColor: AppColors.text,
+-      elevation: 0,
+-      scrolledUnderElevation: 0,
+-      titleTextStyle: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.text),
+-    ),
+-    cardTheme: CardThemeData(
+-      color: AppColors.surface,
+-      elevation: 0,
+-      margin: EdgeInsets.zero,
+-      shape: RoundedRectangleBorder(
+-        borderRadius: BorderRadius.circular(16),
+-        side: const BorderSide(color: AppColors.card),
+-      ),
+-    ),
+-    dividerTheme: const DividerThemeData(color: AppColors.card, thickness: 1, space: 1),
+-    inputDecorationTheme: InputDecorationTheme(
+-      filled: true,
+-      fillColor: AppColors.card,
+-      border: border,
+-      enabledBorder: border,
+-      focusedBorder: border.copyWith(borderSide: const BorderSide(color: AppColors.primary, width: 1.5)),
+-      errorBorder: border.copyWith(borderSide: const BorderSide(color: AppColors.danger)),
+-      focusedErrorBorder: border.copyWith(borderSide: const BorderSide(color: AppColors.danger, width: 1.5)),
+-      labelStyle: const TextStyle(color: AppColors.muted),
+-      hintStyle: const TextStyle(color: AppColors.faint),
+-      helperStyle: const TextStyle(color: AppColors.muted),
+-      helperMaxLines: 3,
+-      errorMaxLines: 3,
+-      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+-    ),
+-    filledButtonTheme: FilledButtonThemeData(
+-      style: FilledButton.styleFrom(
+-        minimumSize: const Size(48, 48),
+-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+-        textStyle: const TextStyle(fontWeight: FontWeight.w700),
+-      ),
+-    ),
+-    outlinedButtonTheme: OutlinedButtonThemeData(
+-      style: OutlinedButton.styleFrom(
+-        minimumSize: const Size(48, 48),
+-        foregroundColor: AppColors.text,
+-        side: const BorderSide(color: AppColors.border),
+-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+-      ),
+-    ),
+-    textButtonTheme: TextButtonThemeData(style: TextButton.styleFrom(foregroundColor: AppColors.primarySoft)),
+-    navigationBarTheme: NavigationBarThemeData(
+-      backgroundColor: AppColors.surface,
+-      indicatorColor: AppColors.primary.withValues(alpha: 0.25),
+-      labelTextStyle: WidgetStateProperty.all(const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+-    ),
+-    snackBarTheme: const SnackBarThemeData(behavior: SnackBarBehavior.floating),
+-    dialogTheme: DialogThemeData(
+-      backgroundColor: AppColors.surface,
+-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+-    ),
+-    bottomSheetTheme: const BottomSheetThemeData(backgroundColor: AppColors.surface, showDragHandle: true),
+-    chipTheme: ChipThemeData(
+-      backgroundColor: AppColors.card,
+-      side: const BorderSide(color: AppColors.border),
+-      labelStyle: const TextStyle(color: AppColors.text, fontSize: 13),
+-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+-    ),
+-    listTileTheme: const ListTileThemeData(iconColor: AppColors.muted),
+-    progressIndicatorTheme: const ProgressIndicatorThemeData(color: AppColors.primary, linearTrackColor: AppColors.card),
+-    tabBarTheme: const TabBarThemeData(
+-      labelColor: AppColors.text,
+-      unselectedLabelColor: AppColors.muted,
+-      indicatorColor: AppColors.primary,
+-      dividerColor: AppColors.card,
+-    ),
+-    switchTheme: SwitchThemeData(
+-      thumbColor: WidgetStateProperty.resolveWith((s) => s.contains(WidgetState.selected) ? Colors.white : AppColors.muted),
+-      trackColor: WidgetStateProperty.resolveWith((s) => s.contains(WidgetState.selected) ? AppColors.primary : AppColors.card),
+-    ),
+-  );
+-}
+-
+-/// Light theme: same layout and accents, slate-50 pages with white surfaces.
+-/// Dark-hardcoded screens keep working because shared widgets and body text
+-/// below read from the color scheme instead of fixed constants.
+-ThemeData buildLightTheme() {
+-  const scheme = ColorScheme.light(
+-    primary: Color(0xFF4F46E5), // indigo-600: readable on white
+-    onPrimary: Colors.white,
+-    secondary: Color(0xFF047857), // emerald-700
+-    onSecondary: Colors.white,
+-    secondaryContainer: Color(0xFFE0E7FF), // indigo-100
+-    onSecondaryContainer: Color(0xFF312E81), // indigo-900
+-    surface: Colors.white,
+-    onSurface: Color(0xFF0F172A), // slate-900
+-    onSurfaceVariant: Color(0xFF64748B), // slate-500
+-    surfaceContainerHighest: Color(0xFFF1F5F9), // slate-100: nested fills
+-    outline: Color(0xFFE2E8F0), // slate-200: borders
+-    outlineVariant: Color(0xFF64748B), // slate-500: faint hints
+-    error: Color(0xFFBE123C), // rose-700
+-    onError: Colors.white,
+-  );
+-  final border = OutlineInputBorder(
+-    borderRadius: BorderRadius.circular(12),
+-    borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+-  );
+-  return ThemeData(
+-    useMaterial3: true,
+-    brightness: Brightness.light,
+-    colorScheme: scheme,
+-    scaffoldBackgroundColor: const Color(0xFFF8FAFC), // slate-50
+-    appBarTheme: const AppBarTheme(
+-      backgroundColor: Colors.white,
+-      foregroundColor: Color(0xFF0F172A),
+-      elevation: 0,
+-      scrolledUnderElevation: 0,
+-      titleTextStyle: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
+-    ),
+-    cardTheme: CardThemeData(
+-      color: Colors.white,
+-      elevation: 0,
+-      margin: EdgeInsets.zero,
+-      shape: RoundedRectangleBorder(
+-        borderRadius: BorderRadius.circular(16),
+-        side: const BorderSide(color: Color(0xFFE2E8F0)),
+-      ),
+-    ),
+-    dividerTheme: const DividerThemeData(color: Color(0xFFF1F5F9), thickness: 1, space: 1),
+-    inputDecorationTheme: InputDecorationTheme(
+-      filled: true,
+-      fillColor: const Color(0xFFF8FAFC),
+-      border: border,
+-      enabledBorder: border,
+-      focusedBorder: border.copyWith(borderSide: const BorderSide(color: Color(0xFF4F46E5), width: 1.5)),
+-      errorBorder: border.copyWith(borderSide: const BorderSide(color: Color(0xFFBE123C))),
+-      focusedErrorBorder: border.copyWith(borderSide: const BorderSide(color: Color(0xFFBE123C), width: 1.5)),
+-      labelStyle: const TextStyle(color: Color(0xFF64748B)),
+-      hintStyle: const TextStyle(color: Color(0xFF94A3B8)),
+-      helperStyle: const TextStyle(color: Color(0xFF64748B)),
+-      helperMaxLines: 3,
+-      errorMaxLines: 3,
+-      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+-    ),
+-    filledButtonTheme: FilledButtonThemeData(
+-      style: FilledButton.styleFrom(
+-        minimumSize: const Size(48, 48),
+-        backgroundColor: const Color(0xFF4F46E5),
+-        foregroundColor: Colors.white,
+-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+-        textStyle: const TextStyle(fontWeight: FontWeight.w700),
+-      ),
+-    ),
+-    outlinedButtonTheme: OutlinedButtonThemeData(
+-      style: OutlinedButton.styleFrom(
+-        minimumSize: const Size(48, 48),
+-        foregroundColor: const Color(0xFF0F172A),
+-        side: const BorderSide(color: Color(0xFFE2E8F0)),
+-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+-      ),
+-    ),
+-    textButtonTheme: TextButtonThemeData(
+-        style: TextButton.styleFrom(foregroundColor: const Color(0xFF4F46E5))),
+-    navigationBarTheme: NavigationBarThemeData(
+-      backgroundColor: Colors.white,
+-      indicatorColor: const Color(0xFF4F46E5).withValues(alpha: 0.15),
+-      labelTextStyle: WidgetStateProperty.all(const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+-    ),
+-    snackBarTheme: const SnackBarThemeData(behavior: SnackBarBehavior.floating),
+-    dialogTheme: DialogThemeData(
+-      backgroundColor: Colors.white,
+-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+-    ),
+-    bottomSheetTheme: const BottomSheetThemeData(backgroundColor: Colors.white, showDragHandle: true),
+-    chipTheme: ChipThemeData(
+-      backgroundColor: const Color(0xFFF1F5F9),
+-      side: const BorderSide(color: Color(0xFFE2E8F0)),
+-      labelStyle: const TextStyle(color: Color(0xFF0F172A), fontSize: 13),
+-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+-    ),
+-    listTileTheme: const ListTileThemeData(iconColor: Color(0xFF64748B)),
+-    progressIndicatorTheme: const ProgressIndicatorThemeData(color: Color(0xFF4F46E5), linearTrackColor: Color(0xFFF1F5F9)),
+-    tabBarTheme: const TabBarThemeData(
+-      labelColor: Color(0xFF0F172A),
+-      unselectedLabelColor: Color(0xFF64748B),
+-      indicatorColor: Color(0xFF4F46E5),
+-      dividerColor: Color(0xFFF1F5F9),
+-    ),
+-    switchTheme: SwitchThemeData(
+-      thumbColor: WidgetStateProperty.resolveWith((s) => s.contains(WidgetState.selected) ? Colors.white : const Color(0xFF94A3B8)),
+-      trackColor: WidgetStateProperty.resolveWith((s) => s.contains(WidgetState.selected) ? const Color(0xFF4F46E5) : const Color(0xFFE2E8F0)),
+-    ),
+-  );
+-}
+diff --git a/mobile/lib/widgets/ui.dart b/mobile/lib/widgets/ui.dart
+index b05bc3a..1f2d1c4 100644
+--- a/mobile/lib/widgets/ui.dart
++++ b/mobile/lib/widgets/ui.dart
+@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
+ import 'package:provider/provider.dart';
+ 
+ import '../core/api.dart';
++import '../core/app_keys.dart';
+ import '../core/i18n.dart';
+ import '../core/repo.dart';
+ import 'theme.dart';
+@@ -11,22 +12,28 @@ import 'theme.dart';
+ /// A short message at the bottom. With [actionLabel] it offers one action
+ /// (usually "Undo") and stays a little longer.
+ void showToast(BuildContext context, String message, {bool error = false, String? actionLabel, VoidCallback? onAction}) {
+-  showToastOn(ScaffoldMessenger.maybeOf(context), message, error: error, actionLabel: actionLabel, onAction: onAction);
++  showToastOn(ScaffoldMessenger.maybeOf(context), message,
++      error: error, actionLabel: actionLabel, onAction: onAction, tokens: context.tt);
+ }
+ 
+ /// [showToast] for code without a BuildContext (notification actions).
+-void showToastOn(ScaffoldMessengerState? messenger, String message, {bool error = false, String? actionLabel, VoidCallback? onAction}) {
++/// [tokens] are the caller's theme; the messenger itself sits above the app theme.
++void showToastOn(ScaffoldMessengerState? messenger, String message,
++    {bool error = false, String? actionLabel, VoidCallback? onAction, TtTokens? tokens}) {
+   if (messenger == null) return;
+   final hasAction = actionLabel != null && onAction != null;
++  // Normal messages use the theme's high-contrast snack bar; errors are filled
++  // with the danger colour (its ink is the background colour, 6:1 or better).
++  final tt = tokens ?? rootNavigatorKey.currentContext?.tt ?? messenger.context.tt;
+   messenger
+     ..hideCurrentSnackBar()
+     ..showSnackBar(SnackBar(
+-      content: Text(message, style: const TextStyle(color: Colors.white)),
+-      backgroundColor: error ? const Color(0xFF9F1239) : const Color(0xFF065F46),
++      content: Text(message, style: TextStyle(color: tt.background, fontSize: 14)),
++      backgroundColor: error ? tt.danger : tt.textPrimary,
+       duration: Duration(seconds: error ? 5 : (hasAction ? 6 : 3)),
+       // Without this a snack bar with an action stays until tapped; an Undo should simply time out.
+       persist: false,
+-      action: hasAction ? SnackBarAction(label: actionLabel, textColor: Colors.white, onPressed: onAction) : null,
++      action: hasAction ? SnackBarAction(label: actionLabel, textColor: error ? tt.background : (tt.isDark ? TtColors.lPrimary : TtColors.dPrimary), onPressed: onAction) : null,
+     ));
+ }
+ 
+@@ -83,7 +90,7 @@ Future<bool> confirm(
+       actions: [
+         TextButton(onPressed: () => Navigator.pop(context, false), child: Text(tr('Cancel'))),
+         FilledButton(
+-          style: danger ? FilledButton.styleFrom(backgroundColor: const Color(0xFFBE123C)) : null,
++          style: danger ? FilledButton.styleFrom(backgroundColor: context.tt.danger, foregroundColor: context.tt.background) : null,
+           onPressed: () => Navigator.pop(context, true),
+           child: Text(confirmLabel),
+         ),
+@@ -260,22 +267,18 @@ class EmptyState extends StatelessWidget {
+ 
+   @override
+   Widget build(BuildContext context) {
+-    final scheme = Theme.of(context).colorScheme;
++    final tt = context.tt;
+     return Container(
+       width: double.infinity,
+-      padding: const EdgeInsets.all(24),
+-      decoration: BoxDecoration(
+-        border: Border.all(color: scheme.outline),
+-        borderRadius: BorderRadius.circular(16),
+-      ),
++      padding: const EdgeInsets.fromLTRB(16, 32, 16, 24),
+       child: Column(
+         children: [
+-          Icon(icon, size: 36, color: scheme.outlineVariant),
+-          const SizedBox(height: 10),
+-          Text(title, textAlign: TextAlign.center, style: const TextStyle(fontWeight: FontWeight.w700)),
++          Icon(icon, size: 36, color: tt.textTertiary),
++          const SizedBox(height: 12),
++          Text(title, textAlign: TextAlign.center, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+           if (message != null) ...[
+             const SizedBox(height: 4),
+-            Text(message!, textAlign: TextAlign.center, style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 13)),
++            Text(message!, textAlign: TextAlign.center, style: TextStyle(color: tt.textSecondary, fontSize: 14, height: 1.5)),
+           ],
+           if (action != null) ...[const SizedBox(height: 14), action!],
+         ],
+@@ -295,7 +298,7 @@ class SectionTitle extends StatelessWidget {
+   Widget build(BuildContext context) {
+     final scheme = Theme.of(context).colorScheme;
+     return Padding(
+-      padding: const EdgeInsets.only(top: 8, bottom: 10),
++      padding: const EdgeInsets.only(top: 8, bottom: 12),
+       child: Row(
+         crossAxisAlignment: CrossAxisAlignment.center,
+         children: [
+@@ -304,7 +307,7 @@ class SectionTitle extends StatelessWidget {
+             child: Column(
+               crossAxisAlignment: CrossAxisAlignment.start,
+               children: [
+-                Text(title, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
++                Text(title, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+                 if (subtitle != null) Text(subtitle!, style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 13)),
+               ],
+             ),
+@@ -316,6 +319,18 @@ class SectionTitle extends StatelessWidget {
+   }
+ }
+ 
++/// The tonal container behind an accent: the token container for success,
++/// warning, danger and primary, a light tint of anything else.
++Color _container(BuildContext context, Color accent) {
++  final tt = context.tt;
++  if (accent == AppColors.success || accent == AppColors.chartEarned) return tt.successContainer;
++  if (accent == AppColors.warning) return tt.warningContainer;
++  if (accent == AppColors.danger) return tt.dangerContainer;
++  if (accent == AppColors.primary || accent == AppColors.primarySoft) return tt.primaryContainer;
++  if (accent == AppColors.muted || accent == AppColors.faint) return tt.cardRaised;
++  return accent.withValues(alpha: 0.14);
++}
++
+ /// A small rounded label: status, counts, categories.
+ class Pill extends StatelessWidget {
+   const Pill(this.label, {super.key, this.color = AppColors.muted, this.icon});
+@@ -327,11 +342,10 @@ class Pill extends StatelessWidget {
+   Widget build(BuildContext context) {
+     final ink = tone(context, color);
+     return Container(
+-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
++      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+       decoration: BoxDecoration(
+-        color: color.withValues(alpha: 0.14),
+-        border: Border.all(color: color.withValues(alpha: 0.35)),
+-        borderRadius: BorderRadius.circular(20),
++        color: _container(context, color),
++        borderRadius: BorderRadius.circular(8),
+       ),
+       child: Row(
+         mainAxisSize: MainAxisSize.min,
+@@ -359,8 +373,7 @@ class Banner2 extends StatelessWidget {
+       width: double.infinity,
+       padding: const EdgeInsets.all(12),
+       decoration: BoxDecoration(
+-        color: color.withValues(alpha: 0.10),
+-        border: Border.all(color: color.withValues(alpha: 0.35)),
++        color: _container(context, color),
+         borderRadius: BorderRadius.circular(12),
+       ),
+       child: Row(
+@@ -368,7 +381,7 @@ class Banner2 extends StatelessWidget {
+         children: [
+           Icon(icon, size: 18, color: ink),
+           const SizedBox(width: 10),
+-          Expanded(child: Text(message, style: TextStyle(color: ink, fontSize: 13, height: 1.35))),
++          Expanded(child: Text(message, style: TextStyle(color: ink, fontSize: 14, height: 1.45))),
+           if (action != null) action!,
+         ],
+       ),
+@@ -388,17 +401,21 @@ class AppCard extends StatelessWidget {
+ 
+   @override
+   Widget build(BuildContext context) {
+-    final scheme = Theme.of(context).colorScheme;
++    final tt = context.tt;
++    // No outlines: cards stand on their fill (and one soft shadow in the light
++    // theme). A [borderColor] is only for cards that must call attention.
+     final shape = RoundedRectangleBorder(
+       borderRadius: BorderRadius.circular(16),
+-      // Hairline borders: cards are told apart by their fill, not by heavy outlines.
+-      side: BorderSide(color: borderColor ?? scheme.outline.withValues(alpha: 0.45)),
++      side: borderColor == null ? BorderSide.none : BorderSide(color: borderColor!),
+     );
+-    return Material(
+-      color: scheme.surface,
+-      shape: shape,
+-      clipBehavior: Clip.antiAlias,
+-      child: InkWell(onTap: onTap, onLongPress: onLongPress, child: Padding(padding: padding, child: child)),
++    return DecoratedBox(
++      decoration: BoxDecoration(borderRadius: BorderRadius.circular(16), boxShadow: tt.cardShadow),
++      child: Material(
++        color: tt.card,
++        shape: shape,
++        clipBehavior: Clip.antiAlias,
++        child: InkWell(onTap: onTap, onLongPress: onLongPress, child: Padding(padding: padding, child: child)),
++      ),
+     );
+   }
+ }
+@@ -432,7 +449,11 @@ class _BusyButtonState extends State<BusyButton> {
+   @override
+   Widget build(BuildContext context) {
+     final child = _busy
+-        ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
++        ? SizedBox(
++            width: 18,
++            height: 18,
++            child: CircularProgressIndicator(strokeWidth: 2, color: widget.outlined ? context.tt.primary : context.tt.onPrimary),
++          )
+         : Row(
+             mainAxisSize: MainAxisSize.min,
+             children: [
+@@ -520,14 +541,14 @@ class FlatGroup extends StatelessWidget {
+   Widget build(BuildContext context) {
+     final scheme = Theme.of(context).colorScheme;
+     final block = Material(
+-      color: scheme.surface,
+-      borderRadius: BorderRadius.circular(14),
++      color: context.tt.card,
++      borderRadius: BorderRadius.circular(16),
+       clipBehavior: Clip.antiAlias,
+       child: Column(
+         crossAxisAlignment: CrossAxisAlignment.stretch,
+         children: [
+           for (var i = 0; i < children.length; i++) ...[
+-            if (i > 0) Divider(height: 1, indent: 16, color: scheme.outline.withValues(alpha: 0.7)),
++            if (i > 0) Divider(height: 1, indent: 16, color: scheme.outline),
+             children[i],
+           ],
+         ],
+@@ -540,7 +561,7 @@ class FlatGroup extends StatelessWidget {
+         Padding(
+           padding: const EdgeInsets.fromLTRB(4, 0, 4, 6),
+           child: Text(title!.toUpperCase(),
+-              style: TextStyle(fontSize: 12, letterSpacing: 0.8, fontWeight: FontWeight.w700, color: scheme.onSurfaceVariant)),
++              style: TextStyle(fontSize: 12, letterSpacing: 0.72, fontWeight: FontWeight.w700, color: context.tt.textTertiary)),
+         ),
+         block,
+       ],
+diff --git a/mobile/pubspec.yaml b/mobile/pubspec.yaml
+index 54a685a..9d497f6 100644
+--- a/mobile/pubspec.yaml
++++ b/mobile/pubspec.yaml
+@@ -86,22 +86,26 @@ flutter:
+   # For details regarding adding assets from package dependencies, see
+   # https://flutter.dev/to/asset-from-package
+ 
+-  # To add custom fonts to your application, add a fonts section here,
+-  # in this "flutter" section. Each entry in this list should have a
+-  # "family" key with the font family name, and a "fonts" key with a
+-  # list giving the asset and other descriptors for the font. For
+-  # example:
+-  # fonts:
+-  #   - family: Schyler
+-  #     fonts:
+-  #       - asset: fonts/Schyler-Regular.ttf
+-  #       - asset: fonts/Schyler-Italic.ttf
+-  #         style: italic
+-  #   - family: Trajan Pro
+-  #     fonts:
+-  #       - asset: fonts/TrajanPro.ttf
+-  #       - asset: fonts/TrajanPro_Bold.ttf
+-  #         weight: 700
+-  #
+-  # For details regarding fonts from package dependencies,
+-  # see https://flutter.dev/to/font-from-package
++  # Calm redesign type: Hanken Grotesk for Latin text, Hind Siliguri for Bangla
++  # (used automatically as the fallback). Both under the SIL Open Font License
++  # (assets/fonts/OFL-*.txt). Hanken Grotesk is cut from the variable font into
++  # static weights because Flutter does not map FontWeight to a variable axis.
++  fonts:
++    - family: HankenGrotesk
++      fonts:
++        - asset: assets/fonts/HankenGrotesk-Regular.ttf
++        - asset: assets/fonts/HankenGrotesk-Medium.ttf
++          weight: 500
++        - asset: assets/fonts/HankenGrotesk-SemiBold.ttf
++          weight: 600
++        - asset: assets/fonts/HankenGrotesk-Bold.ttf
++          weight: 700
++    - family: HindSiliguri
++      fonts:
++        - asset: assets/fonts/HindSiliguri-Regular.ttf
++        - asset: assets/fonts/HindSiliguri-Medium.ttf
++          weight: 500
++        - asset: assets/fonts/HindSiliguri-SemiBold.ttf
++          weight: 600
++        - asset: assets/fonts/HindSiliguri-Bold.ttf
++          weight: 700
+diff --git a/mobile/test/ux_round3_test.dart b/mobile/test/ux_round3_test.dart
+index 64ff8c8..4768814 100644
+--- a/mobile/test/ux_round3_test.dart
++++ b/mobile/test/ux_round3_test.dart
+@@ -126,8 +126,8 @@ void main() {
+       expect(whenLabel(DateTime(2026, 10, 11, 9, 15), _now), 'Tomorrow 9:15 AM');
+       expect(whenLabel(DateTime(2026, 10, 14, 18), _now), 'Wed 6:00 PM');
+       setAppLanguage('bn');
+-      expect(whenLabel(DateTime(2026, 10, 11, 9, 15), _now), 'আগামীকাল ৯:১৫ AM');
+-      expect(whenLabel(DateTime(2026, 10, 14, 18), _now), 'বুধ ৬:০০ PM');
++      expect(whenLabel(DateTime(2026, 10, 11, 9, 15), _now), 'আগামীকাল সকাল ৯:১৫');
++      expect(whenLabel(DateTime(2026, 10, 14, 18), _now), 'বুধ সন্ধ্যা ৬:০০');
+     });
+   });
+ 
+diff --git a/mobile/test/week_plan_test.dart b/mobile/test/week_plan_test.dart
+new file mode 100644
+index 0000000..500120a
+--- /dev/null
++++ b/mobile/test/week_plan_test.dart
+@@ -0,0 +1,81 @@
++// The "This week" section: grouping, today, the next class and what is over.
++import 'package:flutter_test/flutter_test.dart';
++import 'package:tuitiontrack/core/format.dart';
++import 'package:tuitiontrack/core/i18n.dart';
++import 'package:tuitiontrack/core/week_plan.dart';
++
++// Thursday 15 October 2026, 5:00 PM.
++final _thu5pm = DateTime(2026, 10, 15, 17);
++
++Map<String, dynamic> _tuition(String id, List<(String, String, String)> slots) => {
++      'id': id,
++      'title': id,
++      'routine': [
++        for (final (day, start, end) in slots) {'day': day, 'start_time': start, if (end.isNotEmpty) 'end_time': end},
++      ],
++    };
++
++void main() {
++  tearDown(() => setAppLanguage('en'));
++
++  test('groups by day, Saturday first, sorted by time', () {
++    final plan = buildWeekPlan([
++      _tuition('a', [('Thursday', '20:00', '21:00'), ('saturday', '09:00', '')]),
++      _tuition('b', [('Thursday', '08:00', '09:30'), ('FRI', '18:00', '19:30')]),
++    ], _thu5pm);
++    expect(plan.today, 'Thursday');
++    expect(plan.total, 4);
++    expect(plan.byDay['Thursday']!.map((c) => c.start), ['08:00', '20:00']);
++    expect(plan.byDay['Saturday']!.single.tuition['id'], 'a');
++    expect(plan.byDay['Friday']!.single.start, '18:00');
++  });
++
++  test('earlier days and finished classes today are past; the next one is marked', () {
++    final plan = buildWeekPlan([
++      _tuition('a', [('Saturday', '09:00', ''), ('Thursday', '08:00', '09:30'), ('Thursday', '16:30', '17:30'), ('Thursday', '20:00', '')]),
++    ], _thu5pm);
++    final today = plan.byDay['Thursday']!;
++    expect(plan.byDay['Saturday']!.single.past, isTrue);
++    expect(today.map((c) => c.past), [true, false, false]);
++    // A class going on right now (16:30–17:30) is the next one, not the 20:00.
++    expect(today.map((c) => c.isNext), [false, true, false]);
++    expect(plan.next?.start, '16:30');
++  });
++
++  test('the next class can be on a later day', () {
++    final plan = buildWeekPlan([
++      _tuition('a', [('Thursday', '08:00', '09:00'), ('Friday', '09:00', '')]),
++    ], _thu5pm);
++    expect(plan.next?.day, 'Friday');
++  });
++
++  test('today and upcoming by default; the whole week on request', () {
++    final plan = buildWeekPlan([
++      _tuition('a', [('Saturday', '09:00', ''), ('Tuesday', '15:00', ''), ('Thursday', '18:00', ''), ('Friday', '09:00', '')]),
++    ], _thu5pm);
++    expect(plan.daysToShow(whole: false), ['Thursday', 'Friday']);
++    expect(plan.daysToShow(whole: true), ['Saturday', 'Tuesday', 'Thursday', 'Friday']);
++    expect(plan.pastDaysWithClasses, ['Saturday', 'Tuesday']);
++    expect(plan.pastDayClasses, 2);
++    expect(plan.isBusy, isFalse);
++  });
++
++  test('15 classes or more is a busy week; no classes is empty', () {
++    final busy = buildWeekPlan([
++      for (var i = 0; i < 15; i++) _tuition('t$i', [('Sunday', '${10 + i % 8}:00', '')]),
++    ], _thu5pm);
++    expect(busy.isBusy, isTrue);
++    expect(buildWeekPlan([_tuition('a', [])], _thu5pm).isEmpty, isTrue);
++  });
++
++  test('Bangla times say the part of the day', () {
++    expect(to12h('18:00'), '6:00 PM');
++    setAppLanguage('bn');
++    expect(to12h('18:00'), 'সন্ধ্যা ৬:০০');
++    expect(to12h('19:30'), 'রাত ৭:৩০');
++    expect(to12h('09:00'), 'সকাল ৯:০০');
++    expect(to12h('13:15'), 'দুপুর ১:১৫');
++    expect(to12h('16:00'), 'বিকাল ৪:০০');
++    expect(to12h('05:00'), 'ভোর ৫:০০');
++  });
++}

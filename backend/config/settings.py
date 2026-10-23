@@ -114,6 +114,8 @@ INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
+    # Compresses API answers (lists shrink 5-10x on mobile data); sign-in answers are left alone.
+    'config.middleware.ApiGZipMiddleware',
     # Serves the admin's CSS/JS in production without a separate web server.
     'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',

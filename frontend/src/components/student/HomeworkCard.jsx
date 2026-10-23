@@ -195,14 +195,7 @@ export default function HomeworkCard({ homework, isTutor = false, onUpdated }) {
                     {homework.source_label}
                   </div>
                 )}
-                <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-1">
-                  <span className="text-[11px] text-indigo-300 font-medium">
-                    {homework.tutor_display_name}
-                  </span>
-                  {homework.tuition_title && (
-                    <span className="text-[11px] text-slate-500">· {homework.tuition_title}</span>
-                  )}
-                </div>
+                {/* No tuition name for students; the tutor is already the page they are on. */}
               </div>
             </div>
 

@@ -11,6 +11,7 @@ import '../screens/common/account_screen.dart';
 import '../screens/common/payments_screen.dart';
 import '../screens/student/connect_screen.dart';
 import 'theme.dart';
+import 'tt_logo.dart';
 import 'ui.dart';
 
 /// Change this to the official Facebook page. Used by the drawer's follow link.
@@ -131,15 +132,9 @@ class AppDrawer extends StatelessWidget {
               child: ListView(
                 padding: const EdgeInsets.fromLTRB(20, 24, 20, 8),
                 children: [
-                  Container(
-                    width: 44,
-                    height: 44,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(color: tt.primaryContainer, borderRadius: BorderRadius.circular(14)),
-                    child: Icon(Icons.school_outlined, size: 24, color: tt.onPrimaryContainer),
-                  ),
-                  const SizedBox(height: 16),
-                  Text(tr('TuitionTrack'), style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700, letterSpacing: -0.4, color: tt.textPrimary)),
+                  const Align(alignment: Alignment.centerLeft, child: TtLogo(size: 48)),
+                  const SizedBox(height: 14),
+                  const TtWordmark(size: 24, center: false),
                   const SizedBox(height: 2),
                   Text(
                     '$name · ${session.isTutor ? tr('Tutor') : tr('Student')}',

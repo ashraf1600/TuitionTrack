@@ -8,6 +8,7 @@ import '../core/app_keys.dart';
 import '../core/i18n.dart';
 import '../core/repo.dart';
 import 'theme.dart';
+import 'tt_logo.dart';
 
 /// A short message at the bottom. With [actionLabel] it offers one action
 /// (usually "Undo") and stays a little longer.
@@ -207,6 +208,8 @@ class LoaderState<T> extends State<Loader<T>> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   if (_slow) ...[
+                    const Center(child: TtLoader(size: 64)),
+                    const SizedBox(height: 10),
                     Text(
                       tr('Connecting to the server…\nIt can take up to a minute to wake up.'),
                       textAlign: TextAlign.center,
@@ -273,8 +276,14 @@ class EmptyState extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(16, 32, 16, 24),
       child: Column(
         children: [
-          Icon(icon, size: 36, color: tt.textTertiary),
-          const SizedBox(height: 12),
+          // The icon on a soft tinted disc, like the logo's tile: calmer than a bare grey icon.
+          Container(
+            width: 72,
+            height: 72,
+            decoration: BoxDecoration(color: tt.primaryContainer, shape: BoxShape.circle),
+            child: Icon(icon, size: 34, color: tt.onPrimaryContainer),
+          ),
+          const SizedBox(height: 14),
           Text(title, textAlign: TextAlign.center, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
           if (message != null) ...[
             const SizedBox(height: 4),
@@ -390,8 +399,11 @@ class Banner2 extends StatelessWidget {
 }
 
 class AppCard extends StatelessWidget {
-  const AppCard({super.key, required this.child, this.padding = const EdgeInsets.all(16), this.onTap, this.onLongPress, this.borderColor});
+  const AppCard({super.key, required this.child, this.padding = const EdgeInsets.all(16), this.onTap, this.onLongPress, this.borderColor, this.accent});
   final Widget child;
+
+  /// A thin coloured band along the top, e.g. a tuition's own colour.
+  final Color? accent;
   final EdgeInsets padding;
   final VoidCallback? onTap;
 
@@ -414,7 +426,17 @@ class AppCard extends StatelessWidget {
         color: tt.card,
         shape: shape,
         clipBehavior: Clip.antiAlias,
-        child: InkWell(onTap: onTap, onLongPress: onLongPress, child: Padding(padding: padding, child: child)),
+        child: InkWell(
+          onTap: onTap,
+          onLongPress: onLongPress,
+          child: accent == null
+              ? Padding(padding: padding, child: child)
+              : Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [Container(height: 4, color: accent), Padding(padding: padding, child: child)],
+                ),
+        ),
       ),
     );
   }

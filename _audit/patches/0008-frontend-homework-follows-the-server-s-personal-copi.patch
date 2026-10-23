@@ -1,0 +1,290 @@
+From 9ea7541f3a4d1311ca5d36c8b276375522582530 Mon Sep 17 00:00:00 2001
+From: "Claude (audit)" <noreply@anthropic.com>
+Date: Sun, 11 Oct 2026 00:16:41 +0600
+Subject: [PATCH 08/14] frontend: homework follows the server's personal copies
+ and atomic split
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_011d4mgSxngjRmAXosGe4ry4
+
+- Submitting a shared group task returns the student's own copy (new id); the
+  list now replaces the row that was submitted.
+- 'Split per student' is one server call instead of N creates + a delete that
+  could half-fail.
+- Homework list shows a load error with retry instead of a toast and an empty list.
+- Relative times come from a ticking clock (useNow).
+---
+ .../src/components/student/HomeworkCard.jsx   | 16 ++--
+ .../components/student/TutorWorkspaceView.jsx | 17 ++--
+ .../src/components/tutor/HomeworkManager.jsx  | 90 +++++++++----------
+ 3 files changed, 59 insertions(+), 64 deletions(-)
+
+diff --git a/frontend/src/components/student/HomeworkCard.jsx b/frontend/src/components/student/HomeworkCard.jsx
+index 6b37abc..eee7143 100644
+--- a/frontend/src/components/student/HomeworkCard.jsx
++++ b/frontend/src/components/student/HomeworkCard.jsx
+@@ -1,7 +1,7 @@
+-import React, { useState, useEffect, useRef, useCallback } from 'react';
++import React, { useState, useEffect } from 'react';
+ import {
+-  Clock, CheckCircle2, AlertTriangle, ExternalLink, Send, Loader2,
+-  BookOpen, X, Bell, ChevronDown, ChevronUp,
++  Clock, CheckCircle2, ExternalLink, Send, Loader2,
++  BookOpen, X, Bell, ChevronDown, ChevronUp
+ } from 'lucide-react';
+ import { api } from '../../api/client';
+ import { notify } from '../../utils/toast';
+@@ -142,9 +142,9 @@ export default function HomeworkCard({ homework, isTutor = false, onUpdated }) {
+     try {
+       const res = await api.submitHomework(homework.id, submitUrl.trim());
+       notify.success('Submission recorded!');
+-      onUpdated?.(res.homework);
++      onUpdated?.(res.homework, homework.id);
+     } catch (err) {
+-      notify(`Submission failed: ${err.message}`);
++      notify.error(`Submission failed: ${err.message}`);
+     } finally {
+       setSubmitting(false);
+     }
+@@ -156,9 +156,9 @@ export default function HomeworkCard({ homework, isTutor = false, onUpdated }) {
+     try {
+       const res = await api.markHomeworkDone(homework.id, feedbackInput.trim());
+       notify.success('Homework marked as done!');
+-      onUpdated?.(res.homework);
++      onUpdated?.(res.homework, homework.id);
+     } catch (err) {
+-      notify(`Error: ${err.message}`);
++      notify.error(`Error: ${err.message}`);
+     } finally {
+       setMarkingDone(false);
+     }
+@@ -233,7 +233,7 @@ export default function HomeworkCard({ homework, isTutor = false, onUpdated }) {
+             <Clock className="w-3 h-3" />
+             Due: {new Date(homework.due_date).toLocaleString(undefined, {
+               weekday: 'short', month: 'short', day: 'numeric',
+-              hour: 'numeric', minute: '2-digit',
++              hour: 'numeric', minute: '2-digit'
+             })}
+           </div>
+ 
+diff --git a/frontend/src/components/student/TutorWorkspaceView.jsx b/frontend/src/components/student/TutorWorkspaceView.jsx
+index b3472de..4f61c1d 100644
+--- a/frontend/src/components/student/TutorWorkspaceView.jsx
++++ b/frontend/src/components/student/TutorWorkspaceView.jsx
+@@ -1,13 +1,14 @@
+ import React, { useState, useEffect, useCallback } from 'react';
+ import {
+   ArrowLeft, GraduationCap, Calendar, BookOpen, Clock,
+-  Loader2, RefreshCw, AlertCircle, CheckCircle2, Layers,
+-  FileText, Award, HelpCircle, Check, Timer
++  Loader2, RefreshCw, AlertCircle, Layers,
++  FileText, Award, Check
+ } from 'lucide-react';
+ import { api, getMediaUrl } from '../../api/client';
+ import StudentCycleProgress from './StudentCycleProgress';
+ import HomeworkCard from './HomeworkCard';
+ import ExamCard from './ExamCard';
++import { useNow } from '../../hooks/useNow';
+ 
+ const TABS = [
+   { key: 'routine', label: '1. Class Routine', shortLabel: 'Class Routine', icon: Clock },
+@@ -63,6 +64,7 @@ export default function TutorWorkspaceView({
+   const [weeklyRoutine, setWeeklyRoutine] = useState([]);
+   const [taskFilter, setTaskFilter] = useState('all'); // 'all' | 'homework' | 'assignments' | 'exams'
+   const [selectedBatchId, setSelectedBatchId] = useState(null);
++  const now = useNow(60_000);
+ 
+   const load = useCallback(async () => {
+     setLoading(true);
+@@ -83,8 +85,11 @@ export default function TutorWorkspaceView({
+     load();
+   }, [load]);
+ 
+-  const handleHomeworkUpdate = (updated) => {
+-    setHomework((prev) => prev.map((h) => (h.id === updated.id ? updated : h)));
++  // On a shared group task the server answers with the student's own copy (a new id),
++  // so the row is replaced by the id that was submitted, not the one that came back.
++  const handleHomeworkUpdate = (updated, submittedId = updated?.id) => {
++    if (!updated) return;
++    setHomework((prev) => prev.map((h) => (h.id === submittedId ? updated : h)));
+   };
+ 
+   if (loading && !data) {
+@@ -152,8 +157,8 @@ export default function TutorWorkspaceView({
+   const assignments = tutorExams.filter((e) => e.category === 'ASSIGNMENT');
+   const examsOnly = tutorExams.filter((e) => e.category !== 'ASSIGNMENT');
+ 
+-  const pendingHomework = homework.filter((h) => !h.is_evaluated && new Date(h.due_date) > new Date());
+-  const dueSoonHomework = pendingHomework.filter((h) => new Date(h.due_date).getTime() - Date.now() <= 86_400_000);
++  const pendingHomework = homework.filter((h) => !h.is_evaluated && new Date(h.due_date).getTime() > now);
++  const dueSoonHomework = pendingHomework.filter((h) => new Date(h.due_date).getTime() - now <= 86_400_000);
+   const totalTasksCount = homework.length + tutorExams.length;
+ 
+   // Pending first (nearest deadline on top), then evaluated — nothing pending gets buried.
+diff --git a/frontend/src/components/tutor/HomeworkManager.jsx b/frontend/src/components/tutor/HomeworkManager.jsx
+index f998597..c93f919 100644
+--- a/frontend/src/components/tutor/HomeworkManager.jsx
++++ b/frontend/src/components/tutor/HomeworkManager.jsx
+@@ -1,15 +1,18 @@
+-import React, { useState, useEffect } from 'react';
++import React, { useCallback, useEffect, useState } from 'react';
+ import {
+   BookOpen, Plus, Clock, CheckCircle2, AlertTriangle, ExternalLink,
+-  Trash2, MessageSquare, Loader2, RefreshCw, X, Calendar, User, Users,
+-  Check, ChevronRight
++  Trash2, Loader2, RefreshCw, X, Calendar, User, Users,
++  Check
+ } from 'lucide-react';
+ import { api } from '../../api/client';
+ import { notify } from '../../utils/toast';
+ import { confirmAction } from '../common/ConfirmDialog';
++import { ErrorState } from '../common/States';
++import { useNow } from '../../hooks/useNow';
+ 
+ export default function HomeworkManager({ tuitions = [], students = [] }) {
+   const [homeworkList, setHomeworkList] = useState([]);
++  const now = useNow(60_000);
+   const [loading, setLoading] = useState(true);
+   const [filter, setFilter] = useState('all'); // 'all' | 'pending' | 'evaluated'
+   const [createModalOpen, setCreateModalOpen] = useState(false);
+@@ -17,22 +20,29 @@ export default function HomeworkManager({ tuitions = [], students = [] }) {
+   const [feedbackText, setFeedbackText] = useState('');
+   const [submittingEval, setSubmittingEval] = useState(false);
+ 
+-  const loadHomework = async () => {
++  const [loadError, setLoadError] = useState('');
++
++  // State is only set once the answer is in, so this is safe to start from an effect.
++  const fetchHomework = useCallback(async () => {
+     try {
+-      setLoading(true);
+       const data = await api.getHomework();
+       setHomeworkList(Array.isArray(data) ? data : data?.results || []);
++      setLoadError('');
+     } catch (err) {
+-      console.error('Failed to load homework:', err);
+-      notify.error('Could not load homework assignments.');
++      setLoadError(err.message || 'Could not load homework assignments.');
+     } finally {
+       setLoading(false);
+     }
++  }, []);
++
++  const loadHomework = () => {
++    setLoading(true);
++    return fetchHomework();
+   };
+ 
+   useEffect(() => {
+-    loadHomework();
+-  }, []);
++    fetchHomework();
++  }, [fetchHomework]);
+ 
+   const handleDelete = async (id) => {
+     const ok = await confirmAction({
+@@ -72,40 +82,20 @@ export default function HomeworkManager({ tuitions = [], students = [] }) {
+ 
+   const handleSplitGroup = async (hw) => {
+     const tuition = tuitions.find((t) => String(t.id) === String(hw.tuition_id));
+-    const roster = (tuition?.enrollments || [])
+-      .filter((e) => e.is_active !== false)
+-      .map((e) => ({
+-        id: String(e.student_id ?? e.student ?? e.id ?? ''),
+-        name: e.student_name || e.full_name || e.username || 'Student',
+-      }))
+-      .filter((s) => s.id);
+-    if (roster.length === 0) {
+-      notify.error('No enrolled students found in this group to split across.');
+-      return;
+-    }
++    const memberCount = (tuition?.enrollments || []).filter((e) => e.is_active !== false).length;
+     const ok = await confirmAction({
+       title: 'Split into per-student copies?',
+-      message: `"${hw.title}" becomes ${roster.length} individual rows (one per student) so you can review and mark each done separately. The shared row is removed.`,
+-      confirmLabel: `Split (${roster.length})`,
++      message: `"${hw.title}" becomes one row per enrolled student${memberCount ? ` (${memberCount})` : ''} so you can review and mark each done separately. Work already handed in is kept. The shared row is removed.`,
++      confirmLabel: memberCount ? `Split (${memberCount})` : 'Split',
+     });
+     if (!ok) return;
+     try {
+-      const base = {
+-        title: hw.title,
+-        description: hw.description || '',
+-        due_date: hw.due_date,
+-        source_label: hw.source_label || '',
+-      };
+-      const results = await Promise.allSettled(roster.map((s) => api.createHomework({ ...base, student: s.id })));
+-      const created = results.filter((r) => r.status === 'fulfilled').map((r) => r.value);
+-      if (created.length === 0) throw new Error('Could not create individual copies.');
+-      await api.deleteHomework(hw.id);
+-      setHomeworkList((prev) => [...created, ...prev.filter((h) => h.id !== hw.id)]);
+-      notify.success(
+-        created.length === roster.length
+-          ? `Split into ${created.length} individual copies.`
+-          : `Split into ${created.length} of ${roster.length} copies; the shared row was removed.`
+-      );
++      // One server step: either every copy is made and the shared row goes, or nothing changes.
++      const res = await api.splitHomework(hw.id);
++      const created = res.homework || [];
++      const createdIds = new Set(created.map((h) => h.id));
++      setHomeworkList((prev) => [...created, ...prev.filter((h) => h.id !== hw.id && !createdIds.has(h.id))]);
++      notify.success(res.message || `Split into ${created.length} individual copies.`);
+     } catch (err) {
+       notify.error(err.message || 'Failed to split homework.');
+     }
+@@ -178,6 +168,10 @@ export default function HomeworkManager({ tuitions = [], students = [] }) {
+       </div>
+ 
+       {/* Homework List */}
++      {loadError && !loading && (
++        <ErrorState message={loadError} onRetry={loadHomework} />
++      )}
++
+       {loading ? (
+         <div className="flex items-center justify-center py-16">
+           <Loader2 className="w-8 h-8 text-indigo-400 animate-spin" />
+@@ -195,7 +189,7 @@ export default function HomeworkManager({ tuitions = [], students = [] }) {
+       ) : (
+         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+           {filtered.map((hw) => {
+-            const isDuePassed = new Date(hw.due_date) < new Date();
++            const isDuePassed = new Date(hw.due_date).getTime() < now;
+             return (
+               <div
+                 key={hw.id}
+@@ -420,7 +414,13 @@ function CreateHomeworkModal({ tuitions, students, onClose, onCreated }) {
+   const [targetType, setTargetType] = useState('tuition'); // 'tuition' | 'student'
+   const [targetId, setTargetId] = useState(tuitions[0]?.id || '');
+   const [perStudent, setPerStudent] = useState(true); // fan out one copy per student
+-  const [dueDate, setDueDate] = useState('');
++  // Defaults to tomorrow 6:00 PM (local time, as a datetime-local value).
++  const [dueDate, setDueDate] = useState(() => {
++    const tmrw = new Date();
++    tmrw.setDate(tmrw.getDate() + 1);
++    tmrw.setHours(18, 0, 0, 0);
++    return new Date(tmrw.getTime() - tmrw.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
++  });
+   const [submitting, setSubmitting] = useState(false);
+   const [error, setError] = useState('');
+ 
+@@ -434,16 +434,6 @@ function CreateHomeworkModal({ tuitions, students, onClose, onCreated }) {
+     .filter((s) => s.id);
+   const showFanOut = targetType === 'tuition' && groupRoster.length > 0;
+ 
+-  // Default to tomorrow 6:00 PM
+-  useEffect(() => {
+-    const tmrw = new Date();
+-    tmrw.setDate(tmrw.getDate() + 1);
+-    tmrw.setHours(18, 0, 0, 0);
+-    const localIso = new Date(tmrw.getTime() - tmrw.getTimezoneOffset() * 60000)
+-      .toISOString()
+-      .slice(0, 16);
+-    setDueDate(localIso);
+-  }, []);
+ 
+   const handleSubmit = async (e) => {
+     e.preventDefault();
+-- 
+2.43.0
+

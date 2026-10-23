@@ -11,6 +11,7 @@ import '../../core/session.dart';
 import '../../widgets/math_text.dart';
 import '../../widgets/media.dart';
 import '../../widgets/science_paste.dart';
+import '../../widgets/science_toolbar.dart';
 import '../../widgets/theme.dart';
 import '../../widgets/ui.dart';
 import 'mcq_builder.dart';
@@ -754,7 +755,8 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> {
             ? (noun == 'assignment' ? tr('Edit assignment') : tr('Edit exam'))
             : (noun == 'assignment' ? tr('New assignment') : tr('New exam'))),
       ),
-      body: ListView(
+      body: Column(children: [
+        Expanded(child: ListView(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
         children: [
           if (_error != null) ...[
@@ -778,7 +780,10 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> {
                   style: TextStyle(fontSize: 14, height: 1.5, color: context.tt.textSecondary)),
             ),
         ],
-      ),
+      )),
+        // Symbols, sub/superscripts and formula templates for whichever field is being typed in.
+        const ScienceToolbar(),
+      ]),
       bottomNavigationBar: Container(
         color: context.tt.surface,
         child: SafeArea(

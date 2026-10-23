@@ -10,6 +10,7 @@ import '../../core/repo.dart';
 import '../../core/session.dart';
 import '../../widgets/password_field.dart';
 import '../../widgets/theme.dart';
+import '../../widgets/tt_logo.dart';
 import '../../widgets/ui.dart';
 
 enum _Mode { signIn, tutor, student }
@@ -186,19 +187,9 @@ class _LoginScreenState extends State<LoginScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      Center(
-                        child: Container(
-                          width: 60,
-                          height: 60,
-                          alignment: Alignment.center,
-                          decoration: BoxDecoration(color: context.tt.primaryContainer, borderRadius: BorderRadius.circular(18)),
-                          child: Icon(Icons.school_outlined, size: 30, color: context.tt.onPrimaryContainer),
-                        ),
-                      ),
+                      const Center(child: TtLogo(size: 76, animate: true)),
                       gap16,
-                      Text(tr('TuitionTrack'),
-                          textAlign: TextAlign.center,
-                          style: TextStyle(fontSize: 30, height: 1.15, fontWeight: FontWeight.w700, letterSpacing: -0.6, color: context.tt.textPrimary)),
+                      const TtWordmark(size: 32),
                       const SizedBox(height: 4),
                       Text(
                         switch (_mode) {

@@ -1,0 +1,125 @@
+From c611ffb6b4da8376728c28ef0dbca85a58ccd505 Mon Sep 17 00:00:00 2001
+From: "Claude (audit)" <noreply@anthropic.com>
+Date: Sun, 11 Oct 2026 00:06:22 +0600
+Subject: [PATCH 04/14] auth: bulk session revoke, directory search by subject,
+ exception chaining
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_011d4mgSxngjRmAXosGe4ry4
+---
+ backend/apps/authentication/serializers.py | 14 +++++++-------
+ backend/apps/authentication/sessions.py    |  6 ++++--
+ backend/apps/authentication/tests.py       |  2 +-
+ backend/apps/authentication/views.py       |  3 ++-
+ 4 files changed, 14 insertions(+), 11 deletions(-)
+
+diff --git a/backend/apps/authentication/serializers.py b/backend/apps/authentication/serializers.py
+index e0c159a..6237d29 100644
+--- a/backend/apps/authentication/serializers.py
++++ b/backend/apps/authentication/serializers.py
+@@ -95,7 +95,7 @@ class TutorRegistrationSerializer(serializers.ModelSerializer):
+         try:
+             _validated_new_password(attrs['password'], candidate)
+         except serializers.ValidationError as exc:
+-            raise serializers.ValidationError({'password': exc.detail})
++            raise serializers.ValidationError({'password': exc.detail}) from exc
+         return attrs
+ 
+     def create(self, validated_data):
+@@ -182,7 +182,7 @@ class StudentSelfRegistrationSerializer(serializers.Serializer):
+         try:
+             uuid.UUID(str(value).strip())
+         except (ValueError, AttributeError):
+-            raise serializers.ValidationError('Invalid tutor ID format.')
++            raise serializers.ValidationError('Invalid tutor ID format.') from None
+         return str(value).strip()
+ 
+     def validate(self, attrs):
+@@ -192,7 +192,7 @@ class StudentSelfRegistrationSerializer(serializers.Serializer):
+         try:
+             _validated_new_password(attrs['password'], candidate)
+         except serializers.ValidationError as exc:
+-            raise serializers.ValidationError({'password': exc.detail})
++            raise serializers.ValidationError({'password': exc.detail}) from exc
+         return attrs
+ 
+     def create(self, validated_data):
+@@ -240,7 +240,7 @@ class StudentSelfRegistrationSerializer(serializers.Serializer):
+             selected_tutor=target_tutor,
+         )
+ 
+-        profile = StudentProfile.objects.create(
++        StudentProfile.objects.create(
+             user=user,
+             grade_level=grade_level,
+             institution=institution,
+@@ -348,7 +348,7 @@ def _validated_new_password(value, user):
+     try:
+         validate_password(value, user=user)
+     except DjangoValidationError as exc:
+-        raise serializers.ValidationError(list(exc.messages))
++        raise serializers.ValidationError(list(exc.messages)) from exc
+     return value
+ 
+ 
+@@ -387,12 +387,12 @@ class PasswordResetConfirmSerializer(serializers.Serializer):
+         try:
+             user = User.objects.get(pk=force_str(urlsafe_base64_decode(attrs['uid'])), is_active=True)
+         except Exception:
+-            raise invalid
++            raise invalid from None
+         if not default_token_generator.check_token(user, attrs['token']):
+             raise invalid
+         try:
+             _validated_new_password(attrs['new_password'], user)
+         except serializers.ValidationError as exc:
+-            raise serializers.ValidationError({'new_password': exc.detail})
++            raise serializers.ValidationError({'new_password': exc.detail}) from exc
+         attrs['user'] = user
+         return attrs
+diff --git a/backend/apps/authentication/sessions.py b/backend/apps/authentication/sessions.py
+index fb3cdb9..ba0b3c0 100644
+--- a/backend/apps/authentication/sessions.py
++++ b/backend/apps/authentication/sessions.py
+@@ -31,8 +31,10 @@ def revoke_refresh_token(raw_token):
+ 
+ def revoke_all_sessions(user):
+     """Sign the user out everywhere: every refresh token issued so far stops working."""
+-    for token in OutstandingToken.objects.filter(user=user, blacklistedtoken__isnull=True):
+-        BlacklistedToken.objects.get_or_create(token=token)
++    open_tokens = OutstandingToken.objects.filter(user=user, blacklistedtoken__isnull=True)
++    BlacklistedToken.objects.bulk_create(
++        [BlacklistedToken(token=token) for token in open_tokens], ignore_conflicts=True,
++    )
+ 
+ 
+ def resolve_login_name(identifier):
+diff --git a/backend/apps/authentication/tests.py b/backend/apps/authentication/tests.py
+index 315b293..c30231e 100644
+--- a/backend/apps/authentication/tests.py
++++ b/backend/apps/authentication/tests.py
+@@ -42,7 +42,7 @@ class AuthenticationTests(APITestCase):
+         self.assertIn('password_confirm', response.data)
+ 
+     def test_jwt_login_returns_custom_claims_and_user_profile(self):
+-        tutor = User.objects.create_user(
++        User.objects.create_user(
+             username='logintutor',
+             password='testpassword123',
+             email='logintutor@example.com',
+diff --git a/backend/apps/authentication/views.py b/backend/apps/authentication/views.py
+index 67cd712..3cebedc 100644
+--- a/backend/apps/authentication/views.py
++++ b/backend/apps/authentication/views.py
+@@ -229,6 +229,7 @@ class TutorDirectoryView(generics.ListAPIView):
+                 Q(first_name__icontains=search) |
+                 Q(last_name__icontains=search) |
+                 Q(username__icontains=search) |
+-                Q(tuitions__title__icontains=search)
++                Q(tuitions__title__icontains=search) |
++                Q(tuitions__subject__icontains=search)
+             ).distinct()
+         return qs.order_by('first_name', 'last_name')
+-- 
+2.43.0
+

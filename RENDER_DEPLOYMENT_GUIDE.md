@@ -1,6 +1,7 @@
 # TuitionTrack — Render Deployment Guide (DB + Backend + Frontend)
 
 This guide walks you through deploying the complete TuitionTrack stack directly on **[Render](https://render.com/)**:
+
 1. **Render PostgreSQL Database** (`tuitiontrack-db`)
 2. **Django REST API Backend** (`tuitiontrack-api`)
 3. **React + Vite Web Frontend** (`tuitiontrack-web`)
@@ -10,6 +11,7 @@ This guide walks you through deploying the complete TuitionTrack stack directly 
 ## 💡 About Render's PostgreSQL Database
 
 When hosting the database on Render:
+
 - **Private Networking**: The Django backend communicates with the PostgreSQL database over Render's high-speed private internal network (no external internet latency).
 - **Free Tier Note**: Render offers a **Free tier** for PostgreSQL databases (1 GB storage), which **expires after 30 days**. This is great for demos, testing, and evaluation.
 - **Permanent Database**: If you need the database to run permanently without the 30-day expiration, you can upgrade the database on Render to the **Starter plan** ($7/mo), OR you can point `DATABASE_URL` to a free permanent provider such as Neon — see *Moving the database to Neon* below.
@@ -18,9 +20,9 @@ When hosting the database on Render:
 
 ## 🗄️ Moving the database to Neon (free, does not expire)
 
-Render's free PostgreSQL stops after 30 days. [Neon](https://neon.com)'s free plan keeps the
-database for good: 1 GB per project and 100 compute-hours a month. It goes to sleep after
-5 minutes without queries and wakes on the next one (about a second), which suits a tuition app.
+* [ ] Render's free PostgreSQL stops after 30 days. [Neon](https://neon.com)'s free plan keeps the
+  database for good: 1 GB per project and 100 compute-hours a month. It goes to sleep after
+  5 minutes without queries and wakes on the next one (about a second), which suits a tuition app.
 
 1. **Deploy the current code to Render first**, so the old database has every migration.
 2. **Create the Neon database**: neon.com → New project → region **AWS Asia Pacific (Singapore)**
@@ -28,12 +30,14 @@ database for good: 1 GB per project and 100 compute-hours a month. It goes to sl
    **Connection pooling**, and copy the connection string (`postgresql://…-pooler…/neondb?sslmode=require…`).
 3. **Copy your data** on your PC (the TuitionTrack folder with its `venv`): double-click
    `scripts\move-database.bat` and paste
+
    - the **old** address: Render → `tuitiontrack-db` → Connections → *External Database URL*
    - the **new** address: the Neon string from step 2.
 
    The script only reads the old database, refuses a new database that already has users,
    keeps a copy of everything in `backups\`, and never writes the addresses to a file.
 4. **Switch the API over**: Render → `tuitiontrack-api` → Environment:
+
    - `DATABASE_URL` = the Neon string
    - `DB_CONN_MAX_AGE` = `0` (Neon's pooler makes new connections cheap, and idle connections
      would keep the Neon database awake and use up its free hours)
@@ -58,6 +62,7 @@ DSN to get an e-mail with the details whenever the server hits an error. Persona
 ## 🚀 Deployment Options
 
 You can deploy using either:
+
 1. **[Method 1: Render Blueprint (Recommended — 100% Automated)](#method-1-deploy-using-render-blueprint-recommended)**
 2. **[Method 2: Manual Dashboard Setup](#method-2-manual-dashboard-setup)**
 
@@ -68,6 +73,7 @@ You can deploy using either:
 TuitionTrack includes a pre-configured [render.yaml](file:///d:/Django_The_Last_Hope_Phitron/TuitionTrack/render.yaml) blueprint that automatically provisions the **PostgreSQL Database**, **Django Backend**, and **React Frontend** all together and connects them automatically.
 
 ### Step 1: Push your code to GitHub
+
 ```bash
 git add .
 git commit -m "Configure Render for DB, Frontend, and Backend"
@@ -75,6 +81,7 @@ git push origin <your-branch>
 ```
 
 ### Step 2: Launch the Blueprint in Render
+
 1. Log in to [dashboard.render.com](https://dashboard.render.com/).
 2. Click **New +** → **Blueprint**.
 3. Connect your **TuitionTrack** repository.
@@ -98,6 +105,7 @@ git push origin <your-branch>
 If you prefer to configure each component individually in the Render dashboard:
 
 ### Step 1: Create the Render PostgreSQL Database
+
 1. Click **New +** → **PostgreSQL**.
 2. Configure settings:
    - **Name**: `tuitiontrack-db`
@@ -111,6 +119,7 @@ If you prefer to configure each component individually in the Render dashboard:
 ---
 
 ### Step 2: Deploy Django Backend (`tuitiontrack-api`)
+
 1. Click **New +** → **Web Service**.
 2. Connect your GitHub repository.
 3. Configure the service settings:
@@ -123,21 +132,21 @@ If you prefer to configure each component individually in the Render dashboard:
    - **Plan**: `Free`
 4. Expand **Advanced** and set:
    - **Health Check Path**: `/api/v1/meta/`
-5. Under **Environment Variables**, add:
-   | Key | Value | Notes |
-   |---|---|---|
-   | `PYTHON_VERSION` | `3.11.11` | Ensures Python 3.11 runtime |
-   | `DEBUG` | `False` | Production mode |
-   | `SECRET_KEY` | *(Click "Generate")* | Or any secure 50+ character random string |
-   | `DATABASE_URL` | *(Paste Internal Database URL from Step 1)* | Render internal connection string |
-   | `DISPLAY_TIME_ZONE` | `Asia/Dhaka` | Timezone for notifications/exam schedule |
-   | `REFRESH_TOKEN_LIFETIME_DAYS` | `30` | JWT refresh duration |
-   | `FRONTEND_URL` | `https://tuitiontrack-web.onrender.com` | Deployed frontend origin |
+5. Under **Environment Variables**, add:| Key                             | Value                                         | Notes                                     |
+   | ------------------------------- | --------------------------------------------- | ----------------------------------------- |
+   | `PYTHON_VERSION`              | `3.11.11`                                   | Ensures Python 3.11 runtime               |
+   | `DEBUG`                       | `False`                                     | Production mode                           |
+   | `SECRET_KEY`                  | *(Click "Generate")*                        | Or any secure 50+ character random string |
+   | `DATABASE_URL`                | *(Paste Internal Database URL from Step 1)* | Render internal connection string         |
+   | `DISPLAY_TIME_ZONE`           | `Asia/Dhaka`                                | Timezone for notifications/exam schedule  |
+   | `REFRESH_TOKEN_LIFETIME_DAYS` | `30`                                        | JWT refresh duration                      |
+   | `FRONTEND_URL`                | `https://tuitiontrack-web.onrender.com`     | Deployed frontend origin                  |
 6. Click **Create Web Service**.
 
 ---
 
 ### Step 3: Deploy React Frontend (`tuitiontrack-web`)
+
 1. Click **New +** → **Static Site**.
 2. Connect your GitHub repository.
 3. Configure the settings:
@@ -149,11 +158,10 @@ If you prefer to configure each component individually in the Render dashboard:
    - **Type**: `Rewrite`
    - **Source**: `/*`
    - **Destination**: `/index.html`
-   *(Crucial: ensures React Router client-side routes like `/dashboard` work when refreshed)*
-5. Under **Environment Variables**, add:
-   | Key | Value |
-   |---|---|
-   | `NODE_VERSION` | `22.14.0` |
+     *(Crucial: ensures React Router client-side routes like `/dashboard` work when refreshed)*
+5. Under **Environment Variables**, add:| Key              | Value                                                                              |
+   | ---------------- | ---------------------------------------------------------------------------------- |
+   | `NODE_VERSION` | `22.14.0`                                                                        |
    | `VITE_API_URL` | `https://tuitiontrack-api.onrender.com` *(or your actual backend service URL)* |
 6. Click **Create Static Site**.
 
@@ -164,7 +172,9 @@ If you prefer to configure each component individually in the Render dashboard:
 On Render's Free tier, SSH terminal access is disabled. To create an admin account, choose any of these simple approaches:
 
 ### Option A: Set Environment Variables on `tuitiontrack-api`
+
 In your backend service's **Environment** tab on Render, add:
+
 - `DJANGO_SUPERUSER_USERNAME` = `admin`
 - `DJANGO_SUPERUSER_PASSWORD` = `YourSecurePassword123`
 - `DJANGO_SUPERUSER_EMAIL` = `admin@example.com`
@@ -172,7 +182,9 @@ In your backend service's **Environment** tab on Render, add:
 During the next deploy (or click **Manual Deploy** → **Deploy latest commit**), `build.sh` automatically runs `createsuperuser` without failing.
 
 ### Option B: Run locally against the remote database
+
 From your local PC terminal, you can run migrations or createsuperuser pointing to your live cloud database:
+
 ```bash
 cd backend
 python manage.py createsuperuser --database default
@@ -217,9 +229,9 @@ homework links also work offline; they are sent when the phone is back online.
 
 ## 🔍 Verification Checklist
 
-- [x] `backend/build.sh` runs `collectstatic`, `migrate`, and optional `createsuperuser`
-- [x] WhiteNoise configured for instant, zero-configuration admin static asset serving
-- [x] `render.yaml` configured with free plan, Singapore region, and health check
-- [x] `frontend/vite.config.js` and `frontend/src/api/client.js` support dynamic backend origins
-- [x] CORS and CSRF trust exactly `FRONTEND_URL` (plus anything listed in `CORS_ALLOWED_ORIGINS` / `CSRF_TRUSTED_ORIGINS`); other `*.onrender.com` sites are not trusted
-- [x] Client-side SPA routing rewrite (`/* -> /index.html`) configured
+- [X] `backend/build.sh` runs `collectstatic`, `migrate`, and optional `createsuperuser`
+- [X] WhiteNoise configured for instant, zero-configuration admin static asset serving
+- [X] `render.yaml` configured with free plan, Singapore region, and health check
+- [X] `frontend/vite.config.js` and `frontend/src/api/client.js` support dynamic backend origins
+- [X] CORS and CSRF trust exactly `FRONTEND_URL` (plus anything listed in `CORS_ALLOWED_ORIGINS` / `CSRF_TRUSTED_ORIGINS`); other `*.onrender.com` sites are not trusted
+- [X] Client-side SPA routing rewrite (`/* -> /index.html`) configured

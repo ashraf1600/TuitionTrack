@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../context/auth';
-import { GraduationCap, LogOut } from 'lucide-react';
+import { LogOut } from 'lucide-react';
+import Logo from './Logo';
 import NotificationBell from './NotificationBell';
 import AccountModal from './AccountModal';
 
@@ -21,9 +22,7 @@ export default function Navbar() {
               className="flex items-center gap-2.5 rounded-xl group focus-visible:ring-2 focus-visible:ring-indigo-500"
               aria-label="TuitionTrack home"
             >
-              <span className="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-600 to-indigo-500 flex items-center justify-center text-white shadow-md shadow-indigo-600/25 group-hover:scale-105 transition-transform duration-200">
-                <GraduationCap className="w-5 h-5" />
-              </span>
+              <Logo size={36} className="drop-shadow-md group-hover:scale-105 transition-transform duration-200" />
               <div className="flex flex-col">
                 <span className="text-lg font-extrabold tracking-tight text-white flex items-center gap-1">
                   Tuition<span className="text-indigo-400">Track</span>

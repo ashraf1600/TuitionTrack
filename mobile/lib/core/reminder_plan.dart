@@ -1,3 +1,4 @@
+import 'connect.dart' show tutorSirName;
 import 'format.dart';
 import 'i18n.dart';
 import 'json.dart';
@@ -101,10 +102,11 @@ List<PlannedReminder> studentReminders(List<Json> tuitions, List<Json> homework,
       out.add(PlannedReminder(
         key: 'class:$id:${start.toIso8601String()}',
         at: at,
-        title: tr('{title} at {time}', {'title': tuition.str('title'), 'time': to12h(_hhmm(start))}),
-        body: tuition.str('tutor_name').isEmpty
+        // "Class at 5:00 PM" / "Class with Ashraf Sir starts in 30 minutes." — never the tuition's own name.
+        title: tr('Class at {time}', {'time': to12h(_hhmm(start))}),
+        body: tutorSirName(tuition).isEmpty
             ? tr('Class starts in 30 minutes.')
-            : tr('Class with {tutor} starts in 30 minutes.', {'tutor': tuition.str('tutor_name')}),
+            : tr('Class with {tutor} starts in 30 minutes.', {'tutor': tutorSirName(tuition)}),
         payload: {'type': 'tutor', 'tutor': tuition.str('tutor_id')},
       ));
     }

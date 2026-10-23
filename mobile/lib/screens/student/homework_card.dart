@@ -17,7 +17,10 @@ import '../../widgets/ui.dart';
 /// Student sees Upload + "Pending Tutor Review"/"Marked as Done".
 /// Tutor sees "Mark as Done" (the only writer of is_evaluated=true).
 class HomeworkCard extends StatefulWidget {
-  const HomeworkCard({super.key, required this.hw, required this.isTutor, required this.onChanged, this.trailing});
+  const HomeworkCard({super.key, required this.hw, required this.isTutor, required this.onChanged, this.trailing, this.showTutor = false});
+
+  /// Student view: name the tutor ("Ashraf Sir") under the title.
+  final bool showTutor;
   final HomeworkItem hw;
   final bool isTutor;
   final Future<void> Function() onChanged;
@@ -30,6 +33,12 @@ class HomeworkCard extends StatefulWidget {
 }
 
 class _HomeworkCardState extends State<HomeworkCard> {
+  /// "Ashraf Sir · Class 4 · Oct 9": who set it (students only) and where it came from.
+  String _byline(HomeworkItem hw) => [
+        if (!widget.isTutor && widget.showTutor && hw.tutorDisplay.isNotEmpty) hw.tutorDisplay,
+        if (hw.sourceLabel.isNotEmpty) hw.sourceLabel,
+      ].join(' · ');
+
   Timer? _timer;
   Duration _left = Duration.zero;
   bool _alertShown = false;
@@ -169,10 +178,10 @@ class _HomeworkCardState extends State<HomeworkCard> {
               if (widget.trailing != null) widget.trailing!,
             ],
           ),
-          if (hw.sourceLabel.isNotEmpty)
+          if (_byline(hw).isNotEmpty)
             Padding(
               padding: const EdgeInsets.only(top: 4),
-              child: Text(hw.sourceLabel, style: TextStyle(fontSize: 13, color: tt.textSecondary)),
+              child: Text(_byline(hw), style: TextStyle(fontSize: 13, color: tt.textSecondary)),
             ),
           if (hw.description.isNotEmpty) ...[gap8, Text(hw.description, style: const TextStyle(fontSize: 14, height: 1.5))],
           gap12,

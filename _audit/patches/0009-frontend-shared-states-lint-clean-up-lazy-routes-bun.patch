@@ -1,0 +1,4031 @@
+From cf6e663e3a1756d5e876384837b027bf859ffb28 Mon Sep 17 00:00:00 2001
+From: "Claude (audit)" <noreply@anthropic.com>
+Date: Sun, 11 Oct 2026 00:16:41 +0600
+Subject: [PATCH 09/14] frontend: shared states, lint clean-up, lazy routes,
+ bundled KaTeX, tests
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_011d4mgSxngjRmAXosGe4ry4
+
+- New components/common/States.jsx (Spinner, LoadingState, EmptyState,
+  ErrorState) and hooks/useNow.js; semantic colour tokens (success, warning,
+  danger, info, surface) and a card radius in tailwind.config.js.
+- Tutor dashboard reports which sections failed to load with a retry, and
+  'refreshed' is only claimed when everything loaded. Student portal and the
+  tuition workspace no longer turn API failures into empty lists; the
+  workspace loads its five requests in parallel.
+- Tuition workspace 'Password' button did nothing (its modal was never
+  rendered); it opens the reset-password dialog now.
+- Exam taker: drafts survive full/blocked storage, auto-submit uses an effect
+  event instead of a ref written during render.
+- Leaderboard ignores a slow answer for a previously opened exam.
+- Exam form: editor created before use, tuition list keeps the chosen group,
+  hook dependencies complete.
+- Remove dead files (CycleGrid, SubmissionsGradingModal, TutorDetailView,
+  App.css), 80+ unused imports/variables, unused deps (clsx, tailwind-merge)
+  and the pinned rolldown binding (the lockfile has every platform).
+- Role pages are lazy-loaded (entry chunk 378 kB -> 42 kB); fixed vendor
+  chunking ('lucide-react' and '@tiptap/react' were lumped into vendor-react).
+- KaTeX CSS comes from the installed katex 0.19 (CDN copy was 0.16.9).
+- Vitest + jsdom with tests for the API client, MCQ parser/rules and dates.
+---
+ frontend/index.html                           |   4 +-
+ frontend/package-lock.json                    | 781 +++++++++++++++++-
+ frontend/package.json                         |  14 +-
+ frontend/src/App.css                          |   1 -
+ frontend/src/App.jsx                          |  31 +-
+ frontend/src/__tests__/dates.test.js          |  18 +
+ frontend/src/__tests__/mcq.test.js            |  77 ++
+ .../src/components/common/AccountModal.jsx    |   2 +-
+ .../src/components/common/ConfirmDialog.jsx   |  79 +-
+ .../src/components/common/ConfirmView.jsx     |  77 ++
+ .../components/common/LeaderboardModal.jsx    |  28 +-
+ .../src/components/common/MathRenderer.jsx    |   4 +-
+ frontend/src/components/common/Modal.jsx      |   9 +-
+ frontend/src/components/common/Navbar.jsx     |   2 +-
+ .../components/common/NotificationBell.jsx    |   2 +-
+ frontend/src/components/common/States.jsx     |  75 ++
+ frontend/src/components/student/ExamCard.jsx  |  17 +-
+ .../src/components/student/ExamTakerModal.jsx |  69 +-
+ .../components/student/TutorDetailView.jsx    |  10 -
+ .../src/components/tutor/AddStudentModal.jsx  |  18 +-
+ .../components/tutor/AssignStudentModal.jsx   |   4 +-
+ frontend/src/components/tutor/CycleGrid.jsx   | 501 -----------
+ .../components/tutor/ExamAuthoringModal.jsx   | 141 ++--
+ frontend/src/components/tutor/McqBuilder.jsx  |  26 +-
+ .../tutor/StudentCredentialsModal.jsx         |  10 +-
+ .../src/components/tutor/StudentRoster.jsx    |  17 +-
+ .../tutor/SubmissionsGradingModal.jsx         | 255 ------
+ .../components/tutor/TodayClassesPanel.jsx    |  12 +-
+ .../components/tutor/TuitionBatchesModal.jsx  |  34 +-
+ frontend/src/hooks/useNow.js                  |  15 +
+ frontend/src/pages/ForcePasswordChange.jsx    |   2 +-
+ frontend/src/pages/LoginPage.jsx              |   2 +-
+ frontend/src/pages/StudentPortal.jsx          |  26 +-
+ frontend/src/pages/TuitionWorkspace.jsx       | 112 +--
+ frontend/src/pages/TutorDashboard.jsx         |  85 +-
+ frontend/src/routes/ProtectedRoute.jsx        |   7 +-
+ frontend/src/utils/mcqRules.js                |  31 +
+ frontend/tailwind.config.js                   |  16 +
+ frontend/vite.config.js                       |  26 +-
+ frontend/vitest.config.js                     |   8 +
+ 40 files changed, 1415 insertions(+), 1233 deletions(-)
+ delete mode 100644 frontend/src/App.css
+ create mode 100644 frontend/src/__tests__/dates.test.js
+ create mode 100644 frontend/src/__tests__/mcq.test.js
+ create mode 100644 frontend/src/components/common/ConfirmView.jsx
+ create mode 100644 frontend/src/components/common/States.jsx
+ delete mode 100644 frontend/src/components/student/TutorDetailView.jsx
+ delete mode 100644 frontend/src/components/tutor/CycleGrid.jsx
+ delete mode 100644 frontend/src/components/tutor/SubmissionsGradingModal.jsx
+ create mode 100644 frontend/src/hooks/useNow.js
+ create mode 100644 frontend/src/utils/mcqRules.js
+ create mode 100644 frontend/vitest.config.js
+
+diff --git a/frontend/index.html b/frontend/index.html
+index 1a73043..632af21 100644
+--- a/frontend/index.html
++++ b/frontend/index.html
+@@ -12,10 +12,8 @@
+     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;600;700;800&display=swap" rel="stylesheet">
+ 
+-    <!-- KaTeX CSS for LaTeX Math Equations -->
+-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" integrity="sha384-n8MVd4RsNIU0tAv4ct0nTaAbDJwPJzDEaqSD1odI+WdtXRGWt2kTvGFasHpSy3SV" crossorigin="anonymous">
+   </head>
+-  <body class="bg-slate-900 text-slate-100 min-h-screen antialiased selection:bg-indigo-500 selection:text-white">
++  <body class="min-h-screen antialiased selection:bg-indigo-500 selection:text-white">
+     <div id="root"></div>
+     <script type="module" src="/src/main.jsx"></script>
+   </body>
+diff --git a/frontend/package-lock.json b/frontend/package-lock.json
+index ea10ae9..2acb74d 100644
+--- a/frontend/package-lock.json
++++ b/frontend/package-lock.json
+@@ -16,15 +16,13 @@
+         "@tiptap/pm": "^3.31.4",
+         "@tiptap/react": "^3.31.4",
+         "@tiptap/starter-kit": "^3.31.4",
+-        "clsx": "^2.1.1",
+         "dompurify": "^3.4.16",
+         "katex": "^0.19.0",
+         "lucide-react": "^1.52.0",
+         "react": "^19.2.8",
+         "react-dom": "^19.2.8",
+         "react-router-dom": "^7.18.4",
+-        "recharts": "^3.10.1",
+-        "tailwind-merge": "^3.7.0"
++        "recharts": "^3.10.1"
+       },
+       "devDependencies": {
+         "@tailwindcss/typography": "^0.5.20",
+@@ -32,10 +30,12 @@
+         "@types/react-dom": "^19.2.7",
+         "@vitejs/plugin-react": "^6.1.1",
+         "autoprefixer": "^10.6.1",
++        "jsdom": "^30.1.2",
+         "oxlint": "^1.81.0",
+         "postcss": "^8.5.29",
+         "tailwindcss": "^3.4.19",
+-        "vite": "^8.3.0"
++        "vite": "^8.3.0",
++        "vitest": "^5.0.3"
+       }
+     },
+     "node_modules/@alloc/quick-lru": {
+@@ -51,6 +51,210 @@
+         "url": "https://github.com/sponsors/sindresorhus"
+       }
+     },
++    "node_modules/@asamuzakjp/css-color": {
++      "version": "7.1.4",
++      "resolved": "https://registry.npmjs.org/@asamuzakjp/css-color/-/css-color-7.1.4.tgz",
++      "integrity": "sha512-KdNhWlAh2sbYB8Of0Yw84/a+LO/vsBOHJcIg8BpyXo2RGrFWVJvEMRviMON+ysQu0KpV7wxrWrq9jaX0P21GzA==",
++      "dev": true,
++      "license": "MIT",
++      "dependencies": {
++        "@csstools/css-calc": "^3.4.3",
++        "@csstools/css-color-parser": "^4.2.6",
++        "@csstools/css-parser-algorithms": "^4.0.2",
++        "@csstools/css-tokenizer": "^4.0.2",
++        "lru-cache": "^11.5.3"
++      },
++      "engines": {
++        "node": "^22.22.2 || ^24.15.0 || >=26.0.0"
++      }
++    },
++    "node_modules/@asamuzakjp/dom-selector": {
++      "version": "9.2.4",
++      "resolved": "https://registry.npmjs.org/@asamuzakjp/dom-selector/-/dom-selector-9.2.4.tgz",
++      "integrity": "sha512-YnVzxDxLaqL0t7Q4wfcgHZjg55Wm6y5EaO7Bhu3q9J7wq/8iw3PhsnWiOQhYekx4VexnbkgWpTT6n+QIV7kczw==",
++      "dev": true,
++      "license": "MIT",
++      "dependencies": {
++        "bidi-js": "^1.1.0",
++        "css-tree": "^3.2.1",
++        "is-potential-custom-element-name": "^1.0.1",
++        "lru-cache": "^11.5.3"
++      },
++      "engines": {
++        "node": "^22.22.2 || ^24.15.0 || >=26.0.0"
++      }
++    },
++    "node_modules/@bramus/specificity": {
++      "version": "2.4.3",
++      "resolved": "https://registry.npmjs.org/@bramus/specificity/-/specificity-2.4.3.tgz",
++      "integrity": "sha512-0GEz8qJWokkUVYQYRukmkSHIFNoBH8QTreeHrAFbvz1XFYc3Y+puhMs8PQ5x8GNugiC2l5jvDBXKLbBIByeSBw==",
++      "dev": true,
++      "license": "MIT",
++      "dependencies": {
++        "css-tree": "^3.2.1"
++      },
++      "bin": {
++        "specificity": "bin/cli.js"
++      }
++    },
++    "node_modules/@csstools/color-helpers": {
++      "version": "6.1.2",
++      "resolved": "https://registry.npmjs.org/@csstools/color-helpers/-/color-helpers-6.1.2.tgz",
++      "integrity": "sha512-grhRy3OKmniaAEKXMjua5z/EODX0MSqBGjunw8+j/3HQjOnahs2AGhvEOIYVUWcU6ScApbhLhVrQTX8XqrMrow==",
++      "dev": true,
++      "funding": [
++        {
++          "type": "github",
++          "url": "https://github.com/sponsors/csstools"
++        },
++        {
++          "type": "opencollective",
++          "url": "https://opencollective.com/csstools"
++        }
++      ],
++      "license": "MIT-0",
++      "engines": {
++        "node": ">=20.19.0"
++      }
++    },
++    "node_modules/@csstools/css-calc": {
++      "version": "3.4.3",
++      "resolved": "https://registry.npmjs.org/@csstools/css-calc/-/css-calc-3.4.3.tgz",
++      "integrity": "sha512-iex20d8CHVkyvg6B7UKV7uHnI2Bqo9g+EFfT9E0y+GvTvhZ/DwONJ+9aKb1dlqm0ZiGsL5RXjp0fCoJYnkeDjA==",
++      "dev": true,
++      "funding": [
++        {
++          "type": "github",
++          "url": "https://github.com/sponsors/csstools"
++        },
++        {
++          "type": "opencollective",
++          "url": "https://opencollective.com/csstools"
++        }
++      ],
++      "license": "MIT",
++      "engines": {
++        "node": ">=20.19.0"
++      },
++      "peerDependencies": {
++        "@csstools/css-parser-algorithms": "^4.0.2",
++        "@csstools/css-tokenizer": "^4.0.2"
++      }
++    },
++    "node_modules/@csstools/css-color-parser": {
++      "version": "4.2.6",
++      "resolved": "https://registry.npmjs.org/@csstools/css-color-parser/-/css-color-parser-4.2.6.tgz",
++      "integrity": "sha512-iiPQ3iRWwnJkeEn6RIu6SJPr7hYrLz6XZ9s/QZl+2/LI5KQVjpl2fdmDSZKuD4xP6GMmMPgHFFXg6k1Wkz0Trg==",
++      "dev": true,
++      "funding": [
++        {
++          "type": "github",
++          "url": "https://github.com/sponsors/csstools"
++        },
++        {
++          "type": "opencollective",
++          "url": "https://opencollective.com/csstools"
++        }
++      ],
++      "license": "MIT",
++      "dependencies": {
++        "@csstools/color-helpers": "^6.1.2",
++        "@csstools/css-calc": "^3.4.3"
++      },
++      "engines": {
++        "node": ">=20.19.0"
++      },
++      "peerDependencies": {
++        "@csstools/css-parser-algorithms": "^4.0.2",
++        "@csstools/css-tokenizer": "^4.0.2"
++      }
++    },
++    "node_modules/@csstools/css-parser-algorithms": {
++      "version": "4.0.2",
++      "resolved": "https://registry.npmjs.org/@csstools/css-parser-algorithms/-/css-parser-algorithms-4.0.2.tgz",
++      "integrity": "sha512-40cSKyMvK+tq4qz6Awrlye2WGuOKt3FwPgtGg6KTfbHOWNw+Rk1rzbAtZnZ6IBhsY491HLRnDXwoyBAijmmILA==",
++      "dev": true,
++      "funding": [
++        {
++          "type": "github",
++          "url": "https://github.com/sponsors/csstools"
++        },
++        {
++          "type": "opencollective",
++          "url": "https://opencollective.com/csstools"
++        }
++      ],
++      "license": "MIT",
++      "engines": {
++        "node": ">=20.19.0"
++      },
++      "peerDependencies": {
++        "@csstools/css-tokenizer": "^4.0.2"
++      }
++    },
++    "node_modules/@csstools/css-syntax-patches-for-csstree": {
++      "version": "1.1.15",
++      "resolved": "https://registry.npmjs.org/@csstools/css-syntax-patches-for-csstree/-/css-syntax-patches-for-csstree-1.1.15.tgz",
++      "integrity": "sha512-J0u7HkVl2nzSlhsiTOp4AmwcUQ3D+mGEEKfBy/7To5/y7F2OHwyLrXfrhR0SMgr4p5Lo+eaMVSeai24zUcBIxA==",
++      "dev": true,
++      "funding": [
++        {
++          "type": "github",
++          "url": "https://github.com/sponsors/csstools"
++        },
++        {
++          "type": "opencollective",
++          "url": "https://opencollective.com/csstools"
++        }
++      ],
++      "license": "MIT-0",
++      "peerDependencies": {
++        "css-tree": "^3.2.1"
++      },
++      "peerDependenciesMeta": {
++        "css-tree": {
++          "optional": true
++        }
++      }
++    },
++    "node_modules/@csstools/css-tokenizer": {
++      "version": "4.0.2",
++      "resolved": "https://registry.npmjs.org/@csstools/css-tokenizer/-/css-tokenizer-4.0.2.tgz",
++      "integrity": "sha512-OoKoR0f76dCY666JlcbhmVTs2drYj1GUXZTYTcbUgJjh9Nv41aFfZ21bPQTERm5+L5cBDo466NltB2lplS5GBw==",
++      "dev": true,
++      "funding": [
++        {
++          "type": "github",
++          "url": "https://github.com/sponsors/csstools"
++        },
++        {
++          "type": "opencollective",
++          "url": "https://opencollective.com/csstools"
++        }
++      ],
++      "license": "MIT",
++      "engines": {
++        "node": ">=20.19.0"
++      }
++    },
++    "node_modules/@exodus/bytes": {
++      "version": "1.16.0",
++      "resolved": "https://registry.npmjs.org/@exodus/bytes/-/bytes-1.16.0.tgz",
++      "integrity": "sha512-IcpW84uEn3N7ETtNZMlxKhfl6Pec8rUNGOTBtWbK1FKhJxIFAptZyVrvVRVBimAJxJCgc3PxepxkdWWG4DVzfA==",
++      "dev": true,
++      "license": "MIT",
++      "engines": {
++        "node": "^20.19.0 || ^22.12.0 || >=24.0.0"
++      },
++      "peerDependencies": {
++        "@noble/hashes": "^1.8.0 || ^2.0.0"
++      },
++      "peerDependenciesMeta": {
++        "@noble/hashes": {
++          "optional": true
++        }
++      }
++    },
+     "node_modules/@floating-ui/core": {
+       "version": "1.8.0",
+       "resolved": "https://registry.npmjs.org/@floating-ui/core/-/core-1.8.0.tgz",
+@@ -1298,6 +1502,17 @@
+         "url": "https://github.com/sponsors/ueberdosis"
+       }
+     },
++    "node_modules/@types/chai": {
++      "version": "5.2.3",
++      "resolved": "https://registry.npmjs.org/@types/chai/-/chai-5.2.3.tgz",
++      "integrity": "sha512-Mw558oeA9fFbv65/y4mHtXDs9bPnFMZAL/jxdPFUpOHHIXX91mcgEHbS5Lahr+pwZFR8A7GQleRWeI6cGFC2UA==",
++      "dev": true,
++      "license": "MIT",
++      "dependencies": {
++        "@types/deep-eql": "*",
++        "assertion-error": "^2.0.1"
++      }
++    },
+     "node_modules/@types/d3-array": {
+       "version": "3.2.2",
+       "resolved": "https://registry.npmjs.org/@types/d3-array/-/d3-array-3.2.2.tgz",
+@@ -1361,6 +1576,20 @@
+       "integrity": "sha512-Ps3T8E8dZDam6fUyNiMkekK3XUsaUEik+idO9/YjPtfj2qruF8tFBXS7XhtE4iIXBLxhmLjP3SXpLhVf21I9Lw==",
+       "license": "MIT"
+     },
++    "node_modules/@types/deep-eql": {
++      "version": "4.0.2",
++      "resolved": "https://registry.npmjs.org/@types/deep-eql/-/deep-eql-4.0.2.tgz",
++      "integrity": "sha512-c9h9dVVMigMPc4bwTvC5dxqtqJZwQPePsWjPlpSOnojbor6pGqdk541lfA7AqFQr5pB1BRdq0juY9db81BwyFw==",
++      "dev": true,
++      "license": "MIT"
++    },
++    "node_modules/@types/estree": {
++      "version": "1.0.9",
++      "resolved": "https://registry.npmjs.org/@types/estree/-/estree-1.0.9.tgz",
++      "integrity": "sha512-GhdPgy1el4/ImP05X05Uw4cw2/M93BCUmnEvWZNStlCzEKME4Fkk+YpoA5OiHNQmoS7Cafb8Xa3Pya8m1Qrzeg==",
++      "dev": true,
++      "license": "MIT"
++    },
+     "node_modules/@types/react": {
+       "version": "19.3.0",
+       "resolved": "https://registry.npmjs.org/@types/react/-/react-19.3.0.tgz",
+@@ -1422,6 +1651,44 @@
+         }
+       }
+     },
++    "node_modules/@vitest/mocker": {
++      "version": "5.0.3",
++      "resolved": "https://registry.npmjs.org/@vitest/mocker/-/mocker-5.0.3.tgz",
++      "integrity": "sha512-T8sWAIbkSyAjkwTcaEc3Iu0o9A27X1/kdXrizhZkGuSKScRQtRzclfAMpOTcGdXCsqxeWlpGy3XjqaW8CpLORg==",
++      "dev": true,
++      "license": "MIT",
++      "dependencies": {
++        "@jridgewell/trace-mapping": "0.3.31",
++        "@vitest/spy": "5.0.3",
++        "estree-walker": "^3.0.3",
++        "magic-string": "^1.2.3"
++      },
++      "funding": {
++        "url": "https://opencollective.com/vitest"
++      },
++      "peerDependencies": {
++        "msw": "^2.4.9",
++        "vite": "^6.0.0 || ^7.0.0 || ^8.0.0"
++      },
++      "peerDependenciesMeta": {
++        "msw": {
++          "optional": true
++        },
++        "vite": {
++          "optional": true
++        }
++      }
++    },
++    "node_modules/@vitest/spy": {
++      "version": "5.0.3",
++      "resolved": "https://registry.npmjs.org/@vitest/spy/-/spy-5.0.3.tgz",
++      "integrity": "sha512-XhFysQTB8AZ+P4gMi+Lpo99vg2AZi0qKpaB9yXQl37+CaMEAPO3iH/wGVnSyL5MPERiLezpqTVtrR6UZH5GCXg==",
++      "dev": true,
++      "license": "MIT",
++      "funding": {
++        "url": "https://opencollective.com/vitest"
++      }
++    },
+     "node_modules/any-promise": {
+       "version": "1.3.0",
+       "resolved": "https://registry.npmjs.org/any-promise/-/any-promise-1.3.0.tgz",
+@@ -1463,6 +1730,16 @@
+       "dev": true,
+       "license": "MIT"
+     },
++    "node_modules/assertion-error": {
++      "version": "2.0.1",
++      "resolved": "https://registry.npmjs.org/assertion-error/-/assertion-error-2.0.1.tgz",
++      "integrity": "sha512-Izi8RQcffqCeNVgFigKli1ssklIbpHnCYc6AknXGYoB6grJqyeby7jv12JUQgmTAnIDnbck1uxksT4dzN3PWBA==",
++      "dev": true,
++      "license": "MIT",
++      "engines": {
++        "node": ">=12"
++      }
++    },
+     "node_modules/autoprefixer": {
+       "version": "10.6.1",
+       "resolved": "https://registry.npmjs.org/autoprefixer/-/autoprefixer-10.6.1.tgz",
+@@ -1513,6 +1790,16 @@
+         "node": ">=6.0.0"
+       }
+     },
++    "node_modules/bidi-js": {
++      "version": "1.1.0",
++      "resolved": "https://registry.npmjs.org/bidi-js/-/bidi-js-1.1.0.tgz",
++      "integrity": "sha512-fX1Onk0tdVPC7obPWB5EbJ1z7NVhLq4m2xZLq2YXBkxzMXIGRpNMU88n0EPgWseKl12J7zXs7qrDxPK4sRs2fg==",
++      "dev": true,
++      "license": "MIT",
++      "dependencies": {
++        "require-from-string": "^2.0.2"
++      }
++    },
+     "node_modules/binary-extensions": {
+       "version": "2.3.0",
+       "resolved": "https://registry.npmjs.org/binary-extensions/-/binary-extensions-2.3.0.tgz",
+@@ -1604,6 +1891,16 @@
+       ],
+       "license": "CC-BY-4.0"
+     },
++    "node_modules/chai": {
++      "version": "6.3.0",
++      "resolved": "https://registry.npmjs.org/chai/-/chai-6.3.0.tgz",
++      "integrity": "sha512-XWAtwJ6OHO+tj0EKCs0Y2UamnyOxseZWltU4x2U2wh8g4AigdjwvtUjvLP2tqkA/avxHEtzxNaqGq/YGNwckKg==",
++      "dev": true,
++      "license": "MIT",
++      "engines": {
++        "node": ">=18"
++      }
++    },
+     "node_modules/chokidar": {
+       "version": "3.6.0",
+       "resolved": "https://registry.npmjs.org/chokidar/-/chokidar-3.6.0.tgz",
+@@ -1673,6 +1970,20 @@
+         "url": "https://opencollective.com/express"
+       }
+     },
++    "node_modules/css-tree": {
++      "version": "3.2.1",
++      "resolved": "https://registry.npmjs.org/css-tree/-/css-tree-3.2.1.tgz",
++      "integrity": "sha512-X7sjQzceUhu1u7Y/ylrRZFU2FS6LRiFVp6rKLPg23y3x3c3DOKAwuXGDp+PAGjh6CSnCjYeAul8pcT8bAl+lSA==",
++      "dev": true,
++      "license": "MIT",
++      "dependencies": {
++        "mdn-data": "2.27.1",
++        "source-map-js": "^1.2.1"
++      },
++      "engines": {
++        "node": "^10 || ^12.20.0 || ^14.13.0 || >=15.0.0"
++      }
++    },
+     "node_modules/cssesc": {
+       "version": "3.0.0",
+       "resolved": "https://registry.npmjs.org/cssesc/-/cssesc-3.0.0.tgz",
+@@ -1813,6 +2124,27 @@
+         "node": ">=12"
+       }
+     },
++    "node_modules/data-urls": {
++      "version": "8.0.0",
++      "resolved": "https://registry.npmjs.org/data-urls/-/data-urls-8.0.0.tgz",
++      "integrity": "sha512-JQUCCK+/CAGbGGx618PlFZMXH81Jtj7t73CHv9dd/zVWvxgGT2zLFRjnKb+Ng46GIwcy+f7f88qd4duqllK+WQ==",
++      "dev": true,
++      "license": "MIT",
++      "dependencies": {
++        "whatwg-mimetype": "^5.0.0",
++        "whatwg-url": "^17.1.2"
++      },
++      "engines": {
++        "node": "^22.14.0 || >=24.0.0"
++      }
++    },
++    "node_modules/decimal.js": {
++      "version": "10.6.0",
++      "resolved": "https://registry.npmjs.org/decimal.js/-/decimal.js-10.6.0.tgz",
++      "integrity": "sha512-YpgQiITW3JXGntzdUmyUR1V812Hn8T1YVXhCu+wO3OpS4eU9l4YdD3qjyiKdV6mvV29zapkMeD390UVEf2lkUg==",
++      "dev": true,
++      "license": "MIT"
++    },
+     "node_modules/decimal.js-light": {
+       "version": "2.5.1",
+       "resolved": "https://registry.npmjs.org/decimal.js-light/-/decimal.js-light-2.5.1.tgz",
+@@ -1859,6 +2191,19 @@
+       "dev": true,
+       "license": "ISC"
+     },
++    "node_modules/entities": {
++      "version": "8.1.0",
++      "resolved": "https://registry.npmjs.org/entities/-/entities-8.1.0.tgz",
++      "integrity": "sha512-kxL7msIffSuh9aaFAMD7rxAIuTRMAHMeBtgHW2yUdWw732ZNh4MehkF2gdjvtdmikkaIP9bFDDJOPlsvm7avrA==",
++      "dev": true,
++      "license": "BSD-2-Clause",
++      "engines": {
++        "node": ">=20.19.0"
++      },
++      "funding": {
++        "url": "https://github.com/fb55/entities?sponsor=1"
++      }
++    },
+     "node_modules/es-errors": {
+       "version": "1.3.0",
+       "resolved": "https://registry.npmjs.org/es-errors/-/es-errors-1.3.0.tgz",
+@@ -1869,6 +2214,13 @@
+         "node": ">= 0.4"
+       }
+     },
++    "node_modules/es-module-lexer": {
++      "version": "2.3.2",
++      "resolved": "https://registry.npmjs.org/es-module-lexer/-/es-module-lexer-2.3.2.tgz",
++      "integrity": "sha512-poHGpORABojJJucnV9KbOavETW8lBVnphkW77ER5/BQ5Fz7oXSoCNek7IH3vR5nRjdsEz926ibFYX8KtLQmdyw==",
++      "dev": true,
++      "license": "MIT"
++    },
+     "node_modules/es-toolkit": {
+       "version": "1.52.0",
+       "resolved": "https://registry.npmjs.org/es-toolkit/-/es-toolkit-1.52.0.tgz",
+@@ -1891,12 +2243,32 @@
+         "node": ">=6"
+       }
+     },
++    "node_modules/estree-walker": {
++      "version": "3.0.3",
++      "resolved": "https://registry.npmjs.org/estree-walker/-/estree-walker-3.0.3.tgz",
++      "integrity": "sha512-7RUKfXgSMMkzt6ZuXmqapOurLGPPfgj6l9uRZ7lRGolvk0y2yocc35LdcxKC5PQZdn2DMqioAQ2NoWcrTKmm6g==",
++      "dev": true,
++      "license": "MIT",
++      "dependencies": {
++        "@types/estree": "^1.0.0"
++      }
++    },
+     "node_modules/eventemitter3": {
+       "version": "5.0.4",
+       "resolved": "https://registry.npmjs.org/eventemitter3/-/eventemitter3-5.0.4.tgz",
+       "integrity": "sha512-mlsTRyGaPBjPedk6Bvw+aqbsXDtoAyAzm5MO7JgU+yVRyMQ5O8bD4Kcci7BS85f93veegeCPkL8R4GLClnjLFw==",
+       "license": "MIT"
+     },
++    "node_modules/expect-type": {
++      "version": "1.4.0",
++      "resolved": "https://registry.npmjs.org/expect-type/-/expect-type-1.4.0.tgz",
++      "integrity": "sha512-KfYbmpRm0VbLjEvVa9yGwCi9GI34xvi7A/HXYWQO65CSD2u3MczUJSuwXKFIxlGsgBQizV9q5J9NHj4VG0n+pA==",
++      "dev": true,
++      "license": "Apache-2.0",
++      "engines": {
++        "node": ">=12.0.0"
++      }
++    },
+     "node_modules/fast-equals": {
+       "version": "5.4.3",
+       "resolved": "https://registry.npmjs.org/fast-equals/-/fast-equals-5.4.3.tgz",
+@@ -2042,6 +2414,19 @@
+         "node": ">= 0.4"
+       }
+     },
++    "node_modules/html-encoding-sniffer": {
++      "version": "7.0.0",
++      "resolved": "https://registry.npmjs.org/html-encoding-sniffer/-/html-encoding-sniffer-7.0.0.tgz",
++      "integrity": "sha512-UikN5yr7xsCDAq87Or5or0PAlD3HJJOKVzM05az588WnpDJ4Ux7a2A53Qi6gofGg2/EtvF/H4hCi/TXfCW4Y6w==",
++      "dev": true,
++      "license": "MIT",
++      "dependencies": {
++        "@exodus/bytes": "^1.15.1"
++      },
++      "engines": {
++        "node": "^22.13.0 || >=24.0.0"
++      }
++    },
+     "node_modules/immer": {
+       "version": "11.1.21",
+       "resolved": "https://registry.npmjs.org/immer/-/immer-11.1.21.tgz",
+@@ -2123,6 +2508,13 @@
+         "node": ">=0.12.0"
+       }
+     },
++    "node_modules/is-potential-custom-element-name": {
++      "version": "1.0.1",
++      "resolved": "https://registry.npmjs.org/is-potential-custom-element-name/-/is-potential-custom-element-name-1.0.1.tgz",
++      "integrity": "sha512-bCYeRA2rVibKZd+s2625gGnGF/t7DSqDs4dP7CrLA1m7jKWz6pps0LpYLJN8Q64HtmPKJ1hrN3nzPNKFEKOUiQ==",
++      "dev": true,
++      "license": "MIT"
++    },
+     "node_modules/jiti": {
+       "version": "1.21.7",
+       "resolved": "https://registry.npmjs.org/jiti/-/jiti-1.21.7.tgz",
+@@ -2133,6 +2525,46 @@
+         "jiti": "bin/jiti.js"
+       }
+     },
++    "node_modules/jsdom": {
++      "version": "30.1.2",
++      "resolved": "https://registry.npmjs.org/jsdom/-/jsdom-30.1.2.tgz",
++      "integrity": "sha512-0FFE/jE1rppmVfUrJUgxqXjcwolZYIGtAgj1pTussMhNZxIxi7W/PvfWaMNroGi2B36X1IKHbexpZ9DhkoOPiQ==",
++      "dev": true,
++      "license": "MIT",
++      "dependencies": {
++        "@asamuzakjp/css-color": "^7.1.3",
++        "@asamuzakjp/dom-selector": "^9.2.4",
++        "@bramus/specificity": "^2.4.2",
++        "@csstools/css-syntax-patches-for-csstree": "^1.1.15",
++        "@exodus/bytes": "^1.16.0",
++        "css-tree": "^3.2.1",
++        "data-urls": "^8.0.0",
++        "decimal.js": "^10.6.0",
++        "html-encoding-sniffer": "^7.0.0",
++        "is-potential-custom-element-name": "^1.0.1",
++        "lru-cache": "^11.5.3",
++        "parse5": "^8.0.1",
++        "saxes": "^6.0.0",
++        "tough-cookie": "^6.0.2",
++        "undici": "^8.11.2",
++        "w3c-xmlserializer": "^6.0.0",
++        "webidl-conversions": "^8.0.1",
++        "whatwg-mimetype": "^5.0.0",
++        "whatwg-url": "^17.2.0",
++        "xml-name-validator": "^5.0.0"
++      },
++      "engines": {
++        "node": "^22.22.2 || ^24.15.0 || >=26.0.0"
++      },
++      "peerDependencies": {
++        "canvas": "^3.2.3"
++      },
++      "peerDependenciesMeta": {
++        "canvas": {
++          "optional": true
++        }
++      }
++    },
+     "node_modules/katex": {
+       "version": "0.19.0",
+       "resolved": "https://registry.npmjs.org/katex/-/katex-0.19.0.tgz",
+@@ -2436,6 +2868,16 @@
+       "integrity": "sha512-P8aEP5U/D1/IlTY2OeYsErdwh9bGuLE30NcXtKEjgdHcahveQoQwM2yZNsioQHsWFz0P7KKudisbrzCgR0sDHg==",
+       "license": "MIT"
+     },
++    "node_modules/lru-cache": {
++      "version": "11.5.3",
++      "resolved": "https://registry.npmjs.org/lru-cache/-/lru-cache-11.5.3.tgz",
++      "integrity": "sha512-U4N8FgzmWxc8k1VH8Kr6lQg18U7Fjvby6wXHVRX/ZZ7IwWbRMgrRbP0Wrb5q5NVinryp4SQampHKdvtecItxUg==",
++      "dev": true,
++      "license": "BlueOak-1.0.0",
++      "engines": {
++        "node": "20 || >=22"
++      }
++    },
+     "node_modules/lucide-react": {
+       "version": "1.52.0",
+       "resolved": "https://registry.npmjs.org/lucide-react/-/lucide-react-1.52.0.tgz",
+@@ -2451,6 +2893,23 @@
+         }
+       }
+     },
++    "node_modules/magic-string": {
++      "version": "1.4.3",
++      "resolved": "https://registry.npmjs.org/magic-string/-/magic-string-1.4.3.tgz",
++      "integrity": "sha512-z12OxmaPGE0F4xlpGdjuAUckipLpQlTAuAmyGhNoD7ODpYUzvDfvtxUbjM/jwznyP178oju/KDdyi220wNJ0RQ==",
++      "dev": true,
++      "license": "MIT",
++      "dependencies": {
++        "@jridgewell/sourcemap-codec": "^1.6.0"
++      }
++    },
++    "node_modules/mdn-data": {
++      "version": "2.27.1",
++      "resolved": "https://registry.npmjs.org/mdn-data/-/mdn-data-2.27.1.tgz",
++      "integrity": "sha512-9Yubnt3e8A0OKwxYSXyhLymGW4sCufcLG6VdiDdUGVkPhpqLxlvP5vl1983gQjJl3tqbrM731mjaZaP68AgosQ==",
++      "dev": true,
++      "license": "CC0-1.0"
++    },
+     "node_modules/merge2": {
+       "version": "1.4.1",
+       "resolved": "https://registry.npmjs.org/merge2/-/merge2-1.4.1.tgz",
+@@ -2559,6 +3018,20 @@
+         "node": ">= 6"
+       }
+     },
++    "node_modules/obug": {
++      "version": "2.2.1",
++      "resolved": "https://registry.npmjs.org/obug/-/obug-2.2.1.tgz",
++      "integrity": "sha512-XrsrhT5sybtKI6wakr2SPOlGZWWYbUXZ7a0jT8/QOeAPau+1X/bSegNe5YR75oJmEZQbKningirmGOEJCIk61Q==",
++      "dev": true,
++      "funding": [
++        "https://github.com/sponsors/sxzz",
++        "https://opencollective.com/debug"
++      ],
++      "license": "MIT",
++      "engines": {
++        "node": ">=12.20.0"
++      }
++    },
+     "node_modules/orderedmap": {
+       "version": "2.1.1",
+       "resolved": "https://registry.npmjs.org/orderedmap/-/orderedmap-2.1.1.tgz",
+@@ -2614,6 +3087,19 @@
+         }
+       }
+     },
++    "node_modules/parse5": {
++      "version": "8.0.1",
++      "resolved": "https://registry.npmjs.org/parse5/-/parse5-8.0.1.tgz",
++      "integrity": "sha512-z1e/HMG90obSGeidlli3hj7cbocou0/wa5HacvI3ASx34PecNjNQeaHNo5WIZpWofN9kgkqV1q5YvXe3F0FoPw==",
++      "dev": true,
++      "license": "MIT",
++      "dependencies": {
++        "entities": "^8.0.0"
++      },
++      "funding": {
++        "url": "https://github.com/inikulin/parse5?sponsor=1"
++      }
++    },
+     "node_modules/path-parse": {
+       "version": "1.0.7",
+       "resolved": "https://registry.npmjs.org/path-parse/-/path-parse-1.0.7.tgz",
+@@ -2967,6 +3453,16 @@
+         "prosemirror-transform": "^1.1.0"
+       }
+     },
++    "node_modules/punycode": {
++      "version": "2.3.1",
++      "resolved": "https://registry.npmjs.org/punycode/-/punycode-2.3.1.tgz",
++      "integrity": "sha512-vYt7UD1U9Wg6138shLtLOvdAu+8DsC/ilFtEVHcH+wydcSpNE20AfSOduf6MkRFahL5FY7X1oU7nKVZFtfq8Fg==",
++      "dev": true,
++      "license": "MIT",
++      "engines": {
++        "node": ">=6"
++      }
++    },
+     "node_modules/queue-microtask": {
+       "version": "1.2.3",
+       "resolved": "https://registry.npmjs.org/queue-microtask/-/queue-microtask-1.2.3.tgz",
+@@ -3155,6 +3651,16 @@
+         "redux": "^5.0.0"
+       }
+     },
++    "node_modules/require-from-string": {
++      "version": "2.0.2",
++      "resolved": "https://registry.npmjs.org/require-from-string/-/require-from-string-2.0.2.tgz",
++      "integrity": "sha512-Xf0nWe6RseziFMu+Ap9biiUbmplq6S9/p+7w7YXP/JBHhrUDDUhwa+vANyubuqfZWTveU//DYVGsDG7RKL/vEw==",
++      "dev": true,
++      "license": "MIT",
++      "engines": {
++        "node": ">=0.10.0"
++      }
++    },
+     "node_modules/reselect": {
+       "version": "5.2.0",
+       "resolved": "https://registry.npmjs.org/reselect/-/reselect-5.2.0.tgz",
+@@ -3258,6 +3764,19 @@
+         "queue-microtask": "^1.2.2"
+       }
+     },
++    "node_modules/saxes": {
++      "version": "6.0.0",
++      "resolved": "https://registry.npmjs.org/saxes/-/saxes-6.0.0.tgz",
++      "integrity": "sha512-xAg7SOnEhrm5zI3puOOKyy1OMcMlIJZYNJY7xLBwSze0UjhPLnWfj2GF2EpT0jmzaJKIWKHLsaSSajf35bcYnA==",
++      "dev": true,
++      "license": "ISC",
++      "dependencies": {
++        "xmlchars": "^2.2.0"
++      },
++      "engines": {
++        "node": ">=v12.22.7"
++      }
++    },
+     "node_modules/scheduler": {
+       "version": "0.28.0",
+       "resolved": "https://registry.npmjs.org/scheduler/-/scheduler-0.28.0.tgz",
+@@ -3280,6 +3799,13 @@
+         "node": ">=0.10.0"
+       }
+     },
++    "node_modules/std-env": {
++      "version": "4.3.0",
++      "resolved": "https://registry.npmjs.org/std-env/-/std-env-4.3.0.tgz",
++      "integrity": "sha512-OtU/EgQ1kIm5KwqQpBC6ZEMXrZRui11w8zgfTWp8cdO9B8OaPsbA8bTHO2P+HNo1VlUTGMVBwPhydu6poeXiag==",
++      "dev": true,
++      "license": "MIT"
++    },
+     "node_modules/sucrase": {
+       "version": "3.35.1",
+       "resolved": "https://registry.npmjs.org/sucrase/-/sucrase-3.35.1.tgz",
+@@ -3326,16 +3852,6 @@
+         "url": "https://github.com/sponsors/ljharb"
+       }
+     },
+-    "node_modules/tailwind-merge": {
+-      "version": "3.7.0",
+-      "resolved": "https://registry.npmjs.org/tailwind-merge/-/tailwind-merge-3.7.0.tgz",
+-      "integrity": "sha512-XPPUyAc+cvspz3lHTcR/QgPfW2A0lv/xQNIjX3HGhLR+Nq2lHaLq5MtTesHn8GUr3W3DguT2KT5x3NVgRtYwmA==",
+-      "license": "MIT",
+-      "funding": {
+-        "type": "github",
+-        "url": "https://github.com/sponsors/dcastil"
+-      }
+-    },
+     "node_modules/tailwindcss": {
+       "version": "3.4.19",
+       "resolved": "https://registry.npmjs.org/tailwindcss/-/tailwindcss-3.4.19.tgz",
+@@ -3417,6 +3933,26 @@
+       "integrity": "sha512-+FbBPE1o9QAYvviau/qC5SE3caw21q3xkvWKBtja5vgqOWIHHJ3ioaq1VPfn/Szqctz2bU/oYeKd9/z5BL+PVg==",
+       "license": "MIT"
+     },
++    "node_modules/tinybench": {
++      "version": "6.2.1",
++      "resolved": "https://registry.npmjs.org/tinybench/-/tinybench-6.2.1.tgz",
++      "integrity": "sha512-IAbQaPJIIdhVxi0mqy9lez1wEwje0UQf9F1vwtbelEG5Nbgn0nPOxCvU+mNeNS9gyJTAhrHp74CbUaSynQpZcQ==",
++      "dev": true,
++      "license": "MIT",
++      "engines": {
++        "node": ">=20.0.0"
++      }
++    },
++    "node_modules/tinyexec": {
++      "version": "1.3.1",
++      "resolved": "https://registry.npmjs.org/tinyexec/-/tinyexec-1.3.1.tgz",
++      "integrity": "sha512-GCvB3aoys96IuDFBMcTB46JOR6mdMtAToqwiW8JlWhsoh1mhHi/xn9ss/Dg7N555GiJyEt2qzoG/NHCwM6h1EA==",
++      "dev": true,
++      "license": "MIT",
++      "engines": {
++        "node": ">=18"
++      }
++    },
+     "node_modules/tinyglobby": {
+       "version": "0.2.17",
+       "resolved": "https://registry.npmjs.org/tinyglobby/-/tinyglobby-0.2.17.tgz",
+@@ -3434,6 +3970,26 @@
+         "url": "https://github.com/sponsors/SuperchupuDev"
+       }
+     },
++    "node_modules/tldts": {
++      "version": "7.4.18",
++      "resolved": "https://registry.npmjs.org/tldts/-/tldts-7.4.18.tgz",
++      "integrity": "sha512-somxA8xKAUzlAxl0TX/jMSYIbRNFIVGnI96pVGJPeMc5BsHmfVXn6mOJT6U++ELnl04eGfzpfcEuZe8WiASkXg==",
++      "dev": true,
++      "license": "MIT",
++      "dependencies": {
++        "tldts-core": "^7.4.18"
++      },
++      "bin": {
++        "tldts": "bin/cli.js"
++      }
++    },
++    "node_modules/tldts-core": {
++      "version": "7.4.18",
++      "resolved": "https://registry.npmjs.org/tldts-core/-/tldts-core-7.4.18.tgz",
++      "integrity": "sha512-KI2PKvCmvQI/xD6ypPqkU0i7oxNXR/O58RLRaHR4svsgVUQ2JE/XC8BtMbG6PSehD27I8sZJRcC1ASnCy6lp3g==",
++      "dev": true,
++      "license": "MIT"
++    },
+     "node_modules/to-regex-range": {
+       "version": "5.0.1",
+       "resolved": "https://registry.npmjs.org/to-regex-range/-/to-regex-range-5.0.1.tgz",
+@@ -3447,6 +4003,32 @@
+         "node": ">=8.0"
+       }
+     },
++    "node_modules/tough-cookie": {
++      "version": "6.0.2",
++      "resolved": "https://registry.npmjs.org/tough-cookie/-/tough-cookie-6.0.2.tgz",
++      "integrity": "sha512-exgYmnmL/sJpR3upZfXG5PoatXQii55xAiXGXzY+sROLZ/Y+SLcp9PgJNI9Vz37HpQ74WvDcLT8eqm+kV3FzrA==",
++      "dev": true,
++      "license": "BSD-3-Clause",
++      "dependencies": {
++        "tldts": "^7.0.5"
++      },
++      "engines": {
++        "node": ">=16"
++      }
++    },
++    "node_modules/tr46": {
++      "version": "7.0.0",
++      "resolved": "https://registry.npmjs.org/tr46/-/tr46-7.0.0.tgz",
++      "integrity": "sha512-BcDSDW+SIGWVOns1Zm6Yg91q9AEj7eaID0QDY9oIqJD1A8dscNwMcl9Sms2DeuWCNov1X0/oXanHGYQBSLwZsg==",
++      "dev": true,
++      "license": "MIT",
++      "dependencies": {
++        "punycode": "^2.3.1"
++      },
++      "engines": {
++        "node": "^22.14.0 || >=24.0.0"
++      }
++    },
+     "node_modules/ts-interface-checker": {
+       "version": "0.1.13",
+       "resolved": "https://registry.npmjs.org/ts-interface-checker/-/ts-interface-checker-0.1.13.tgz",
+@@ -3454,6 +4036,16 @@
+       "dev": true,
+       "license": "Apache-2.0"
+     },
++    "node_modules/undici": {
++      "version": "8.11.2",
++      "resolved": "https://registry.npmjs.org/undici/-/undici-8.11.2.tgz",
++      "integrity": "sha512-u4UB2/IrKdU6lFxumHmmo1a3fCQO5tzQllRorfoRS63txhrB7xTpSn1PftwC4qEHkOaqP95fCWW4lJzwErwzhQ==",
++      "dev": true,
++      "license": "MIT",
++      "engines": {
++        "node": ">=22.19.0"
++      }
++    },
+     "node_modules/update-browserslist-db": {
+       "version": "1.3.3",
+       "resolved": "https://registry.npmjs.org/update-browserslist-db/-/update-browserslist-db-1.3.3.tgz",
+@@ -3601,11 +4193,172 @@
+         }
+       }
+     },
++    "node_modules/vitest": {
++      "version": "5.0.3",
++      "resolved": "https://registry.npmjs.org/vitest/-/vitest-5.0.3.tgz",
++      "integrity": "sha512-xMw97S3rjdtj5dkVat7jCsqWBpvchs3RlpQctUqwJD0KkERk40vz2fJ77lDwW/Vzh/pk18eItYAzkodhSes3jQ==",
++      "dev": true,
++      "license": "MIT",
++      "dependencies": {
++        "@types/chai": "^5.2.2",
++        "@vitest/mocker": "5.0.3",
++        "chai": "^6.2.2",
++        "es-module-lexer": "^2.3.2",
++        "expect-type": "^1.4.0",
++        "magic-string": "^1.2.3",
++        "obug": "^2.1.4",
++        "picomatch": "^4.0.7",
++        "std-env": "^4.2.0",
++        "tinybench": "^6.1.4",
++        "tinyexec": "^1.3.0",
++        "tinyglobby": "^0.2.17",
++        "why-is-node-running": "3.2.1"
++      },
++      "bin": {
++        "vitest": "vitest.mjs"
++      },
++      "engines": {
++        "node": "^22.12.0 || ^24.0.0 || >=26.0.0"
++      },
++      "funding": {
++        "url": "https://opencollective.com/vitest"
++      },
++      "peerDependencies": {
++        "@edge-runtime/vm": "*",
++        "@opentelemetry/api": "^1.9.0",
++        "@types/node": "^22.0.0 || >=24.0.0",
++        "@vitest/browser-playwright": "5.0.3",
++        "@vitest/browser-preview": "5.0.3",
++        "@vitest/browser-webdriverio": "^5.0.0-beta.5 || >=5.0.0",
++        "@vitest/coverage-istanbul": "5.0.3",
++        "@vitest/coverage-v8": "5.0.3",
++        "@vitest/ui": "5.0.3",
++        "happy-dom": "*",
++        "jsdom": "*",
++        "vite": "^6.4.0 || ^7.0.0 || ^8.0.0"
++      },
++      "peerDependenciesMeta": {
++        "@edge-runtime/vm": {
++          "optional": true
++        },
++        "@opentelemetry/api": {
++          "optional": true
++        },
++        "@types/node": {
++          "optional": true
++        },
++        "@vitest/browser-playwright": {
++          "optional": true
++        },
++        "@vitest/browser-preview": {
++          "optional": true
++        },
++        "@vitest/browser-webdriverio": {
++          "optional": true
++        },
++        "@vitest/coverage-istanbul": {
++          "optional": true
++        },
++        "@vitest/coverage-v8": {
++          "optional": true
++        },
++        "@vitest/ui": {
++          "optional": true
++        },
++        "happy-dom": {
++          "optional": true
++        },
++        "jsdom": {
++          "optional": true
++        },
++        "vite": {
++          "optional": false
++        }
++      }
++    },
+     "node_modules/w3c-keyname": {
+       "version": "2.2.8",
+       "resolved": "https://registry.npmjs.org/w3c-keyname/-/w3c-keyname-2.2.8.tgz",
+       "integrity": "sha512-dpojBhNsCNN7T82Tm7k26A6G9ML3NkhDsnw9n/eoxSRlVBB4CEtIQ/KTCLI2Fwf3ataSXRhYFkQi3SlnFwPvPQ==",
+       "license": "MIT"
++    },
++    "node_modules/w3c-xmlserializer": {
++      "version": "6.0.0",
++      "resolved": "https://registry.npmjs.org/w3c-xmlserializer/-/w3c-xmlserializer-6.0.0.tgz",
++      "integrity": "sha512-4Nsy8K5Tr6SPDH9jhKJOHf7ChDrc1zufZTVSF7x72hwuEXBqxqk9G6cK+K2NRUtB3iELRJqjXb4JPDMBjMTl2Q==",
++      "dev": true,
++      "license": "MIT",
++      "dependencies": {
++        "xml-name-validator": "^5.0.0"
++      },
++      "engines": {
++        "node": "^22.22.2 || ^24.15.0 || >=26.0.0"
++      }
++    },
++    "node_modules/webidl-conversions": {
++      "version": "8.0.1",
++      "resolved": "https://registry.npmjs.org/webidl-conversions/-/webidl-conversions-8.0.1.tgz",
++      "integrity": "sha512-BMhLD/Sw+GbJC21C/UgyaZX41nPt8bUTg+jWyDeg7e7YN4xOM05YPSIXceACnXVtqyEw/LMClUQMtMZ+PGGpqQ==",
++      "dev": true,
++      "license": "BSD-2-Clause",
++      "engines": {
++        "node": ">=20"
++      }
++    },
++    "node_modules/whatwg-mimetype": {
++      "version": "5.0.0",
++      "resolved": "https://registry.npmjs.org/whatwg-mimetype/-/whatwg-mimetype-5.0.0.tgz",
++      "integrity": "sha512-sXcNcHOC51uPGF0P/D4NVtrkjSU2fNsm9iog4ZvZJsL3rjoDAzXZhkm2MWt1y+PUdggKAYVoMAIYcs78wJ51Cw==",
++      "dev": true,
++      "license": "MIT",
++      "engines": {
++        "node": ">=20"
++      }
++    },
++    "node_modules/whatwg-url": {
++      "version": "17.2.0",
++      "resolved": "https://registry.npmjs.org/whatwg-url/-/whatwg-url-17.2.0.tgz",
++      "integrity": "sha512-IhLIHNcBrzIixC5XXsbr4DxdjajyA5vQ5RwGZMtrUp+GbtE5Nrsge9QKau7jXrC0aTXLYGV0xiW7Tb4YS2aomw==",
++      "dev": true,
++      "license": "MIT",
++      "dependencies": {
++        "@exodus/bytes": "^1.16.0",
++        "tr46": "^7.0.0",
++        "webidl-conversions": "^8.0.1"
++      },
++      "engines": {
++        "node": "^22.14.0 || >=24.0.0"
++      }
++    },
++    "node_modules/why-is-node-running": {
++      "version": "3.2.1",
++      "resolved": "https://registry.npmjs.org/why-is-node-running/-/why-is-node-running-3.2.1.tgz",
++      "integrity": "sha512-Tb2FUhB4vUsGQlfSquQLYkApkuPAFQXGFzxWKHHumVz2dK+X1RUm/HnID4+TfIGYJ1kTcwOaCk/buYCEJr6YjQ==",
++      "dev": true,
++      "license": "MIT",
++      "bin": {
++        "why-is-node-running": "cli.js"
++      },
++      "engines": {
++        "node": ">=20.11"
++      }
++    },
++    "node_modules/xml-name-validator": {
++      "version": "5.0.0",
++      "resolved": "https://registry.npmjs.org/xml-name-validator/-/xml-name-validator-5.0.0.tgz",
++      "integrity": "sha512-EvGK8EJ3DhaHfbRlETOWAS5pO9MZITeauHKJyb8wyajUfQUenkIg2MvLDTZ4T/TgIcm3HU0TFBgWWboAZ30UHg==",
++      "dev": true,
++      "license": "Apache-2.0",
++      "engines": {
++        "node": ">=18"
++      }
++    },
++    "node_modules/xmlchars": {
++      "version": "2.2.0",
++      "resolved": "https://registry.npmjs.org/xmlchars/-/xmlchars-2.2.0.tgz",
++      "integrity": "sha512-JZnDKK8B0RCDw84FNdDAIpZK+JuJw+s7Lz8nksI7SIuU3UXJJslUthsi+uWBUYOwPFwW7W7PRLRfUKpxjtjFCw==",
++      "dev": true,
++      "license": "MIT"
+     }
+   }
+ }
+diff --git a/frontend/package.json b/frontend/package.json
+index b3a0b48..f98704f 100644
+--- a/frontend/package.json
++++ b/frontend/package.json
+@@ -7,7 +7,8 @@
+     "dev": "vite",
+     "build": "node --max-old-space-size=4096 ./node_modules/vite/bin/vite.js build",
+     "lint": "oxlint",
+-    "preview": "vite preview"
++    "preview": "vite preview",
++    "test": "vitest run"
+   },
+   "dependencies": {
+     "@tiptap/extension-image": "^3.31.4",
+@@ -18,15 +19,13 @@
+     "@tiptap/pm": "^3.31.4",
+     "@tiptap/react": "^3.31.4",
+     "@tiptap/starter-kit": "^3.31.4",
+-    "clsx": "^2.1.1",
+     "dompurify": "^3.4.16",
+     "katex": "^0.19.0",
+     "lucide-react": "^1.52.0",
+     "react": "^19.2.8",
+     "react-dom": "^19.2.8",
+     "react-router-dom": "^7.18.4",
+-    "recharts": "^3.10.1",
+-    "tailwind-merge": "^3.7.0"
++    "recharts": "^3.10.1"
+   },
+   "devDependencies": {
+     "@tailwindcss/typography": "^0.5.20",
+@@ -34,12 +33,11 @@
+     "@types/react-dom": "^19.2.7",
+     "@vitejs/plugin-react": "^6.1.1",
+     "autoprefixer": "^10.6.1",
++    "jsdom": "^30.1.2",
+     "oxlint": "^1.81.0",
+     "postcss": "^8.5.29",
+     "tailwindcss": "^3.4.19",
+-    "vite": "^8.3.0"
+-  },
+-  "optionalDependencies": {
+-    "@rolldown/binding-linux-x64-gnu": "1.2.12"
++    "vite": "^8.3.0",
++    "vitest": "^5.0.3"
+   }
+ }
+diff --git a/frontend/src/App.css b/frontend/src/App.css
+deleted file mode 100644
+index 10656f2..0000000
+--- a/frontend/src/App.css
++++ /dev/null
+@@ -1 +0,0 @@
+-/* TuitionTrack Custom Micro-Styles & Component Accents */
+diff --git a/frontend/src/App.jsx b/frontend/src/App.jsx
+index a698a9d..75dce54 100644
+--- a/frontend/src/App.jsx
++++ b/frontend/src/App.jsx
+@@ -1,24 +1,31 @@
+-import React from 'react';
++import React, { Suspense, lazy } from 'react';
+ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+-import { AuthProvider, useAuth } from './context/AuthContext';
++import { AuthProvider } from './context/AuthContext';
++import { useAuth } from './context/auth';
+ import { ProtectedRoute } from './routes/ProtectedRoute';
+ import LoginPage from './pages/LoginPage';
+-import TutorDashboard from './pages/TutorDashboard';
+-import StudentPortal from './pages/StudentPortal';
+-
+-import TuitionWorkspace from './pages/TuitionWorkspace';
+ import Toaster from './components/common/Toaster';
+ import ResetPasswordPage from './pages/ResetPasswordPage';
++import { Spinner } from './components/common/States';
++
++// Each role's pages load on demand: a student never downloads the tutor's exam editor.
++const TutorDashboard = lazy(() => import('./pages/TutorDashboard'));
++const StudentPortal = lazy(() => import('./pages/StudentPortal'));
++const TuitionWorkspace = lazy(() => import('./pages/TuitionWorkspace'));
++
++function FullPageSpinner() {
++  return (
++    <div className="min-h-screen bg-slate-950 flex items-center justify-center">
++      <Spinner className="w-10 h-10 border-4" />
++    </div>
++  );
++}
+ 
+ function RootRedirect() {
+   const { user, token, loading } = useAuth();
+ 
+   if (loading) {
+-    return (
+-      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+-        <div className="w-10 h-10 rounded-full border-4 border-indigo-500/20 border-t-indigo-500 animate-spin" />
+-      </div>
+-    );
++    return <FullPageSpinner />;
+   }
+ 
+   if (!token || !user) {
+@@ -32,6 +39,7 @@ export default function App() {
+   return (
+     <AuthProvider>
+       <BrowserRouter>
++        <Suspense fallback={<FullPageSpinner />}>
+         <Routes>
+           <Route path="/" element={<RootRedirect />} />
+           <Route path="/login" element={<LoginPage />} />
+@@ -62,6 +70,7 @@ export default function App() {
+           />
+           <Route path="*" element={<Navigate to="/" replace />} />
+         </Routes>
++        </Suspense>
+       </BrowserRouter>
+       <Toaster />
+     </AuthProvider>
+diff --git a/frontend/src/__tests__/dates.test.js b/frontend/src/__tests__/dates.test.js
+new file mode 100644
+index 0000000..a940392
+--- /dev/null
++++ b/frontend/src/__tests__/dates.test.js
+@@ -0,0 +1,18 @@
++import { describe, expect, it } from 'vitest';
++import { dateInputToIso, toDateInputValue, toDateTimeInputValue } from '../utils/dates';
++
++describe('date helpers', () => {
++  it('formats local dates for date inputs', () => {
++    expect(toDateInputValue(new Date(2026, 0, 5, 23, 59))).toBe('2026-01-05');
++    expect(toDateTimeInputValue(new Date(2026, 9, 9, 7, 5))).toBe('2026-10-09T07:05');
++  });
++
++  it('falls back to today for unreadable values instead of "NaN-NaN-NaN"', () => {
++    expect(toDateInputValue('not a date')).toMatch(/^\d{4}-\d{2}-\d{2}$/);
++  });
++
++  it('turns a date input into an ISO time on that local day', () => {
++    const iso = dateInputToIso('2026-10-09');
++    expect(toDateInputValue(new Date(iso))).toBe('2026-10-09');
++  });
++});
+diff --git a/frontend/src/__tests__/mcq.test.js b/frontend/src/__tests__/mcq.test.js
+new file mode 100644
+index 0000000..2f7e280
+--- /dev/null
++++ b/frontend/src/__tests__/mcq.test.js
+@@ -0,0 +1,77 @@
++import { describe, expect, it } from 'vitest';
++import { parseQuestions, parseWrittenQuestions } from '../utils/mcqParser';
++import { correctIndex, questionProblems } from '../utils/mcqRules';
++
++const brief = (result) => result.questions.map((q) => [q.question, q.options.filter(Boolean), q.correct_answer]);
++
++describe('parseQuestions', () => {
++  it('reads ChatGPT-style questions with maths, answers and explanations', () => {
++    const result = parseQuestions(String.raw`**1. If \(P(x)=x^3-3x^2+5x-7\), then \(P(1)\) is—**
++
++A) \(-4\)
++B) \(-3\)
++C) \(-2\)
++D) 0
++
++**Answer:** A
++**Explanation:** \(P(1)=1-3+5-7=-4\).
++
++**2. The roots of \(x^2 - 5x + 6 = 0\) are**
++A. 2 and 3
++B. 1 and 6
++C. -2 and -3
++D. 5 and 6
++Answer: A`);
++    expect(brief(result)).toEqual([
++      [String.raw`If \(P(x)=x^3-3x^2+5x-7\), then \(P(1)\) is—`, [String.raw`\(-4\)`, String.raw`\(-3\)`, String.raw`\(-2\)`, '0'], 0],
++      [String.raw`The roots of \(x^2 - 5x + 6 = 0\) are`, ['2 and 3', '1 and 6', '-2 and -3', '5 and 6'], 0],
++    ]);
++    expect(result.questions[0].explanation).toBe(String.raw`\(P(1)=1-3+5-7=-4\).`);
++    expect(result.issues).toEqual([]);
++  });
++
++  it('reads options on one line and an answer key at the end', () => {
++    const result = parseQuestions(`1. What is the value of $x^2 + y^2$ when x = 3, y = 4?
++A) 10  B) 20  C) 25  D) 40
++2) H₂O is the formula of
++(a) water (b) salt (c) sugar (d) acid
++
++Answer Key:
++1. C
++2. A`);
++    expect(brief(result)).toEqual([
++      ['What is the value of $x^2 + y^2$ when x = 3, y = 4?', ['10', '20', '25', '40'], 2],
++      ['H₂O is the formula of', ['water', 'salt', 'sugar', 'acid'], 0],
++    ]);
++  });
++
++  it('returns nothing for empty input', () => {
++    expect(parseQuestions('   ')).toEqual({ questions: [], issues: [] });
++  });
++});
++
++describe('parseWrittenQuestions', () => {
++  it('splits numbered questions and reads their marks', () => {
++    const items = parseWrittenQuestions('1. Define force. [5]\n2. State Newton\'s laws (10 marks)');
++    expect(items.map((i) => [i.label, i.marks])).toEqual([['Q1', 5], ['Q2', 10]]);
++  });
++});
++
++describe('MCQ publishing rules', () => {
++  it('accepts the answer as an index, a digit string or a letter', () => {
++    expect(correctIndex({ correct_answer: 2 })).toBe(2);
++    expect(correctIndex({ correct_answer: '1' })).toBe(1);
++    expect(correctIndex({ correct_answer: 'b' })).toBe(1);
++    expect(correctIndex({ correct_answer: '' })).toBeNull();
++  });
++
++  it('lists what still blocks a question', () => {
++    expect(questionProblems({ question: 'Q', options: ['a', 'b'], correct_answer: 0 })).toEqual([]);
++    expect(questionProblems({ question: '', options: ['a', ''], correct_answer: null })).toEqual([
++      'Add the question text or a picture',
++      'Add at least two options',
++      'Choose the correct answer',
++    ]);
++    expect(questionProblems({ question: 'Q', options: ['a', 'b'], correct_answer: 3 })).toEqual(['Choose the correct answer']);
++  });
++});
+diff --git a/frontend/src/components/common/AccountModal.jsx b/frontend/src/components/common/AccountModal.jsx
+index 27b71c4..747861f 100644
+--- a/frontend/src/components/common/AccountModal.jsx
++++ b/frontend/src/components/common/AccountModal.jsx
+@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
+ import { AlertCircle, Loader2, Copy, Check } from 'lucide-react';
+ import Modal from './Modal';
+ import PasswordField from './PasswordField';
+-import { useAuth } from '../../context/AuthContext';
++import { useAuth } from '../../context/auth';
+ import { api } from '../../api/client';
+ import { notify } from '../../utils/toast';
+ 
+diff --git a/frontend/src/components/common/ConfirmDialog.jsx b/frontend/src/components/common/ConfirmDialog.jsx
+index 389d368..9432347 100644
+--- a/frontend/src/components/common/ConfirmDialog.jsx
++++ b/frontend/src/components/common/ConfirmDialog.jsx
+@@ -1,6 +1,6 @@
+-import React, { useEffect, useRef } from 'react';
++import React from 'react';
+ import { createRoot } from 'react-dom/client';
+-import { AlertTriangle, HelpCircle } from 'lucide-react';
++import ConfirmView from './ConfirmView';
+ 
+ /**
+  * Professional replacement for window.confirm().
+@@ -43,78 +43,3 @@ export function confirmAction({
+     );
+   });
+ }
+-
+-function ConfirmView({ title, message, confirmLabel, cancelLabel, danger, onConfirm, onCancel }) {
+-  const confirmRef = useRef(null);
+-
+-  useEffect(() => {
+-    const onKey = (e) => {
+-      if (e.key === 'Escape') onCancel();
+-    };
+-    const prev = document.body.style.overflow;
+-    document.body.style.overflow = 'hidden';
+-    window.addEventListener('keydown', onKey);
+-    confirmRef.current?.focus();
+-    return () => {
+-      document.body.style.overflow = prev;
+-      window.removeEventListener('keydown', onKey);
+-    };
+-  }, [onCancel]);
+-
+-  const Icon = danger ? AlertTriangle : HelpCircle;
+-
+-  return (
+-    <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center sm:p-6">
+-      <div
+-        className="fixed inset-0 bg-slate-950/80 backdrop-blur-md"
+-        onClick={onCancel}
+-        aria-hidden="true"
+-      />
+-      <div
+-        role="alertdialog"
+-        aria-modal="true"
+-        aria-label={title}
+-        className="modal-in relative w-full max-w-md bg-slate-900/95 border border-slate-800/90 rounded-t-3xl sm:rounded-2xl shadow-2xl shadow-black/80 z-10 p-5 sm:p-6 space-y-4"
+-      >
+-        <div className="flex items-start gap-3.5">
+-          <span
+-            className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 border ${
+-              danger
+-                ? 'bg-rose-500/15 text-rose-400 border-rose-500/30'
+-                : 'bg-indigo-500/15 text-indigo-300 border-indigo-500/30'
+-            }`}
+-          >
+-            <Icon className="w-5 h-5" />
+-          </span>
+-          <div className="min-w-0">
+-            <h3 className="text-base font-bold text-white tracking-tight">{title}</h3>
+-            {message && <p className="text-sm text-slate-400 mt-1 leading-relaxed">{message}</p>}
+-          </div>
+-        </div>
+-        <div className="flex items-center justify-end gap-2 pt-1">
+-          <button
+-            type="button"
+-            onClick={onCancel}
+-            className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 transition"
+-          >
+-            {cancelLabel}
+-          </button>
+-          <button
+-            ref={confirmRef}
+-            type="button"
+-            onClick={onConfirm}
+-            className={`px-4 py-2 rounded-xl text-white text-xs font-bold transition flex items-center gap-1.5 ${
+-              danger
+-                ? 'bg-rose-600 hover:bg-rose-500 shadow-md shadow-rose-600/25'
+-                : 'bg-indigo-600 hover:bg-indigo-500 shadow-md shadow-indigo-600/25'
+-            }`}
+-          >
+-            {confirmLabel}
+-          </button>
+-        </div>
+-      </div>
+-    </div>
+-  );
+-}
+-
+-export default ConfirmView;
+diff --git a/frontend/src/components/common/ConfirmView.jsx b/frontend/src/components/common/ConfirmView.jsx
+new file mode 100644
+index 0000000..17569ef
+--- /dev/null
++++ b/frontend/src/components/common/ConfirmView.jsx
+@@ -0,0 +1,77 @@
++import React, { useEffect, useRef } from 'react';
++import { AlertTriangle, HelpCircle } from 'lucide-react';
++
++/** The dialog drawn by confirmAction() in ConfirmDialog.jsx. */
++export default function ConfirmView({ title, message, confirmLabel, cancelLabel, danger, onConfirm, onCancel }) {
++  const confirmRef = useRef(null);
++
++  useEffect(() => {
++    const onKey = (e) => {
++      if (e.key === 'Escape') onCancel();
++    };
++    const prev = document.body.style.overflow;
++    document.body.style.overflow = 'hidden';
++    window.addEventListener('keydown', onKey);
++    confirmRef.current?.focus();
++    return () => {
++      document.body.style.overflow = prev;
++      window.removeEventListener('keydown', onKey);
++    };
++  }, [onCancel]);
++
++  const Icon = danger ? AlertTriangle : HelpCircle;
++
++  return (
++    <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center sm:p-6">
++      <div
++        className="fixed inset-0 bg-slate-950/80 backdrop-blur-md"
++        onClick={onCancel}
++        aria-hidden="true"
++      />
++      <div
++        role="alertdialog"
++        aria-modal="true"
++        aria-label={title}
++        className="modal-in relative w-full max-w-md bg-slate-900/95 border border-slate-800/90 rounded-t-3xl sm:rounded-2xl shadow-2xl shadow-black/80 z-10 p-5 sm:p-6 space-y-4"
++      >
++        <div className="flex items-start gap-3.5">
++          <span
++            className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 border ${
++              danger
++                ? 'bg-rose-500/15 text-rose-400 border-rose-500/30'
++                : 'bg-indigo-500/15 text-indigo-300 border-indigo-500/30'
++            }`}
++          >
++            <Icon className="w-5 h-5" />
++          </span>
++          <div className="min-w-0">
++            <h3 className="text-base font-bold text-white tracking-tight">{title}</h3>
++            {message && <p className="text-sm text-slate-400 mt-1 leading-relaxed">{message}</p>}
++          </div>
++        </div>
++        <div className="flex items-center justify-end gap-2 pt-1">
++          <button
++            type="button"
++            onClick={onCancel}
++            className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 transition"
++          >
++            {cancelLabel}
++          </button>
++          <button
++            ref={confirmRef}
++            type="button"
++            onClick={onConfirm}
++            className={`px-4 py-2 rounded-xl text-white text-xs font-bold transition flex items-center gap-1.5 ${
++              danger
++                ? 'bg-rose-600 hover:bg-rose-500 shadow-md shadow-rose-600/25'
++                : 'bg-indigo-600 hover:bg-indigo-500 shadow-md shadow-indigo-600/25'
++            }`}
++          >
++            {confirmLabel}
++          </button>
++        </div>
++      </div>
++    </div>
++  );
++}
++
+diff --git a/frontend/src/components/common/LeaderboardModal.jsx b/frontend/src/components/common/LeaderboardModal.jsx
+index 7e1bb9e..87e767c 100644
+--- a/frontend/src/components/common/LeaderboardModal.jsx
++++ b/frontend/src/components/common/LeaderboardModal.jsx
+@@ -1,48 +1,46 @@
+-import React, { useState, useEffect } from 'react';
++import React, { useCallback, useEffect, useRef, useState } from 'react';
+ import Modal from './Modal';
+ import { api } from '../../api/client';
+ import {
+   Trophy,
+-  Medal,
+-  Award,
+   Crown,
+   Users,
+-  Clock,
+-  CheckCircle2,
+   AlertCircle,
+   RefreshCw,
+-  Sparkles,
++  Sparkles
+ } from 'lucide-react';
+-import StatusBadge from './StatusBadge';
+ 
+ export default function LeaderboardModal({ isOpen, onClose, examId, examTitle }) {
+   const [data, setData] = useState(null);
+   const [loading, setLoading] = useState(true);
+   const [error, setError] = useState('');
+ 
+-  const loadLeaderboard = async () => {
++  // Only the answer for the exam currently shown may land (a slow reply for a
++  // previously opened exam is ignored).
++  const latestRequest = useRef(0);
++  const loadLeaderboard = useCallback(async () => {
+     if (!examId) return;
++    const requestId = ++latestRequest.current;
+     try {
+       setLoading(true);
+       setError('');
+       const res = await api.getExamLeaderboard(examId);
+-      setData(res);
++      if (requestId === latestRequest.current) setData(res);
+     } catch (err) {
+-      setError(err.message || 'Failed to load leaderboard.');
++      if (requestId === latestRequest.current) setError(err.message || 'Failed to load leaderboard.');
+     } finally {
+-      setLoading(false);
++      if (requestId === latestRequest.current) setLoading(false);
+     }
+-  };
++  }, [examId]);
+ 
+   useEffect(() => {
+     if (isOpen && examId) {
+       loadLeaderboard();
+     }
+-  }, [isOpen, examId]);
++  }, [isOpen, examId, loadLeaderboard]);
+ 
+   const leaderboard = data?.leaderboard || [];
+   const topThree = leaderboard.slice(0, 3);
+-  const remaining = leaderboard.slice(3);
+ 
+   return (
+     <Modal
+@@ -267,7 +265,7 @@ export default function LeaderboardModal({ isOpen, onClose, examId, examTitle })
+                             month: 'short',
+                             day: 'numeric',
+                             hour: '2-digit',
+-                            minute: '2-digit',
++                            minute: '2-digit'
+                           })}
+                         </td>
+                       </tr>
+diff --git a/frontend/src/components/common/MathRenderer.jsx b/frontend/src/components/common/MathRenderer.jsx
+index e3ae193..8b63295 100644
+--- a/frontend/src/components/common/MathRenderer.jsx
++++ b/frontend/src/components/common/MathRenderer.jsx
+@@ -1,6 +1,8 @@
+ import React, { useMemo } from 'react';
+ import DOMPurify from 'dompurify';
+ import katex from 'katex';
++// Bundled with the same katex version that renders the math (the CDN copy was an older release).
++import 'katex/dist/katex.min.css';
+ 
+ // Every way maths arrives from ChatGPT, textbooks and our own editor:
+ //   $$…$$ and \[…\] (display)   ·   \(…\) and $…$ (inline)
+@@ -24,7 +26,7 @@ const decodeEntities = (text) =>
+  * `plain` treats everything outside the maths as literal text (so "a < b" or a
+  * stray tag in a pasted question is shown, not interpreted) and keeps line breaks.
+  */
+-export function renderMathToHtml(content, { plain = false } = {}) {
++function renderMathToHtml(content, { plain = false } = {}) {
+   if (!content) return '';
+   const source = String(content);
+   let html = '';
+diff --git a/frontend/src/components/common/Modal.jsx b/frontend/src/components/common/Modal.jsx
+index 952e9b0..1e4938a 100644
+--- a/frontend/src/components/common/Modal.jsx
++++ b/frontend/src/components/common/Modal.jsx
+@@ -1,17 +1,16 @@
+-import React, { useEffect, useId, useRef } from 'react';
++import React, { useEffect, useEffectEvent, useId, useRef } from 'react';
+ import { X } from 'lucide-react';
+ 
+ export default function Modal({ isOpen, onClose, title, children, maxWidth = 'max-w-2xl' }) {
+   const titleId = useId();
+   const dialogRef = useRef(null);
+-  // Keep the latest onClose without re-running the effect (and re-focusing) on every parent render.
+-  const onCloseRef = useRef(onClose);
+-  onCloseRef.current = onClose;
++  // Always calls the latest onClose without re-running the effect (and re-focusing) on every parent render.
++  const closeOnEscape = useEffectEvent(() => onClose?.());
+ 
+   useEffect(() => {
+     if (!isOpen) return undefined;
+     const handleKeyDown = (e) => {
+-      if (e.key === 'Escape') onCloseRef.current?.();
++      if (e.key === 'Escape') closeOnEscape();
+     };
+     const previousOverflow = document.body.style.overflow;
+     document.body.style.overflow = 'hidden';
+diff --git a/frontend/src/components/common/Navbar.jsx b/frontend/src/components/common/Navbar.jsx
+index 152accd..850cc43 100644
+--- a/frontend/src/components/common/Navbar.jsx
++++ b/frontend/src/components/common/Navbar.jsx
+@@ -1,6 +1,6 @@
+ import React, { useState } from 'react';
+ import { Link } from 'react-router-dom';
+-import { useAuth } from '../../context/AuthContext';
++import { useAuth } from '../../context/auth';
+ import { GraduationCap, LogOut } from 'lucide-react';
+ import NotificationBell from './NotificationBell';
+ import AccountModal from './AccountModal';
+diff --git a/frontend/src/components/common/NotificationBell.jsx b/frontend/src/components/common/NotificationBell.jsx
+index 8ce1f9b..b76caa2 100644
+--- a/frontend/src/components/common/NotificationBell.jsx
++++ b/frontend/src/components/common/NotificationBell.jsx
+@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
+ import { useNavigate } from 'react-router-dom';
+ import { Bell, UserPlus, ClipboardCheck, RotateCcw, FileText, Clock, Trophy, AlertTriangle, Link2 } from 'lucide-react';
+ import { api } from '../../api/client';
+-import { useAuth } from '../../context/AuthContext';
++import { useAuth } from '../../context/auth';
+ 
+ const ICONS = {
+   request: UserPlus,
+diff --git a/frontend/src/components/common/States.jsx b/frontend/src/components/common/States.jsx
+new file mode 100644
+index 0000000..48e1cba
+--- /dev/null
++++ b/frontend/src/components/common/States.jsx
+@@ -0,0 +1,75 @@
++import React from 'react';
++import { AlertTriangle, Inbox, RefreshCw } from 'lucide-react';
++
++/**
++ * Shared loading / empty / error states, so every list and page tells the
++ * user the same thing the same way. `tone="light"` is for the light student
++ * pages, the default for the dark tutor pages.
++ */
++
++const TONES = {
++  dark: {
++    box: 'border-surface-overlay bg-surface-raised/50 text-slate-300',
++    muted: 'text-slate-400',
++    error: 'border-danger-500/30 bg-danger-500/10 text-danger-200',
++    button: 'bg-surface-overlay hover:bg-slate-700 text-slate-100 border-surface-border',
++  },
++  light: {
++    box: 'border-slate-200 bg-white text-slate-700',
++    muted: 'text-slate-500',
++    error: 'border-danger-200 bg-danger-50 text-danger-700',
++    button: 'bg-white hover:bg-slate-50 text-slate-700 border-slate-300',
++  },
++};
++
++export function Spinner({ className = 'w-6 h-6', label = 'Loading' }) {
++  return (
++    <span
++      role="status"
++      aria-label={label}
++      className={`inline-block rounded-full border-2 border-brand-500/25 border-t-brand-500 animate-spin ${className}`}
++    />
++  );
++}
++
++export function LoadingState({ label = 'Loading…', tone = 'dark', className = '' }) {
++  const t = TONES[tone] || TONES.dark;
++  return (
++    <div className={`flex items-center justify-center gap-3 py-10 text-sm ${t.muted} ${className}`}>
++      <Spinner className="w-5 h-5" label={label} />
++      <span>{label}</span>
++    </div>
++  );
++}
++
++export function EmptyState({ icon: Icon = Inbox, title, message, action, tone = 'dark', className = '' }) {
++  const t = TONES[tone] || TONES.dark;
++  return (
++    <div className={`rounded-card border border-dashed px-6 py-10 text-center ${t.box} ${className}`}>
++      <Icon className={`mx-auto mb-3 w-8 h-8 ${t.muted}`} aria-hidden="true" />
++      {title && <p className="font-semibold">{title}</p>}
++      {message && <p className={`mt-1 text-sm ${t.muted}`}>{message}</p>}
++      {action && <div className="mt-4 flex justify-center">{action}</div>}
++    </div>
++  );
++}
++
++export function ErrorState({ message, onRetry, retryLabel = 'Try again', tone = 'dark', className = '' }) {
++  const t = TONES[tone] || TONES.dark;
++  return (
++    <div role="alert" className={`flex flex-wrap items-center gap-3 rounded-xl border px-4 py-3 text-sm ${t.error} ${className}`}>
++      <AlertTriangle className="w-4 h-4 shrink-0" aria-hidden="true" />
++      <span className="flex-1 min-w-[12rem]">{message || 'Something went wrong.'}</span>
++      {onRetry && (
++        <button
++          type="button"
++          onClick={onRetry}
++          className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition ${t.button}`}
++        >
++          <RefreshCw className="w-3.5 h-3.5" aria-hidden="true" />
++          {retryLabel}
++        </button>
++      )}
++    </div>
++  );
++}
+diff --git a/frontend/src/components/student/ExamCard.jsx b/frontend/src/components/student/ExamCard.jsx
+index 4023476..1166560 100644
+--- a/frontend/src/components/student/ExamCard.jsx
++++ b/frontend/src/components/student/ExamCard.jsx
+@@ -1,6 +1,7 @@
+ import React, { useEffect, useState } from 'react';
+ import { Clock, Award, ArrowRight, CheckCircle2, Trophy, Layers, Timer, AlertTriangle, CalendarClock, Hourglass } from 'lucide-react';
+ import { api } from '../../api/client';
++import { useNow } from '../../hooks/useNow';
+ 
+ const fmtDateTime = (value) =>
+   new Date(value).toLocaleString(undefined, { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
+@@ -21,15 +22,17 @@ function relative(ms) {
+  * what the server says is possible (`can_submit`, `has_submission`).
+  */
+ export default function ExamCard({ exam, onTakeExam, onViewResults, onViewLeaderboard, light = true }) {
+-  const [now, setNow] = useState(Date.now());
++  // 5s tick: fresh enough at window boundaries that the button the
++  // student sees matches what the exam screen will enforce.
++  const clock = useNow(5000);
+   const [serverOffsetMs, setServerOffsetMs] = useState(0);
+   useEffect(() => {
+-    api.fetchServerOffset().then(setServerOffsetMs).catch(() => setServerOffsetMs(0));
+-    // 5s tick: fresh enough at window boundaries that the button the
+-    // student sees matches what the exam screen will enforce.
+-    const id = setInterval(() => setNow(Date.now() + serverOffsetMs), 5000);
+-    return () => clearInterval(id);
+-  }, [serverOffsetMs]);
++    let alive = true;
++    // One shared measurement for every card (see fetchServerOffset).
++    api.fetchServerOffset().then((offset) => { if (alive) setServerOffsetMs(offset); });
++    return () => { alive = false; };
++  }, []);
++  const now = clock + serverOffsetMs;
+ 
+   const isAssignment = exam.category === 'ASSIGNMENT';
+   const start = new Date(exam.start_time).getTime();
+diff --git a/frontend/src/components/student/ExamTakerModal.jsx b/frontend/src/components/student/ExamTakerModal.jsx
+index 8904d9f..657abc9 100644
+--- a/frontend/src/components/student/ExamTakerModal.jsx
++++ b/frontend/src/components/student/ExamTakerModal.jsx
+@@ -1,4 +1,4 @@
+-import React, { useState, useEffect, useRef } from 'react';
++import React, { useState, useEffect, useEffectEvent, useMemo, useRef } from 'react';
+ import Modal from '../common/Modal';
+ import MathRenderer from '../common/MathRenderer';
+ import QuestionImage from '../common/QuestionImage';
+@@ -7,22 +7,18 @@ import { api } from '../../api/client';
+ import {
+   Clock,
+   Camera,
+-  Upload,
+   AlertCircle,
+-  CheckCircle2,
+   Send,
+   X,
+   FileText,
+-  AlertTriangle,
+-  HelpCircle,
+-  Sparkles,
++  Sparkles
+ } from 'lucide-react';
+ 
+ export default function ExamTakerModal({
+   isOpen,
+   onClose,
+   exam,
+-  onExamSubmitted,
++  onExamSubmitted
+ }) {
+   const [mcqAnswers, setMcqAnswers] = useState({});
+   const [textAnswers, setTextAnswers] = useState({});
+@@ -37,8 +33,6 @@ export default function ExamTakerModal({
+   const [textAnswer, setTextAnswer] = useState('');
+   const [serverOffsetMs, setServerOffsetMs] = useState(0);
+   const [submitFailed, setSubmitFailed] = useState(false);
+-
+-  const autoSubmitRef = useRef(null);
+   const autoSubmittedRef = useRef(false);
+   const autoAttemptsRef = useRef(0);
+   const submittingRef = useRef(false);
+@@ -46,14 +40,16 @@ export default function ExamTakerModal({
+ 
+   // Drafts are per exam AND per user so a shared browser never leaks answers
+   // between accounts.
+-  const draftKey = () => {
++  const draftKey = useMemo(() => {
+     let who = 'anon';
+     try {
+       const u = JSON.parse(localStorage.getItem('user_data') || '{}');
+       who = u.username || u.id || 'anon';
+-    } catch {}
++    } catch {
++      // unreadable profile: fall back to a generic key
++    }
+     return `exam_draft_${exam?.id}_${who}`;
+-  };
++  }, [exam?.id]);
+ 
+   // Restore draft answers from localStorage if available
+   useEffect(() => {
+@@ -65,9 +61,8 @@ export default function ExamTakerModal({
+       autoAttemptsRef.current = 0;
+       api.fetchServerOffset().then(setServerOffsetMs).catch(() => setServerOffsetMs(0));
+ 
+-      const storageKey = draftKey();
+       try {
+-        const saved = localStorage.getItem(storageKey);
++        const saved = localStorage.getItem(draftKey);
+         if (saved) {
+           const parsed = JSON.parse(saved);
+           if (parsed.mcqAnswers) setMcqAnswers(parsed.mcqAnswers);
+@@ -80,33 +75,41 @@ export default function ExamTakerModal({
+           setImageUrls([]);
+           setTextAnswer('');
+         }
+-      } catch (_) {
++      } catch  {
+         setMcqAnswers({});
+         setTextAnswers({});
+         setImageUrls([]);
+         setTextAnswer('');
+       }
+     }
+-  }, [exam?.id]);
++  }, [exam?.id, draftKey]);
+ 
+   // Persist in-progress answers so closing modal does not lose answers.
+   // When everything is empty the stale draft is removed so deleted work
+   // cannot resurrect on reopen.
+   useEffect(() => {
+     if (!exam?.id) return;
+-    const storageKey = draftKey();
+-    if (Object.keys(mcqAnswers).length > 0 || Object.keys(textAnswers).length > 0 || imageUrls.length > 0 || textAnswer) {
+-      localStorage.setItem(storageKey, JSON.stringify({ mcqAnswers, textAnswers, imageUrls, textAnswer }));
+-    } else {
+-      localStorage.removeItem(storageKey);
++    try {
++      if (Object.keys(mcqAnswers).length > 0 || Object.keys(textAnswers).length > 0 || imageUrls.length > 0 || textAnswer) {
++        localStorage.setItem(draftKey, JSON.stringify({ mcqAnswers, textAnswers, imageUrls, textAnswer }));
++      } else {
++        localStorage.removeItem(draftKey);
++      }
++    } catch {
++      // Storage full or blocked (private mode): the exam still works, only the draft is not kept.
+     }
+-  }, [exam?.id, mcqAnswers, textAnswers, imageUrls, textAnswer]);
++  }, [exam?.id, draftKey, mcqAnswers, textAnswers, imageUrls, textAnswer]);
+ 
+   // Keep the mutable uploading flag in sync for the auto-submit path.
+   useEffect(() => {
+     uploadingRef.current = uploading;
+   }, [uploading]);
+ 
++  // Auto-submit whatever has been answered so far. Only the countdown effect calls
++  // it, and that effect only runs while there is an exam, so doSubmit (defined
++  // after the early return below) always exists by then.
++  const autoSubmit = useEffectEvent(() => doSubmit(true));
++
+   // Live countdown (server-clock corrected).
+   // The on-time deadline is the student's own (timed exams) or the exam end time.
+   // At the deadline the answers are sent automatically once; the server allows a short
+@@ -156,10 +159,10 @@ export default function ExamTakerModal({
+         setTimeLeft(fmt(graceEnd - now));
+         // Auto-send once; on failure the flag is reset so the next tick
+         // retries (capped) instead of stranding the answers.
+-        if (!autoSubmittedRef.current && autoSubmitRef.current && autoAttemptsRef.current < 8) {
++        if (!autoSubmittedRef.current && autoAttemptsRef.current < 8) {
+           autoSubmittedRef.current = true;
+           autoAttemptsRef.current += 1;
+-          autoSubmitRef.current(true);
++          autoSubmit();
+         }
+         return;
+       }
+@@ -182,7 +185,7 @@ export default function ExamTakerModal({
+   const handleSelectMCQ = (qId, optionIndex) => {
+     setMcqAnswers((prev) => ({
+       ...prev,
+-      [qId]: optionIndex,
++      [qId]: optionIndex
+     }));
+   };
+ 
+@@ -243,18 +246,20 @@ export default function ExamTakerModal({
+     try {
+       const answersData = {
+         ...textAnswers,
+-        ...mcqAnswers,
++        ...mcqAnswers
+       };
+ 
+       const response = await api.submitExam(exam.id, {
+         answers_data: answersData,
+         text_answer: textAnswer.trim(),
+         image_urls: imageUrls,
+-        uploaded_images: imageUrls,
++        uploaded_images: imageUrls
+       });
+ 
+-      if (exam?.id) {
+-        localStorage.removeItem(draftKey());
++      try {
++        localStorage.removeItem(draftKey);
++      } catch {
++        // the submission went through; a leftover draft is harmless
+       }
+       setSubmitFailed(false);
+       onExamSubmitted(response, exam);
+@@ -273,10 +278,6 @@ export default function ExamTakerModal({
+     }
+   };
+ 
+-  // Auto-submit whatever has been answered so far. Assigned directly rather than in
+-  // an effect: this sits below the `!exam` early return, where a hook is not allowed.
+-  autoSubmitRef.current = (isAuto) => doSubmit(isAuto);
+-
+   // Written section exists when the paper has real text content (not just
+   // empty editor HTML like <p></p> or <p><br></p>).
+   const stripHtml = (html) =>
+@@ -321,7 +322,7 @@ export default function ExamTakerModal({
+       message: blankCount > 0
+         ? `${summaryBits.join(' · ')}. ${blankCount} MCQ${blankCount === 1 ? ' is' : 's are'} still blank — turn in anyway?`
+         : `${summaryBits.join(' · ')}. Once turned in, answers cannot be changed.`,
+-      confirmLabel: isAssignment ? 'Turn in' : 'Turn in exam',
++      confirmLabel: isAssignment ? 'Turn in' : 'Turn in exam'
+     });
+     if (!ok) return;
+ 
+diff --git a/frontend/src/components/student/TutorDetailView.jsx b/frontend/src/components/student/TutorDetailView.jsx
+deleted file mode 100644
+index c7048f6..0000000
+--- a/frontend/src/components/student/TutorDetailView.jsx
++++ /dev/null
+@@ -1,10 +0,0 @@
+-import React from 'react';
+-import TutorWorkspaceView from './TutorWorkspaceView';
+-
+-/**
+- * TutorDetailView — Alias and wrapper around TutorWorkspaceView
+- * for backwards compatibility with any existing student dashboard routes.
+- */
+-export default function TutorDetailView(props) {
+-  return <TutorWorkspaceView {...props} />;
+-}
+diff --git a/frontend/src/components/tutor/AddStudentModal.jsx b/frontend/src/components/tutor/AddStudentModal.jsx
+index d7a5bc0..b842eab 100644
+--- a/frontend/src/components/tutor/AddStudentModal.jsx
++++ b/frontend/src/components/tutor/AddStudentModal.jsx
+@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
+ import Modal from '../common/Modal';
+ import { api } from '../../api/client';
+ import StudentCredentialsModal from './StudentCredentialsModal';
+-import { UserPlus, AlertCircle, CheckCircle2, Key, Sparkles, Eye, EyeOff } from 'lucide-react';
++import { UserPlus, AlertCircle, CheckCircle2, Sparkles, Eye, EyeOff } from 'lucide-react';
+ 
+ function generateRandomPassword(length = 12) {
+   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789!@#$%&*';
+@@ -132,7 +132,7 @@ export default function AddStudentModal({
+       if (formData.tuition_id && res?.student?.id) {
+         try {
+           await api.enrollInTuition(formData.tuition_id, res.student.id);
+-        } catch (_) {
++        } catch  {
+           // Handled or already enrolled
+         }
+       }
+@@ -411,12 +411,14 @@ export default function AddStudentModal({
+       </form>
+     </Modal>
+ 
+-    <StudentCredentialsModal
+-      isOpen={credentialsModalOpen}
+-      onClose={handleCloseCredentials}
+-      student={createdStudentCreds?.student}
+-      tempPassword={createdStudentCreds?.tempPassword}
+-    />
++    {credentialsModalOpen && createdStudentCreds?.student && (
++      <StudentCredentialsModal
++        isOpen
++        onClose={handleCloseCredentials}
++        student={createdStudentCreds.student}
++        tempPassword={createdStudentCreds.tempPassword}
++      />
++    )}
+   </>
+   );
+ }
+diff --git a/frontend/src/components/tutor/AssignStudentModal.jsx b/frontend/src/components/tutor/AssignStudentModal.jsx
+index fcc8a2c..3110898 100644
+--- a/frontend/src/components/tutor/AssignStudentModal.jsx
++++ b/frontend/src/components/tutor/AssignStudentModal.jsx
+@@ -1,14 +1,14 @@
+ import React, { useState } from 'react';
+ import Modal from '../common/Modal';
+ import { api } from '../../api/client';
+-import { Users, CheckCircle2, AlertCircle, BookOpen, Calendar, Clock, DollarSign, Sparkles } from 'lucide-react';
++import { CheckCircle2, AlertCircle, Clock, Sparkles } from 'lucide-react';
+ 
+ export default function AssignStudentModal({
+   isOpen,
+   onClose,
+   student,
+   tuitions = [],
+-  onAssigned,
++  onAssigned
+ }) {
+   const [selectedTuitionId, setSelectedTuitionId] = useState('');
+   const [loading, setLoading] = useState(false);
+diff --git a/frontend/src/components/tutor/CycleGrid.jsx b/frontend/src/components/tutor/CycleGrid.jsx
+deleted file mode 100644
+index 0d9cd83..0000000
+--- a/frontend/src/components/tutor/CycleGrid.jsx
++++ /dev/null
+@@ -1,501 +0,0 @@
+-import React, { useState } from 'react';
+-import { notify } from '../../utils/toast';
+-import {
+-  Check,
+-  RotateCcw,
+-  AlertTriangle,
+-  Calendar,
+-  CheckCircle2,
+-  Clock,
+-  CalendarDays,
+-  Sparkles,
+-  BookOpen,
+-  X,
+-} from 'lucide-react';
+-import Modal from '../common/Modal';
+-
+-const toLocalDateString = (d = new Date()) => {
+-  const dt = d instanceof Date ? d : new Date(d);
+-  return dt.getFullYear() + '-' + String(dt.getMonth() + 1).padStart(2, '0') + '-' + String(dt.getDate()).padStart(2, '0');
+-};
+-
+-export default function CycleGrid({
+-  cycle,
+-  studentName,
+-  tuitionTitle = '',
+-  onToggleClass,
+-  onResetCycle,
+-  onOpenAddStudent = null,
+-  loading,
+-}) {
+-  const [resetModalOpen, setResetModalOpen] = useState(false);
+-  const [resetting, setResetting] = useState(false);
+-
+-  // Class Attendance Date Picker Modal
+-  const [dateModalOpen, setDateModalOpen] = useState(false);
+-  const [selectedClass, setSelectedClass] = useState(null);
+-  const [classDate, setClassDate] = useState(toLocalDateString(new Date()));
+-  const [classTopic, setClassTopic] = useState('');
+-  const [isCompletedState, setIsCompletedState] = useState(true);
+-  const [savingClass, setSavingClass] = useState(false);
+-
+-  if (!cycle) {
+-    return (
+-      <div className="glass-panel p-8 rounded-2xl text-center text-slate-400 space-y-3">
+-        <Calendar className="w-12 h-12 mx-auto text-indigo-400 mb-2" />
+-        <h4 className="text-base font-bold text-slate-200">
+-          {tuitionTitle ? `${tuitionTitle} — Class Attendance & Billing Engine` : 'No active cycle selected'}
+-        </h4>
+-        <p className="text-xs text-slate-400 max-w-md mx-auto">
+-          {tuitionTitle
+-            ? 'No students are currently enrolled in this tuition. Add a student to start tracking attendance and revenue.'
+-            : 'Select a student from the roster on the left to view and check off classes.'}
+-        </p>
+-        {onOpenAddStudent && (
+-          <button
+-            onClick={onOpenAddStudent}
+-            className="mt-2 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow-md shadow-indigo-600/30 transition"
+-          >
+-            + Add Student to {tuitionTitle || 'Tuition'}
+-          </button>
+-        )}
+-      </div>
+-    );
+-  }
+-
+-  const cycle_number = cycle.cycle_number || 1;
+-  const fee_snapshot = cycle.tuition_fee !== undefined ? cycle.tuition_fee : (cycle.fee_snapshot || 0);
+-  const total_classes = cycle.total_classes || 12;
+-  const completed_classes = cycle.completed_classes || 0;
+-  const earned_amount = cycle.earned_revenue !== undefined ? cycle.earned_revenue : (cycle.earned_amount || 0);
+-  const pending_amount = cycle.pending_balance !== undefined ? cycle.pending_balance : (cycle.pending_amount || 0);
+-  const progress_percentage = cycle.progress_percent !== undefined ? cycle.progress_percent : (cycle.progress_percentage || 0);
+-  const is_complete = cycle.is_complete || (completed_classes >= total_classes);
+-  const classes_data = cycle.classes_data || [];
+-
+-  const handleOpenClassModal = (cls) => {
+-    setSelectedClass(cls);
+-    // Always default to Completed (true) on open so calendar date picker is immediately visible and ready to save
+-    setIsCompletedState(true);
+-    if (cls.date) {
+-      setClassDate(toLocalDateString(new Date(cls.date)));
+-    } else {
+-      setClassDate(toLocalDateString(new Date()));
+-    }
+-    setClassTopic(cls.topic || '');
+-    setDateModalOpen(true);
+-  };
+-
+-  const handleSaveClassAttendance = async (e) => {
+-    e?.preventDefault();
+-    if (!selectedClass) return;
+-
+-    const classNum = selectedClass.class_no ?? selectedClass.classNo;
+-    setSavingClass(true);
+-    try {
+-      const targetDate = isCompletedState ? (classDate ? `${classDate}T12:00:00Z` : `${toLocalDateString(new Date())}T12:00:00Z`) : null;
+-      await onToggleClass(cycle.id, classNum, isCompletedState, targetDate, isCompletedState ? classTopic : '');
+-      setDateModalOpen(false);
+-    } catch (err) {
+-      notify(`Save failed: ${err.message}`);
+-    } finally {
+-      setSavingClass(false);
+-    }
+-  };
+-
+-  const handleQuickMarkToday = async () => {
+-    if (!selectedClass) return;
+-    const classNum = selectedClass.class_no ?? selectedClass.classNo;
+-    setSavingClass(true);
+-    try {
+-      const todayIso = `${toLocalDateString(new Date())}T12:00:00Z`;
+-      await onToggleClass(cycle.id, classNum, true, todayIso, classTopic);
+-      setDateModalOpen(false);
+-    } finally {
+-      setSavingClass(false);
+-    }
+-  };
+-
+-  const handleQuickUnmark = async () => {
+-    if (!selectedClass) return;
+-    const classNum = selectedClass.class_no ?? selectedClass.classNo;
+-    setSavingClass(true);
+-    try {
+-      await onToggleClass(cycle.id, classNum, false, null, '');
+-      setDateModalOpen(false);
+-    } finally {
+-      setSavingClass(false);
+-    }
+-  };
+-
+-  const handleConfirmReset = async () => {
+-    setResetting(true);
+-    try {
+-      await onResetCycle(cycle.id);
+-      setResetModalOpen(false);
+-    } finally {
+-      setResetting(false);
+-    }
+-  };
+-
+-  return (
+-    <div className="glass-panel p-6 rounded-2xl">
+-      {/* Header & Stats */}
+-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-slate-800">
+-        <div>
+-          <div className="flex flex-wrap items-center gap-2">
+-            <span className="text-xs font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-indigo-900/60 text-indigo-300 border border-indigo-700/50">
+-              Cycle #{cycle_number}
+-            </span>
+-            {(tuitionTitle || cycle.tuition_title) && (
+-              <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 font-mono">
+-                {tuitionTitle || cycle.tuition_title}
+-              </span>
+-            )}
+-            <span className="text-xs text-slate-400 font-medium">
+-              for <strong className="text-slate-200">{studentName}</strong>
+-            </span>
+-            {is_complete && (
+-              <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
+-                <CheckCircle2 className="w-3.5 h-3.5" />
+-                Cycle Completed
+-              </span>
+-            )}
+-          </div>
+-          <h3 className="text-xl font-bold text-slate-100 mt-1">
+-            {(tuitionTitle || cycle.tuition_title) ? `${tuitionTitle || cycle.tuition_title} — ` : ''}Class Attendance & Billing Engine
+-          </h3>
+-        </div>
+-
+-        {/* Action Button: Start New Cycle */}
+-        <button
+-          onClick={() => is_complete && setResetModalOpen(true)}
+-          disabled={!is_complete}
+-          className={`px-4 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 transition shadow-md ${
+-            is_complete
+-              ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-600/30 cursor-pointer'
+-              : 'bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed opacity-50'
+-          }`}
+-          title={is_complete ? 'Cycle complete! Archive and roll over to new cycle' : 'Complete all classes before starting a new cycle'}
+-        >
+-          <RotateCcw className="w-4 h-4" />
+-          <span>Start New Cycle</span>
+-        </button>
+-      </div>
+-
+-      {/* Progress Bar & Financial Breakdown */}
+-      <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 my-5 p-4 rounded-xl bg-slate-800/40 border border-slate-700/50">
+-        <div>
+-          <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+-            Classes Completed
+-          </div>
+-          <div className="text-lg font-bold text-slate-100 mt-0.5">
+-            {completed_classes} <span className="text-sm text-slate-400 font-normal">/ {total_classes}</span>
+-          </div>
+-        </div>
+-
+-        <div>
+-          <div className="text-[11px] font-semibold text-emerald-400 uppercase tracking-wider">
+-            Earned Revenue
+-          </div>
+-          <div className="text-lg font-bold text-emerald-400 mt-0.5">
+-            ৳{Number(earned_amount).toLocaleString()}
+-          </div>
+-        </div>
+-
+-        <div>
+-          <div className="text-[11px] font-semibold text-indigo-400 uppercase tracking-wider">
+-            Pending Balance
+-          </div>
+-          <div className="text-lg font-bold text-indigo-300 mt-0.5">
+-            ৳{Number(pending_amount).toLocaleString()}
+-          </div>
+-        </div>
+-
+-        <div>
+-          <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+-            Progress
+-          </div>
+-          <div className="text-lg font-bold text-slate-200 mt-0.5">
+-            {progress_percentage}%
+-          </div>
+-          <div className="w-full h-1.5 bg-slate-700 rounded-full overflow-hidden mt-1.5">
+-            <div
+-              className="h-full bg-gradient-to-r from-emerald-500 to-indigo-500 transition-all duration-300"
+-              style={{ width: `${progress_percentage}%` }}
+-            />
+-          </div>
+-        </div>
+-      </div>
+-
+-      {/* Interactive Checkbox Grid */}
+-      <div className="mb-2">
+-        <div className="flex flex-wrap items-center justify-between text-xs text-slate-400 mb-3 gap-2">
+-          <span className="flex items-center gap-1.5">
+-            <CalendarDays className="w-4 h-4 text-indigo-400" />
+-            Click any box to set attendance date and topic:
+-          </span>
+-          <span className="font-mono text-slate-300">
+-            Snapshot Rate: <strong className="text-emerald-400">৳{!total_classes ? 0 : Math.round(fee_snapshot / total_classes)}</strong> / class
+-          </span>
+-        </div>
+-
+-        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-3">
+-          {classes_data.map((cls, idx) => {
+-            const cNum = cls.class_no ?? cls.classNo ?? (idx + 1);
+-            const isCompleted = cls.completed;
+-            const dateObj = cls.date ? new Date(cls.date) : null;
+-            const formattedDate = dateObj
+-              ? dateObj.toLocaleDateString(undefined, {
+-                  month: 'short',
+-                  day: 'numeric',
+-                })
+-              : null;
+-
+-            return (
+-              <div
+-                key={cNum}
+-                onClick={() => handleOpenClassModal({ ...cls, classNo: cNum, class_no: cNum })}
+-                title={
+-                  isCompleted
+-                    ? `Class #${cNum}: Completed on ${dateObj?.toLocaleDateString()}${
+-                        cls.topic ? ` (${cls.topic})` : ''
+-                      } — Click to edit date`
+-                    : `Class #${cNum}: Click to record date & complete`
+-                }
+-                className={`relative group p-3 rounded-xl border flex flex-col items-center justify-center cursor-pointer select-none transition-all duration-200 transform hover:scale-[1.03] active:scale-95 ${
+-                  isCompleted
+-                    ? 'bg-gradient-to-br from-emerald-600/90 to-emerald-700 border-emerald-500 text-white shadow-lg shadow-emerald-600/20'
+-                    : 'bg-slate-800/60 border-slate-700/80 text-slate-400 hover:border-indigo-500/70 hover:text-slate-200 hover:bg-slate-800'
+-                }`}
+-              >
+-                <div className="flex items-center justify-between w-full text-xs font-bold font-mono">
+-                  <span>#{cNum}</span>
+-                  <CalendarDays className="w-3.5 h-3.5 opacity-40 group-hover:opacity-100 transition" />
+-                </div>
+-
+-                <div className="my-1.5">
+-                  {isCompleted ? (
+-                    <Check className="w-5 h-5 stroke-[2.5]" />
+-                  ) : (
+-                    <div className="w-5 h-5 rounded-md border border-slate-600 group-hover:border-slate-400 transition" />
+-                  )}
+-                </div>
+-
+-                <span
+-                  className={`text-[10px] font-medium truncate max-w-full text-center ${
+-                    isCompleted ? 'text-emerald-100' : 'text-slate-500 group-hover:text-slate-300'
+-                  }`}
+-                >
+-                  {formattedDate || 'Set Date'}
+-                </span>
+-
+-                {cls.topic && (
+-                  <span className="text-[9px] text-emerald-200/80 truncate max-w-full mt-0.5">
+-                    {cls.topic}
+-                  </span>
+-                )}
+-              </div>
+-            );
+-          })}
+-        </div>
+-      </div>
+-
+-      {/* Class Attendance Date Selection Modal */}
+-      {selectedClass && (
+-        <Modal
+-          isOpen={dateModalOpen}
+-          onClose={() => setDateModalOpen(false)}
+-          title={`Class #${selectedClass.classNo} — Attendance Date & Topic`}
+-          maxWidth="max-w-md"
+-        >
+-          <form onSubmit={handleSaveClassAttendance} className="space-y-4">
+-            <div className="flex items-center justify-between p-3 rounded-xl bg-slate-900 border border-slate-800">
+-              <div>
+-                <span className="text-xs font-bold text-slate-200 block">Attendance Status</span>
+-                <span className="text-[11px] text-slate-400">
+-                  {isCompletedState ? 'Mark class as attended / completed' : 'Class will be unmarked as incomplete'}
+-                </span>
+-              </div>
+-              <div className="flex items-center gap-1 bg-slate-800 p-1 rounded-lg">
+-                <button
+-                  type="button"
+-                  onClick={() => setIsCompletedState(true)}
+-                  className={`px-3 py-1.5 rounded-md text-xs font-bold transition flex items-center gap-1 ${
+-                    isCompletedState ? 'bg-emerald-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'
+-                  }`}
+-                >
+-                  <Check className="w-3.5 h-3.5" />
+-                  <span>Completed</span>
+-                </button>
+-                <button
+-                  type="button"
+-                  onClick={() => setIsCompletedState(false)}
+-                  className={`px-3 py-1.5 rounded-md text-xs font-bold transition flex items-center gap-1 ${
+-                    !isCompletedState ? 'bg-rose-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'
+-                  }`}
+-                >
+-                  <X className="w-3.5 h-3.5" />
+-                  <span>Incomplete</span>
+-                </button>
+-              </div>
+-            </div>
+-
+-            {isCompletedState ? (
+-              <div className="space-y-3 p-3.5 rounded-xl bg-slate-800/40 border border-slate-700/60">
+-                <div>
+-                  <div className="flex items-center justify-between mb-1">
+-                    <label className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
+-                      <CalendarDays className="w-4 h-4 text-indigo-400" />
+-                      Class Date (Calendar) *
+-                    </label>
+-                    <div className="flex items-center gap-1">
+-                      <button
+-                        type="button"
+-                        onClick={() => setClassDate(toLocalDateString(new Date()))}
+-                        className="text-[10px] px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-indigo-300 border border-slate-700 transition"
+-                      >
+-                        Today
+-                      </button>
+-                      <button
+-                        type="button"
+-                        onClick={() => {
+-                          const y = new Date();
+-                          y.setDate(y.getDate() - 1);
+-                          setClassDate(toLocalDateString(y));
+-                        }}
+-                        className="text-[10px] px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition"
+-                      >
+-                        Yesterday
+-                      </button>
+-                    </div>
+-                  </div>
+-                  <input
+-                    type="date"
+-                    required={isCompletedState}
+-                    value={classDate}
+-                    onChange={(e) => setClassDate(e.target.value)}
+-                    className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs text-slate-100 font-mono focus:outline-none focus:border-indigo-500 cursor-pointer"
+-                  />
+-                  <span className="text-[10px] text-slate-400 block mt-1">
+-                    This exact date will appear in the student dashboard attendance record.
+-                  </span>
+-                </div>
+-
+-                <div>
+-                  <label className="text-xs font-bold text-slate-300 block mb-1 flex items-center gap-1.5">
+-                    <BookOpen className="w-4 h-4 text-emerald-400" />
+-                    Lesson Topic / Note (Optional)
+-                  </label>
+-                  <input
+-                    type="text"
+-                    value={classTopic}
+-                    onChange={(e) => setClassTopic(e.target.value)}
+-                    placeholder="e.g. Chapter 4 Newton's Laws & Friction derivations"
+-                    className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs text-slate-100 focus:outline-none focus:border-indigo-500"
+-                  />
+-                </div>
+-              </div>
+-            ) : (
+-              <div className="p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-300 text-xs flex items-center gap-2">
+-                <span>Saving will remove attendance and unmark this class.</span>
+-              </div>
+-            )}
+-
+-            <div className="pt-2 flex items-center justify-between border-t border-slate-800">
+-              {selectedClass.completed ? (
+-                <button
+-                  type="button"
+-                  onClick={handleQuickUnmark}
+-                  disabled={savingClass}
+-                  className="px-3 py-1.5 rounded-xl border border-rose-500/30 text-rose-400 hover:bg-rose-500/10 text-xs font-semibold transition"
+-                >
+-                  Unmark Class
+-                </button>
+-              ) : (
+-                <button
+-                  type="button"
+-                  onClick={handleQuickMarkToday}
+-                  disabled={savingClass}
+-                  className="px-3 py-1.5 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 text-xs font-semibold transition"
+-                >
+-                  Mark Today ({new Date().toLocaleDateString(undefined, { month: 'short', day: 'numeric' })})
+-                </button>
+-              )}
+-
+-              <div className="flex items-center gap-2">
+-                <button
+-                  type="button"
+-                  onClick={() => setDateModalOpen(false)}
+-                  className="px-3 py-1.5 rounded-xl border border-slate-700 text-slate-300 text-xs hover:bg-slate-800 transition"
+-                >
+-                  Cancel
+-                </button>
+-                <button
+-                  type="submit"
+-                  disabled={savingClass}
+-                  className="px-4 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs shadow-md shadow-indigo-600/30 transition disabled:opacity-50"
+-                >
+-                  {savingClass ? 'Saving...' : 'Save Attendance'}
+-                </button>
+-              </div>
+-            </div>
+-          </form>
+-        </Modal>
+-      )}
+-
+-      {/* Start New Cycle Confirmation Modal */}
+-      <Modal
+-        isOpen={resetModalOpen}
+-        onClose={() => setResetModalOpen(false)}
+-        title="Start New Billing Cycle"
+-        maxWidth="max-w-md"
+-      >
+-        <div className="space-y-4">
+-          <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-300 text-sm flex items-start gap-3">
+-            <AlertTriangle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+-            <div>
+-              <p className="font-semibold">Archive Cycle #{cycle_number}?</p>
+-              <p className="text-xs text-amber-200/80 mt-1">
+-                This will archive current attendance and initialize Cycle #{cycle_number + 1} with fresh fee snapshots.
+-              </p>
+-            </div>
+-          </div>
+-
+-          <div className="text-xs text-slate-400 space-y-1">
+-            <div className="flex justify-between py-1 border-b border-slate-800">
+-              <span>Completed Classes:</span>
+-              <strong className="text-slate-200">
+-                {completed_classes} of {total_classes}
+-              </strong>
+-            </div>
+-            <div className="flex justify-between py-1 border-b border-slate-800">
+-              <span>Earned Amount:</span>
+-              <strong className="text-emerald-400">৳{Number(earned_amount).toLocaleString()}</strong>
+-            </div>
+-            <div className="flex justify-between py-1">
+-              <span>Next Cycle:</span>
+-              <strong className="text-indigo-400">Cycle #{cycle_number + 1}</strong>
+-            </div>
+-          </div>
+-
+-          <div className="pt-3 flex items-center justify-end gap-3">
+-            <button
+-              onClick={() => setResetModalOpen(false)}
+-              className="px-4 py-2 rounded-xl border border-slate-700 text-slate-300 text-xs hover:bg-slate-800 transition"
+-            >
+-              Cancel
+-            </button>
+-            <button
+-              onClick={handleConfirmReset}
+-              disabled={resetting}
+-              className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs shadow-md shadow-indigo-600/30 flex items-center gap-1.5 transition disabled:opacity-50"
+-            >
+-              {resetting ? 'Archiving & Initializing...' : 'Confirm & Start New Cycle'}
+-            </button>
+-          </div>
+-        </div>
+-      </Modal>
+-    </div>
+-  );
+-}
+diff --git a/frontend/src/components/tutor/ExamAuthoringModal.jsx b/frontend/src/components/tutor/ExamAuthoringModal.jsx
+index c170ee7..ef202fe 100644
+--- a/frontend/src/components/tutor/ExamAuthoringModal.jsx
++++ b/frontend/src/components/tutor/ExamAuthoringModal.jsx
+@@ -1,4 +1,4 @@
+-import React, { useState, useEffect } from 'react';
++import React, { useCallback, useEffect, useEffectEvent, useState } from 'react';
+ import { notify } from '../../utils/toast';
+ import { useEditor, EditorContent } from '@tiptap/react';
+ import StarterKit from '@tiptap/starter-kit';
+@@ -7,7 +7,8 @@ import { Image } from '@tiptap/extension-image';
+ import Modal from '../common/Modal';
+ import { api } from '../../api/client';
+ import { parseWrittenQuestions } from '../../utils/mcqParser';
+-import McqBuilder, { questionProblems } from './McqBuilder';
++import McqBuilder from './McqBuilder';
++import { questionProblems } from '../../utils/mcqRules';
+ import { htmlWithLatex, pasteWithLatex } from '../../utils/clipboard';
+ import {
+   Bold,
+@@ -23,17 +24,13 @@ import {
+   Calendar,
+   Send,
+   Eye,
+-  CheckCircle2,
+   Plus,
+   Trash2,
+   FileText,
+   ClipboardPaste,
+-  Users,
+-  User,
+-  Settings,
+   KeyRound,
+   Upload,
+-  Clock,
++  Clock
+ } from 'lucide-react';
+ import MathRenderer from '../common/MathRenderer';
+ 
+@@ -86,12 +83,9 @@ export default function ExamAuthoringModal({
+   // The written paper as HTML, kept in step with the editor for the live preview.
+   const [writtenHtml, setWrittenHtml] = useState('');
+ 
+-  // Dates
+-  const now = new Date();
+-  const defaultStart = formatLocalInputDateTime(new Date(now.getTime() + 10 * 60 * 1000));
+-  const defaultEnd = formatLocalInputDateTime(new Date(now.getTime() + 70 * 60 * 1000));
+-  const [startTime, setStartTime] = useState(defaultStart);
+-  const [endTime, setEndTime] = useState(defaultEnd);
++  // Dates: a new exam starts in 10 minutes and runs for an hour (reset on every open).
++  const [startTime, setStartTime] = useState(() => formatLocalInputDateTime(new Date(Date.now() + 10 * 60 * 1000)));
++  const [endTime, setEndTime] = useState(() => formatLocalInputDateTime(new Date(Date.now() + 70 * 60 * 1000)));
+ 
+   // MCQ questions state (empty by default - never ship sample content)
+   const [mcqList, setMcqList] = useState([]);
+@@ -111,6 +105,33 @@ export default function ExamAuthoringModal({
+   const [loading, setLoading] = useState(false);
+   const [error, setError] = useState('');
+ 
++  // TipTap Editor instance for CQ (clean empty content by default)
++  const editor = useEditor({
++    extensions: [
++      StarterKit,
++      Table.configure({
++        resizable: true
++      }),
++      TableRow,
++      TableHeader,
++      TableCell,
++      Image.configure({
++        inline: true,
++        allowBase64: true
++      }),
++    ],
++    content: '',
++    editorProps: {
++      attributes: {
++        class: 'prose prose-invert max-w-none focus:outline-none min-h-[180px] p-4 text-slate-100'
++      },
++      // Text copied from a ChatGPT page carries each formula as drawn symbols plus hidden
++      // LaTeX; keep only the LaTeX so it is typeset again instead of pasted twice as garble.
++      transformPastedHTML: (html) => htmlWithLatex(html)
++    },
++    onTransaction: ({ editor: current }) => setWrittenHtml(current.getHTML())
++  });
++
+   // Load an existing exam into the form (edit mode)
+   const loadExamIntoForm = (exam) => {
+     setError('');
+@@ -179,48 +200,44 @@ export default function ExamAuthoringModal({
+     }
+   };
+ 
+-  // Sync category, target, and reset state whenever modal opens
+-  useEffect(() => {
+-    if (isOpen) {
+-      if (examToEdit?.id) {
+-        loadExamIntoForm(examToEdit);
+-      } else {
+-        resetForm();
+-      }
+-      loadBatches();
+-    }
+-  }, [isOpen, initialCategory, initialStudentId, initialBatchId, examToEdit?.id]);
+-
+-  const loadBatches = async () => {
++  // Tuition groups for the target picker. Keeps a group already chosen.
++  const loadBatches = useCallback(async () => {
+     try {
+       setLoadingBatches(true);
+-      let list = [];
+-      try {
+-        const resTuitions = await api.getTuitions();
+-        list = Array.isArray(resTuitions) ? resTuitions : resTuitions.results || [];
+-      } catch (_) {
+-        const res = await api.getBatches();
+-        list = Array.isArray(res) ? res : res.results || [];
+-      }
++      const resTuitions = await api.getTuitions();
++      const list = Array.isArray(resTuitions) ? resTuitions : resTuitions.results || [];
+       setBatches(list);
+-      if (list.length > 0 && !batchId) {
+-        setBatchId(list[0].id);
+-      }
++      if (list.length > 0) setBatchId((current) => current || list[0].id);
+     } catch (err) {
+-      console.error('Failed to load tuition batches:', err);
++      notify.error(`Could not load your tuition groups: ${err.message}`);
+     } finally {
+       setLoadingBatches(false);
+     }
+-  };
++  }, []);
++
++  // Fill (edit) or reset (new) the form each time the modal opens. An effect event
++  // reads the latest props without making every prop change re-run the reset.
++  const initializeForm = useEffectEvent(() => {
++    if (examToEdit?.id) {
++      loadExamIntoForm(examToEdit);
++    } else {
++      resetForm();
++    }
++    loadBatches();
++  });
++
++  useEffect(() => {
++    if (isOpen) initializeForm();
++  }, [isOpen, initialCategory, initialStudentId, initialBatchId, examToEdit?.id]);
+ 
+   useEffect(() => {
+     if (initialStudentId) {
+       setStudentId(initialStudentId);
+       if (!initialBatchId) setTargetType('student');
+-    } else if (students.length > 0 && !studentId) {
+-      setStudentId(students[0].id || students[0].student_id);
++    } else if (students.length > 0) {
++      setStudentId((current) => current || students[0].id || students[0].student_id);
+     }
+-  }, [initialStudentId, students]);
++  }, [initialStudentId, initialBatchId, students]);
+ 
+   useEffect(() => {
+     if (initialBatchId) {
+@@ -229,32 +246,6 @@ export default function ExamAuthoringModal({
+     }
+   }, [initialBatchId]);
+ 
+-  // TipTap Editor instance for CQ (clean empty content by default)
+-  const editor = useEditor({
+-    extensions: [
+-      StarterKit,
+-      Table.configure({
+-        resizable: true,
+-      }),
+-      TableRow,
+-      TableHeader,
+-      TableCell,
+-      Image.configure({
+-        inline: true,
+-        allowBase64: true,
+-      }),
+-    ],
+-    content: '',
+-    editorProps: {
+-      attributes: {
+-        class: 'prose prose-invert max-w-none focus:outline-none min-h-[180px] p-4 text-slate-100',
+-      },
+-      // Text copied from a ChatGPT page carries each formula as drawn symbols plus hidden
+-      // LaTeX; keep only the LaTeX so it is typeset again instead of pasted twice as garble.
+-      transformPastedHTML: (html) => htmlWithLatex(html),
+-    },
+-    onTransaction: ({ editor: current }) => setWrittenHtml(current.getHTML()),
+-  });
+ 
+   // LaTeX Formula prompt
+   const insertFormula = () => {
+@@ -337,10 +328,10 @@ export default function ExamAuthoringModal({
+ 
+   // The editor mounts a moment after the modal opens; fill it once it exists.
+   useEffect(() => {
+-    if (isOpen && editor && examToEdit?.id && examToEdit.exam_type !== 'MCQ') {
+-      editor.commands.setContent(examToEdit.content_html || '');
++    if (isOpen && editor && examToEdit?.id && examToEdit?.exam_type !== 'MCQ') {
++      editor.commands.setContent(examToEdit?.content_html || '');
+     }
+-  }, [editor, isOpen, examToEdit?.id]);
++  }, [editor, isOpen, examToEdit?.id, examToEdit?.exam_type, examToEdit?.content_html]);
+ 
+   // Handle Form Submit. `publish` false saves a draft students cannot see.
+   const handleSubmit = async (e, publish = true) => {
+@@ -448,7 +439,7 @@ export default function ExamAuthoringModal({
+         negative_marks_per_wrong: examType !== 'CQ' ? parseFloat(negativeMarks) || 0 : 0,
+         is_published: publish,
+         result_publish_mode: resultsMode === 'CLOSE' || resultsMode === 'TIME' ? 'SCHEDULED' : resultsMode,
+-        publish_time: resultsMode === 'TIME' ? new Date(resultsAt).toISOString() : null,
++        publish_time: resultsMode === 'TIME' ? new Date(resultsAt).toISOString() : null
+       };
+ 
+       if (isEditing) {
+@@ -612,7 +603,9 @@ export default function ExamAuthoringModal({
+                   onChange={(e) => setBatchId(e.target.value)}
+                   className="w-full px-2.5 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-100 text-xs focus:outline-none focus:border-indigo-500"
+                 >
+-                  {batches.length === 0 ? (
++                  {loadingBatches && batches.length === 0 ? (
++                    <option value="">Loading groups…</option>
++                  ) : batches.length === 0 ? (
+                     <option value="">Create a tuition group first</option>
+                   ) : (
+                     batches.map((b) => (
+@@ -1089,7 +1082,7 @@ export default function ExamAuthoringModal({
+                   label: 'As soon as each student submits',
+                   hint: targetType === 'batch'
+                     ? 'Marks and correct answers appear the moment they hand in. In a group, someone who finishes early could pass the answers on.'
+-                    : 'Marks and correct answers appear the moment they hand in.',
++                    : 'Marks and correct answers appear the moment they hand in.'
+                 },
+                 { value: 'CLOSE', label: 'When the exam closes', hint: 'After the deadline and any late-work time, when nobody can still be answering.' },
+                 { value: 'TIME', label: 'At a time I choose', hint: 'Results come out automatically at the date and time you set.' },
+diff --git a/frontend/src/components/tutor/McqBuilder.jsx b/frontend/src/components/tutor/McqBuilder.jsx
+index 3604871..fb18890 100644
+--- a/frontend/src/components/tutor/McqBuilder.jsx
++++ b/frontend/src/components/tutor/McqBuilder.jsx
+@@ -17,10 +17,10 @@ import {
+ import { api, getMediaUrl } from '../../api/client';
+ import { notify } from '../../utils/toast';
+ import { parseQuestions } from '../../utils/mcqParser';
++import { LETTERS, correctIndex, questionProblems } from '../../utils/mcqRules';
+ import { pasteWithLatex } from '../../utils/clipboard';
+ import MathRenderer from '../common/MathRenderer';
+ 
+-const LETTERS = ['A', 'B', 'C', 'D', 'E'];
+ const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+ const SAFE_IMAGE = /^(\/media\/|https?:\/\/)/i;
+ 
+@@ -50,29 +50,7 @@ const blankQuestion = (extra = {}) => ({
+   ...extra,
+ });
+ 
+-const correctIndex = (q) => {
+-  if (typeof q.correct_answer === 'number') return q.correct_answer;
+-  if (typeof q.correct_answer === 'string' && q.correct_answer.trim()) {
+-    const value = q.correct_answer.trim().toUpperCase();
+-    if (LETTERS.includes(value)) return LETTERS.indexOf(value);
+-    if (/^\d+$/.test(value)) return Number(value);
+-  }
+-  return null;
+-};
+-
+-/** What still stops this question from being published, in the tutor's words. */
+-export function questionProblems(q) {
+-  const problems = [];
+-  const options = q.options || [];
+-  if (!String(q.question || '').trim() && !q.image_url) problems.push('Add the question text or a picture');
+-  if (options.filter((o) => String(o).trim()).length < 2) problems.push('Add at least two options');
+-  else if (options.some((o) => !String(o).trim())) problems.push('Fill in or remove the empty option');
+-  const correct = correctIndex(q);
+-  if (correct === null || correct >= options.length || !String(options[correct] ?? '').trim()) {
+-    problems.push('Choose the correct answer');
+-  }
+-  return problems;
+-}
++
+ 
+ async function uploadImage(file) {
+   if (!file.type.startsWith('image/')) throw new Error('Please choose an image file (PNG, JPG or WebP).');
+diff --git a/frontend/src/components/tutor/StudentCredentialsModal.jsx b/frontend/src/components/tutor/StudentCredentialsModal.jsx
+index ca17670..41512a5 100644
+--- a/frontend/src/components/tutor/StudentCredentialsModal.jsx
++++ b/frontend/src/components/tutor/StudentCredentialsModal.jsx
+@@ -1,4 +1,4 @@
+-import React, { useEffect, useState } from 'react';
++import React, { useState } from 'react';
+ import Modal from '../common/Modal';
+ import { api } from '../../api/client';
+ import {
+@@ -10,7 +10,6 @@ import {
+   User,
+   ShieldCheck,
+   Send,
+-  ExternalLink,
+ } from 'lucide-react';
+ 
+ export default function StudentCredentialsModal({
+@@ -25,12 +24,9 @@ export default function StudentCredentialsModal({
+   const [resetting, setResetting] = useState(false);
+   const [resetError, setResetError] = useState('');
+ 
++  // Parents mount this per student (key) and unmount it on close, so a generated
++  // password is forgotten as soon as the dialog goes away.
+   const studentKey = student?.student_id || student?.id || '';
+-  useEffect(() => {
+-    // A password is shown once: forget it as soon as the dialog closes or the student changes.
+-    setGenerated('');
+-    setResetError('');
+-  }, [studentKey, isOpen]);
+ 
+   if (!student) return null;
+ 
+diff --git a/frontend/src/components/tutor/StudentRoster.jsx b/frontend/src/components/tutor/StudentRoster.jsx
+index c908f4e..a0eb715 100644
+--- a/frontend/src/components/tutor/StudentRoster.jsx
++++ b/frontend/src/components/tutor/StudentRoster.jsx
+@@ -1,5 +1,5 @@
+ import React, { useState } from 'react';
+-import { User, Phone, School, DollarSign, Calendar, Check, X, UserPlus, Power, Key } from 'lucide-react';
++import { User, Phone, School, UserPlus, Power, Key } from 'lucide-react';
+ import StudentCredentialsModal from './StudentCredentialsModal';
+ 
+ export default function StudentRoster({
+@@ -9,7 +9,7 @@ export default function StudentRoster({
+   onSelectStudent,
+   onToggleActive,
+   onOpenAddModal,
+-  loading,
++  loading
+ }) {
+   const [selectedStudentForCredentials, setSelectedStudentForCredentials] = useState(null);
+ 
+@@ -155,11 +155,14 @@ export default function StudentRoster({
+         )}
+       </div>
+ 
+-      <StudentCredentialsModal
+-        isOpen={Boolean(selectedStudentForCredentials)}
+-        onClose={() => setSelectedStudentForCredentials(null)}
+-        student={selectedStudentForCredentials}
+-      />
++      {selectedStudentForCredentials && (
++        <StudentCredentialsModal
++          key={selectedStudentForCredentials.student_id || selectedStudentForCredentials.id}
++          isOpen
++          onClose={() => setSelectedStudentForCredentials(null)}
++          student={selectedStudentForCredentials}
++        />
++      )}
+     </>
+   );
+ }
+diff --git a/frontend/src/components/tutor/SubmissionsGradingModal.jsx b/frontend/src/components/tutor/SubmissionsGradingModal.jsx
+deleted file mode 100644
+index 388c8c4..0000000
+--- a/frontend/src/components/tutor/SubmissionsGradingModal.jsx
++++ /dev/null
+@@ -1,255 +0,0 @@
+-import React, { useState, useEffect } from 'react';
+-import { notify } from '../../utils/toast';
+-import Modal from '../common/Modal';
+-import { api } from '../../api/client';
+-import { Award, CheckCircle2, AlertCircle, FileText, ExternalLink, Image as ImageIcon } from 'lucide-react';
+-import StatusBadge from '../common/StatusBadge';
+-
+-export default function SubmissionsGradingModal({
+-  isOpen,
+-  onClose,
+-  exam,
+-  submission,
+-  onGraded,
+-}) {
+-  const submissionsList = (exam?.submissions && exam.submissions.length > 0)
+-    ? exam.submissions
+-    : (submission ? [submission] : []);
+-
+-  const [selectedSubId, setSelectedSubId] = useState(submission?.id || (submissionsList[0]?.id));
+-  const activeSubmission = submissionsList.find(s => s.id === selectedSubId) || submissionsList[0] || submission;
+-
+-  const [obtainedMarks, setObtainedMarks] = useState('');
+-  const [feedback, setFeedback] = useState('');
+-  const [loading, setLoading] = useState(false);
+-  const [error, setError] = useState('');
+-
+-  useEffect(() => {
+-    if (submission?.id) {
+-      setSelectedSubId(submission.id);
+-    } else if (submissionsList[0]?.id) {
+-      setSelectedSubId(submissionsList[0].id);
+-    }
+-  }, [submission, exam]);
+-
+-  useEffect(() => {
+-    if (activeSubmission) {
+-      setObtainedMarks(activeSubmission.obtained_marks !== null ? activeSubmission.obtained_marks : '');
+-      setFeedback(activeSubmission.tutor_feedback || '');
+-      setError('');
+-    }
+-  }, [activeSubmission]);
+-
+-  if (!activeSubmission || !exam) return null;
+-
+-  const handleSubmit = async (e) => {
+-    e.preventDefault();
+-    setError('');
+-
+-    const marksNum = parseFloat(obtainedMarks);
+-    if (isNaN(marksNum) || marksNum < 0) {
+-      setError('Please enter a valid marks value.');
+-      return;
+-    }
+-
+-    if (marksNum > parseFloat(exam.total_marks)) {
+-      setError(`Marks cannot exceed exam total of ${exam.total_marks}.`);
+-      return;
+-    }
+-
+-    setLoading(true);
+-    try {
+-      await api.gradeSubmission(activeSubmission.id, {
+-        obtained_marks: marksNum,
+-        tutor_feedback: feedback,
+-      });
+-      onGraded();
+-      if (submissionsList.length <= 1) {
+-        onClose();
+-      } else {
+-        notify(`Grade saved for ${activeSubmission.student_name}!`);
+-      }
+-    } catch (err) {
+-      setError(err.message || 'Failed to grade submission.');
+-    } finally {
+-      setLoading(false);
+-    }
+-  };
+-
+-  return (
+-    <Modal isOpen={isOpen} onClose={onClose} title={`Grade Submission — ${exam.title}`} maxWidth="max-w-3xl">
+-      <div className="space-y-5">
+-        {/* Multi-student submission selector for group / tuition exams */}
+-        {submissionsList.length > 1 && (
+-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-3 rounded-xl bg-slate-800/80 border border-indigo-500/30">
+-            <span className="text-xs text-indigo-300 font-semibold">
+-              Select Submission ({submissionsList.length} students):
+-            </span>
+-            <select
+-              value={activeSubmission.id}
+-              onChange={(e) => setSelectedSubId(e.target.value)}
+-              className="bg-slate-900 text-slate-100 text-xs rounded-lg px-3 py-1.5 border border-slate-700 focus:outline-none focus:border-indigo-500"
+-            >
+-              {submissionsList.map((s) => (
+-                <option key={s.id} value={s.id}>
+-                  {s.student_name} — {s.is_graded ? `Graded (${s.obtained_marks}/${exam.total_marks})` : 'Pending'} ({new Date(s.submitted_at).toLocaleDateString()})
+-                </option>
+-              ))}
+-            </select>
+-          </div>
+-        )}
+-
+-        {/* Student submission metadata */}
+-        <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-xl bg-slate-800/40 border border-slate-700/60 text-xs">
+-          <div>
+-            <span className="text-slate-400">Student: </span>
+-            <strong className="text-slate-200">{activeSubmission.student_name}</strong>
+-          </div>
+-          <div>
+-            <span className="text-slate-400">Submitted: </span>
+-            <span className="text-slate-200">
+-              {activeSubmission.submitted_at
+-                ? new Date(activeSubmission.submitted_at).toLocaleString()
+-                : 'Pending'}
+-            </span>
+-          </div>
+-          <div>
+-            <StatusBadge status={activeSubmission.status} />
+-          </div>
+-          <div>
+-            <span className="text-slate-400">Total Exam Marks: </span>
+-            <strong className="text-emerald-400 font-bold">{exam.total_marks}</strong>
+-          </div>
+-        </div>
+-
+-        {/* Section 1: MCQ Answers Data (if any) */}
+-        {submission.answers_data && Object.keys(submission.answers_data).length > 0 && (
+-          <div>
+-            <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+-              <FileText className="w-4 h-4 text-indigo-400" />
+-              MCQ Answers Recorded
+-            </h4>
+-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+-              {Object.entries(submission.answers_data).map(([q, ans]) => (
+-                <div key={q} className="p-2.5 rounded-lg bg-slate-800/60 border border-slate-700 text-xs flex justify-between">
+-                  <span className="font-mono text-slate-400 uppercase">{q}:</span>
+-                  <span className="font-bold text-indigo-300">{String(ans)}</span>
+-                </div>
+-              ))}
+-            </div>
+-          </div>
+-        )}
+-
+-        {/* Section 2: Uploaded CQ Answer Sheets (Images / PDFs) */}
+-        {submission.image_urls && submission.image_urls.length > 0 ? (
+-          <div>
+-            <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+-              <ImageIcon className="w-4 h-4 text-emerald-400" />
+-              Submitted CQ Answer Sheets ({submission.image_urls.length})
+-            </h4>
+-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[300px] overflow-y-auto p-1">
+-              {submission.image_urls.map((imgUrl, idx) => (
+-                <div key={idx} className="relative group rounded-xl overflow-hidden border border-slate-700 bg-slate-950">
+-                  <img
+-                    src={imgUrl}
+-                    alt={`CQ Sheet #${idx + 1}`}
+-                    className="w-full h-44 object-contain bg-slate-900"
+-                  />
+-                  <div className="absolute inset-0 bg-slate-950/70 opacity-0 group-hover:opacity-100 transition flex items-center justify-center gap-2">
+-                    <a
+-                      href={imgUrl}
+-                      target="_blank"
+-                      rel="noopener noreferrer"
+-                      className="px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-semibold flex items-center gap-1.5"
+-                    >
+-                      <ExternalLink className="w-3.5 h-3.5" />
+-                      View Full Size
+-                    </a>
+-                  </div>
+-                  <div className="p-2 bg-slate-800/90 text-[11px] text-slate-300 font-mono truncate">
+-                    Sheet #{idx + 1}
+-                  </div>
+-                </div>
+-              ))}
+-            </div>
+-          </div>
+-        ) : (
+-          <div className="p-3 rounded-xl bg-slate-800/30 border border-slate-700/50 text-xs text-slate-400 text-center">
+-            No CQ image sheets uploaded for this submission.
+-          </div>
+-        )}
+-
+-        {/* Section 3: Grading Form */}
+-        <form onSubmit={handleSubmit} className="pt-3 border-t border-slate-800 space-y-4">
+-          {error && (
+-            <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs flex items-center gap-2">
+-              <AlertCircle className="w-4 h-4 flex-shrink-0" />
+-              <span>{error}</span>
+-            </div>
+-          )}
+-
+-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+-            <div>
+-              <label className="block text-xs font-semibold text-slate-300 mb-1">
+-                Awarded Marks *
+-              </label>
+-              <div className="relative">
+-                <input
+-                  type="number"
+-                  step="0.5"
+-                  min="0"
+-                  max={exam.total_marks}
+-                  required
+-                  value={obtainedMarks}
+-                  onChange={(e) => setObtainedMarks(e.target.value)}
+-                  placeholder={`Max ${exam.total_marks}`}
+-                  className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-emerald-400 font-bold text-sm focus:outline-none focus:border-indigo-500 transition"
+-                />
+-                <span className="absolute right-3 top-2 text-xs text-slate-500">
+-                  / {exam.total_marks}
+-                </span>
+-              </div>
+-            </div>
+-
+-            <div className="sm:col-span-2">
+-              <label className="block text-xs font-semibold text-slate-300 mb-1">
+-                Tutor Feedback & Comments
+-              </label>
+-              <textarea
+-                rows={2}
+-                value={feedback}
+-                onChange={(e) => setFeedback(e.target.value)}
+-                placeholder="e.g. Great work in dynamics derivation! Need practice on circular motion."
+-                className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 text-xs focus:outline-none focus:border-indigo-500 transition"
+-              />
+-            </div>
+-          </div>
+-
+-          <div className="flex items-center justify-end gap-3 pt-2">
+-            <button
+-              type="button"
+-              onClick={onClose}
+-              className="px-4 py-2 rounded-xl border border-slate-700 text-slate-300 text-xs hover:bg-slate-800 transition"
+-            >
+-              Cancel
+-            </button>
+-            <button
+-              type="submit"
+-              disabled={loading}
+-              className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs shadow-lg shadow-emerald-600/30 flex items-center gap-1.5 transition disabled:opacity-50"
+-            >
+-              {loading ? (
+-                'Saving Grade...'
+-              ) : (
+-                <>
+-                  <Award className="w-4 h-4" />
+-                  <span>{submission.is_graded ? 'Update Grade' : 'Finalize Grade & Feedback'}</span>
+-                </>
+-              )}
+-            </button>
+-          </div>
+-        </form>
+-      </div>
+-    </Modal>
+-  );
+-}
+diff --git a/frontend/src/components/tutor/TodayClassesPanel.jsx b/frontend/src/components/tutor/TodayClassesPanel.jsx
+index 8e70187..b4e4bbf 100644
+--- a/frontend/src/components/tutor/TodayClassesPanel.jsx
++++ b/frontend/src/components/tutor/TodayClassesPanel.jsx
+@@ -3,6 +3,7 @@ import { CalendarCheck, Check, Clock, Loader2, AlertTriangle, X } from 'lucide-r
+ import { api } from '../../api/client';
+ import { notify } from '../../utils/toast';
+ import { toDateInputValue, dateInputToIso } from '../../utils/dates';
++import { useNow } from '../../hooks/useNow';
+ 
+ const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+ const LOOKBACK_DAYS = 7;
+@@ -38,9 +39,12 @@ export default function TodayClassesPanel({ tuitions = [], onChanged }) {
+   const [busy, setBusy] = useState(null);
+   const [dismissed, setDismissed] = useState(readDismissed);
+ 
++  // The calendar day, from a clock that ticks: the panel moves on to the next day by itself.
++  const todayKey = toDateInputValue(new Date(useNow(60_000)));
++
+   const { today, missed } = useMemo(() => {
+-    const now = new Date();
+-    const todayKey = toDateInputValue(now);
++    const [y, m, d] = todayKey.split('-').map(Number);
++    const now = new Date(y, m - 1, d);
+     const todayRows = [];
+     const missedRows = [];
+ 
+@@ -85,7 +89,7 @@ export default function TodayClassesPanel({ tuitions = [], onChanged }) {
+     todayRows.sort((a, b) => a.time.localeCompare(b.time));
+     missedRows.sort((a, b) => b.dayKey.localeCompare(a.dayKey));
+     return { today: todayRows.map((r) => ({ ...r, isToday: r.dayKey === todayKey })), missed: missedRows };
+-  }, [tuitions]);
++  }, [tuitions, todayKey]);
+ 
+   const visibleMissed = missed.filter((r) => !dismissed.has(r.key));
+   if (today.length === 0 && visibleMissed.length === 0) return null;
+@@ -126,7 +130,7 @@ export default function TodayClassesPanel({ tuitions = [], onChanged }) {
+         <div>
+           <h3 className="font-bold text-slate-100">Today's classes</h3>
+           <p className="text-xs text-slate-400">
+-            {new Date().toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })} · from your weekly routines
++            {new Date(`${todayKey}T00:00`).toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })} · from your weekly routines
+           </p>
+         </div>
+       </header>
+diff --git a/frontend/src/components/tutor/TuitionBatchesModal.jsx b/frontend/src/components/tutor/TuitionBatchesModal.jsx
+index 40fb04b..f2f6c58 100644
+--- a/frontend/src/components/tutor/TuitionBatchesModal.jsx
++++ b/frontend/src/components/tutor/TuitionBatchesModal.jsx
+@@ -11,20 +11,14 @@ import {
+   Clock,
+   Check,
+   AlertCircle,
+-  Sparkles,
+   UserPlus,
+   Search,
+   X,
+-  BookOpen,
+-  DollarSign,
+-  Key,
+ } from 'lucide-react';
+ 
+ // Canonical Sat-first week order (matches TutorDashboard + TuitionWorkspace).
+ const DAYS_OF_WEEK = ['Saturday', 'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+ 
+-const isNotFoundError = (err) => /404|not found/i.test(err?.message || '');
+-
+ // Strong 12-char generated password using crypto RNG (letters+digits+symbols).
+ function generateTempPassword(length = 12) {
+   const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789!@#$%&*';
+@@ -42,7 +36,7 @@ export default function TuitionBatchesModal({
+   onClose,
+   allStudents = [],
+   batchToEdit = null,
+-  onBatchSaved,
++  onBatchSaved
+ }) {
+   const [name, setName] = useState('');
+   const [subject, setSubject] = useState('');
+@@ -96,7 +90,7 @@ export default function TuitionBatchesModal({
+       setWeeklyRoutine(loadedRoutine.map(r => ({
+         day: r.day,
+         start_time: r.start_time || r.time || '18:00',
+-        end_time: r.end_time || '19:30',
++        end_time: r.end_time || '19:30'
+       })));
+     } else {
+       setName('');
+@@ -171,7 +165,7 @@ export default function TuitionBatchesModal({
+         email: newStudentEmail.trim() || `${newStudentUsername.trim().toLowerCase()}@tuitiontrack.local`,
+         password: tempPassword,
+         phone: newStudentPhone.trim(),
+-        grade_level: newStudentGrade.trim(),
++        grade_level: newStudentGrade.trim()
+       });
+ 
+       const newId = res.student.student_id || res.student.id;
+@@ -182,7 +176,7 @@ export default function TuitionBatchesModal({
+         full_name: `${newStudentFirst} ${newStudentLast}`.trim(),
+         email: res.student.email,
+         phone: newStudentPhone,
+-        profile: { grade_level: newStudentGrade },
++        profile: { grade_level: newStudentGrade }
+       };
+ 
+       setStudentsList((prev) => [newStudentObj, ...prev]);
+@@ -197,7 +191,7 @@ export default function TuitionBatchesModal({
+       setShowAddStudentForm(false);
+       setCreatedCredentials({
+         student: newStudentObj,
+-        tempPassword,
++        tempPassword
+       });
+       setCredentialsModalOpen(true);
+     } catch (err) {
+@@ -221,7 +215,7 @@ export default function TuitionBatchesModal({
+       const normalizedRoutine = weeklyRoutine.map(r => ({
+         day: r.day,
+         start_time: r.start_time || r.time || '18:00',
+-        end_time: r.end_time || '19:30',
++        end_time: r.end_time || '19:30'
+       }));
+ 
+       const payload = {
+@@ -231,7 +225,7 @@ export default function TuitionBatchesModal({
+         cycle_length: parseInt(cycleLength, 10) || 12,
+         total_fee: parseFloat(monthlyFee) || 0,
+         student_ids: selectedStudentIds.map((id) => String(id)).filter(Boolean),
+-        routine: normalizedRoutine,
++        routine: normalizedRoutine
+       };
+ 
+       if (batchToEdit) {
+@@ -614,12 +608,14 @@ export default function TuitionBatchesModal({
+       </form>
+     </Modal>
+ 
+-    <StudentCredentialsModal
+-      isOpen={credentialsModalOpen}
+-      onClose={() => setCredentialsModalOpen(false)}
+-      student={createdCredentials?.student}
+-      tempPassword={createdCredentials?.tempPassword}
+-    />
++    {credentialsModalOpen && createdCredentials?.student && (
++      <StudentCredentialsModal
++        isOpen
++        onClose={() => setCredentialsModalOpen(false)}
++        student={createdCredentials.student}
++        tempPassword={createdCredentials.tempPassword}
++      />
++    )}
+   </>
+   );
+ }
+diff --git a/frontend/src/hooks/useNow.js b/frontend/src/hooks/useNow.js
+new file mode 100644
+index 0000000..c33a8e4
+--- /dev/null
++++ b/frontend/src/hooks/useNow.js
+@@ -0,0 +1,15 @@
++import { useEffect, useState } from 'react';
++
++/**
++ * The current time as a number, refreshed every `intervalMs`. Components read
++ * this instead of calling Date.now() while rendering, so "due in 2 hours",
++ * "today" and countdowns move on by themselves and renders stay pure.
++ */
++export function useNow(intervalMs = 60_000) {
++  const [now, setNow] = useState(() => Date.now());
++  useEffect(() => {
++    const id = setInterval(() => setNow(Date.now()), intervalMs);
++    return () => clearInterval(id);
++  }, [intervalMs]);
++  return now;
++}
+diff --git a/frontend/src/pages/ForcePasswordChange.jsx b/frontend/src/pages/ForcePasswordChange.jsx
+index 426cb34..3ee6702 100644
+--- a/frontend/src/pages/ForcePasswordChange.jsx
++++ b/frontend/src/pages/ForcePasswordChange.jsx
+@@ -1,6 +1,6 @@
+ import React, { useState } from 'react';
+ import { ShieldCheck, AlertCircle, Loader2 } from 'lucide-react';
+-import { useAuth } from '../context/AuthContext';
++import { useAuth } from '../context/auth';
+ import { api } from '../api/client';
+ import { notify } from '../utils/toast';
+ import PasswordField from '../components/common/PasswordField';
+diff --git a/frontend/src/pages/LoginPage.jsx b/frontend/src/pages/LoginPage.jsx
+index 7db1e67..25d0fb5 100644
+--- a/frontend/src/pages/LoginPage.jsx
++++ b/frontend/src/pages/LoginPage.jsx
+@@ -1,6 +1,6 @@
+ import React, { useState, useEffect } from 'react';
+ import { useNavigate } from 'react-router-dom';
+-import { useAuth } from '../context/AuthContext';
++import { useAuth } from '../context/auth';
+ import { api } from '../api/client';
+ import {
+   GraduationCap, Lock, User, Mail, Phone, ArrowRight, AlertCircle, Search, Eye, EyeOff,
+diff --git a/frontend/src/pages/StudentPortal.jsx b/frontend/src/pages/StudentPortal.jsx
+index aef9cc2..dffa45d 100644
+--- a/frontend/src/pages/StudentPortal.jsx
++++ b/frontend/src/pages/StudentPortal.jsx
+@@ -11,7 +11,7 @@ import ExamResultModal from '../components/student/ExamResultModal';
+ import LeaderboardModal from '../components/common/LeaderboardModal';
+ import { confirmAction } from '../components/common/ConfirmDialog';
+ import { api } from '../api/client';
+-import { useAuth } from '../context/AuthContext';
++import { useAuth } from '../context/auth';
+ 
+ const asList = (data) => (Array.isArray(data) ? data : data?.results || []);
+ 
+@@ -52,16 +52,22 @@ export default function StudentPortal() {
+     setError('');
+     try {
+       setLoading(true);
+-      const [tuitionData, connectionData, tutorsData, examData] = await Promise.all([
+-        api.getTuitions().catch(() => []),
+-        api.getConnections().catch(() => []),
+-        api.getMyTutors().catch(() => []),
+-        api.getExams().catch(() => []),
++      const results = await Promise.allSettled([
++        api.getTuitions(),
++        api.getConnections(),
++        api.getMyTutors(),
++        api.getExams(),
+       ]);
+-      setTuitions(asList(tuitionData));
+-      setConnections(asList(connectionData));
+-      setTutors(asList(tutorsData));
+-      setExams(asList(examData));
++      const [tuitionData, connectionData, tutorsData, examData] = results.map((r) =>
++        r.status === 'fulfilled' ? asList(r.value) : null
++      );
++      // Keep what is already on screen for any part that failed this time.
++      if (tuitionData) setTuitions(tuitionData);
++      if (connectionData) setConnections(connectionData);
++      if (tutorsData) setTutors(tutorsData);
++      if (examData) setExams(examData);
++      const failed = results.find((r) => r.status === 'rejected');
++      if (failed) throw failed.reason;
+     } catch (err) {
+       setError(err.message || 'Could not load your portal data.');
+     } finally {
+diff --git a/frontend/src/pages/TuitionWorkspace.jsx b/frontend/src/pages/TuitionWorkspace.jsx
+index 77166ef..54226f7 100644
+--- a/frontend/src/pages/TuitionWorkspace.jsx
++++ b/frontend/src/pages/TuitionWorkspace.jsx
+@@ -1,6 +1,6 @@
+-import React, { useState, useEffect, useMemo } from 'react';
++import React, { useState, useEffect, useMemo, useCallback } from 'react';
+ import { notify } from '../utils/toast';
+-import { useParams, useNavigate, Link } from 'react-router-dom';
++import { useParams, Link } from 'react-router-dom';
+ import Navbar from '../components/common/Navbar';
+ import AddStudentModal from '../components/tutor/AddStudentModal';
+ import SharedCycleBoard from '../components/tutor/SharedCycleBoard';
+@@ -8,56 +8,34 @@ import ExamManager from '../components/tutor/ExamManager';
+ import AssignStudentModal from '../components/tutor/AssignStudentModal';
+ import TuitionBatchesModal from '../components/tutor/TuitionBatchesModal';
+ import ExamAuthoringModal from '../components/tutor/ExamAuthoringModal';
+-import StudentCredentialsModal from '../components/tutor/StudentCredentialsModal';
+ import Modal from '../components/common/Modal';
+ import { confirmAction } from '../components/common/ConfirmDialog';
++import StudentCredentialsModal from '../components/tutor/StudentCredentialsModal';
+ import { api } from '../api/client';
+ import {
+   ArrowLeft,
+   Calendar,
+   Clock,
+-  DollarSign,
+   Users,
+-  Layers,
+   FileText,
+   Plus,
+-  RotateCcw,
+-  CheckCircle2,
+   Check,
+   AlertCircle,
+-  Award,
+   Key,
+-  Trophy,
+   Edit2,
+   Trash2,
+   UserPlus,
+-  Mail,
+-  Phone,
+-  School,
+-  Sparkles,
+-  CalendarDays,
+   X,
+-  ExternalLink,
+   ChevronRight,
+-  TrendingUp,
+   RefreshCw,
+-  Search,
++  Search
+ } from 'lucide-react';
+ 
+ const DAYS_ORDER = ['Saturday', 'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+ 
+-const toLocalDateString = (d = new Date()) => {
+-  const dt = d instanceof Date ? d : new Date(d);
+-  return dt.getFullYear() + '-' + String(dt.getMonth() + 1).padStart(2, '0') + '-' + String(dt.getDate()).padStart(2, '0');
+-};
+-
+-const getLocalTodayIso = () => {
+-  return `${toLocalDateString(new Date())}T12:00:00Z`;
+-};
+ 
+ export default function TuitionWorkspace() {
+   const { id: tuitionId } = useParams();
+-  const navigate = useNavigate();
+ 
+   // Active Tab: 'attendance' | 'exams' | 'routine' | 'roster'
+   const [activeTab, setActiveTab] = useState('attendance');
+@@ -79,11 +57,6 @@ export default function TuitionWorkspace() {
+   const [authorExamModalOpen, setAuthorExamModalOpen] = useState(false);
+   const [authorCategory, setAuthorCategory] = useState('EXAM');
+ 
+-  // Grading & Leaderboard
+-  const [gradingModalOpen, setGradingModalOpen] = useState(false);
+-  const [selectedExamForGrading, setSelectedExamForGrading] = useState(null);
+-  const [selectedSubmissionForGrading, setSelectedSubmissionForGrading] = useState(null);
+-  const [selectedExamForLeaderboard, setSelectedExamForLeaderboard] = useState(null);
+   const [selectedStudentForCredentials, setSelectedStudentForCredentials] = useState(null);
+   const [enrollExistingModalOpen, setEnrollExistingModalOpen] = useState(false);
+   const [enrollSearch, setEnrollSearch] = useState('');
+@@ -97,56 +70,39 @@ export default function TuitionWorkspace() {
+   const [newSlotEnd, setNewSlotEnd] = useState('19:30');
+   const [savingRoutine, setSavingRoutine] = useState(false);
+ 
+-  // Load Tuition Data
+-  const loadTuitionData = async () => {
++  // Load everything the workspace shows in parallel. The group itself is required;
++  // the side lists keep what they had if they fail, and the page says so.
++  const loadTuitionData = useCallback(async () => {
+     if (!tuitionId) return;
++    setError('');
+     try {
+-      setLoading(true);
+-      setError('');
+-
+-      // 1. Fetch Tuition Detail
+-      const tData = await api.getTuitionDetail(tuitionId);
+-      setTuition(tData);
+-      setRoutineSlots(tData.routine || []);
+-
+-      // 2. Fetch Attendance Cycles for this Tuition
+-      try {
+-        const cData = await api.getAttendanceCycles(tuitionId);
+-        const cycleList = Array.isArray(cData) ? cData : cData.results || [];
+-        setCycles(cycleList);
+-      } catch (cErr) {
+-        console.error('Failed to load cycles for tuition:', cErr);
+-      }
+-
+-      // 3. Fetch Exams assigned to this Tuition
+-      try {
+-        const eData = await api.getExams(null, null, tuitionId);
+-        const examList = Array.isArray(eData) ? eData : eData.results || [];
+-        setExams(examList);
+-      } catch (eErr) {
+-        console.error('Failed to load exams for tuition:', eErr);
+-      }
+-
+-      // 4. Fetch Unassigned Students & All Students
+-      try {
+-        const uData = await api.getUnassignedStudents();
+-        setUnassignedStudents(Array.isArray(uData) ? uData : uData.results || []);
+-      } catch (_) {}
+-
+-      try {
+-        const sData = await api.getStudents();
+-        setAllStudents(Array.isArray(sData) ? sData : sData.results || []);
+-      } catch (_) {}
++      const [detail, cyclesRes, examsRes, unassignedRes, studentsRes] = await Promise.allSettled([
++        api.getTuitionDetail(tuitionId),
++        api.getAttendanceCycles(tuitionId),
++        api.getExams(null, null, tuitionId),
++        api.getUnassignedStudents(),
++        api.getStudents(),
++      ]);
++      if (detail.status === 'rejected') throw detail.reason;
++      const asList = (res) => (Array.isArray(res.value) ? res.value : res.value?.results || []);
++      setTuition(detail.value);
++      setRoutineSlots(detail.value.routine || []);
++      if (cyclesRes.status === 'fulfilled') setCycles(asList(cyclesRes));
++      if (examsRes.status === 'fulfilled') setExams(asList(examsRes));
++      if (unassignedRes.status === 'fulfilled') setUnassignedStudents(asList(unassignedRes));
++      if (studentsRes.status === 'fulfilled') setAllStudents(asList(studentsRes));
++      const failed = [cyclesRes, examsRes, unassignedRes, studentsRes].find((r) => r.status === 'rejected');
++      if (failed) notify.error(`Some parts of this group could not be loaded: ${failed.reason?.message || 'try again'}`);
+     } catch (err) {
+       setError(err.message || 'Failed to load tuition workspace.');
+     } finally {
+       setLoading(false);
+     }
+-  };
++  }, [tuitionId]);
+ 
+   useEffect(() => {
+     loadTuitionData();
+-  }, [tuitionId]);
++  }, [loadTuitionData]);
+ 
+   // Tuition Wallet for this group. The server owns the maths:
+   // earned = (total fee / classes in the cycle) * completed classes.
+@@ -162,8 +118,7 @@ export default function TuitionWorkspace() {
+     loadTuitionData();
+   };
+ 
+-  // Helpers shared by attendance lookups: numeric class-no compare + time overlap.
+-  const classNoOf = (c) => parseInt(c?.class_no ?? c?.classNo, 10);
++  // Helpers for routine slots: time overlap.
+   const slotToMinutes = (t) => {
+     const m = String(t || '00:00').match(/(\d{1,2}):(\d{2})/);
+     return m ? parseInt(m[1], 10) * 60 + parseInt(m[2], 10) : 0;
+@@ -183,7 +138,7 @@ export default function TuitionWorkspace() {
+       title: `Remove ${studentName}?`,
+       message: `They will stop seeing this group's classes and exams. The group's class tracker and earnings are not affected.`,
+       confirmLabel: 'Remove',
+-      danger: true,
++      danger: true
+     });
+     if (!ok) return;
+     try {
+@@ -920,6 +875,15 @@ export default function TuitionWorkspace() {
+           </div>
+         </div>
+       </Modal>
++      {/* Temporary password for a student (the Password button on the roster) */}
++      {selectedStudentForCredentials && (
++        <StudentCredentialsModal
++          key={selectedStudentForCredentials.student_id || selectedStudentForCredentials.id}
++          isOpen
++          onClose={() => setSelectedStudentForCredentials(null)}
++          student={selectedStudentForCredentials}
++        />
++      )}
+     </div>
+   );
+ }
+diff --git a/frontend/src/pages/TutorDashboard.jsx b/frontend/src/pages/TutorDashboard.jsx
+index f169175..d1b767d 100644
+--- a/frontend/src/pages/TutorDashboard.jsx
++++ b/frontend/src/pages/TutorDashboard.jsx
+@@ -1,4 +1,4 @@
+-import React, { useState, useEffect, useMemo } from 'react';
++import React, { useState, useEffect, useEffectEvent, useMemo } from 'react';
+ import { notify } from '../utils/toast';
+ import { useNavigate } from 'react-router-dom';
+ import Navbar from '../components/common/Navbar';
+@@ -12,15 +12,16 @@ import ExamAuthoringModal from '../components/tutor/ExamAuthoringModal';
+ import ExamManager from '../components/tutor/ExamManager';
+ import TuitionBatchesModal from '../components/tutor/TuitionBatchesModal';
+ import HomeworkManager from '../components/tutor/HomeworkManager';
+-import { useAuth } from '../context/AuthContext';
++import { useAuth } from '../context/auth';
+ import { api } from '../api/client';
+ import { confirmAction } from '../components/common/ConfirmDialog';
++import { ErrorState } from '../components/common/States';
++import { useNow } from '../hooks/useNow';
+ 
+ // Sat-first canonical week order shared with TuitionWorkspace (Sat -> Fri for BD context).
+ // Keep this single source consistent everywhere weekly routines are rendered/sorted.
+ const DAYS_ORDER = ['Saturday', 'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+ const normId = (s) => String(s?.student_id ?? s?.id ?? s ?? '');
+-const isNotFoundError = (err) => /404|not found/i.test(err?.message || '');
+ const timeToMinutes = (t) => {
+   const m = String(t || '18:00').match(/(\d{1,2}):(\d{2})/);
+   if (!m) return 18 * 60;
+@@ -30,31 +31,26 @@ import {
+   FileText,
+   Plus,
+   Calendar,
+-  Award,
+   Users,
+   Clock,
+-  ExternalLink,
+   ChevronRight,
+   RefreshCw,
+-  CheckCircle2,
+   Layers,
+-  Trophy,
+   BookOpen,
+   DollarSign,
+   Edit2,
+   Trash2,
+-  Eye,
+-  EyeOff,
+   Sparkles,
+   UserPlus,
+   CalendarDays,
+-  Copy,
++  Copy
+ } from 'lucide-react';
+ 
+ export default function TutorDashboard() {
+   const navigate = useNavigate();
+   const { user } = useAuth();
+   const [activeTab, setActiveTab] = useState('batches'); // 'batches' | 'homework' | 'attendance' | 'exams'
++  const todayName = new Date(useNow(60_000)).toLocaleDateString('en-US', { weekday: 'long' });
+ 
+   // Data states
+   const [analytics, setAnalytics] = useState(null);
+@@ -69,7 +65,6 @@ export default function TutorDashboard() {
+   // Loading states
+   const [loadingAnalytics, setLoadingAnalytics] = useState(true);
+   const [loadingStudents, setLoadingStudents] = useState(true);
+-  const [loadingUnassigned, setLoadingUnassigned] = useState(false);
+   const [loadingBatches, setLoadingBatches] = useState(false);
+   const [loadingExams, setLoadingExams] = useState(false);
+ 
+@@ -80,6 +75,18 @@ export default function TutorDashboard() {
+   const [selectedBatchToEdit, setSelectedBatchToEdit] = useState(null);
+   const [initialBatchForExam, setInitialBatchForExam] = useState('');
+   const [refreshing, setRefreshing] = useState(false);
++  // Which sections failed to load, so the page says so instead of showing empty lists.
++  const [loadErrors, setLoadErrors] = useState({});
++  const recordLoad = (section, err) => {
++    setLoadErrors((prev) => {
++      if (!err && !(section in prev)) return prev;
++      const next = { ...prev };
++      if (err) next[section] = err.message || 'Could not load.';
++      else delete next[section];
++      return next;
++    });
++    return !err;
++  };
+ 
+   // 1. Load Analytics
+   const loadAnalytics = async () => {
+@@ -87,8 +94,9 @@ export default function TutorDashboard() {
+       setLoadingAnalytics(true);
+       const data = await api.getWalletAnalytics();
+       setAnalytics(data);
++      return recordLoad('wallet', null);
+     } catch (err) {
+-      console.error('Failed to load wallet analytics:', err);
++      return recordLoad('wallet', err);
+     } finally {
+       setLoadingAnalytics(false);
+     }
+@@ -97,16 +105,15 @@ export default function TutorDashboard() {
+   const refreshAll = async () => {
+     setRefreshing(true);
+     try {
+-      await Promise.all([
++      const results = await Promise.all([
+         loadAnalytics(),
+         loadStudents(),
+         loadUnassignedStudents(),
+         loadTuitions(),
+         loadExams(),
+       ]);
+-      notify.success('Dashboard data refreshed.');
+-    } catch {
+-      // errors handled inside individual functions
++      if (results.every(Boolean)) notify.success('Dashboard data refreshed.');
++      else notify.error('Some sections could not be loaded.');
+     } finally {
+       setRefreshing(false);
+     }
+@@ -123,8 +130,9 @@ export default function TutorDashboard() {
+       if (list.length > 0 && !selectedStudentId) {
+         setSelectedStudentId(normId(list[0]));
+       }
++      return recordLoad('students', null);
+     } catch (err) {
+-      console.error('Failed to load students:', err);
++      return recordLoad('students', err);
+     } finally {
+       setLoadingStudents(false);
+     }
+@@ -133,14 +141,12 @@ export default function TutorDashboard() {
+   // 3. Load Unassigned Prospective Students
+   const loadUnassignedStudents = async () => {
+     try {
+-      setLoadingUnassigned(true);
+       const data = await api.getUnassignedStudents();
+       const list = Array.isArray(data) ? data : data.results || [];
+       setUnassignedStudents(list);
++      return recordLoad('requests', null);
+     } catch (err) {
+-      console.error('Failed to load unassigned students:', err);
+-    } finally {
+-      setLoadingUnassigned(false);
++      return recordLoad('requests', err);
+     }
+   };
+ 
+@@ -148,20 +154,13 @@ export default function TutorDashboard() {
+   const loadTuitions = async () => {
+     try {
+       setLoadingBatches(true);
+-      let list = [];
+-      try {
+-        const tData = await api.getTuitions();
+-        list = Array.isArray(tData) ? tData : tData.results || [];
+-      } catch (_) {}
+-
+-      if (list.length === 0) {
+-        const bData = await api.getBatches();
+-        list = Array.isArray(bData) ? bData : bData.results || [];
+-      }
++      const tData = await api.getTuitions();
++      const list = Array.isArray(tData) ? tData : tData.results || [];
+       setBatches(list);
+       setTuitions(list);
++      return recordLoad('tuitions', null);
+     } catch (err) {
+-      console.error('Failed to load tuition batches:', err);
++      return recordLoad('tuitions', err);
+     } finally {
+       setLoadingBatches(false);
+     }
+@@ -176,19 +175,25 @@ export default function TutorDashboard() {
+       const data = await api.getExams();
+       const list = Array.isArray(data) ? data : data.results || [];
+       setExams(list);
++      return recordLoad('exams', null);
+     } catch (err) {
+-      console.error('Failed to load exams:', err);
++      return recordLoad('exams', err);
+     } finally {
+       setLoadingExams(false);
+     }
+   };
+ 
+-  useEffect(() => {
++  // First load of every section. An effect event: it runs once on mount and
++  // always uses the current loaders.
++  const loadEverything = useEffectEvent(() => {
+     loadAnalytics();
+     loadStudents();
+     loadUnassignedStudents();
+     loadTuitions();
+     loadExams();
++  });
++  useEffect(() => {
++    loadEverything();
+   }, []);
+ 
+   // Actions
+@@ -223,7 +228,7 @@ export default function TutorDashboard() {
+       title: 'Delete tuition group?',
+       message: 'Its students and exams are removed from it. What it has already earned stays in your lifetime earnings.',
+       confirmLabel: 'Delete group',
+-      danger: true,
++      danger: true
+     });
+     if (!ok) return;
+     try {
+@@ -277,7 +282,7 @@ export default function TutorDashboard() {
+             startTime: slot.start_time || slot.time || '18:00',
+             endTime: slot.end_time || '19:30',
+             studentCount: t.student_count || t.enrollment_count || t.enrollments?.length || 0,
+-            fee: t.tuition_fee || t.monthly_fee || 0,
++            fee: t.tuition_fee || t.monthly_fee || 0
+           });
+         }
+       });
+@@ -295,6 +300,12 @@ export default function TutorDashboard() {
+       <Navbar />
+ 
+       <main className="flex-1 max-w-7xl w-full mx-auto px-3.5 sm:px-6 lg:px-8 py-5 sm:py-8 space-y-6 sm:space-y-8">
++        {Object.keys(loadErrors).length > 0 && (
++          <ErrorState
++            message={`Could not load ${Object.keys(loadErrors).join(', ')}: ${Object.values(loadErrors)[0]}`}
++            onRetry={refreshAll}
++          />
++        )}
+         {/* Page header & quick actions */}
+         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-4 sm:p-6 rounded-2xl bg-gradient-to-r from-slate-900 via-indigo-950/30 to-slate-900 border border-slate-800 shadow-xl">
+           <div>
+@@ -772,7 +783,7 @@ export default function TutorDashboard() {
+               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
+                 {DAYS_ORDER.map((day) => {
+                   const daySlots = weeklyScheduleByDay[day] || [];
+-                  const isToday = new Date().toLocaleDateString('en-US', { weekday: 'long' }) === day;
++                  const isToday = todayName === day;
+                   return (
+                     <div
+                       key={day}
+diff --git a/frontend/src/routes/ProtectedRoute.jsx b/frontend/src/routes/ProtectedRoute.jsx
+index bf296ca..63e5550 100644
+--- a/frontend/src/routes/ProtectedRoute.jsx
++++ b/frontend/src/routes/ProtectedRoute.jsx
+@@ -1,15 +1,16 @@
+ import React from 'react';
+ import { Navigate } from 'react-router-dom';
+-import { useAuth } from '../context/AuthContext';
++import { useAuth } from '../context/auth';
+ import ForcePasswordChange from '../pages/ForcePasswordChange';
++import { Spinner } from '../components/common/States';
+ 
+ export function ProtectedRoute({ children, requiredRole }) {
+   const { user, token, loading } = useAuth();
+ 
+   if (loading) {
+     return (
+-      <div className="min-h-screen bg-slate-900 flex items-center justify-center">
+-        <div className="w-10 h-10 rounded-full border-4 border-indigo-500/20 border-t-indigo-500 animate-spin" />
++      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
++        <Spinner className="w-10 h-10 border-4" />
+       </div>
+     );
+   }
+diff --git a/frontend/src/utils/mcqRules.js b/frontend/src/utils/mcqRules.js
+new file mode 100644
+index 0000000..534d0ae
+--- /dev/null
++++ b/frontend/src/utils/mcqRules.js
+@@ -0,0 +1,31 @@
++/**
++ * Rules a multiple-choice question must meet before it can be published.
++ * Shared by the question builder and the exam form (and covered by tests).
++ */
++
++export const LETTERS = ['A', 'B', 'C', 'D', 'E'];
++
++/** The correct option as an index, whether it was stored as 1, "1" or "B". Null when unset. */
++export const correctIndex = (q) => {
++  if (typeof q.correct_answer === 'number') return q.correct_answer;
++  if (typeof q.correct_answer === 'string' && q.correct_answer.trim()) {
++    const value = q.correct_answer.trim().toUpperCase();
++    if (LETTERS.includes(value)) return LETTERS.indexOf(value);
++    if (/^\d+$/.test(value)) return Number(value);
++  }
++  return null;
++};
++
++/** What still stops this question from being published, in the tutor's words. */
++export function questionProblems(q) {
++  const problems = [];
++  const options = q.options || [];
++  if (!String(q.question || '').trim() && !q.image_url) problems.push('Add the question text or a picture');
++  if (options.filter((o) => String(o).trim()).length < 2) problems.push('Add at least two options');
++  else if (options.some((o) => !String(o).trim())) problems.push('Fill in or remove the empty option');
++  const correct = correctIndex(q);
++  if (correct === null || correct >= options.length || !String(options[correct] ?? '').trim()) {
++    problems.push('Choose the correct answer');
++  }
++  return problems;
++}
+diff --git a/frontend/tailwind.config.js b/frontend/tailwind.config.js
+index 55534a6..9a3c39c 100644
+--- a/frontend/tailwind.config.js
++++ b/frontend/tailwind.config.js
+@@ -1,4 +1,5 @@
+ import typography from '@tailwindcss/typography';
++import colors from 'tailwindcss/colors';
+ 
+ /** @type {import('tailwindcss').Config} */
+ export default {
+@@ -34,6 +35,21 @@ export default {
+         // ── Canonical semantic palette (use these, not one-off hues) ──
+         // success → emerald | warning → amber | danger → rose | info → sky
+         // brand   → indigo  | assignments follow brand (indigo), NOT purple
++        success: colors.emerald,
++        warning: colors.amber,
++        danger: colors.rose,
++        info: colors.sky,
++        // Dark console surfaces, darkest to lightest.
++        surface: {
++          base: colors.slate[950],
++          raised: colors.slate[900],
++          overlay: colors.slate[800],
++          border: colors.slate[700],
++        },
++      },
++      borderRadius: {
++        // Cards and dialogs share one corner size.
++        card: '1rem',
+       },
+     },
+   },
+diff --git a/frontend/vite.config.js b/frontend/vite.config.js
+index 8bf5a27..3bced38 100644
+--- a/frontend/vite.config.js
++++ b/frontend/vite.config.js
+@@ -9,24 +9,16 @@ export default defineConfig({
+     rollupOptions: {
+       output: {
+         manualChunks(id) {
+-          if (id.includes('node_modules')) {
+-            if (id.includes('react') || id.includes('react-dom') || id.includes('react-router-dom')) {
+-              return 'vendor-react';
+-            }
+-            if (id.includes('recharts')) {
+-              return 'vendor-charts';
+-            }
+-            if (id.includes('@tiptap') || id.includes('prosemirror')) {
+-              return 'vendor-editor';
+-            }
+-            if (id.includes('katex')) {
+-              return 'vendor-katex';
+-            }
+-            if (id.includes('lucide-react')) {
+-              return 'vendor-icons';
+-            }
+-            return 'vendor';
++          if (!id.includes('node_modules')) return undefined;
++          // Most specific first: "lucide-react" and "@tiptap/react" also contain "react".
++          if (id.includes('lucide-react')) return 'vendor-icons';
++          if (id.includes('@tiptap') || id.includes('prosemirror')) return 'vendor-editor';
++          if (id.includes('recharts') || id.includes('d3-') || id.includes('victory-vendor')) return 'vendor-charts';
++          if (id.includes('katex')) return 'vendor-katex';
++          if (/[\\/]node_modules[\\/](react|react-dom|react-router|react-router-dom|scheduler)[\\/]/.test(id)) {
++            return 'vendor-react';
+           }
++          return 'vendor';
+         },
+       },
+     },
+diff --git a/frontend/vitest.config.js b/frontend/vitest.config.js
+new file mode 100644
+index 0000000..edd11a8
+--- /dev/null
++++ b/frontend/vitest.config.js
+@@ -0,0 +1,8 @@
++import { defineConfig } from 'vitest/config';
++
++export default defineConfig({
++  test: {
++    environment: 'jsdom',
++    include: ['src/**/*.test.{js,jsx}'],
++  },
++});
+-- 
+2.43.0
+

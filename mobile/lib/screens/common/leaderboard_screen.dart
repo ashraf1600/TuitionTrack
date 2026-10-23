@@ -17,7 +17,8 @@ class LeaderboardScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final repo = context.read<Repo>();
-    final myId = context.read<Session>().user?.str('id');
+    final session = context.read<Session>();
+    final myId = session.user?.str('id');
     return Scaffold(
       appBar: AppBar(title: Text(tr('Leaderboard'))),
       body: Loader<Json>(
@@ -28,7 +29,7 @@ class LeaderboardScreen extends StatelessWidget {
             children: [
               Text(data.str('exam_title', title), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
               Text(
-                [if (data.str('tuition_title').isNotEmpty) data.str('tuition_title'), tr('Out of {p0}', {'p0': trimNumber(data.number('total_marks'))})].join(' · '),
+                [if (session.isTutor && data.str('tuition_title').isNotEmpty) data.str('tuition_title'), tr('Out of {p0}', {'p0': trimNumber(data.number('total_marks'))})].join(' · '),
                 style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
               ),
               gap16,

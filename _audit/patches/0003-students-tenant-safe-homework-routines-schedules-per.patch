@@ -1,0 +1,1077 @@
+From 6f0b63889e7a967e96366b4ed9a53588e8805915 Mon Sep 17 00:00:00 2001
+From: "Claude (audit)" <noreply@anthropic.com>
+Date: Sun, 11 Oct 2026 00:06:22 +0600
+Subject: [PATCH 03/14] students: tenant-safe homework/routines/schedules,
+ personal copies for group homework
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_011d4mgSxngjRmAXosGe4ry4
+
+Security / data integrity
+- Students could PATCH/DELETE their tutor's weekly routines and dated
+  classes; writes are tutor-only now.
+- Routines, dated classes and homework accepted any student/tuition id, so a
+  tutor could attach rows to another tutor's group or student. Targets are
+  checked against the tutor's own groups and manageable students.
+- PATCH /homework/<id>/ with only a title always failed validation; partial
+  updates now keep the existing target.
+- A student's submission on shared group homework was written onto the row
+  every classmate sees (and overwrote theirs). Submitting now creates the
+  student's own copy (Homework.group_source); POST /homework/<id>/split/
+  does the tutor's split atomically on the server.
+- Homework file submissions go through the shared upload validator and the
+  file URL is returned (submission_file_url) so tutors can open it.
+- Student 'payment due' notifications no longer show the whole group's fee.
+- Connected-tutor cards show a student only their own groups' routines.
+- Invalid ?tutor_id no longer 500s.
+
+Correctness / performance
+- Tuition routine JSON is validated and normalised (day names, HH:MM).
+- Tuition list/detail prefetch cycles and members (no N+1) and mutation
+  responses are re-read so wallet figures are never stale.
+- AttendanceCycle.ensure_active survives a creation race.
+- Wallet totals and legacy cycle money use Decimal.
+- Indexes for the hot filters; migration 0014 is additive only.
+---
+ backend/apps/analytics/views.py               |  25 ++-
+ backend/apps/cycles/models.py                 |  21 +-
+ backend/apps/cycles/serializers.py            |  13 +-
+ ...14_homework_personal_copies_and_indexes.py |  66 ++++++
+ backend/apps/students/models.py               |  50 ++++-
+ backend/apps/students/serializers.py          | 209 ++++++++++++++---
+ backend/apps/students/views.py                | 212 ++++++++++++------
+ 7 files changed, 479 insertions(+), 117 deletions(-)
+ create mode 100644 backend/apps/students/migrations/0014_homework_personal_copies_and_indexes.py
+
+diff --git a/backend/apps/analytics/views.py b/backend/apps/analytics/views.py
+index 5c18e17..52b23a8 100644
+--- a/backend/apps/analytics/views.py
++++ b/backend/apps/analytics/views.py
+@@ -29,6 +29,7 @@ class WalletAnalyticsView(APIView):
+     permission_classes = [IsAuthenticated, IsTutor]
+ 
+     def get(self, request):
++        from decimal import Decimal
+         from django.db.models import Q
+         from apps.cycles.models import AttendanceCycle
+         from apps.students.models import TuitionEnrollment
+@@ -60,9 +61,18 @@ class WalletAnalyticsView(APIView):
+         ).exclude(student_id__in=enrolled_student_ids).select_related('student')
+         legacy_archived = Cycle.objects.filter(tutor=tutor, status=Cycle.Status.ARCHIVED)
+ 
+-        total_earned = sum(float(c.earned_revenue) for c in group_active) + sum(float(c.earned_amount) for c in legacy_active)
+-        total_pending = sum(float(c.pending_balance) for c in group_active) + sum(float(c.pending_amount) for c in legacy_active)
+-        lifetime_archived = sum(float(c.earned_revenue) for c in group_archived) + sum(float(c.earned_amount) for c in legacy_archived)
++        # Money is added up as Decimal and turned into a number only for the response.
++        zero = Decimal('0.00')
++        total_earned = float(
++            sum((c.earned_revenue for c in group_active), zero) + sum((Decimal(c.earned_amount) for c in legacy_active), zero)
++        )
++        total_pending = float(
++            sum((c.pending_balance for c in group_active), zero) + sum((Decimal(c.pending_amount) for c in legacy_active), zero)
++        )
++        lifetime_archived = float(
++            sum((c.earned_revenue for c in group_archived), zero)
++            + sum((Decimal(c.earned_amount) for c in legacy_archived), zero)
++        )
+ 
+         students_per_tuition = {}
+         for tuition_id in TuitionEnrollment.objects.filter(
+@@ -219,19 +229,20 @@ class NotificationsView(APIView):
+             seen_cycle_ids = set()
+             for enr in TuitionEnrollment.objects.filter(
+                 student=user, is_active=True
+-            ).select_related('tuition', 'tuition__tutor'):
++            ).select_related('tuition', 'tuition__tutor').prefetch_related('tuition__cycles'):
+                 tuition = enr.tuition
+-                cycle = tuition.cycles.filter(status=AttendanceCycle.Status.ACTIVE).first()
++                cycle = tuition.active_cycle
+                 if not cycle or not cycle.is_complete or cycle.id in seen_cycle_ids:
+                     continue
+                 seen_cycle_ids.add(cycle.id)
+                 tutor = tuition.tutor
+                 tutor_name = f'{(tutor.first_name or "").strip() or tutor.username} Sir'
+-                amount = f'৳{float(cycle.total_fee):,.0f}'
++                # No amount here: the cycle's fee is the whole group's total, which
++                # is the tutor's business and is not what one student owes.
+                 add(
+                     f'cycle-due-{cycle.id}', 'cycle',
+                     f'{tuition.title}: cycle #{cycle.cycle_number} complete — payment due',
+-                    f'{tutor_name} · {amount}', cycle.updated_at, f'/student?tutor={tutor.id}',
++                    f'Pay {tutor_name} for this cycle.', cycle.updated_at, f'/student?tutor={tutor.id}',
+                 )
+ 
+             # Legacy 1-on-1 billing (students with no tuition group).
+diff --git a/backend/apps/cycles/models.py b/backend/apps/cycles/models.py
+index c1ab850..164b13c 100644
+--- a/backend/apps/cycles/models.py
++++ b/backend/apps/cycles/models.py
+@@ -129,14 +129,16 @@ class Cycle(models.Model):
+         Guards against division by zero.
+         """
+         if not self.total_classes:
+-            return 0
+-        per_class_rate = self.fee_snapshot / self.total_classes
+-        return round(per_class_rate * self.completed_classes, 2)
++            return Decimal('0.00')
++        fee = Decimal(str(self.fee_snapshot or '0'))
++        completed = min(self.completed_classes, self.total_classes)
++        return (fee * completed / Decimal(self.total_classes)).quantize(Decimal('0.01'))
+ 
+     @property
+     def pending_amount(self):
+         """Revenue yet to be earned in this cycle."""
+-        return round(self.fee_snapshot - self.earned_amount, 2)
++        fee = Decimal(str(self.fee_snapshot or '0'))
++        return max(Decimal('0.00'), (fee - self.earned_amount).quantize(Decimal('0.01')))
+ 
+     @property
+     def is_complete(self):
+@@ -285,7 +287,16 @@ class AttendanceCycle(models.Model):
+     @classmethod
+     def ensure_active(cls, tuition):
+         """Return the tuition's ACTIVE cycle, creating it if the group has none yet."""
+-        return cls.objects.filter(tuition=tuition, status=cls.Status.ACTIVE).first() or cls.start_for(tuition)
++        from django.db import IntegrityError, transaction
++        existing = cls.objects.filter(tuition=tuition, status=cls.Status.ACTIVE).first()
++        if existing:
++            return existing
++        try:
++            # A savepoint, so losing the race to a parallel request does not break the caller's transaction.
++            with transaction.atomic():
++                return cls.start_for(tuition)
++        except IntegrityError:
++            return cls.objects.get(tuition=tuition, status=cls.Status.ACTIVE)
+ 
+     @staticmethod
+     def _class_no(item):
+diff --git a/backend/apps/cycles/serializers.py b/backend/apps/cycles/serializers.py
+index 3b5f412..1f00460 100644
+--- a/backend/apps/cycles/serializers.py
++++ b/backend/apps/cycles/serializers.py
+@@ -139,10 +139,7 @@ class StudentCycleSerializer(serializers.ModelSerializer):
+         read_only_fields = fields
+ 
+     def get_tuition_title(self, obj):
+-        try:
+-            return obj.tuition.title if (obj.tuition_id and obj.tuition) else ''
+-        except Exception:
+-            return ''
++        return obj.tuition.title if (obj.tuition_id and obj.tuition) else ''
+ 
+ 
+ class AttendanceCycleSerializer(StudentCycleSerializer):
+@@ -172,10 +169,10 @@ class AttendanceCycleSerializer(StudentCycleSerializer):
+         read_only_fields = fields
+ 
+     def get_student_count(self, obj):
+-        try:
+-            return obj.tuition.enrolled_students_count if (obj.tuition_id and obj.tuition) else 0
+-        except Exception:
+-            return 0
++        # A tuition serializer that already counted its members passes the number down.
++        if 'student_count' in self.context:
++            return self.context['student_count']
++        return obj.tuition.enrolled_students_count if (obj.tuition_id and obj.tuition) else 0
+ 
+     def to_representation(self, instance):
+         data = super().to_representation(instance)
+diff --git a/backend/apps/students/migrations/0014_homework_personal_copies_and_indexes.py b/backend/apps/students/migrations/0014_homework_personal_copies_and_indexes.py
+new file mode 100644
+index 0000000..22068da
+--- /dev/null
++++ b/backend/apps/students/migrations/0014_homework_personal_copies_and_indexes.py
+@@ -0,0 +1,66 @@
++# Generated by Django 5.2.17 on 2026-10-10 18:02
++
++import django.db.models.deletion
++from django.conf import settings
++from django.db import migrations, models
++
++
++class Migration(migrations.Migration):
++
++    dependencies = [
++        ("students", "0013_homework_source_label"),
++        migrations.swappable_dependency(settings.AUTH_USER_MODEL),
++    ]
++
++    operations = [
++        migrations.AddField(
++            model_name="homework",
++            name="group_source",
++            field=models.ForeignKey(
++                blank=True,
++                null=True,
++                on_delete=django.db.models.deletion.SET_NULL,
++                related_name="personal_copies",
++                to="students.homework",
++                verbose_name="Copied From Group Task",
++            ),
++        ),
++        migrations.AddIndex(
++            model_name="classschedule",
++            index=models.Index(
++                fields=["tutor", "scheduled_at"], name="schedule_tutor_time_idx"
++            ),
++        ),
++        migrations.AddIndex(
++            model_name="connectionrequest",
++            index=models.Index(
++                fields=["tutor", "status"], name="connection_tutor_status_idx"
++            ),
++        ),
++        migrations.AddIndex(
++            model_name="homework",
++            index=models.Index(
++                fields=["tutor", "due_date"], name="homework_tutor_due_idx"
++            ),
++        ),
++        migrations.AddIndex(
++            model_name="tuitionenrollment",
++            index=models.Index(
++                fields=["student", "is_active"], name="enrollment_student_active_idx"
++            ),
++        ),
++        migrations.AddIndex(
++            model_name="tuitionenrollment",
++            index=models.Index(
++                fields=["tuition", "is_active"], name="enrollment_tuition_active_idx"
++            ),
++        ),
++        migrations.AddConstraint(
++            model_name="homework",
++            constraint=models.UniqueConstraint(
++                condition=models.Q(("group_source__isnull", False)),
++                fields=("group_source", "student"),
++                name="unique_personal_copy_per_student",
++            ),
++        ),
++    ]
+diff --git a/backend/apps/students/models.py b/backend/apps/students/models.py
+index 9fac82a..b7162c3 100644
+--- a/backend/apps/students/models.py
++++ b/backend/apps/students/models.py
+@@ -123,7 +123,7 @@ class Tuition(models.Model):
+     @property
+     def active_cycle(self):
+         """The single shared cycle every enrolled student currently sees."""
+-        return self.cycles.filter(status='ACTIVE').first()
++        return next((c for c in self.cycles.all() if c.status == 'ACTIVE'), None)
+ 
+ 
+ class TuitionEnrollment(models.Model):
+@@ -164,6 +164,10 @@ class TuitionEnrollment(models.Model):
+         verbose_name_plural = 'Tuition Enrollments'
+         unique_together = ('tuition', 'student')
+         ordering = ['-joined_at']
++        indexes = [
++            models.Index(fields=['student', 'is_active'], name='enrollment_student_active_idx'),
++            models.Index(fields=['tuition', 'is_active'], name='enrollment_tuition_active_idx'),
++        ]
+ 
+     def __str__(self):
+         return f'{self.student.get_full_name() or self.student.username} in {self.tuition.title}'
+@@ -221,6 +225,9 @@ class ConnectionRequest(models.Model):
+                 name='unique_connection_request_per_student_tutor'
+             )
+         ]
++        indexes = [
++            models.Index(fields=['tutor', 'status'], name='connection_tutor_status_idx'),
++        ]
+ 
+     def __str__(self):
+         return f'{self.student.username} -> {self.tutor.username} ({self.status})'
+@@ -265,6 +272,18 @@ class Homework(models.Model):
+         help_text='Null when assigned to an individual student.',
+     )
+ 
++    # A student's own copy of a shared group task, made when they hand in their
++    # work (or when the tutor splits the task), so one student's submission is
++    # never written onto — or shown on — the row their classmates share.
++    group_source = models.ForeignKey(
++        'self',
++        on_delete=models.SET_NULL,
++        null=True,
++        blank=True,
++        related_name='personal_copies',
++        verbose_name='Copied From Group Task',
++    )
++
+     title = models.CharField(max_length=255, verbose_name='Title')
+     description = models.TextField(blank=True, verbose_name='Description / Instructions')
+     due_date = models.DateTimeField(verbose_name='Due Date & Time', db_index=True)
+@@ -310,6 +329,32 @@ class Homework(models.Model):
+         verbose_name = 'Homework'
+         verbose_name_plural = 'Homework Assignments'
+         ordering = ['due_date']
++        indexes = [
++            models.Index(fields=['tutor', 'due_date'], name='homework_tutor_due_idx'),
++        ]
++        constraints = [
++            # At most one personal copy of a group task per student.
++            models.UniqueConstraint(
++                fields=['group_source', 'student'],
++                condition=models.Q(group_source__isnull=False),
++                name='unique_personal_copy_per_student',
++            ),
++        ]
++
++    def personal_copy_for(self, student):
++        """This group task's copy for one student, created on first use (caller holds a transaction)."""
++        copy, _ = Homework.objects.get_or_create(
++            group_source=self,
++            student=student,
++            defaults={
++                'tutor_id': self.tutor_id,
++                'title': self.title,
++                'description': self.description,
++                'due_date': self.due_date,
++                'source_label': self.source_label,
++            },
++        )
++        return copy
+ 
+     def __str__(self):
+         recipient = (
+@@ -374,6 +419,9 @@ class ClassSchedule(models.Model):
+ 
+     class Meta:
+         ordering = ['scheduled_at']
++        indexes = [
++            models.Index(fields=['tutor', 'scheduled_at'], name='schedule_tutor_time_idx'),
++        ]
+ 
+     def __str__(self):
+         return f'{self.tutor.username} @ {self.scheduled_at:%Y-%m-%d %H:%M}'
+diff --git a/backend/apps/students/serializers.py b/backend/apps/students/serializers.py
+index 047cccc..a1cd4ae 100644
+--- a/backend/apps/students/serializers.py
++++ b/backend/apps/students/serializers.py
+@@ -9,7 +9,6 @@ Handles serialization for:
+ from rest_framework import serializers
+ from django.contrib.auth import get_user_model
+ from django.db import transaction
+-from django.db.models import Q
+ 
+ from .models import StudentProfile
+ 
+@@ -155,7 +154,7 @@ class StudentCreateSerializer(serializers.Serializer):
+         try:
+             attrs['email'] = validate_unique_email(attrs.get('email', ''), exclude_user=same_account)
+         except serializers.ValidationError as exc:
+-            raise serializers.ValidationError({'email': exc.detail})
++            raise serializers.ValidationError({'email': exc.detail}) from exc
+         return attrs
+ 
+     @transaction.atomic
+@@ -252,10 +251,71 @@ class StudentCreateSerializer(serializers.Serializer):
+         return student_user
+ 
+ 
++# ── Weekly routine stored on a tuition ───────────────────────────────────
++
++ROUTINE_DAYS = ('Saturday', 'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday')
++MAX_ROUTINE_SLOTS = 28
++
++
++def _clock(value, field):
++    """'7:5', '07:05' and '07:05:00' all become '07:05'. Anything else is refused."""
++    import re
++    match = re.fullmatch(r'\s*(\d{1,2}):(\d{1,2})(?::\d{1,2})?\s*', str(value or ''))
++    if not match or int(match.group(1)) > 23 or int(match.group(2)) > 59:
++        raise serializers.ValidationError(f'{field} must be a time like 18:30.')
++    return f'{int(match.group(1)):02d}:{int(match.group(2)):02d}'
++
++
++def normalize_routine(value):
++    """
++    The weekly routine every client reads: [{day, start_time, end_time}], with
++    the day spelled in full ("Saturday") and times as HH:MM. Older clients sent
++    `time` instead of `start_time`; that is still accepted.
++    """
++    if value in (None, ''):
++        return []
++    if not isinstance(value, list):
++        raise serializers.ValidationError('Routine must be a list of {day, start_time, end_time}.')
++    if len(value) > MAX_ROUTINE_SLOTS:
++        raise serializers.ValidationError(f'A routine can have at most {MAX_ROUTINE_SLOTS} slots.')
++    by_lower = {d.lower(): d for d in ROUTINE_DAYS}
++    by_lower.update({d[:3].lower(): d for d in ROUTINE_DAYS})
++    slots = []
++    for raw in value:
++        if not isinstance(raw, dict):
++            raise serializers.ValidationError('Each routine slot must be an object.')
++        day = by_lower.get(str(raw.get('day', '')).strip().lower())
++        if not day:
++            raise serializers.ValidationError(f'"{raw.get("day")}" is not a day of the week.')
++        start = _clock(raw.get('start_time') or raw.get('time'), 'start_time')
++        end = _clock(raw.get('end_time') or start, 'end_time')
++        if end <= start:
++            raise serializers.ValidationError(f'{day}: the class must end after it starts.')
++        slots.append({'day': day, 'start_time': start, 'end_time': end})
++    slots.sort(key=lambda slot: (ROUTINE_DAYS.index(slot['day']), slot['start_time']))
++    return slots
++
++
+ # ── Tuition Group Serializers ────────────────────────────────────────────
+ 
+ def _active_enrollments(tuition):
+-    return tuition.enrollments.filter(is_active=True, student__is_active=True)
++    """Current members. Uses the list the view prefetched when there is one (no query per row)."""
++    cached = getattr(tuition, 'active_enrollments_cache', None)
++    if cached is not None:
++        return cached
++    return list(
++        tuition.enrollments.filter(is_active=True, student__is_active=True)
++        .select_related('student', 'student__student_profile')
++    )
++
++
++def _cycles(tuition):
++    """All cycles of the tuition; served from the prefetch cache when the view loaded them."""
++    return list(tuition.cycles.all())
++
++
++def _active_cycle(tuition):
++    return next((c for c in _cycles(tuition) if c.status == 'ACTIVE'), None)
+ 
+ 
+ class StudentTuitionSerializer(serializers.ModelSerializer):
+@@ -284,11 +344,11 @@ class StudentTuitionSerializer(serializers.ModelSerializer):
+         return obj.tutor.get_full_name() or obj.tutor.username
+ 
+     def get_enrolled_count(self, obj):
+-        return _active_enrollments(obj).count()
++        return len(_active_enrollments(obj))
+ 
+     def get_active_cycle(self, obj):
+         from apps.cycles.serializers import StudentCycleSerializer
+-        cycle = obj.active_cycle
++        cycle = _active_cycle(obj)
+         return StudentCycleSerializer(cycle, context=self.context).data if cycle else None
+ 
+ 
+@@ -313,15 +373,18 @@ class TuitionSerializer(StudentTuitionSerializer):
+ 
+     def get_active_cycle(self, obj):
+         from apps.cycles.serializers import AttendanceCycleSerializer
+-        cycle = obj.active_cycle
+-        return AttendanceCycleSerializer(cycle, context=self.context).data if cycle else None
++        cycle = _active_cycle(obj)
++        if not cycle:
++            return None
++        context = {**self.context, 'student_count': len(_active_enrollments(obj))}
++        return AttendanceCycleSerializer(cycle, context=context).data
+ 
+     def get_students_detail(self, obj):
+         return self.get_enrollments(obj)
+ 
+     def get_enrollments(self, obj):
+         res = []
+-        for enr in _active_enrollments(obj).select_related('student', 'student__student_profile'):
++        for enr in _active_enrollments(obj):
+             student = enr.student
+             profile = getattr(student, 'student_profile', None)
+             res.append({
+@@ -345,14 +408,14 @@ class TuitionSerializer(StudentTuitionSerializer):
+         for the current cycle, plus what earlier (archived) cycles earned.
+         """
+         from decimal import Decimal
+-        cycle = obj.active_cycle
++        cycle = _active_cycle(obj)
+         lifetime = sum(
+-            (c.earned_revenue for c in obj.cycles.filter(status='ARCHIVED')),
++            (c.earned_revenue for c in _cycles(obj) if c.status == 'ARCHIVED'),
+             Decimal('0.00'),
+         )
+         earned = cycle.earned_revenue if cycle else Decimal('0.00')
+         return {
+-            'total_students': _active_enrollments(obj).count(),
++            'total_students': len(_active_enrollments(obj)),
+             'total_fee': float(obj.total_fee),
+             'per_class_rate': float(cycle.per_class_rate) if cycle else 0.0,
+             'completed_classes': cycle.completed_classes if cycle else 0,
+@@ -391,6 +454,9 @@ class TuitionCreateUpdateSerializer(serializers.ModelSerializer):
+     def _tutor(self):
+         return self.instance.tutor if self.instance else self.context['request'].user
+ 
++    def validate_routine(self, value):
++        return normalize_routine(value)
++
+     def validate_student_ids(self, value):
+         from .services import manageable_students
+         allowed = set(manageable_students(self._tutor()).filter(id__in=value).values_list('id', flat=True))
+@@ -575,6 +641,24 @@ class ConnectedTutorSerializer(serializers.Serializer):
+             return url
+         return None
+ 
++    def _visible_tuitions(self, obj):
++        """
++        A student sees the groups of this tutor they are actually in (their
++        schedule is built from these routines), never the tutor's other groups.
++        """
++        tuitions = list(obj.tuitions.all())
++        request = self.context.get("request")
++        if request and getattr(request.user, "role", None) == "STUDENT":
++            enrolled = self.context.get("enrolled_tuition_ids")
++            if enrolled is None:
++                from .models import TuitionEnrollment
++                enrolled = set(TuitionEnrollment.objects.filter(
++                    student=request.user, is_active=True
++                ).values_list("tuition_id", flat=True))
++                self.context["enrolled_tuition_ids"] = enrolled
++            tuitions = [t for t in tuitions if t.id in enrolled]
++        return tuitions
++
+     def get_tuitions(self, obj):
+         return [
+             {
+@@ -584,10 +668,11 @@ class ConnectedTutorSerializer(serializers.Serializer):
+                 "routine": t.routine,
+                 "cycle_length": t.cycle_length,
+             }
+-            for t in obj.tuitions.all()
++            for t in self._visible_tuitions(obj)
+         ]
+ 
+     def get_subjects(self, obj):
++        # What the tutor teaches is public (it is in the tutor directory too).
+         subjects = [t.subject for t in obj.tuitions.all() if t.subject]
+         return list(dict.fromkeys(subjects))
+ 
+@@ -601,6 +686,8 @@ class HomeworkSerializer(serializers.ModelSerializer):
+     student_name = serializers.SerializerMethodField()
+     tuition_title = serializers.SerializerMethodField()
+     is_submitted = serializers.SerializerMethodField()
++    submission_file_url = serializers.SerializerMethodField()
++    is_group = serializers.SerializerMethodField()
+ 
+     class Meta:
+         from .models import Homework
+@@ -609,12 +696,24 @@ class HomeworkSerializer(serializers.ModelSerializer):
+             "id", "title", "description", "due_date", "source_label",
+             "tutor_name", "tutor_display_name", "tutor_profile_picture",
+             "student_id", "student_name", "tuition_id", "tuition_title",
+-            "submitted_online_url", "submitted_at", "is_submitted",
++            "is_group", "group_source_id",
++            "submitted_online_url", "submission_file_url", "submitted_at", "is_submitted",
+             "is_evaluated", "evaluated_at", "tutor_feedback",
+             "created_at", "updated_at",
+         ]
+         read_only_fields = fields
+ 
++    def get_is_group(self, obj):
++        """A shared task for a whole tuition group (no single student yet)."""
++        return obj.student_id is None and obj.tuition_id is not None
++
++    def get_submission_file_url(self, obj):
++        if not obj.submission_file:
++            return None
++        url = obj.submission_file.url
++        request = self.context.get("request")
++        return request.build_absolute_uri(url) if request else url
++
+     def get_tutor_name(self, obj):
+         return obj.tutor.get_full_name() or obj.tutor.username
+ 
+@@ -638,10 +737,48 @@ class HomeworkSerializer(serializers.ModelSerializer):
+         return obj.tuition.title if obj.tuition else None
+ 
+     def get_is_submitted(self, obj):
+-        return bool(obj.submitted_online_url or getattr(obj, "submission_file", None) or obj.submitted_at)
++        return bool(obj.submitted_online_url or obj.submission_file or obj.submitted_at)
++
+ 
++class _TutorTargetMixin:
++    """
++    Shared by homework, routines and dated classes: the target is exactly one
++    of a student or a tuition group, and both must belong to the requesting
++    tutor. On a partial update the fields that were not sent keep their
++    current values, so a rename does not have to resend the target.
++    """
++    target_required = True
++
++    def _tutor(self):
++        request = self.context.get("request")
++        return request.user if request else None
++
++    def _validate_target(self, attrs):
++        from .services import can_manage
++
++        def current(field):
++            if field in attrs:
++                return attrs[field]
++            return getattr(self.instance, field, None) if self.instance else None
++
++        student, tuition = current("student"), current("tuition")
++        if student and tuition:
++            raise serializers.ValidationError("Assign to either a student OR a tuition group, not both.")
++        if self.target_required and not student and not tuition:
++            raise serializers.ValidationError("Provide either a student or a tuition group.")
++
++        tutor = self._tutor()
++        if tutor is not None:
++            if "student" in attrs and student and (
++                student.role != User.Role.STUDENT or not can_manage(tutor, student)
++            ):
++                raise serializers.ValidationError({"student": "This student does not belong to you."})
++            if "tuition" in attrs and tuition and tuition.tutor_id != tutor.id:
++                raise serializers.ValidationError({"tuition": "This tuition does not belong to you."})
++        return attrs
+ 
+-class HomeworkCreateUpdateSerializer(serializers.ModelSerializer):
++
++class HomeworkCreateUpdateSerializer(_TutorTargetMixin, serializers.ModelSerializer):
+     """Tutor creates/edits homework. is_evaluated is NOT writable here."""
+ 
+     class Meta:
+@@ -654,15 +791,7 @@ class HomeworkCreateUpdateSerializer(serializers.ModelSerializer):
+         read_only_fields = ["id"]
+ 
+     def validate(self, attrs):
+-        if not attrs.get("student") and not attrs.get("tuition"):
+-            raise serializers.ValidationError(
+-                "Provide either a student or a tuition group for this homework."
+-            )
+-        if attrs.get("student") and attrs.get("tuition"):
+-            raise serializers.ValidationError(
+-                "Assign homework to either a student OR a tuition group, not both."
+-            )
+-        return attrs
++        return self._validate_target(attrs)
+ 
+ 
+ class HomeworkMarkDoneSerializer(serializers.Serializer):
+@@ -672,9 +801,23 @@ class HomeworkMarkDoneSerializer(serializers.Serializer):
+ 
+ class StudentHomeworkSubmitSerializer(serializers.Serializer):
+     """Student optionally submits an online link and/or file. No is_evaluated here."""
+-    submitted_online_url = serializers.URLField(required=False, allow_blank=True, default="")
++    submitted_online_url = serializers.URLField(required=False, allow_blank=True, default="", max_length=1000)
+     submission_file = serializers.FileField(required=False, allow_null=True)
+ 
++    def validate_submitted_online_url(self, value):
++        if value and not value.lower().startswith(("http://", "https://")):
++            raise serializers.ValidationError("Use a link that starts with http:// or https://.")
++        return value
++
++    def validate_submission_file(self, value):
++        from apps.exams.uploads import UploadRejected, validate_upload
++        if value is None:
++            return value
++        try:
++            return validate_upload(value)
++        except UploadRejected as exc:
++            raise serializers.ValidationError(str(exc)) from exc
++
+ 
+ class TutorHomeworkEvaluateSerializer(serializers.Serializer):
+     """Tutor-only: the ONLY path that writes is_evaluated."""
+@@ -701,7 +844,7 @@ class ConnectedTutorListSerializer(serializers.Serializer):
+         return request.build_absolute_uri(url) if request else url
+ 
+ 
+-class WeeklyRoutineSerializer(serializers.ModelSerializer):
++class WeeklyRoutineSerializer(_TutorTargetMixin, serializers.ModelSerializer):
+     class Meta:
+         from .models import WeeklyRoutine
+         model = WeeklyRoutine
+@@ -709,14 +852,15 @@ class WeeklyRoutineSerializer(serializers.ModelSerializer):
+         read_only_fields = ["id"]
+ 
+     def validate(self, attrs):
+-        if not attrs.get("student") and not attrs.get("tuition"):
+-            raise serializers.ValidationError("Provide a student or a tuition group.")
+-        if attrs.get("student") and attrs.get("tuition"):
+-            raise serializers.ValidationError("Provide either student OR tuition, not both.")
++        attrs = self._validate_target(attrs)
++        start = attrs.get("start_time", getattr(self.instance, "start_time", None))
++        end = attrs.get("end_time", getattr(self.instance, "end_time", None))
++        if start and end and end <= start:
++            raise serializers.ValidationError({"end_time": "The class must end after it starts."})
+         return attrs
+ 
+ 
+-class ClassScheduleSerializer(serializers.ModelSerializer):
++class ClassScheduleSerializer(_TutorTargetMixin, serializers.ModelSerializer):
+     scheduled_at = serializers.DateTimeField(format="%Y-%m-%dT%H:%M:%SZ")
+ 
+     class Meta:
+@@ -724,3 +868,6 @@ class ClassScheduleSerializer(serializers.ModelSerializer):
+         model = ClassSchedule
+         fields = ["id", "scheduled_at", "topic", "is_cancelled", "student", "tuition"]
+         read_only_fields = ["id"]
++
++    def validate(self, attrs):
++        return self._validate_target(attrs)
+diff --git a/backend/apps/students/views.py b/backend/apps/students/views.py
+index 5d6fcee..93f10ba 100644
+--- a/backend/apps/students/views.py
++++ b/backend/apps/students/views.py
+@@ -91,10 +91,14 @@ class StudentDetailView(generics.RetrieveUpdateDestroyAPIView):
+     http_method_names = ['get', 'patch', 'delete', 'head', 'options']
+ 
+     def get_queryset(self):
+-        return User.objects.filter(
+-            role='STUDENT',
+-            tutor=self.request.user
+-        ).select_related('student_profile')
++        # Any student on the tutor's list can be opened; only the tutor who owns
++        # the account (created or first accepted it) may change or deactivate it.
++        from .services import manageable_students
++        if self.request.method in ('GET', 'HEAD', 'OPTIONS'):
++            qs = manageable_students(self.request.user)
++        else:
++            qs = User.objects.filter(role='STUDENT', tutor=self.request.user)
++        return qs.select_related('student_profile')
+ 
+     def destroy(self, request, *args, **kwargs):
+         """
+@@ -198,10 +202,25 @@ class TuitionViewSet(viewsets.ModelViewSet):
+             return [IsAuthenticated(), IsTutorOrStudent()]
+         return [IsAuthenticated(), IsTutor()]
+ 
++    @staticmethod
++    def _with_related(qs):
++        """Loads cycles and current members in two queries for the whole page, not per row."""
++        from django.db.models import Prefetch
++        from .models import TuitionEnrollment
++        return qs.select_related('tutor').prefetch_related(
++            'cycles',
++            Prefetch(
++                'enrollments',
++                queryset=TuitionEnrollment.objects.filter(is_active=True, student__is_active=True)
++                .select_related('student', 'student__student_profile'),
++                to_attr='active_enrollments_cache',
++            ),
++        )
++
+     def get_queryset(self):
+         from .models import Tuition
+         user = self.request.user
+-        qs = Tuition.objects.select_related('tutor').prefetch_related('cycles')
++        qs = self._with_related(Tuition.objects.all())
+         if user.role == 'TUTOR':
+             return qs.filter(tutor=user)
+         if user.role == 'STUDENT':
+@@ -217,8 +236,11 @@ class TuitionViewSet(viewsets.ModelViewSet):
+         return StudentTuitionSerializer
+ 
+     def _detail(self, tuition):
++        """The tutor's view of the group as it is now (re-read, so a change just made shows)."""
++        from .models import Tuition
+         from .serializers import TuitionSerializer
+-        return TuitionSerializer(tuition, context=self.get_serializer_context()).data
++        fresh = self._with_related(Tuition.objects.filter(pk=tuition.pk)).first() or tuition
++        return TuitionSerializer(fresh, context=self.get_serializer_context()).data
+ 
+     def create(self, request, *args, **kwargs):
+         serializer = self.get_serializer(data=request.data)
+@@ -261,7 +283,7 @@ class TuitionViewSet(viewsets.ModelViewSet):
+         try:
+             ids = {uuid.UUID(str(value)) for value in raw}
+         except (ValueError, TypeError, AttributeError):
+-            raise ValidationError({'student_id': 'Invalid student id.'})
++            raise ValidationError({'student_id': 'Invalid student id.'}) from None
+ 
+         existing = User.objects.filter(id__in=ids, role=User.Role.STUDENT)
+         if existing.count() != len(ids):
+@@ -696,37 +718,54 @@ class HomeworkViewSet(viewsets.GenericViewSet):
+     PATCH  /api/v1/homework/<id>/               - Tutor edits homework
+     DELETE /api/v1/homework/<id>/               - Tutor deletes homework
+     POST   /api/v1/homework/<id>/mark_done/     - Tutor marks as evaluated
+-    POST   /api/v1/homework/<id>/submit/        - Student submits online link
++    POST   /api/v1/homework/<id>/evaluate/      - Tutor sets is_evaluated true/false
++    POST   /api/v1/homework/<id>/split/         - Tutor turns a group task into one copy per student
++    POST   /api/v1/homework/<id>/submit/        - Student submits a link and/or file
++
++    A group task (tuition set, no student) is shared. A student never writes on
++    it: handing in work creates (or reuses) their own copy, and from then on
++    they see that copy instead of the shared row.
+     """
+-    permission_classes = [IsAuthenticated]
++    permission_classes = [IsAuthenticated, IsTutorOrStudent]
+ 
+     def get_queryset(self):
+-        from .models import Homework
++        from .models import Homework, TuitionEnrollment
+         user = self.request.user
+         qs = Homework.objects.select_related("tutor", "student", "tuition")
+         if user.role == "TUTOR":
+             return qs.filter(tutor=user)
+         if user.role == "STUDENT":
+-            from .models import TuitionEnrollment
+             enrolled_tuition_ids = TuitionEnrollment.objects.filter(
+                 student=user, is_active=True
+             ).values_list("tuition_id", flat=True)
++            copied_group_ids = Homework.objects.filter(
++                student=user, group_source__isnull=False
++            ).values_list("group_source_id", flat=True)
+             return qs.filter(
+-                Q(student=user) | Q(tuition_id__in=enrolled_tuition_ids)
+-            )
++                Q(student=user) | Q(student__isnull=True, tuition_id__in=enrolled_tuition_ids)
++            ).exclude(id__in=copied_group_ids)
+         return Homework.objects.none()
+ 
++    def _tutor_only(self, request, verb):
++        if request.user.role != "TUTOR":
++            return Response({"error": f"Only tutors can {verb} homework."}, status=status.HTTP_403_FORBIDDEN)
++        return None
++
+     def list(self, request):
++        import uuid as _uuid
+         from .serializers import HomeworkSerializer
+         qs = self.get_queryset().order_by("due_date")
+ 
+-        # Optional query filters
+         tutor_id = request.query_params.get("tutor_id")
+         evaluated = request.query_params.get("evaluated")
+         if tutor_id:
++            try:
++                _uuid.UUID(str(tutor_id))
++            except (ValueError, TypeError):
++                return Response({"tutor_id": ["Invalid tutor id."]}, status=status.HTTP_400_BAD_REQUEST)
+             qs = qs.filter(tutor_id=tutor_id)
+-        if evaluated is not None:
+-            qs = qs.filter(is_evaluated=(evaluated.lower() == "true"))
++        if evaluated is not None and evaluated != "":
++            qs = qs.filter(is_evaluated=(evaluated.lower() in ("true", "1", "yes")))
+ 
+         return Response(HomeworkSerializer(qs, many=True, context={"request": request}).data)
+ 
+@@ -737,39 +776,30 @@ class HomeworkViewSet(viewsets.GenericViewSet):
+ 
+     def create(self, request):
+         from .serializers import HomeworkCreateUpdateSerializer, HomeworkSerializer
+-        from .models import Homework
+-        if request.user.role != "TUTOR":
+-            return Response({"error": "Only tutors can create homework."}, status=status.HTTP_403_FORBIDDEN)
+-
+-        serializer = HomeworkCreateUpdateSerializer(data=request.data)
++        denied = self._tutor_only(request, "create")
++        if denied:
++            return denied
++        serializer = HomeworkCreateUpdateSerializer(data=request.data, context={"request": request})
+         serializer.is_valid(raise_exception=True)
+-
+-        # Ensure the student / tuition belongs to this tutor.
+-        student = serializer.validated_data.get("student")
+-        tuition = serializer.validated_data.get("tuition")
+-        if student and student.tutor != request.user:
+-            return Response({"student": "This student does not belong to you."}, status=status.HTTP_400_BAD_REQUEST)
+-        if tuition and tuition.tutor != request.user:
+-            return Response({"tuition": "This tuition does not belong to you."}, status=status.HTTP_400_BAD_REQUEST)
+-
+         hw = serializer.save(tutor=request.user)
+         return Response(HomeworkSerializer(hw, context={"request": request}).data, status=status.HTTP_201_CREATED)
+ 
+     def partial_update(self, request, pk=None):
+         from .serializers import HomeworkCreateUpdateSerializer, HomeworkSerializer
+-        if request.user.role != "TUTOR":
+-            return Response({"error": "Only tutors can edit homework."}, status=status.HTTP_403_FORBIDDEN)
++        denied = self._tutor_only(request, "edit")
++        if denied:
++            return denied
+         hw = get_object_or_404(self.get_queryset(), pk=pk)
+-        serializer = HomeworkCreateUpdateSerializer(hw, data=request.data, partial=True)
++        serializer = HomeworkCreateUpdateSerializer(hw, data=request.data, partial=True, context={"request": request})
+         serializer.is_valid(raise_exception=True)
+         hw = serializer.save()
+         return Response(HomeworkSerializer(hw, context={"request": request}).data)
+ 
+     def destroy(self, request, pk=None):
+-        if request.user.role != "TUTOR":
+-            return Response({"error": "Only tutors can delete homework."}, status=status.HTTP_403_FORBIDDEN)
+-        from .models import Homework
+-        hw = get_object_or_404(Homework, pk=pk, tutor=request.user)
++        denied = self._tutor_only(request, "delete")
++        if denied:
++            return denied
++        hw = get_object_or_404(self.get_queryset(), pk=pk)
+         hw.delete()
+         return Response(status=status.HTTP_204_NO_CONTENT)
+ 
+@@ -788,36 +818,84 @@ class HomeworkViewSet(viewsets.GenericViewSet):
+         hw.evaluated_at = timezone.now()
+         if serializer.validated_data.get("feedback"):
+             hw.tutor_feedback = serializer.validated_data["feedback"]
+-        hw.save(update_fields=["is_evaluated", "evaluated_at", "tutor_feedback"])
++        hw.save(update_fields=["is_evaluated", "evaluated_at", "tutor_feedback", "updated_at"])
+ 
+         return Response({
+             "message": "Homework marked as done.",
+             "homework": HomeworkSerializer(hw, context={"request": request}).data,
+         })
+ 
++    @action(detail=True, methods=["post"], permission_classes=[IsAuthenticated, IsTutor])
++    def split(self, request, pk=None):
++        """
++        POST /api/v1/homework/<id>/split/
++        Turns a shared group task into one row per current member, in one step:
++        students who already handed in keep their copy, everyone else gets a
++        fresh one, and the shared row is removed. Returns the per-student rows.
++        """
++        from django.db import transaction
++        from .models import Homework, TuitionEnrollment
++        from .serializers import HomeworkSerializer
++
++        with transaction.atomic():
++            hw = get_object_or_404(self.get_queryset().select_for_update(of=("self",)), pk=pk)
++            if hw.student_id or not hw.tuition_id:
++                return Response({"error": "Only a shared group task can be split."}, status=status.HTTP_400_BAD_REQUEST)
++            members = [
++                enr.student for enr in TuitionEnrollment.objects.filter(
++                    tuition_id=hw.tuition_id, is_active=True, student__is_active=True
++                ).select_related("student")
++            ]
++            if not members:
++                return Response(
++                    {"error": "No enrolled students found in this group to split across."},
++                    status=status.HTTP_400_BAD_REQUEST,
++                )
++            copies = [hw.personal_copy_for(student) for student in members]
++            # Copies made earlier for students who have since left stay as they are.
++            copy_ids = [c.id for c in copies] + list(
++                Homework.objects.filter(group_source=hw).exclude(id__in=[c.id for c in copies]).values_list("id", flat=True)
++            )
++            hw.delete()
++            rows = Homework.objects.filter(id__in=copy_ids).select_related("tutor", "student", "tuition")
++
++        return Response({
++            "message": f"Split into {len(copies)} individual copies.",
++            "homework": HomeworkSerializer(rows, many=True, context={"request": request}).data,
++        }, status=status.HTTP_200_OK)
++
+     @action(detail=True, methods=["post"])
+     def submit(self, request, pk=None):
+         """
+         POST /api/v1/homework/<id>/submit/ — STUDENT ONLY.
+         May upload submission_file and/or submitted_online_url.
+         Can NEVER touch is_evaluated (field not even in serializer).
++        On a shared group task the work goes onto the student's own copy,
++        which is what the response returns (its id differs from the one posted).
+         """
++        from django.db import transaction
+         from .serializers import StudentHomeworkSubmitSerializer, HomeworkSerializer
+         if request.user.role != "STUDENT":
+             return Response({"error": "Only students can submit homework."}, status=status.HTTP_403_FORBIDDEN)
+         hw = get_object_or_404(self.get_queryset(), pk=pk)
+         serializer = StudentHomeworkSubmitSerializer(data=request.data)
+         serializer.is_valid(raise_exception=True)
++        if hw.is_evaluated:
++            return Response({"error": "This homework has already been checked."}, status=status.HTTP_400_BAD_REQUEST)
+ 
+-        hw.submitted_online_url = serializer.validated_data.get("submitted_online_url", hw.submitted_online_url)
+-        if serializer.validated_data.get("submission_file"):
+-            hw.submission_file = serializer.validated_data["submission_file"]
+-        hw.submitted_at = timezone.now()
+-        hw.save(update_fields=["submitted_online_url", "submission_file", "submitted_at"])
++        with transaction.atomic():
++            target = hw if hw.student_id else hw.personal_copy_for(request.user)
++            target.submitted_online_url = serializer.validated_data.get(
++                "submitted_online_url", target.submitted_online_url
++            )
++            if serializer.validated_data.get("submission_file"):
++                target.submission_file = serializer.validated_data["submission_file"]
++            target.submitted_at = timezone.now()
++            target.save(update_fields=["submitted_online_url", "submission_file", "submitted_at", "updated_at"])
+ 
+         return Response({
+             "message": "Homework submission recorded.",
+-            "homework": HomeworkSerializer(hw, context={"request": request}).data,
++            "homework": HomeworkSerializer(target, context={"request": request}).data,
+         })
+ 
+     @action(detail=True, methods=["post", "patch"], permission_classes=[IsAuthenticated, IsTutor],
+@@ -832,18 +910,36 @@ class HomeworkViewSet(viewsets.GenericViewSet):
+         hw.evaluated_at = timezone.now() if hw.is_evaluated else None
+         if serializer.validated_data.get("tutor_feedback"):
+             hw.tutor_feedback = serializer.validated_data["tutor_feedback"]
+-        hw.save(update_fields=["is_evaluated", "evaluated_at", "tutor_feedback"])
++        hw.save(update_fields=["is_evaluated", "evaluated_at", "tutor_feedback", "updated_at"])
+         return Response({
+             "message": "Homework evaluation updated.",
+             "homework": HomeworkSerializer(hw, context={"request": request}).data,
+         })
+ 
+ 
+-class WeeklyRoutineViewSet(viewsets.ModelViewSet):
+-    """Tutor manages slots; student reads own (scoped)."""
+-    permission_classes = [IsAuthenticated]
++class _TutorWritesViewSet(viewsets.ModelViewSet):
++    """Tutors manage the rows; students only ever read the ones meant for them."""
+     http_method_names = ["get", "post", "patch", "delete", "head", "options"]
+ 
++    def get_permissions(self):
++        from rest_framework.permissions import SAFE_METHODS
++        if self.request.method in SAFE_METHODS:
++            return [IsAuthenticated(), IsTutorOrStudent()]
++        return [IsAuthenticated(), IsTutor()]
++
++    def _student_scope(self, user):
++        """Rows for the student personally, or for a group they are in now."""
++        from .models import TuitionEnrollment
++        tuition_ids = TuitionEnrollment.objects.filter(student=user, is_active=True).values_list("tuition_id", flat=True)
++        return Q(student=user) | Q(tuition_id__in=tuition_ids)
++
++    def perform_create(self, serializer):
++        serializer.save(tutor=self.request.user)
++
++
++class WeeklyRoutineViewSet(_TutorWritesViewSet):
++    """Tutor manages slots; student reads own (scoped)."""
++
+     def get_queryset(self):
+         from .models import WeeklyRoutine
+         user = self.request.user
+@@ -851,24 +947,16 @@ class WeeklyRoutineViewSet(viewsets.ModelViewSet):
+         if user.role == "TUTOR":
+             return qs.filter(tutor=user).order_by("day_of_week", "start_time")
+         if user.role == "STUDENT":
+-            return qs.filter(Q(student=user) | Q(tuition__enrollments__student=user)).order_by("day_of_week", "start_time")
++            return qs.filter(self._student_scope(user)).order_by("day_of_week", "start_time")
+         return WeeklyRoutine.objects.none()
+ 
+     def get_serializer_class(self):
+         from .serializers import WeeklyRoutineSerializer
+         return WeeklyRoutineSerializer
+ 
+-    def perform_create(self, serializer):
+-        if self.request.user.role != "TUTOR":
+-            from rest_framework.exceptions import PermissionDenied
+-            raise PermissionDenied("Only tutors can create routines.")
+-        serializer.save(tutor=self.request.user)
+-
+ 
+-class ClassScheduleViewSet(viewsets.ModelViewSet):
++class ClassScheduleViewSet(_TutorWritesViewSet):
+     """Tutor manages dated classes; student reads upcoming own."""
+-    permission_classes = [IsAuthenticated]
+-    http_method_names = ["get", "post", "patch", "delete", "head", "options"]
+ 
+     def get_queryset(self):
+         from .models import ClassSchedule
+@@ -877,7 +965,7 @@ class ClassScheduleViewSet(viewsets.ModelViewSet):
+         if user.role == "TUTOR":
+             qs = qs.filter(tutor=user)
+         elif user.role == "STUDENT":
+-            qs = qs.filter(Q(student=user) | Q(tuition__enrollments__student=user))
++            qs = qs.filter(self._student_scope(user))
+         else:
+             return ClassSchedule.objects.none()
+         upcoming = self.request.query_params.get("upcoming")
+@@ -888,9 +976,3 @@ class ClassScheduleViewSet(viewsets.ModelViewSet):
+     def get_serializer_class(self):
+         from .serializers import ClassScheduleSerializer
+         return ClassScheduleSerializer
+-
+-    def perform_create(self, serializer):
+-        if self.request.user.role != "TUTOR":
+-            from rest_framework.exceptions import PermissionDenied
+-            raise PermissionDenied("Only tutors can schedule classes.")
+-        serializer.save(tutor=self.request.user)
+-- 
+2.43.0
+

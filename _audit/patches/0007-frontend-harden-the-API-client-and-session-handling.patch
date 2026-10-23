@@ -1,0 +1,585 @@
+From 9f67fdc2c8e708f73c6ebca949a8bfc7dc65e8b4 Mon Sep 17 00:00:00 2001
+From: "Claude (audit)" <noreply@anthropic.com>
+Date: Sun, 11 Oct 2026 00:16:41 +0600
+Subject: [PATCH 07/14] frontend: harden the API client and session handling
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_011d4mgSxngjRmAXosGe4ry4
+
+- Drop the hidden localStorage 'tuitiontrack_api_url' override (anything able to
+  write localStorage could redirect every request and password to another host).
+- Content-Type only on requests with a body (no CORS preflight on every GET).
+- Network failures become a readable offline message; errors carry status,
+  code and fieldErrors from the API's {message, code, errors} shape.
+- A failed page while collecting a paginated list is an error, not a silently
+  short list.
+- Refresh: only a 400/401 refusal signs the user out; an offline refresh or a
+  server hiccup keeps the session. The single-flight promise resets
+  immediately instead of on a timer.
+- Server clock offset comes from /meta/ and is measured once for all exam cards
+  (was a HEAD /auth/me/ per card).
+- AuthProvider no longer signs the user out when /auth/me/ fails offline;
+  useAuth moved to context/auth.js.
+- Remove dead legacy endpoints (batches, 1-on-1 cycles, unused details); add
+  splitHomework.
+---
+ frontend/src/__tests__/apiClient.test.js | 106 ++++++++++++
+ frontend/src/api/client.js               | 204 ++++++++++++-----------
+ frontend/src/context/AuthContext.jsx     |  72 ++++----
+ frontend/src/context/auth.js             |  12 ++
+ 4 files changed, 264 insertions(+), 130 deletions(-)
+ create mode 100644 frontend/src/__tests__/apiClient.test.js
+ create mode 100644 frontend/src/context/auth.js
+
+diff --git a/frontend/src/__tests__/apiClient.test.js b/frontend/src/__tests__/apiClient.test.js
+new file mode 100644
+index 0000000..d9d8aa9
+--- /dev/null
++++ b/frontend/src/__tests__/apiClient.test.js
+@@ -0,0 +1,106 @@
++import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
++import { apiError, apiRequest } from '../api/client';
++
++const json = (status, body, headers = {}) =>
++  new Response(body === undefined ? null : JSON.stringify(body), {
++    status,
++    headers: { 'content-type': 'application/json', ...headers },
++  });
++
++describe('apiError', () => {
++  it('uses the message the API sends and keeps code and field errors', () => {
++    const err = apiError(400, { message: 'title: This field is required.', code: 'validation_error', errors: { title: ['This field is required.'] } });
++    expect(err.message).toBe('title: This field is required.');
++    expect(err.status).toBe(400);
++    expect(err.code).toBe('validation_error');
++    expect(err.fieldErrors).toEqual({ title: ['This field is required.'] });
++  });
++
++  it('prefers error/detail and flattens bare field errors from older endpoints', () => {
++    expect(apiError(403, { error: 'Students only.' }).message).toBe('Students only.');
++    expect(apiError(400, { student_id: ['Invalid student id.'] }).message).toBe('student_id: Invalid student id.');
++  });
++
++  it('never shows an HTML error page and explains gateway failures', () => {
++    expect(apiError(500, '<!doctype html><html>Server Error</html>').message).toMatch(/went wrong on the server/);
++    expect(apiError(503, null).message).toMatch(/not available right now/);
++  });
++});
++
++describe('apiRequest', () => {
++  beforeEach(() => {
++    localStorage.clear();
++    vi.stubGlobal('fetch', vi.fn());
++  });
++  afterEach(() => {
++    vi.unstubAllGlobals();
++  });
++
++  it('sends JSON content type only when there is a body, and the bearer token', async () => {
++    localStorage.setItem('access_token', 'abc');
++    fetch.mockResolvedValueOnce(json(200, { ok: true }));
++    await apiRequest('/auth/me/');
++    const [, init] = fetch.mock.calls[0];
++    expect(init.headers.Authorization).toBe('Bearer abc');
++    expect(init.headers['Content-Type']).toBeUndefined();
++
++    fetch.mockResolvedValueOnce(json(201, { id: 1 }));
++    await apiRequest('/homework/', { method: 'POST', body: JSON.stringify({ title: 'x' }) });
++    expect(fetch.mock.calls[1][1].headers['Content-Type']).toBe('application/json');
++  });
++
++  it('turns a network failure into a readable offline message', async () => {
++    fetch.mockRejectedValueOnce(new TypeError('Failed to fetch'));
++    await expect(apiRequest('/tuitions/')).rejects.toThrow(/Cannot reach the server/);
++  });
++
++  it('renews an expired access token once and retries the request', async () => {
++    localStorage.setItem('access_token', 'old');
++    localStorage.setItem('refresh_token', 'refresh');
++    fetch
++      .mockResolvedValueOnce(json(401, { detail: 'expired', code: 'token_not_valid' }))
++      .mockResolvedValueOnce(json(200, { access: 'new' }))
++      .mockResolvedValueOnce(json(200, [{ id: 1 }]));
++    const data = await apiRequest('/tuitions/');
++    expect(data).toEqual([{ id: 1 }]);
++    expect(localStorage.getItem('access_token')).toBe('new');
++    expect(fetch.mock.calls[2][1].headers.Authorization).toBe('Bearer new');
++  });
++
++  it('collects every page of a paginated list and fails loudly when a page fails', async () => {
++    fetch
++      .mockResolvedValueOnce(json(200, { count: 3, next: 'http://api/api/v1/students/?page=2', results: [{ id: 1 }, { id: 2 }] }))
++      .mockResolvedValueOnce(json(200, { count: 3, next: null, results: [{ id: 3 }] }));
++    const data = await apiRequest('/students/');
++    expect(data.results.map((s) => s.id)).toEqual([1, 2, 3]);
++    expect(fetch.mock.calls[1][0]).toBe('/api/v1/students/?page=2');
++
++    fetch
++      .mockResolvedValueOnce(json(200, { count: 3, next: 'http://api/api/v1/students/?page=2', results: [{ id: 1 }] }))
++      .mockResolvedValueOnce(json(500, { message: 'boom' }));
++    await expect(apiRequest('/students/')).rejects.toThrow('boom');
++  });
++
++  it('returns null for 204 No Content', async () => {
++    fetch.mockResolvedValueOnce(new Response(null, { status: 204 }));
++    await expect(apiRequest('/homework/1/', { method: 'DELETE' })).resolves.toBeNull();
++  });
++});
++
++describe('session renewal', () => {
++  beforeEach(() => {
++    localStorage.clear();
++    vi.stubGlobal('fetch', vi.fn());
++  });
++  afterEach(() => vi.unstubAllGlobals());
++
++  it('keeps the session when the refresh call cannot reach the server', async () => {
++    localStorage.setItem('access_token', 'old');
++    localStorage.setItem('refresh_token', 'refresh');
++    fetch
++      .mockResolvedValueOnce(json(401, { detail: 'expired' }))
++      .mockRejectedValueOnce(new TypeError('Failed to fetch'));
++    await expect(apiRequest('/tuitions/')).rejects.toThrow('expired');
++    expect(localStorage.getItem('refresh_token')).toBe('refresh');
++  });
++});
+diff --git a/frontend/src/api/client.js b/frontend/src/api/client.js
+index cb5dbe3..67aa7e4 100644
+--- a/frontend/src/api/client.js
++++ b/frontend/src/api/client.js
+@@ -1,17 +1,20 @@
+ /**
+- * API Client with JWT Bearer Token Injection and Auto-Refresh
++ * API client: adds the bearer token, renews it once when it has expired
++ * (parallel 401s share one refresh), follows pagination for GET lists and
++ * turns every error body into an Error with a readable message.
+  */
+ 
+ // Where the API lives. Empty in development (the Vite proxy forwards /api to Django);
+ // set VITE_API_URL=https://your-api-host when the website and the API are hosted separately.
+-const customOrigin = (typeof window !== 'undefined' ? localStorage.getItem('tuitiontrack_api_url') : '') || '';
+-let resolvedOrigin = (customOrigin || import.meta.env.VITE_API_URL || '').trim().replace(/\/+$/, '');
+-if (resolvedOrigin && !resolvedOrigin.startsWith('http://') && !resolvedOrigin.startsWith('https://')) {
++let resolvedOrigin = (import.meta.env.VITE_API_URL || '').trim().replace(/\/+$/, '');
++if (resolvedOrigin && !/^https?:\/\//i.test(resolvedOrigin)) {
+   resolvedOrigin = `https://${resolvedOrigin}`;
+ }
+ export const API_ORIGIN = resolvedOrigin;
+ export const BASE_URL = `${API_ORIGIN}/api/v1`;
+ 
++const OFFLINE_MESSAGE = 'Cannot reach the server. Check your internet connection and try again.';
++
+ let _refreshPromise = null;
+ 
+ /**
+@@ -31,10 +34,12 @@ export async function apiRequest(endpoint, options = {}) {
+   const token = localStorage.getItem('access_token');
+ 
+   const headers = {
++    Accept: 'application/json',
+     ...options.headers,
+   };
+ 
+-  if (!(options.body instanceof FormData)) {
++  // Only requests that carry JSON say so (a bare GET with this header needs a CORS preflight).
++  if (options.body !== undefined && options.body !== null && !(options.body instanceof FormData)) {
+     headers['Content-Type'] = 'application/json';
+   }
+ 
+@@ -47,7 +52,16 @@ export async function apiRequest(endpoint, options = {}) {
+     headers,
+   };
+ 
+-  let response = await fetch(url, config);
++  const send = async (cfg) => {
++    try {
++      return await fetch(url, cfg);
++    } catch {
++      // fetch only rejects when no answer came back at all (offline, DNS, CORS, server down).
++      throw new Error(OFFLINE_MESSAGE);
++    }
++  };
++
++  let response = await send(config);
+ 
+   // If token expired (401), attempt refresh once (single-flight for parallel 401s)
+   if (response.status === 401 && localStorage.getItem('refresh_token')) {
+@@ -55,7 +69,7 @@ export async function apiRequest(endpoint, options = {}) {
+       const refreshToken = localStorage.getItem('refresh_token');
+       _refreshPromise = fetch(`${BASE_URL}/auth/token/refresh/`, {
+         method: 'POST',
+-        headers: { 'Content-Type': 'application/json' },
++        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+         body: JSON.stringify({ refresh: refreshToken }),
+       }).then(async (refreshResp) => {
+         if (refreshResp.ok) {
+@@ -64,61 +78,30 @@ export async function apiRequest(endpoint, options = {}) {
+           if (refreshData.refresh) localStorage.setItem('refresh_token', refreshData.refresh);
+           return refreshData.access;
+         }
+-        throw new Error('refresh failed');
+-      }).catch(() => {
+-        localStorage.removeItem('access_token');
+-        localStorage.removeItem('refresh_token');
+-        localStorage.removeItem('user_data');
+-        window.location.href = '/login';
++        // Only a definite refusal ends the session; a server hiccup must not sign anyone out.
++        if (refreshResp.status === 400 || refreshResp.status === 401) {
++          localStorage.removeItem('access_token');
++          localStorage.removeItem('refresh_token');
++          localStorage.removeItem('user_data');
++          window.location.href = '/login';
++        }
+         return null;
+-      }).finally(() => {
+-        // reset on next tick so concurrent callers share the same promise
+-        setTimeout(() => { _refreshPromise = null; }, 0);
+-      });
++      }, () => null) // offline: keep the session and let the caller report the problem
++        .finally(() => {
++          // Callers already waiting hold this promise; the next expiry starts a fresh refresh.
++          _refreshPromise = null;
++        });
+     }
+-    try {
+-      const newAccess = await _refreshPromise;
+-      if (newAccess) {
+-        headers['Authorization'] = `Bearer ${newAccess}`;
+-        response = await fetch(url, { ...config, headers });
+-      }
+-    } catch {
+-      // redirect already handled
++    const newAccess = await _refreshPromise;
++    if (newAccess) {
++      headers['Authorization'] = `Bearer ${newAccess}`;
++      response = await send({ ...config, headers });
+     }
+   }
+ 
+-  const contentType = response.headers.get('content-type');
+-  let data = null;
+-  if (contentType && contentType.includes('application/json')) {
+-    data = await response.json();
+-  } else {
+-    data = await response.text();
+-  }
+-
++  const data = await readBody(response);
+   if (!response.ok) {
+-    // Flatten DRF field errors: {field: [msg]} -> "field: msg"
+-    let errorMsg = 'Request failed';
+-    if ([502, 503, 504].includes(response.status)) {
+-      // The dev proxy / gateway answered, but the API behind it did not.
+-      throw new Error('Cannot reach the server. Make sure the backend is running, then try again.');
+-    }
+-    if (data && typeof data === 'object') {
+-      if (data.error || data.detail || data.message) {
+-        errorMsg = data.error || data.detail || data.message;
+-      } else {
+-        const parts = [];
+-        for (const [k, v] of Object.entries(data)) {
+-          parts.push(`${k}: ${Array.isArray(v) ? v.join(', ') : v}`);
+-        }
+-        errorMsg = parts.join(' | ') || errorMsg;
+-      }
+-    } else if (response.status >= 500 || (typeof data === 'string' && /^\s*<(!doctype|html)/i.test(data))) {
+-      // A server crash returns an HTML error page; never show that to the user.
+-      errorMsg = 'Something went wrong on the server. Please try again.';
+-    } else if (typeof data === 'string' && data) {
+-      errorMsg = data;
+-    }
+-    throw new Error(errorMsg);
++    throw apiError(response.status, data);
+   }
+ 
+   // Transparent pagination auto-accumulation for GET requests so lists never stop at page 1
+@@ -132,7 +115,7 @@ export async function apiRequest(endpoint, options = {}) {
+         const parsedNext = new URL(nextUrl, window.location.origin);
+         const fetchUrl = `${API_ORIGIN}${parsedNext.pathname}${parsedNext.search}`;
+         const nextResp = await fetch(fetchUrl, { ...config, headers });
+-        if (!nextResp.ok) break;
++        if (!nextResp.ok) throw apiError(nextResp.status, await readBody(nextResp));
+         const nextData = await nextResp.json();
+         if (Array.isArray(nextData.results)) {
+           accumulated.push(...nextData.results);
+@@ -142,26 +125,80 @@ export async function apiRequest(endpoint, options = {}) {
+       data.results = accumulated;
+       data.count = accumulated.length;
+     } catch (pageErr) {
+-      console.warn('Pagination auto-accumulation warning:', pageErr);
++      // A half-loaded list would look complete; report the failure instead.
++      throw pageErr instanceof Error && pageErr.status ? pageErr : new Error(OFFLINE_MESSAGE);
+     }
+   }
+ 
+   return data;
+ }
+ 
+-export async function fetchServerOffset() {
++async function readBody(response) {
++  if (response.status === 204) return null;
++  const contentType = response.headers.get('content-type') || '';
+   try {
+-    const before = Date.now();
+-    const resp = await fetch(`${BASE_URL}/auth/me/`, { method: 'HEAD' });
+-    const dateHeader = resp.headers.get('date');
+-    if (!dateHeader) return 0;
+-    const serverMs = new Date(dateHeader).getTime();
+-    const after = Date.now();
+-    const rtt = (after - before) / 2;
+-    return serverMs + rtt - after;
++    return contentType.includes('application/json') ? await response.json() : await response.text();
+   } catch {
+-    return 0;
++    return null;
++  }
++}
++
++/**
++ * One Error for any failed response. The API always sends {message, code,
++ * errors?}; older shapes ({error}, {detail}, {field: [..]}) are still read.
++ * The Error carries `status`, `code` and `fieldErrors` for forms that want them.
++ */
++export function apiError(status, data) {
++  let message = 'The request could not be completed.';
++  if ([502, 503, 504].includes(status)) {
++    // The gateway answered, but the API behind it did not (asleep, deploying or down).
++    message = 'The server is not available right now. Please try again in a moment.';
++  } else if (data && typeof data === 'object') {
++    const general = [data.error, data.detail, data.message].find((m) => typeof m === 'string' && m);
++    if (general) {
++      message = general;
++    } else {
++      const parts = Object.entries(data)
++        .filter(([key]) => key !== 'code')
++        .map(([key, value]) => `${key}: ${Array.isArray(value) ? value.join(', ') : value}`);
++      if (parts.length) message = parts.join(' | ');
++    }
++  } else if (status >= 500 || (typeof data === 'string' && /^\s*<(!doctype|html)/i.test(data))) {
++    // A server crash may return an HTML error page; never show that to the user.
++    message = 'Something went wrong on the server. Please try again.';
++  } else if (typeof data === 'string' && data.trim()) {
++    message = data.trim();
+   }
++  const error = new Error(message);
++  error.status = status;
++  error.code = (data && typeof data === 'object' && typeof data.code === 'string') ? data.code : 'error';
++  error.fieldErrors = (data && typeof data === 'object' && data.errors && typeof data.errors === 'object') ? data.errors : {};
++  return error;
++}
++
++// Exam timers follow the server clock. One measurement serves every card on the page.
++let _offsetPromise = null;
++let _offsetAt = 0;
++const OFFSET_TTL_MS = 5 * 60 * 1000;
++
++export function fetchServerOffset() {
++  if (_offsetPromise && Date.now() - _offsetAt < OFFSET_TTL_MS) return _offsetPromise;
++  _offsetAt = Date.now();
++  _offsetPromise = (async () => {
++    try {
++      const before = Date.now();
++      const resp = await fetch(`${BASE_URL}/meta/`, { headers: { Accept: 'application/json' } });
++      const after = Date.now();
++      const body = resp.ok ? await resp.json() : null;
++      const serverMs = body?.server_time ? new Date(body.server_time).getTime() : new Date(resp.headers.get('date')).getTime();
++      if (!Number.isFinite(serverMs)) return 0;
++      return serverMs + (after - before) / 2 - after;
++    } catch {
++      _offsetPromise = null; // try again next time
++      return 0;
++    }
++  })();
++  return _offsetPromise;
+ }
+ 
+ export const api = {
+@@ -210,7 +247,6 @@ export const api = {
+   getStudents: () => apiRequest('/students/'),
+   getUnassignedStudents: () => apiRequest('/students/unassigned/'),
+   createStudent: (studentData) => apiRequest('/students/', { method: 'POST', body: JSON.stringify(studentData) }),
+-  getStudentDetail: (id) => apiRequest(`/students/${id}/`),
+   updateStudent: (id, data) => apiRequest(`/students/${id}/`, { method: 'PATCH', body: JSON.stringify(data) }),
+   toggleStudentActive: (id) => apiRequest(`/students/${id}/toggle_active/`, { method: 'POST' }),
+   // Sets a new temporary password; the response is the only time it is ever shown.
+@@ -253,21 +289,6 @@ export const api = {
+   }),
+   rejectConnection: (id) => apiRequest(`/connections/${id}/reject/`, { method: 'POST' }),
+ 
+-  // Legacy Tuition Batches (backward compatibility)
+-  getBatches: () => apiRequest('/batches/'),
+-  createBatch: (data) => apiRequest('/batches/', { method: 'POST', body: JSON.stringify(data) }),
+-  getBatchDetail: (id) => apiRequest(`/batches/${id}/`),
+-  updateBatch: (id, data) => apiRequest(`/batches/${id}/`, { method: 'PATCH', body: JSON.stringify(data) }),
+-  deleteBatch: (id) => apiRequest(`/batches/${id}/`, { method: 'DELETE' }),
+-  addStudentToBatch: (batchId, studentId) => apiRequest(`/batches/${batchId}/add_student/`, {
+-    method: 'POST',
+-    body: JSON.stringify({ student_id: studentId }),
+-  }),
+-  removeStudentFromBatch: (batchId, studentId) => apiRequest(`/batches/${batchId}/remove_student/`, {
+-    method: 'POST',
+-    body: JSON.stringify({ student_id: studentId }),
+-  }),
+-
+   // Attendance & Dynamic Cycles (Per-Tuition Engine)
+   getAttendanceCycles: (arg1 = null, arg2 = null) => {
+     const params = new URLSearchParams();
+@@ -289,15 +310,6 @@ export const api = {
+   }),
+   resetAttendanceCycle: (cycleId) => apiRequest(`/attendance-cycles/${cycleId}/reset/`, { method: 'POST' }),
+ 
+-  // Legacy Cycles
+-  getCycles: (studentId) => apiRequest(`/cycles/${studentId ? `?student_id=${studentId}` : ''}`),
+-  getCycleDetail: (id) => apiRequest(`/cycles/${id}/`),
+-  toggleClass: (cycleId, classNo, completed, date = null, topic = '') => apiRequest(`/cycles/${cycleId}/toggle_class/`, {
+-    method: 'PATCH',
+-    body: JSON.stringify({ class_no: classNo, completed, date, topic }),
+-  }),
+-  resetCycle: (cycleId) => apiRequest(`/cycles/${cycleId}/reset/`, { method: 'POST' }),
+-
+   // Analytics
+   getWalletAnalytics: () => apiRequest('/analytics/wallet/'),
+ 
+@@ -365,7 +377,6 @@ export const api = {
+     const qs = query.toString() ? `?${query.toString()}` : '';
+     return apiRequest(`/homework/${qs}`);
+   },
+-  getHomeworkDetail: (id) => apiRequest(`/homework/${id}/`),
+   createHomework: (data) =>
+     apiRequest('/homework/', { method: 'POST', body: JSON.stringify(data) }),
+   updateHomework: (id, data) =>
+@@ -377,7 +388,10 @@ export const api = {
+       method: 'POST',
+       body: JSON.stringify({ feedback }),
+     }),
+-  // Student submits an optional online URL as their submission.
++  // Tutor: turn a shared group task into one row per student (one server step).
++  splitHomework: (id) => apiRequest(`/homework/${id}/split/`, { method: 'POST' }),
++  // Student submits an optional online URL. On a group task the server answers
++  // with the student's own copy, which has a different id from the one posted.
+   submitHomework: (id, url = '') =>
+     apiRequest(`/homework/${id}/submit/`, {
+       method: 'POST',
+diff --git a/frontend/src/context/AuthContext.jsx b/frontend/src/context/AuthContext.jsx
+index a129d8a..0074268 100644
+--- a/frontend/src/context/AuthContext.jsx
++++ b/frontend/src/context/AuthContext.jsx
+@@ -1,7 +1,12 @@
+-import React, { createContext, useContext, useState, useEffect } from 'react';
++import React, { useCallback, useEffect, useState } from 'react';
+ import { api } from '../api/client';
++import { AuthContext } from './auth';
+ 
+-const AuthContext = createContext(null);
++function clearStoredSession() {
++  localStorage.removeItem('access_token');
++  localStorage.removeItem('refresh_token');
++  localStorage.removeItem('user_data');
++}
+ 
+ export function AuthProvider({ children }) {
+   const [user, setUser] = useState(() => {
+@@ -13,24 +18,38 @@ export function AuthProvider({ children }) {
+     }
+   });
+   const [token, setToken] = useState(() => localStorage.getItem('access_token'));
+-  const [loading, setLoading] = useState(true);
++  // Only a stored session needs checking; with none there is nothing to wait for.
++  const [loading, setLoading] = useState(() => Boolean(localStorage.getItem('access_token')));
++
++  const logout = useCallback(() => {
++    api.logout(); // tell the server too, so the session cannot be reused (reads the token before it is cleared)
++    clearStoredSession();
++    setToken(null);
++    setUser(null);
++  }, []);
+ 
+   useEffect(() => {
+-    async function verifyUser() {
+-      if (token) {
+-        try {
+-          const profile = await api.getMe();
+-          setUser(profile);
+-          localStorage.setItem('user_data', JSON.stringify(profile));
+-        } catch {
+-          // Token invalid or expired
+-          logout();
+-        }
+-      }
+-      setLoading(false);
+-    }
+-    verifyUser();
+-  }, [token]);
++    if (!token) return undefined;
++    let cancelled = false;
++    api.getMe()
++      .then((profile) => {
++        if (cancelled) return;
++        setUser(profile);
++        localStorage.setItem('user_data', JSON.stringify(profile));
++      })
++      .catch((err) => {
++        if (cancelled) return;
++        // Only a refused session signs the user out. Offline or a server hiccup
++        // keeps the saved profile so the app opens and each screen reports the problem.
++        if (err?.status === 401 || err?.status === 403) logout();
++      })
++      .finally(() => {
++        if (!cancelled) setLoading(false);
++      });
++    return () => {
++      cancelled = true;
++    };
++  }, [token, logout]);
+ 
+   const login = async (username, password) => {
+     const data = await api.login({ username, password });
+@@ -52,15 +71,6 @@ export function AuthProvider({ children }) {
+     return login(formData.username, formData.password);
+   };
+ 
+-  const logout = () => {
+-    api.logout(); // tell the server too, so the session cannot be reused (reads the token before it is cleared)
+-    localStorage.removeItem('access_token');
+-    localStorage.removeItem('refresh_token');
+-    localStorage.removeItem('user_data');
+-    setToken(null);
+-    setUser(null);
+-  };
+-
+   // Re-read the signed-in user after they change their details or password.
+   const refreshUser = async () => {
+     const profile = await api.getMe();
+@@ -88,11 +98,3 @@ export function AuthProvider({ children }) {
+     </AuthContext.Provider>
+   );
+ }
+-
+-export function useAuth() {
+-  const context = useContext(AuthContext);
+-  if (!context) {
+-    throw new Error('useAuth must be used within an AuthProvider');
+-  }
+-  return context;
+-}
+diff --git a/frontend/src/context/auth.js b/frontend/src/context/auth.js
+new file mode 100644
+index 0000000..26b4be3
+--- /dev/null
++++ b/frontend/src/context/auth.js
+@@ -0,0 +1,12 @@
++import { createContext, useContext } from 'react';
++
++/** The signed-in user and the sign-in/out actions. Provided by <AuthProvider> (AuthContext.jsx). */
++export const AuthContext = createContext(null);
++
++export function useAuth() {
++  const context = useContext(AuthContext);
++  if (!context) {
++    throw new Error('useAuth must be used within an AuthProvider');
++  }
++  return context;
++}
+-- 
+2.43.0
+

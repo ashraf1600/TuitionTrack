@@ -1,0 +1,158 @@
+From 422d3cd16e882fd15e597cbf546f699258028a22 Mon Sep 17 00:00:00 2001
+From: "Claude (audit)" <noreply@anthropic.com>
+Date: Sun, 11 Oct 2026 00:06:22 +0600
+Subject: [PATCH 01/14] settings: drop blanket *.onrender.com CORS/CSRF trust,
+ no CORS credentials
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_011d4mgSxngjRmAXosGe4ry4
+
+- Any site hosted on onrender.com was a trusted CORS/CSRF origin; only the
+  configured FRONTEND_URL, Render hostname and CORS_ALLOWED_ORIGIN(_REGEXES)
+  env values are trusted now.
+- The API uses bearer tokens, so CORS_ALLOW_CREDENTIALS is off.
+- Remove the dead commented-out security block, fix the misleading
+  refresh-rotation comment, cap JSON body size, string env defaults.
+- Tests use the MD5 hasher (suite 204s -> ~50s).
+---
+ backend/config/settings.py | 62 +++++++++++++-------------------------
+ 1 file changed, 21 insertions(+), 41 deletions(-)
+
+diff --git a/backend/config/settings.py b/backend/config/settings.py
+index fe18d59..7f51d62 100644
+--- a/backend/config/settings.py
++++ b/backend/config/settings.py
+@@ -13,25 +13,6 @@ BASE_DIR = Path(__file__).resolve().parent.parent
+ # ─── Load Environment Variables ───────────────────────────────────────────────
+ load_dotenv(BASE_DIR / '.env')
+ 
+-# ─── Security ─────────────────────────────────────────────────────────────────
+-# DEBUG = os.getenv('DEBUG', 'False').lower() in ('true', '1', 't')
+-# SECRET_KEY = os.getenv('SECRET_KEY')
+-# if not SECRET_KEY:
+-#     if DEBUG:
+-#         import secrets
+-#         SECRET_KEY = os.getenv('SECRET_KEY', 'dev-secret-key-' + secrets.token_hex(16))
+-#     else:
+-#         from django.core.exceptions import ImproperlyConfigured
+-#         raise ImproperlyConfigured("The SECRET_KEY environment variable must be set in production.")
+-# ALLOWED_HOSTS = [h.strip() for h in os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1,testserver').split(',') if h.strip()]
+-# # Render tells the service its own public hostname.
+-# if os.getenv('RENDER_EXTERNAL_HOSTNAME'):
+-#     ALLOWED_HOSTS.append(os.environ['RENDER_EXTERNAL_HOSTNAME'])
+-# if DEBUG and not os.getenv('ALLOWED_HOSTS'):
+-#     # Development only: lets a phone or emulator on the same network reach this computer
+-#     # (http://<this-PC's-IP>:8000, or http://10.0.2.2:8000 from an Android emulator).
+-#     ALLOWED_HOSTS = ['*']
+-
+ # ─── Security ─────────────────────────────────────────────────────────────────
+ 
+ DEBUG = os.getenv('DEBUG', 'False').lower() in ('true', '1', 't')
+@@ -94,9 +75,6 @@ else:
+ # Render provides its own public hostname.
+ if os.getenv('RENDER_EXTERNAL_HOSTNAME'):
+     ALLOWED_HOSTS.append(os.environ['RENDER_EXTERNAL_HOSTNAME'])
+-if os.getenv('RENDER') or os.getenv('RENDER_EXTERNAL_HOSTNAME'):
+-    if '.onrender.com' not in ALLOWED_HOSTS:
+-        ALLOWED_HOSTS.append('.onrender.com')
+ 
+ # ─── Application Definition ───────────────────────────────────────────────────
+ DJANGO_APPS = [
+@@ -169,7 +147,7 @@ if DATABASE_URL:
+     DATABASES = {
+         'default': dj_database_url.parse(
+             DATABASE_URL,
+-            conn_max_age=int(os.getenv('DB_CONN_MAX_AGE', 60)),
++            conn_max_age=int(os.getenv('DB_CONN_MAX_AGE', '60')),
+             conn_health_checks=True,
+             ssl_require=os.getenv('DB_SSL', 'True').lower() in ('true', '1', 't'),
+         )
+@@ -214,7 +192,9 @@ STATIC_ROOT = BASE_DIR / 'staticfiles'
+ 
+ MEDIA_URL = os.getenv('MEDIA_URL', '/media/')
+ MEDIA_ROOT = BASE_DIR / 'media'
+-MAX_UPLOAD_SIZE_MB = int(os.getenv('MAX_UPLOAD_SIZE_MB', 10))
++MAX_UPLOAD_SIZE_MB = int(os.getenv('MAX_UPLOAD_SIZE_MB', '10'))
++# Request bodies other than file uploads (JSON) stay small; files are checked against MAX_UPLOAD_SIZE_MB.
++DATA_UPLOAD_MAX_MEMORY_SIZE = 5 * 1024 * 1024
+ 
+ STORAGES = {
+     # Uploaded question pictures and answer sheets. On your own PC: the media/ folder.
+@@ -268,19 +248,16 @@ if os.getenv('RENDER_EXTERNAL_HOSTNAME'):
+     if render_origin not in CSRF_TRUSTED_ORIGINS:
+         CSRF_TRUSTED_ORIGINS.append(render_origin)
+ 
+-if os.getenv('RENDER') or os.getenv('RENDER_EXTERNAL_HOSTNAME'):
+-    if 'https://*.onrender.com' not in CSRF_TRUSTED_ORIGINS:
+-        CSRF_TRUSTED_ORIGINS.append('https://*.onrender.com')
+-
+-# Allow *.onrender.com subdomains so Render static frontend and API connect seamlessly
+-CORS_ALLOWED_ORIGIN_REGEXES = [
+-    r'^https:\/\/.*\.onrender\.com$',
+-]
++# Extra origin patterns, e.g. preview deployments: CORS_ALLOWED_ORIGIN_REGEXES=^https://tt-pr-\d+\.onrender\.com$
++# (A blanket *.onrender.com rule is deliberately not used: anyone can host a site there.)
++CORS_ALLOWED_ORIGIN_REGEXES = [r.strip() for r in os.getenv('CORS_ALLOWED_ORIGIN_REGEXES', '').split(',') if r.strip()]
+ if DEBUG:
+     # Development only: the mobile app run in a browser (`flutter run -d chrome`) uses a random local port.
+     CORS_ALLOWED_ORIGIN_REGEXES.append(r'^http://(localhost|127\.0\.0\.1)(:\d+)?$')
+ 
+-CORS_ALLOW_CREDENTIALS = True
++# The API authenticates with a bearer token in a header, never with cookies, so
++# cross-site requests never need to carry credentials.
++CORS_ALLOW_CREDENTIALS = False
+ 
+ # ─── Django REST Framework ────────────────────────────────────────────────────
+ REST_FRAMEWORK = {
+@@ -316,20 +293,23 @@ REST_FRAMEWORK = {
+         'auth': os.getenv('AUTH_THROTTLE_RATE', '20/min'),
+     },
+ }
+-if 'test' in sys.argv:
++TESTING = 'test' in sys.argv
++if TESTING:
+     # The test suite signs in far more often than a person can; throttling has its own test.
+     REST_FRAMEWORK['DEFAULT_THROTTLE_RATES'] = {'anon': '100000/min', 'user': '100000/min', 'auth': '100000/min'}
++    # Hashing every test password with PBKDF2 makes the suite several times slower.
++    PASSWORD_HASHERS = ['django.contrib.auth.hashers.MD5PasswordHasher']
+ 
+ # ─── Simple JWT ───────────────────────────────────────────────────────────────
+ SIMPLE_JWT = {
+     'ACCESS_TOKEN_LIFETIME': timedelta(
+-        minutes=int(os.getenv('ACCESS_TOKEN_LIFETIME_MINUTES', 60))
++        minutes=int(os.getenv('ACCESS_TOKEN_LIFETIME_MINUTES', '60'))
+     ),
+     'REFRESH_TOKEN_LIFETIME': timedelta(
+-        days=int(os.getenv('REFRESH_TOKEN_LIFETIME_DAYS', 7))
++        days=int(os.getenv('REFRESH_TOKEN_LIFETIME_DAYS', '7'))
+     ),
+-    # Rotation without blacklist keeps old refresh valid; either install
+-    # token_blacklist app or disable rotation. Disabled by default.
++    # A refresh token stays the same until it expires or is revoked (sign-out,
++    # password change, deactivation — see apps/authentication/sessions.py).
+     'ROTATE_REFRESH_TOKENS': False,
+     'BLACKLIST_AFTER_ROTATION': False,
+     'AUTH_HEADER_TYPES': ('Bearer',),
+@@ -344,8 +324,8 @@ EMAIL_BACKEND = os.getenv(
+     'django.core.mail.backends.console.EmailBackend'
+ )
+ EMAIL_HOST = os.getenv('EMAIL_HOST', 'smtp.gmail.com')
+-EMAIL_PORT = int(os.getenv('EMAIL_PORT', 587))
+-EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS', 'True') == 'True'
++EMAIL_PORT = int(os.getenv('EMAIL_PORT', '587'))
++EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS', 'True').lower() in ('true', '1', 't')
+ EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', '')
+ EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '')
+ DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'TuitionTrack <noreply@tuitiontrack.app>')
+@@ -359,7 +339,7 @@ if not DEBUG:
+     SECURE_REDIRECT_EXEMPT = [r'^api/v1/meta/$']
+     SESSION_COOKIE_SECURE = True
+     CSRF_COOKIE_SECURE = True
+-    SECURE_HSTS_SECONDS = int(os.getenv('SECURE_HSTS_SECONDS', 60 * 60 * 24 * 30))
++    SECURE_HSTS_SECONDS = int(os.getenv('SECURE_HSTS_SECONDS', str(60 * 60 * 24 * 30)))
+     SECURE_CONTENT_TYPE_NOSNIFF = True
+ 
+ # Errors go to the console, which is what a hosting platform collects as its logs.
+-- 
+2.43.0
+

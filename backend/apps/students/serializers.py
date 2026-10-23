@@ -340,6 +340,7 @@ class StudentTuitionSerializer(serializers.ModelSerializer):
     name = serializers.CharField(source='title', read_only=True)
     weekly_routine = serializers.JSONField(source='routine', read_only=True)
     tutor_name = serializers.SerializerMethodField()
+    tutor_display_name = serializers.SerializerMethodField()
     tutor_id = serializers.UUIDField(read_only=True)
     enrolled_count = serializers.SerializerMethodField()
     active_cycle = serializers.SerializerMethodField()
@@ -349,7 +350,7 @@ class StudentTuitionSerializer(serializers.ModelSerializer):
         from .models import Tuition
         model = Tuition
         fields = [
-            'id', 'tutor_id', 'tutor_name', 'title', 'name', 'subject', 'description',
+            'id', 'tutor_id', 'tutor_name', 'tutor_display_name', 'title', 'name', 'subject', 'description',
             'cycle_length', 'routine', 'weekly_routine',
             'enrolled_count', 'active_cycle', 'pending_payments', 'created_at',
         ]
@@ -357,6 +358,10 @@ class StudentTuitionSerializer(serializers.ModelSerializer):
 
     def get_tutor_name(self, obj):
         return obj.tutor.get_full_name() or obj.tutor.username
+
+    def get_tutor_display_name(self, obj):
+        from apps.authentication.naming import sir_name
+        return sir_name(obj.tutor)
 
     @staticmethod
     def _unpaid_finished_cycles(obj):

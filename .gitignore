@@ -114,3 +114,4 @@ TuitionTrack.apk
 # ─── Database copies made by scripts/move-database.bat ───────
 backups/
 scripts/*.log
+backups/

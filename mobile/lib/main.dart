@@ -22,6 +22,7 @@ import 'screens/common/notification_actions.dart';
 import 'screens/student/student_home.dart';
 import 'screens/tutor/tutor_home.dart';
 import 'widgets/theme.dart';
+import 'widgets/tt_logo.dart';
 
 /// The server the app talks to until the user sets another one on the sign-in screen.
 /// Override at build time with --dart-define=API_BASE_URL=https://… . Release builds
@@ -68,14 +69,14 @@ Future<void> main() async {
 
 const _updatesTask = 'tuitiontrack-updates';
 
-/// Every half hour or so (Android decides exactly, and waits for a network),
+/// Every 15 minutes or so (the shortest Android allows; it decides exactly, and waits for a network),
 /// asks the server for new notifications even when the app is closed, and
 /// shows the new ones on the phone. Needs no Firebase account.
 Future<void> _startBackgroundCheck() async {
   if (!Reminders.instance.available) return;
   try {
     await Workmanager().initialize(backgroundDispatcher);
-    await Workmanager().registerPeriodicTask(_updatesTask, _updatesTask, frequency: const Duration(minutes: 30));
+    await Workmanager().registerPeriodicTask(_updatesTask, _updatesTask, frequency: const Duration(minutes: 15));
   } catch (error) {
     debugPrint('Background check unavailable: $error');
   }
@@ -199,7 +200,7 @@ class _Root extends StatelessWidget {
   Widget build(BuildContext context) {
     final session = context.watch<Session>();
     if (!session.ready) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      return const TtSplash();
     }
     if (!session.signedIn) return const LoginScreen();
     if (session.mustChangePassword) return const ForcePasswordScreen();
