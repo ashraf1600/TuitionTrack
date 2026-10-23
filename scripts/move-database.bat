@@ -11,6 +11,9 @@ rem
 rem Before running: deploy the current code to Render once, so the old database
 rem has every migration (the script checks this and stops if not).
 setlocal EnableDelayedExpansion
+rem Python writes and reads the backup as UTF-8 (Bangla text, dashes); Windows
+rem would otherwise use its own code page and stop at the first such character.
+set "PYTHONUTF8=1"
 cd /d "%~dp0.."
 set "ROOT=%CD%"
 set "LOG=%ROOT%\scripts\move-database.log"
