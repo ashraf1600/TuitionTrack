@@ -41,14 +41,12 @@ services:
       # Render's free database expires after 30 days. After moving to Neon
       # (RENDER_DEPLOYMENT_GUIDE.md → "Moving the database to Neon"), replace these four
       # lines with the commented ones below and set the values in the Dashboard:
+      # The database lives on Neon (moved from Render's free database, which expires).
+      # Set the Neon pooled connection string in Dashboard → tuitiontrack-api → Environment.
       - key: DATABASE_URL
-        fromDatabase:
-          name: tuitiontrack-db
-          property: connectionString
-      # - key: DATABASE_URL        # the Neon pooled connection string
-      #   sync: false
-      # - key: DB_CONN_MAX_AGE     # let Neon sleep when nobody is using the app
-      #   value: "0"
+        sync: false
+      - key: DB_CONN_MAX_AGE     # let Neon sleep when nobody is using the app
+        value: "0"
       # Optional: SENTRY_DSN (error reports), set in the Dashboard.
 
       # ── Frontend & CORS ──
