@@ -1,7 +1,7 @@
 /// The version of this build. Keep in step with `version:` in pubspec.yaml
 /// (a test checks it). The server's APP_LATEST_VERSION is compared with this
 /// to offer an update.
-const appVersion = '1.2.1';
+const appVersion = '1.3.0';
 
 /// Compares two "1.2.3" versions: negative when [a] is older than [b].
 /// Missing or non-numeric parts count as 0, so "1.2" equals "1.2.0".

@@ -82,15 +82,19 @@ jobs:
         # The app's default server; set the repository variable API_BASE_URL to change it.
         run: flutter build apk --release --dart-define=API_BASE_URL=${{ vars.API_BASE_URL || 'https://tuitiontrack-api.onrender.com' }}
 
+      - name: Name the APK the way the in-app update link expects
+        # The app offers .../releases/latest/download/TuitionTrack.apk (APP_DOWNLOAD_URL).
+        run: cp mobile/build/app/outputs/flutter-apk/app-release.apk TuitionTrack.apk
+
       - name: Compute SHA-256
         run: |
-          sha256sum mobile/build/app/outputs/flutter-apk/app-release.apk | tee app-release.apk.sha256
+          sha256sum TuitionTrack.apk | tee TuitionTrack.apk.sha256
 
       - name: Upload APK to release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            mobile/build/app/outputs/flutter-apk/app-release.apk
-            app-release.apk.sha256
+            TuitionTrack.apk
+            TuitionTrack.apk.sha256
           generate_release_notes: true
           fail_on_unmatched_files: false
