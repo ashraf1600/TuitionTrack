@@ -116,10 +116,18 @@ class TutorDirectorySerializer(serializers.ModelSerializer):
     name = serializers.SerializerMethodField()
     subjects = serializers.SerializerMethodField()
     tuitions = serializers.SerializerMethodField()
+    profile_picture_url = serializers.SerializerMethodField()
 
     class Meta:
         model = User
-        fields = ['id', 'username', 'name', 'subjects', 'tuitions']
+        fields = ['id', 'username', 'name', 'subjects', 'tuitions', 'profile_picture_url']
+
+    def get_profile_picture_url(self, obj):
+        if not obj.profile_picture:
+            return None
+        request = self.context.get('request')
+        url = obj.profile_picture.url
+        return request.build_absolute_uri(url) if request else url
 
     def get_name(self, obj):
         return obj.get_full_name() or obj.username

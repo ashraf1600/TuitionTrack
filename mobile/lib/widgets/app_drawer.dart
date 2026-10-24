@@ -11,8 +11,8 @@ import '../screens/common/account_screen.dart';
 import '../screens/common/payments_screen.dart';
 import '../screens/student/connect_screen.dart';
 import 'theme.dart';
-import 'tt_logo.dart';
 import 'ui.dart';
+import 'update_banner.dart';
 
 /// Change this to the official Facebook page. Used by the drawer's follow link.
 const facebookPageUrl = 'https://www.facebook.com/tuitiontrack';
@@ -132,15 +132,35 @@ class AppDrawer extends StatelessWidget {
               child: ListView(
                 padding: const EdgeInsets.fromLTRB(20, 24, 20, 8),
                 children: [
-                  const Align(alignment: Alignment.centerLeft, child: TtLogo(size: 48)),
-                  const SizedBox(height: 14),
-                  const TtWordmark(size: 24, center: false),
-                  const SizedBox(height: 2),
-                  Text(
-                    '$name · ${session.isTutor ? tr('Tutor') : tr('Student')}',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(color: tt.textSecondary, fontSize: 14),
+                  // Who is signed in: photo, name and role. Opens My account.
+                  Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(14),
+                      onTap: () => open(const AccountScreen()),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 6),
+                        child: Row(
+                          children: [
+                            PersonAvatar(name: name, photo: u['profile_picture_url'] as String?, radius: 26),
+                            const SizedBox(width: 14),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(name, maxLines: 1, overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: tt.textPrimary)),
+                                  const SizedBox(height: 2),
+                                  Text(session.isTutor ? tr('Tutor') : tr('Student'),
+                                      style: TextStyle(color: tt.textSecondary, fontSize: 14)),
+                                ],
+                              ),
+                            ),
+                            Icon(Icons.chevron_right_rounded, color: tt.textTertiary),
+                          ],
+                        ),
+                      ),
+                    ),
                   ),
                   _SectionLabel(tr('APPEARANCE')),
                   PillToggle<ThemeMode>(
@@ -184,11 +204,6 @@ class AppDrawer extends StatelessWidget {
                       ),
                     ),
                   Divider(height: 17, color: tt.border),
-                  _DrawerItem(
-                    icon: Icons.person_outline_rounded,
-                    title: tr('My account'),
-                    onTap: () => open(const AccountScreen()),
-                  ),
                   if (session.isStudent)
                     _DrawerItem(
                       icon: Icons.key_rounded,
@@ -217,6 +232,17 @@ class AppDrawer extends StatelessWidget {
                     onTap: () {
                       Navigator.pop(context);
                       _openAbout(context);
+                    },
+                  ),
+                  _DrawerItem(
+                    icon: Icons.system_update_rounded,
+                    title: tr('Check for update'),
+                    subtitle: tr('Version {v}', {'v': Raw(appVersion)}),
+                    onTap: () {
+                      // The drawer is gone once it closes; check from the navigator, which stays.
+                      final host = Navigator.of(context).context;
+                      Navigator.pop(context);
+                      checkForUpdate(host);
                     },
                   ),
                   _DrawerItem(

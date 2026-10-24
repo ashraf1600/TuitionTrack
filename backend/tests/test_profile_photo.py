@@ -73,3 +73,19 @@ class ProfilePhotoTests(APITestCase):
         resp = self.client.patch(reverse('user_me'), {'first_name': 'Ashraf'}, format='json')
         self.assertEqual(resp.status_code, status.HTTP_200_OK)
         self.assertEqual(resp.data['first_name'], 'Ashraf')
+
+    def test_students_see_the_tutor_photo_in_search_and_requests(self):
+        from apps.students.models import ConnectionRequest
+        self.client.force_authenticate(self.tutor)
+        self.client.post(self.url, {'photo': png()}, format='multipart')
+        student = User.objects.create_user(username='stu', password='x', role=User.Role.STUDENT)
+        ConnectionRequest.objects.create(student=student, tutor=self.tutor)
+
+        self.client.force_authenticate(student)
+        found = self.client.get(reverse('tutor_directory'), {'search': 'tutor'}).data
+        rows = found['results'] if isinstance(found, dict) else found
+        self.assertTrue(rows[0]['profile_picture_url'])
+
+        mine = self.client.get('/api/v1/connections/').data
+        rows = mine['results'] if isinstance(mine, dict) else mine
+        self.assertTrue(rows[0]['tutor_profile_picture'])

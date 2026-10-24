@@ -79,11 +79,7 @@ class _TutorConnect extends StatelessWidget {
           AppCard(
             padding: EdgeInsets.zero,
             child: ListTile(
-              leading: CircleAvatar(
-                radius: 20,
-                backgroundColor: context.tt.primaryContainer,
-                child: Icon(Icons.person_outline_rounded, color: context.tt.onPrimaryContainer),
-              ),
+              leading: PersonAvatar(name: name, radius: 20),
               title: Text(name),
               subtitle: Padding(
                 padding: EdgeInsets.only(top: 4),
@@ -118,11 +114,7 @@ class _TutorConnect extends StatelessWidget {
                       _ => (tr('Waiting for the tutor'), AppColors.warning),
                     };
                     return ListTile(
-                      leading: CircleAvatar(
-                radius: 20,
-                backgroundColor: context.tt.primaryContainer,
-                child: Icon(Icons.person_outline_rounded, color: context.tt.onPrimaryContainer),
-              ),
+                      leading: PersonAvatar(name: c.str('tutor_name'), photo: c.str('tutor_profile_picture'), radius: 20),
                       title: Text(c.str('tutor_name')),
                       subtitle: Padding(
                         padding: const EdgeInsets.only(top: 4),
@@ -284,11 +276,7 @@ class _FindTutorSheetState extends State<_FindTutorSheet> {
                                   return ListTile(
                                     contentPadding: EdgeInsets.zero,
                                     enabled: !blocked,
-                                    leading: CircleAvatar(
-                radius: 20,
-                backgroundColor: context.tt.primaryContainer,
-                child: Icon(Icons.person_outline_rounded, color: context.tt.onPrimaryContainer),
-              ),
+                                    leading: PersonAvatar(name: tutor.str('name'), photo: tutor.str('profile_picture_url'), radius: 20),
                                     title: Text(tutor.str('name')),
                                     subtitle: Text([
                                       '@${tutor.str('username')}',

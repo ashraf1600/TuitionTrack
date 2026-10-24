@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/api.dart';
-import '../../core/app_info.dart';
 import '../../core/format.dart';
 import '../../core/i18n.dart';
 import '../../core/json.dart';
@@ -13,7 +12,6 @@ import '../../core/repo.dart';
 import '../../core/session.dart';
 import '../../widgets/theme.dart';
 import '../../widgets/ui.dart';
-import '../../widgets/update_banner.dart';
 import 'account_screen.dart';
 
 const _seenKey = 'seen_notifications';
@@ -162,40 +160,15 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 
 /// Bell + account button, shared by the tutor and student home screens.
 List<Widget> homeActions(BuildContext context) {
-  final session = context.read<Session>();
   return [
     const NotificationBell(),
     IconButton(
       tooltip: tr('My account'),
-      icon: CircleAvatar(
-        radius: 16,
-        backgroundColor: context.tt.primaryContainer,
-        child: Text(
-          session.displayName.isEmpty ? '?' : session.displayName[0].toUpperCase(),
-          style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: context.tt.onPrimaryContainer),
-        ),
+      // Watches the session so a new or removed photo shows up straight away.
+      icon: Consumer<Session>(
+        builder: (context, s, _) => PersonAvatar(name: s.displayName, photo: s.user?.str('profile_picture_url'), radius: 16),
       ),
       onPressed: () => Navigator.push(context, MaterialPageRoute<void>(builder: (_) => const AccountScreen())),
-    ),
-    // Three dots: things that are not needed every day.
-    PopupMenuButton<String>(
-      tooltip: tr('More'),
-      icon: const Icon(Icons.more_vert_rounded),
-      onSelected: (value) {
-        if (value == 'update') checkForUpdate(context);
-      },
-      itemBuilder: (context) => [
-        PopupMenuItem<String>(
-          value: 'update',
-          child: ListTile(
-            dense: true,
-            contentPadding: EdgeInsets.zero,
-            leading: const Icon(Icons.system_update_rounded),
-            title: Text(tr('Check for update')),
-            subtitle: Text(tr('Version {v}', {'v': Raw(appVersion)})),
-          ),
-        ),
-      ],
     ),
     const SizedBox(width: 4),
   ];

@@ -740,6 +740,44 @@ class InitialAvatar extends StatelessWidget {
   }
 }
 
+/// A round profile picture: the person's photo when they have one, otherwise
+/// the first letter of their name. [photo] may be a full or server-relative URL.
+class PersonAvatar extends StatelessWidget {
+  const PersonAvatar({super.key, required this.name, this.photo, this.radius = 16});
+  final String name;
+  final String? photo;
+  final double radius;
+
+  @override
+  Widget build(BuildContext context) {
+    final url = (photo == null || photo!.isEmpty) ? '' : context.read<Repo>().api.mediaUrl(photo);
+    final letter = Center(
+      child: Text(
+        name.trim().isEmpty ? '?' : name.trim().characters.first.toUpperCase(),
+        style: TextStyle(fontSize: radius * 0.85, fontWeight: FontWeight.w600, color: context.tt.onPrimaryContainer),
+      ),
+    );
+    return CircleAvatar(
+      radius: radius,
+      backgroundColor: context.tt.primaryContainer,
+      child: url.isEmpty
+          ? letter
+          : ClipOval(
+              child: SizedBox.square(
+                dimension: radius * 2,
+                child: Image.network(
+                  url,
+                  fit: BoxFit.cover,
+                  gaplessPlayback: true,
+                  loadingBuilder: (_, child, progress) => progress == null ? child : letter,
+                  errorBuilder: (_, _, _) => letter,
+                ),
+              ),
+            ),
+    );
+  }
+}
+
 /// Shows [options] in a bottom sheet with an optional search box; returns the chosen value.
 Future<String?> pickFromSheet(
   BuildContext context, {
