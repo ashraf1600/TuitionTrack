@@ -10,6 +10,7 @@ import '../../core/json.dart';
 import '../../core/repo.dart';
 import '../../core/session.dart';
 import '../../core/reminder_plan.dart' show nextClass, whenLabel;
+import '../../core/week_plan.dart' show weekOrder;
 import '../../widgets/kit.dart';
 import '../../widgets/theme.dart';
 import '../../widgets/ui.dart';
@@ -135,17 +136,18 @@ class _TutorDetailScreenState extends State<TutorDetailScreen> {
   }
 }
 
+/// The tutor at a glance, then three plain sections: Subjects, Weekly
+/// routine (day and time only) and Classes done (by date).
 class _ClassesTab extends StatelessWidget {
   const _ClassesTab({required this.detail});
   final _Detail detail;
 
-  static const _week = ['Saturday', 'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
-
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     if (detail.tuitions.isEmpty && detail.legacyRoutine.isEmpty && detail.upcoming.isEmpty) {
       return PageBody(children: [
+        _TutorHeader(detail: detail),
+        gap24,
         EmptyState(
           icon: Icons.class_outlined,
           title: tr('No classes yet'),
@@ -153,82 +155,39 @@ class _ClassesTab extends StatelessWidget {
         ),
       ]);
     }
+    final routine = _routine(detail);
     return PageBody(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
       children: [
         _TutorHeader(detail: detail),
-        gap16,
-        for (final (index, tuition) in detail.tuitions.indexed) ...[
-          // Reminders first, but they never stop anything below from working.
-          for (final p in tuition.maps('pending_payments')) ...[
-            Banner2(
-              tr('Payment pending for cycle #{p0}{p1}. Classes go on as usual; this goes away when your tutor marks it paid.', {'p0': p.integer('cycle_number'), 'p1': ''}),
-              color: AppColors.warning,
-              icon: Icons.warning_amber_rounded,
-            ),
-            gap8,
-          ],
+        if (routine.isNotEmpty) ...[
+          SectionHeader(tr('Weekly routine')),
+          _RoutineCard(rows: routine),
+        ],
+        if (detail.tuitions.isNotEmpty) ...[
+          SectionHeader(tr('Classes done')),
+          // One date-wise list for this tutor, as they mark classes; no split by subject.
           AppCard(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                // The tuition's own name stays with the tutor; the student sees the subject only.
-                if (tuition.str('subject').isNotEmpty || detail.tuitions.length > 1)
-                  Row(
-                    children: [
-                      InitialTile(tuition.str('subject').isNotEmpty ? tuition.str('subject') : '${index + 1}', size: 36),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          tuition.str('subject').isNotEmpty ? tuition.str('subject') : tr('Class group {n}', {'n': index + 1}),
-                          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700, letterSpacing: -0.2),
-                        ),
-                      ),
-                    ],
-                  ),
-                if (tuition.maps('routine').isNotEmpty) ...[
-                  gap12,
-                  Wrap(
-                    spacing: 6,
-                    runSpacing: 6,
-                    children: [
-                      for (final slot in _sorted(tuition.maps('routine')))
-                        Pill(_slotLabel(slot), color: AppColors.primarySoft, icon: Icons.schedule),
-                    ],
-                  ),
-                ],
-                gap16,
-                if (tuition.obj('active_cycle') case final cycle?)
-                  CycleProgress(cycle: cycle)
-                else
-                  Text(tr('No classes recorded yet.'), style: TextStyle(color: scheme.onSurfaceVariant)),
+            child: ClassesDone(
+              cycles: [
+                for (final t in detail.tuitions)
+                  if (t.obj('active_cycle') case final cycle?) cycle,
               ],
+              homework: detail.homework,
+              paymentDue: detail.tuitions.any((t) => t.maps('pending_payments').isNotEmpty),
             ),
           ),
-          gap16,
-        ],
-        if (detail.legacyRoutine.isNotEmpty) ...[
-          SectionTitle(tr('Other class times')),
-          FlatGroup(children: [
-            for (final r in detail.legacyRoutine)
-              ListTile(
-                dense: true,
-                leading: const Icon(Icons.schedule, size: 20),
-                title: Text(r.subject.isEmpty ? tr('Class') : r.subject),
-                trailing: Text('${normalizeDay(r.day).isEmpty ? r.day : dayLabel(normalizeDay(r.day))} · ${to12h(r.start)}${r.end.isEmpty ? '' : '–${to12h(r.end)}'}'),
-              ),
-          ]),
-          gap16,
         ],
         if (detail.upcoming.isNotEmpty) ...[
-          SectionTitle(tr('Upcoming classes')),
-          FlatGroup(children: [
+          SectionHeader(tr('Extra classes')),
+          RowGroup(children: [
             for (final c in detail.upcoming)
-              ListTile(
+              KitRow(
                 dense: true,
-                leading: const Icon(Icons.event_rounded, size: 20),
-                title: Text(c.topic.isEmpty ? tr('Class') : c.topic),
-                trailing: Text(fmtDateTime(c.at)),
+                icon: Icons.event_rounded,
+                accent: AppColors.primarySoft,
+                title: c.topic.isEmpty ? tr('Class') : c.topic,
+                subtitle: fmtDateTime(c.at),
               ),
           ]),
         ],
@@ -236,16 +195,67 @@ class _ClassesTab extends StatelessWidget {
     );
   }
 
-  static List<Json> _sorted(List<Json> slots) => [...slots]
-    ..sort((a, b) {
-      final byDay = _week.indexOf(normalizeDay(a.str('day'))).compareTo(_week.indexOf(normalizeDay(b.str('day'))));
-      return byDay != 0 ? byDay : minutesOf(slotStart(a)).compareTo(minutesOf(slotStart(b)));
-    });
+  /// Every class time with this tutor, Saturday first: (day, start, end).
+  static List<(String, String, String)> _routine(_Detail detail) {
+    final out = <(String, String, String)>{
+      for (final t in detail.tuitions)
+        for (final slot in t.maps('routine')) (normalizeDay(slot.str('day')), slotStart(slot), slot.str('end_time')),
+      for (final r in detail.legacyRoutine) (normalizeDay(r.day), r.start, r.end),
+    }.where((r) => r.$1.isNotEmpty).toList()
+      ..sort((a, b) {
+        final byDay = weekOrder.indexOf(a.$1).compareTo(weekOrder.indexOf(b.$1));
+        return byDay != 0 ? byDay : minutesOf(a.$2).compareTo(minutesOf(b.$2));
+      });
+    return out;
+  }
+}
 
-  static String _slotLabel(Json slot) {
-    final day = normalizeDay(slot.str('day'));
-    final end = slot.str('end_time');
-    return '${day.isEmpty ? slot.str('day') : dayLabel(day)} ${to12h(slotStart(slot))}${end.isEmpty ? '' : '–${to12h(end)}'}';
+/// One row per class time: "Sat   8:00 – 9:30 AM". Today's rows are marked.
+class _RoutineCard extends StatelessWidget {
+  const _RoutineCard({required this.rows});
+  final List<(String, String, String)> rows;
+
+  @override
+  Widget build(BuildContext context) {
+    final tt = context.tt;
+    final today = weekdayName(DateTime.now());
+    return AppCard(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      child: Column(
+        children: [
+          for (final (i, (day, start, end)) in rows.indexed) ...[
+            if (i > 0 && rows[i - 1].$1 != day) Divider(height: 1, color: tt.border),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 10),
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: isBangla ? 64 : 44,
+                    // The day is written once, on its first class.
+                    child: i > 0 && rows[i - 1].$1 == day
+                        ? null
+                        : Text(
+                            dayLabel(day),
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                              color: day == today ? tt.primary : tt.textSecondary,
+                            ),
+                          ),
+                  ),
+                  Expanded(
+                    child: Text(
+                      end.isEmpty ? to12h(start) : '${to12h(start)} – ${to12h(end)}',
+                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: tt.textPrimary, fontFeatures: tabular),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
   }
 }
 
@@ -259,83 +269,40 @@ class _TutorHeader extends StatelessWidget {
     final tt = context.tt;
     final tutor = detail.tutor;
     final name = tutor.str('display_name').isNotEmpty ? tutor.str('display_name') : tutor.str('username');
-    final photo = context.read<Session>().api.mediaUrl(tutor.str('profile_picture_url'));
-    final subjects = tutor.strings('subjects');
     final now = context.read<Session>().api.serverNow;
     final next = nextClass(detail.tuitions, now);
-    final done = detail.tuitions.fold<int>(0, (sum, t) => sum + (t.obj('active_cycle')?.integer('completed_classes') ?? 0));
-    return AppCard(
-      padding: const EdgeInsets.all(18),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
+    return Row(
+      children: [
+        PersonAvatar(name: name, photo: tutor.str('profile_picture_url', tutor.str('profile_picture')), radius: 32),
+        const SizedBox(width: 16),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(20),
-                child: SizedBox.square(
-                  dimension: 60,
-                  child: photo.isEmpty
-                      ? InitialTile(name, size: 60, seed: tutor.str('id'))
-                      : Image.network(photo, fit: BoxFit.cover, errorBuilder: (_, _, _) => InitialTile(name, size: 60, seed: tutor.str('id'))),
-                ),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(name, style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, letterSpacing: -0.3, color: tt.textPrimary)),
-                    if (subjects.isNotEmpty)
-                      Text(subjects.join(' · '), maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 14, color: tt.textSecondary)),
-                  ],
-                ),
+              Text(name, style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700, letterSpacing: -0.4, color: tt.textPrimary)),
+              const SizedBox(height: 4),
+              Row(
+                children: [
+                  Icon(Icons.event_available_rounded, size: 16, color: next == null ? tt.textTertiary : tone(context, AppColors.primarySoft)),
+                  const SizedBox(width: 6),
+                  Flexible(
+                    child: Text(
+                      next == null ? tr('No class coming up') : tr('Next class: {when}', {'when': whenLabel(next.at.toLocal(), now.toLocal())}),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: next == null ? tt.textSecondary : tone(context, AppColors.primarySoft),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
-          gap16,
-          TileRow(children: [
-            _MiniStat(
-              icon: Icons.event_available_rounded,
-              label: tr('Next class'),
-              value: next == null ? '—' : whenLabel(next.at.toLocal(), now.toLocal()),
-            ),
-            _MiniStat(icon: Icons.check_circle_outline_rounded, label: tr('Classes this cycle'), value: localDigits('$done')),
-          ]),
-        ],
-      ),
-    );
-  }
-}
-
-class _MiniStat extends StatelessWidget {
-  const _MiniStat({required this.icon, required this.label, required this.value});
-  final IconData icon;
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    final tt = context.tt;
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(color: tt.cardRaised, borderRadius: BorderRadius.circular(14)),
-      child: Row(
-        children: [
-          Icon(icon, size: 18, color: tt.primary),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 11, color: tt.textSecondary)),
-                Text(value, maxLines: 1, overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: tt.textPrimary)),
-              ],
-            ),
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }

@@ -63,6 +63,10 @@ String _headingsAsBold(String text) => text.replaceAllMapped(
 /// its LaTeX typeset. Doubled backslashes from JSON are made single, LaTeX
 /// without $…$ is found, **bold** and # headings from ChatGPT are shown bold,
 /// and `code` is never read as maths. The stored text itself is not changed.
+/// Whether [text] holds maths or science notation that [MathText] typesets.
+bool hasMath(String text) =>
+    text.contains(r'$') || text.contains(r'\') || text.contains('^') || text.contains('_');
+
 class MathText extends StatelessWidget {
   const MathText(this.text, {super.key, this.style, this.maxLines});
 

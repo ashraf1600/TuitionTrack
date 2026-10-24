@@ -442,10 +442,9 @@ class _RequestsBanner extends StatelessWidget {
   }
 }
 
-/// "This week": a strip of the seven days (Saturday first), then the classes
-/// grouped by day. Today sits on a raised block, the next class is marked, and
-/// days already over are quieter. By default only today and what is still to
-/// come are listed; the rest of the week is one tap away.
+/// "This week", kept small: the next class, a strip of the seven days
+/// (Saturday first), and the classes of one day as cards — today by default,
+/// or whichever day is tapped.
 class _WeekAtAGlance extends StatefulWidget {
   const _WeekAtAGlance({required this.tuitions, required this.onOpen});
   final List<Json> tuitions;
@@ -456,9 +455,7 @@ class _WeekAtAGlance extends StatefulWidget {
 }
 
 class _WeekAtAGlanceState extends State<_WeekAtAGlance> {
-  bool _whole = false;
-
-  /// A day picked on the strip; null shows today and what is still to come.
+  /// The day shown below the strip; null means today.
   String? _picked;
 
   @override
@@ -466,69 +463,42 @@ class _WeekAtAGlanceState extends State<_WeekAtAGlance> {
     final tt = context.tt;
     final now = DateTime.now();
     final plan = buildWeekPlan(widget.tuitions, now);
-    final picked = _picked;
-    final days = picked != null ? [picked] : plan.daysToShow(whole: _whole);
-    final hasPast = plan.pastDaysWithClasses.isNotEmpty;
-    // A busy week folds its past days into one row instead of listing them.
-    final foldPast = picked == null && !_whole && plan.isBusy && hasPast;
+    final day = _picked ?? plan.today;
+    final classes = plan.byDay[day]!;
     final next = plan.next;
 
     return Container(
       decoration: BoxDecoration(color: tt.card, borderRadius: BorderRadius.circular(20), boxShadow: tt.cardShadow),
-      padding: const EdgeInsets.fromLTRB(8, 16, 8, 8),
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          if (next != null && picked == null) ...[
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              child: _NextClassHero(item: next, plan: plan, now: now, onTap: () => widget.onOpen(next.tuition.str('id'))),
-            ),
+          if (next != null) ...[
+            _NextClassHero(item: next, plan: plan, now: now, onTap: () => widget.onOpen(next.tuition.str('id'))),
             const SizedBox(height: 16),
           ],
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            child: _DayStrip(
-              plan: plan,
-              picked: picked,
-              onPick: (day) => setState(() => _picked = (day == _picked) ? null : day),
-            ),
+          _DayStrip(
+            plan: plan,
+            picked: day,
+            onPick: (d) => setState(() => _picked = d == plan.today ? null : d),
           ),
           const SizedBox(height: 12),
-          Padding(padding: const EdgeInsets.symmetric(horizontal: 8), child: Divider(height: 1, color: tt.border)),
           if (plan.isEmpty)
             _WeekEmpty(hasTuitions: widget.tuitions.isNotEmpty)
-          else ...[
-            const SizedBox(height: 8),
-            if (picked != null && plan.byDay[picked]!.isEmpty)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 20),
-                child: Text(
-                  tr('No classes on {day}', {'day': dayLabel(picked, short: false)}),
-                  textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 14, color: tt.textSecondary),
-                ),
+          else if (classes.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              child: Text(
+                day == plan.today ? tr('No classes today.') : tr('No classes on {day}', {'day': dayLabel(day, short: false)}),
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 14, color: tt.textSecondary),
               ),
-            if (foldPast)
-              _PastSummary(plan: plan, onTap: () => setState(() => _whole = true)),
-            for (final day in days)
-              if (plan.byDay[day]!.isNotEmpty) _DayGroup(plan: plan, day: day, now: now, onOpen: widget.onOpen),
-            if (picked != null)
-              TextButton(
-                onPressed: () => setState(() => _picked = null),
-                child: Text(tr('Back to today and upcoming')),
-              )
-            else if (hasPast)
-              TextButton(
-                onPressed: () => setState(() => _whole = !_whole),
-                child: Text(
-                  _whole
-                      ? tr('Show today and upcoming only')
-                      : tr('Show whole week · {n} classes', {'n': plan.total}),
-                  textAlign: TextAlign.center,
-                ),
-              ),
-          ],
+            )
+          else
+            for (final (i, c) in classes.indexed) ...[
+              if (i > 0) const SizedBox(height: 8),
+              _ClassCard(item: c, live: _isNow(c, plan, now), onTap: () => widget.onOpen(c.tuition.str('id'))),
+            ],
         ],
       ),
     );
@@ -777,88 +747,10 @@ class _DashedCircle extends CustomPainter {
   bool shouldRepaint(_DashedCircle old) => old.color != color;
 }
 
-/// A busy week's past days in one row; tapping it shows them.
-class _PastSummary extends StatelessWidget {
-  const _PastSummary({required this.plan, required this.onTap});
-  final WeekPlan plan;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final tt = context.tt;
-    final days = plan.pastDaysWithClasses;
-    final range = days.length == 1 ? dayLabel(days.first) : '${dayLabel(days.first)} – ${dayLabel(days.last)}';
-    return InkWell(
-      borderRadius: BorderRadius.circular(12),
-      onTap: onTap,
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(minHeight: 48),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          child: Row(
-            children: [
-              Expanded(
-                child: Text(
-                  tr('{days} · {n} classes done', {'days': range, 'n': plan.pastDayClasses}),
-                  style: TextStyle(fontSize: 14, color: tt.textSecondary, fontFeatures: tabular),
-                ),
-              ),
-              Icon(Icons.keyboard_arrow_down_rounded, size: 22, color: tt.textTertiary),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// One day's classes under its header; today's group sits on a raised block.
-class _DayGroup extends StatelessWidget {
-  const _DayGroup({required this.plan, required this.day, required this.now, required this.onOpen});
-  final WeekPlan plan;
-  final String day;
-  final DateTime now;
-  final Future<void> Function(String tuitionId) onOpen;
-
-  @override
-  Widget build(BuildContext context) {
-    final tt = context.tt;
-    final isToday = day == plan.today;
-    final isPast = plan.isPastDay(day);
-    final header = isToday
-        ? tr('Today · {day}', {'day': dayLabel(day, short: !isBangla)})
-        : dayLabel(day, short: !isBangla);
-    final group = Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(12, 10, 12, 2),
-          child: Text(
-            header,
-            style: TextStyle(
-              fontSize: 13,
-              height: 1.4,
-              fontWeight: isToday ? FontWeight.w700 : FontWeight.w600,
-              color: isToday ? tt.primary : (isPast ? tt.textTertiary : tt.textSecondary),
-            ),
-          ),
-        ),
-        for (final c in plan.byDay[day]!) _ClassRow(item: c, live: _isNow(c, plan, now), onTap: () => onOpen(c.tuition.str('id'))),
-      ],
-    );
-    if (!isToday) return group;
-    return Container(
-      margin: const EdgeInsets.symmetric(vertical: 4),
-      padding: const EdgeInsets.only(bottom: 4),
-      decoration: BoxDecoration(color: tt.cardRaised, borderRadius: BorderRadius.circular(12)),
-      child: group,
-    );
-  }
-}
-
-/// [ start / end ] [ dot ] [ tuition name ] [ Next ] [ > ] — the whole row opens the tuition.
-class _ClassRow extends StatelessWidget {
-  const _ClassRow({required this.item, required this.onTap, this.live = false});
+/// One class as a small card in the tuition's colour: time, tuition, subject
+/// and students, with "Now" or "Next" when it applies. Opens the tuition.
+class _ClassCard extends StatelessWidget {
+  const _ClassCard({required this.item, required this.onTap, this.live = false});
   final WeekClass item;
   final VoidCallback onTap;
 
@@ -868,93 +760,69 @@ class _ClassRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final tt = context.tt;
+    final color = tuitionColor(item.tuition);
     final ink = item.past ? tt.textSecondary : tt.textPrimary;
-    return InkWell(
-      borderRadius: BorderRadius.circular(12),
-      onTap: onTap,
-      child: ConstrainedBox(
-        constraints: BoxConstraints(minHeight: isBangla ? 64 : 56),
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
+    final students = item.tuition.integer('enrolled_count');
+    return Material(
+      color: tt.cardRaised,
+      borderRadius: BorderRadius.circular(14),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: IntrinsicHeight(
           child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              SizedBox(
-                width: isBangla ? 86 : 70,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(to12h(item.start),
-                        maxLines: 1,
-                        style: TextStyle(fontSize: 14, height: 1.3, fontWeight: FontWeight.w600, fontFeatures: tabular, color: ink)),
-                    if (item.end.isNotEmpty)
-                      Text(to12h(item.end),
-                          maxLines: 1,
-                          style: TextStyle(fontSize: 12, height: 1.3, fontFeatures: tabular, color: tt.textTertiary)),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 8),
-              _Dot(item: item, tt: tt),
-              const SizedBox(width: 10),
               // The tuition's colour, the same as on its card below.
-              Container(
-                width: 4,
-                height: 32,
-                decoration: BoxDecoration(
-                  color: tuitionColor(item.tuition).withValues(alpha: item.past ? 0.35 : 1),
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-              const SizedBox(width: 10),
+              Container(width: 4, color: color.withValues(alpha: item.past ? 0.35 : 1)),
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      item.tuition.str('title'),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, height: isBangla ? 1.55 : 1.45, color: ink),
-                    ),
-                    Text(
-                      [
-                        if (item.tuition.str('subject').isNotEmpty) item.tuition.str('subject'),
-                        tr('{p0} student{p1}', {'p0': item.tuition.integer('enrolled_count'), 'p1': item.tuition.integer('enrolled_count') == 1 ? '' : 's'}),
-                      ].join(' · '),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(fontSize: 12, color: tt.textTertiary),
-                    ),
-                  ],
-                ),
-              ),
-              if (live) ...[
-                const SizedBox(width: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(color: tt.successContainer, borderRadius: BorderRadius.circular(8)),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
                   child: Row(
-                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      Container(width: 6, height: 6, decoration: BoxDecoration(color: tt.success, shape: BoxShape.circle)),
-                      const SizedBox(width: 4),
-                      Text(tr('Now'), style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: tt.onSuccessContainer)),
+                      SizedBox(
+                        width: isBangla ? 84 : 68,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(to12h(item.start),
+                                maxLines: 1,
+                                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, fontFeatures: tabular, color: ink)),
+                            if (item.end.isNotEmpty)
+                              Text(to12h(item.end), maxLines: 1, style: TextStyle(fontSize: 12, fontFeatures: tabular, color: tt.textTertiary)),
+                          ],
+                        ),
+                      ),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(item.tuition.str('title'),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, height: isBangla ? 1.55 : 1.4, color: ink)),
+                            Text(
+                              [
+                                if (item.tuition.str('subject').isNotEmpty) item.tuition.str('subject'),
+                                tr('{p0} student{p1}', {'p0': students, 'p1': students == 1 ? '' : 's'}),
+                              ].join(' · '),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(fontSize: 12, color: tt.textTertiary),
+                            ),
+                          ],
+                        ),
+                      ),
+                      if (live)
+                        _Tag(tr('Now'), background: tt.successContainer, foreground: tt.onSuccessContainer)
+                      else if (item.isNext)
+                        _Tag(tr('Next'), background: tt.primaryContainer, foreground: tt.onPrimaryContainer)
+                      else if (item.past)
+                        Icon(Icons.check_rounded, size: 18, color: tt.textTertiary),
                     ],
                   ),
                 ),
-              ] else if (item.isNext) ...[
-                const SizedBox(width: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(color: tt.primaryContainer, borderRadius: BorderRadius.circular(8)),
-                  child: Text(tr('Next'),
-                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tt.onPrimaryContainer)),
-                ),
-              ],
-              const SizedBox(width: 4),
-              Icon(Icons.chevron_right_rounded, size: 22, color: tt.textTertiary),
+              ),
             ],
           ),
         ),
@@ -963,43 +831,18 @@ class _ClassRow extends StatelessWidget {
   }
 }
 
-/// Next class: filled primary with a ring. Other upcoming: hollow. Past: solid grey.
-class _Dot extends StatelessWidget {
-  const _Dot({required this.item, required this.tt});
-  final WeekClass item;
-  final TtTokens tt;
+class _Tag extends StatelessWidget {
+  const _Tag(this.label, {required this.background, required this.foreground});
+  final String label;
+  final Color background;
+  final Color foreground;
 
   @override
-  Widget build(BuildContext context) {
-    if (item.isNext) {
-      // A 9 dp dot with a 3 dp ring around it: 15 dp in all, like the others' box.
-      return Container(
-        width: 9,
-        height: 9,
-        margin: const EdgeInsets.all(3),
-        decoration: BoxDecoration(
-          color: tt.primary,
-          shape: BoxShape.circle,
-          border: Border.all(color: tt.primaryContainer, width: 3, strokeAlign: BorderSide.strokeAlignOutside),
-        ),
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(color: background, borderRadius: BorderRadius.circular(8)),
+        child: Text(label, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: foreground)),
       );
-    }
-    return SizedBox(
-      width: 15,
-      height: 15,
-      child: Center(
-        child: Container(
-          width: 9,
-          height: 9,
-          decoration: BoxDecoration(
-            color: item.past ? tt.dotPast : Colors.transparent,
-            shape: BoxShape.circle,
-            border: item.past ? null : Border.all(color: tt.dotUpcoming, width: 2),
-          ),
-        ),
-      ),
-    );
-  }
 }
 
 /// No class days anywhere this week.

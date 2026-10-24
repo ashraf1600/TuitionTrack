@@ -69,7 +69,7 @@ void main() {
 
   testWidgets('tests, results', (tester) async {
     await openApp(tester, size: tallPhone);
-    await tapTab(tester, 2);
+    await tapTab(tester, 1);
     final results = find.text('Results');
     if (results.evaluate().isNotEmpty) {
       await tester.tap(results.first);

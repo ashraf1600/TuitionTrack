@@ -9,6 +9,7 @@ import '../../core/connect.dart';
 import '../../core/format.dart';
 import '../../core/i18n.dart';
 import '../../core/repo.dart';
+import '../../widgets/math_text.dart';
 import '../../widgets/media.dart';
 import '../../widgets/theme.dart';
 import '../../widgets/ui.dart';
@@ -223,7 +224,7 @@ class _HomeworkCardState extends State<HomeworkCard> {
         children: [
           Pill(status, color: color, icon: icon),
           gap12,
-          Text(hw.title, style: TextStyle(fontSize: 17, height: 1.3, fontWeight: FontWeight.w700, letterSpacing: -0.2, color: tt.textPrimary)),
+          MathText(hw.title, style: TextStyle(fontSize: 17, height: 1.3, fontWeight: FontWeight.w700, letterSpacing: -0.2, color: tt.textPrimary)),
           if (_byline(hw).isNotEmpty)
             Padding(
               padding: const EdgeInsets.only(top: 3),
@@ -231,7 +232,7 @@ class _HomeworkCardState extends State<HomeworkCard> {
             ),
           if (hw.description.isNotEmpty) ...[
             gap8,
-            Text(hw.description, maxLines: 4, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 14, height: 1.5, color: tt.textPrimary)),
+            MathText(hw.description, maxLines: 4, style: TextStyle(fontSize: 14, height: 1.5, color: tt.textPrimary)),
           ],
           gap12,
           Row(
@@ -348,7 +349,7 @@ class _HomeworkCardState extends State<HomeworkCard> {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(child: Text(hw.title, style: TextStyle(fontSize: 17, height: 1.3, fontWeight: FontWeight.w600, color: tt.textPrimary))),
+              Expanded(child: MathText(hw.title, style: TextStyle(fontSize: 17, height: 1.3, fontWeight: FontWeight.w600, color: tt.textPrimary))),
               if (widget.trailing != null) widget.trailing!,
             ],
           ),
@@ -357,7 +358,7 @@ class _HomeworkCardState extends State<HomeworkCard> {
               padding: const EdgeInsets.only(top: 4),
               child: Text(_byline(hw), style: TextStyle(fontSize: 13, color: tt.textSecondary)),
             ),
-          if (hw.description.isNotEmpty) ...[gap8, Text(hw.description, style: const TextStyle(fontSize: 14, height: 1.5))],
+          if (hw.description.isNotEmpty) ...[gap8, MathText(hw.description, style: const TextStyle(fontSize: 14, height: 1.5))],
           gap12,
           // Status as icon + word chips: the time left, and where the work stands.
           Wrap(
