@@ -11,6 +11,10 @@ on:
         description: 'Release tag to attach the APK to, e.g. v1.4.0'
         required: true
 
+# Attaching the APK to the release needs write access to the repository's releases.
+permissions:
+  contents: write
+
 jobs:
   build:
     name: Build release APK
