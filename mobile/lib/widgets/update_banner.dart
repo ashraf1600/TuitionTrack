@@ -88,7 +88,7 @@ class _UpdateBannerState extends State<UpdateBanner> {
   }
 }
 
-/// "Check for update" in the three-dot menu: asks the server right now and
+/// "Check for update" in the side menu: asks the server right now and
 /// says what it found. A newer version opens the download link.
 Future<void> checkForUpdate(BuildContext context) async {
   final session = context.read<Session>();

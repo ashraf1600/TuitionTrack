@@ -576,6 +576,7 @@ class ConnectionRequestSerializer(serializers.ModelSerializer):
     tutor_name = serializers.SerializerMethodField()
     tutor_display_name = serializers.SerializerMethodField()
     tutor_username = serializers.CharField(source='tutor.username', read_only=True)
+    tutor_profile_picture = serializers.SerializerMethodField()
     student = serializers.SerializerMethodField()
 
     class Meta:
@@ -584,9 +585,16 @@ class ConnectionRequestSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'status', 'message', 'created_at', 'responded_at',
             'student_id', 'student_name', 'student_username', 'student',
-            'tutor_id', 'tutor_name', 'tutor_display_name', 'tutor_username',
+            'tutor_id', 'tutor_name', 'tutor_display_name', 'tutor_username', 'tutor_profile_picture',
         ]
         read_only_fields = fields
+
+    def get_tutor_profile_picture(self, obj):
+        if not obj.tutor.profile_picture:
+            return None
+        request = self.context.get('request')
+        url = obj.tutor.profile_picture.url
+        return request.build_absolute_uri(url) if request else url
 
     def get_student_name(self, obj):
         return obj.student.get_full_name() or obj.student.username
