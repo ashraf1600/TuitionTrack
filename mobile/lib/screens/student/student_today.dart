@@ -187,9 +187,9 @@ String tutorCardName(Json tutor) {
   return name.isNotEmpty ? name : tutor.str('username');
 }
 
-/// One tutor on the student's home: photo, name, subjects and a ring of
-/// classes done in the current cycle (all their subjects together).
-/// Tap for the subjects, weekly routine and every class done.
+/// One tutor on the student's home: photo, name, classes a week and a ring of
+/// classes done in the current cycle.
+/// Tap for the weekly routine and every class done.
 class TutorCard extends StatelessWidget {
   const TutorCard({super.key, required this.tutor, required this.tuitions, required this.onTap});
   final Json tutor;
@@ -200,11 +200,8 @@ class TutorCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final tt = context.tt;
     final name = tutorCardName(tutor);
-    final subjects = {
-      for (final t in tuitions)
-        if (t.str('subject').isNotEmpty) t.str('subject'),
-      if (tuitions.isEmpty) ...tutor.strings('subjects'),
-    };
+    // Subjects are not shown: a tutor teaches whatever the student needs.
+    final perWeek = tuitions.fold<int>(0, (n, t) => n + t.maps('routine').length);
     var done = 0;
     var total = 0;
     for (final t in tuitions) {
@@ -228,7 +225,11 @@ class TutorCard extends StatelessWidget {
                     style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, letterSpacing: -0.2, color: tt.textPrimary)),
                 const SizedBox(height: 2),
                 Text(
-                  subjects.isEmpty ? tr('No classes yet') : subjects.join(' · '),
+                  tuitions.isEmpty
+                      ? tr('No classes yet')
+                      : perWeek == 1
+                          ? tr('1 class a week')
+                          : tr('{n} classes a week', {'n': perWeek}),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(fontSize: 13, color: tt.textSecondary),

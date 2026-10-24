@@ -1119,4 +1119,6 @@ const bnStrings = <String, String>{
   'Show all {n} classes': 'সব {n}টি ক্লাস দেখান',
   'This cycle': 'এই সাইকেল',
   'This cycle · Payment due': 'এই সাইকেল · পেমেন্ট বাকি',
+  '1 class a week': 'সপ্তাহে ১টি ক্লাস',
+  '{n} classes a week': 'সপ্তাহে {n}টি ক্লাস',
 };

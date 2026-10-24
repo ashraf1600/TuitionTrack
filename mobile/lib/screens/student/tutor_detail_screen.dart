@@ -137,7 +137,7 @@ class _TutorDetailScreenState extends State<TutorDetailScreen> {
 }
 
 /// The tutor at a glance, then three plain sections: Subjects, Weekly
-/// routine (one compact list for the whole week) and Classes done.
+/// routine (day and time only) and Classes done (by date).
 class _ClassesTab extends StatelessWidget {
   const _ClassesTab({required this.detail});
   final _Detail detail;
@@ -155,24 +155,11 @@ class _ClassesTab extends StatelessWidget {
         ),
       ]);
     }
-    final subjects = <String>{
-      for (final t in detail.tuitions)
-        if (t.str('subject').isNotEmpty) t.str('subject'),
-      ...detail.tutor.strings('subjects'),
-    };
     final routine = _routine(detail);
     return PageBody(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
       children: [
         _TutorHeader(detail: detail),
-        if (subjects.isNotEmpty) ...[
-          SectionHeader(tr('Subjects')),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [for (final s in subjects) _SubjectChip(s)],
-          ),
-        ],
         if (routine.isNotEmpty) ...[
           SectionHeader(tr('Weekly routine')),
           _RoutineCard(rows: routine),
@@ -207,14 +194,13 @@ class _ClassesTab extends StatelessWidget {
     );
   }
 
-  /// Every class time with this tutor, Saturday first: (day, start, end, subject).
-  static List<(String, String, String, String)> _routine(_Detail detail) {
-    final out = <(String, String, String, String)>[
+  /// Every class time with this tutor, Saturday first: (day, start, end).
+  static List<(String, String, String)> _routine(_Detail detail) {
+    final out = <(String, String, String)>{
       for (final t in detail.tuitions)
-        for (final slot in t.maps('routine'))
-          (normalizeDay(slot.str('day')), slotStart(slot), slot.str('end_time'), t.str('subject')),
-      for (final r in detail.legacyRoutine) (normalizeDay(r.day), r.start, r.end, r.subject),
-    ].where((r) => r.$1.isNotEmpty).toList()
+        for (final slot in t.maps('routine')) (normalizeDay(slot.str('day')), slotStart(slot), slot.str('end_time')),
+      for (final r in detail.legacyRoutine) (normalizeDay(r.day), r.start, r.end),
+    }.where((r) => r.$1.isNotEmpty).toList()
       ..sort((a, b) {
         final byDay = weekOrder.indexOf(a.$1).compareTo(weekOrder.indexOf(b.$1));
         return byDay != 0 ? byDay : minutesOf(a.$2).compareTo(minutesOf(b.$2));
@@ -223,32 +209,10 @@ class _ClassesTab extends StatelessWidget {
   }
 }
 
-class _SubjectChip extends StatelessWidget {
-  const _SubjectChip(this.subject);
-  final String subject;
-
-  @override
-  Widget build(BuildContext context) {
-    final tt = context.tt;
-    return Container(
-      padding: const EdgeInsets.fromLTRB(6, 6, 14, 6),
-      decoration: BoxDecoration(color: tt.card, borderRadius: BorderRadius.circular(20), boxShadow: tt.cardShadow),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          InitialTile(subject, size: 24),
-          const SizedBox(width: 8),
-          Text(subject, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: tt.textPrimary)),
-        ],
-      ),
-    );
-  }
-}
-
-/// One row per class time: "Sat   8:00 – 9:30 AM   Physics". Today's rows are marked.
+/// One row per class time: "Sat   8:00 – 9:30 AM". Today's rows are marked.
 class _RoutineCard extends StatelessWidget {
   const _RoutineCard({required this.rows});
-  final List<(String, String, String, String)> rows;
+  final List<(String, String, String)> rows;
 
   @override
   Widget build(BuildContext context) {
@@ -258,7 +222,7 @@ class _RoutineCard extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
       child: Column(
         children: [
-          for (final (i, (day, start, end, subject)) in rows.indexed) ...[
+          for (final (i, (day, start, end)) in rows.indexed) ...[
             if (i > 0 && rows[i - 1].$1 != day) Divider(height: 1, color: tt.border),
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 10),
@@ -284,11 +248,6 @@ class _RoutineCard extends StatelessWidget {
                       style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: tt.textPrimary, fontFeatures: tabular),
                     ),
                   ),
-                  if (subject.isNotEmpty)
-                    Flexible(
-                      child: Text(subject, maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.right,
-                          style: TextStyle(fontSize: 13, color: tt.textSecondary)),
-                    ),
                 ],
               ),
             ),
