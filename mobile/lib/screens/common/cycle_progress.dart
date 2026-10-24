@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/connect.dart' show HomeworkItem;
 import '../../core/format.dart';
 import '../../core/i18n.dart';
 import '../../core/json.dart';
@@ -22,10 +23,13 @@ List<Json> orderedClasses(Json cycle) {
 /// first, as the tutor marks them. Subjects are not split out. The latest five
 /// show; the rest are one tap away. No money here.
 class ClassesDone extends StatefulWidget {
-  const ClassesDone({super.key, required this.cycles, this.paymentDue = false});
+  const ClassesDone({super.key, required this.cycles, this.homework = const [], this.paymentDue = false});
 
   /// The current cycle of each of the tutor's tuitions this student is in.
   final List<Json> cycles;
+
+  /// This tutor's homework; each piece shows under the class done on the day it was given.
+  final List<HomeworkItem> homework;
 
   /// A cycle waits for payment (a reminder only).
   final bool paymentDue;
@@ -53,6 +57,11 @@ class _ClassesDoneState extends State<ClassesDone> {
     log.sort((a, b) => (a.date('date') ?? DateTime(0)).compareTo(b.date('date') ?? DateTime(0)));
     final numbered = [for (final (i, c) in log.indexed) (i + 1, c)].reversed.toList();
     final shown = _all ? numbered : numbered.take(_first).toList();
+    final givenOn = <String, List<HomeworkItem>>{};
+    for (final hw in widget.homework) {
+      final at = hw.createdAt;
+      if (at != null) givenOn.putIfAbsent(_dayKey(at.toLocal()), () => []).add(hw);
+    }
     final complete = widget.cycles.isNotEmpty && widget.cycles.every((c) => c.flag('is_complete'));
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -85,7 +94,12 @@ class _ClassesDoneState extends State<ClassesDone> {
         else ...[
           const SizedBox(height: 12),
           Divider(height: 1, color: tt.border),
-          for (final (n, c) in shown) _DoneClass(number: n, entry: c),
+          for (final (n, c) in shown)
+            _DoneClass(
+              number: n,
+              entry: c,
+              homework: c.date('date') == null ? const [] : givenOn[_dayKey(c.date('date')!)] ?? const [],
+            ),
           if (numbered.length > _first)
             Align(
               alignment: Alignment.centerLeft,
@@ -105,11 +119,15 @@ class _ClassesDoneState extends State<ClassesDone> {
   }
 }
 
-/// "Thu, 22 Oct   Energy" — one class done, on the day the tutor marked it.
+String _dayKey(DateTime d) => '${d.year}-${d.month}-${d.day}';
+
+/// "Thu, 22 Oct   Energy" — one class done, on the day the tutor marked it,
+/// with any homework given that day.
 class _DoneClass extends StatelessWidget {
-  const _DoneClass({required this.number, required this.entry});
+  const _DoneClass({required this.number, required this.entry, this.homework = const []});
   final int number;
   final Json entry;
+  final List<HomeworkItem> homework;
 
   @override
   Widget build(BuildContext context) {
@@ -138,6 +156,28 @@ class _DoneClass extends StatelessWidget {
                 ),
                 if (topic.isNotEmpty)
                   Text(topic, maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 13, color: tt.textSecondary)),
+                for (final hw in homework)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.only(top: 1),
+                          child: Icon(Icons.menu_book_rounded, size: 14, color: tone(context, AppColors.warning)),
+                        ),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            tr('Homework: {title}', {'title': Raw(hw.title)}),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: tone(context, AppColors.warning)),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
               ],
             ),
           ),

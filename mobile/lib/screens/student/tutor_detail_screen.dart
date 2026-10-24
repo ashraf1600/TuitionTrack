@@ -173,6 +173,7 @@ class _ClassesTab extends StatelessWidget {
                 for (final t in detail.tuitions)
                   if (t.obj('active_cycle') case final cycle?) cycle,
               ],
+              homework: detail.homework,
               paymentDue: detail.tuitions.any((t) => t.maps('pending_payments').isNotEmpty),
             ),
           ),

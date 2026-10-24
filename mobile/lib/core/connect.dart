@@ -95,6 +95,7 @@ class HomeworkItem {
     required this.studentId,
     required this.studentName,
     this.isPending = false,
+    this.createdAt,
   });
   final String id;
   final String title;
@@ -116,6 +117,9 @@ class HomeworkItem {
 
   /// Assigned on this phone while offline and not on the server yet.
   final bool isPending;
+
+  /// When the tutor gave it (to show it under that day's class).
+  final DateTime? createdAt;
 
   /// True for a group-shared row (one task, whole group) as opposed to a
   /// per-student copy that is reviewed and marked done individually.
@@ -140,5 +144,6 @@ class HomeworkItem {
         studentId: j.str('student_id'),
         studentName: j.str('student_name'),
         isPending: j.flag('pending_sync'),
+        createdAt: j.date('created_at'),
       );
 }

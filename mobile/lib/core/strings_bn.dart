@@ -1121,4 +1121,5 @@ const bnStrings = <String, String>{
   'This cycle · Payment due': 'এই সাইকেল · পেমেন্ট বাকি',
   '1 class a week': 'সপ্তাহে ১টি ক্লাস',
   '{n} classes a week': 'সপ্তাহে {n}টি ক্লাস',
+  'Homework: {title}': 'হোমওয়ার্ক: {title}',
 };
