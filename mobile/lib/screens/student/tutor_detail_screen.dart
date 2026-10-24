@@ -179,10 +179,16 @@ class _ClassesTab extends StatelessWidget {
         ],
         if (detail.tuitions.isNotEmpty) ...[
           SectionHeader(tr('Classes done')),
-          for (final (index, tuition) in detail.tuitions.indexed) ...[
-            if (index > 0) gap12,
-            AppCard(child: _cycleOf(context, tuition, index)),
-          ],
+          // One date-wise list for this tutor, as they mark classes; no split by subject.
+          AppCard(
+            child: ClassesDone(
+              cycles: [
+                for (final t in detail.tuitions)
+                  if (t.obj('active_cycle') case final cycle?) cycle,
+              ],
+              paymentDue: detail.tuitions.any((t) => t.maps('pending_payments').isNotEmpty),
+            ),
+          ),
         ],
         if (detail.upcoming.isNotEmpty) ...[
           SectionHeader(tr('Extra classes')),
@@ -198,18 +204,6 @@ class _ClassesTab extends StatelessWidget {
           ]),
         ],
       ],
-    );
-  }
-
-  /// One subject's classes done, or a note when none are recorded yet.
-  static Widget _cycleOf(BuildContext context, Json tuition, int index) {
-    final cycle = tuition.obj('active_cycle');
-    if (cycle == null) return Text(tr('No classes recorded yet.'), style: TextStyle(color: context.tt.textSecondary));
-    return CycleProgress(
-      cycle: cycle,
-      // The tuition's own name stays with the tutor; the student sees the subject only.
-      title: tuition.str('subject').isNotEmpty ? tuition.str('subject') : tr('Class group {n}', {'n': index + 1}),
-      paymentDue: tuition.maps('pending_payments').isNotEmpty,
     );
   }
 

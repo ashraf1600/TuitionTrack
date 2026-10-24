@@ -17,55 +17,59 @@ List<Json> orderedClasses(Json cycle) {
   ];
 }
 
-/// Read-only class progress for one subject's current cycle, as a student
-/// sees it: a ring, then the classes done (newest first, each with its date and
-/// topic). The latest three show; the rest are one tap away. No money here.
-class CycleProgress extends StatefulWidget {
-  const CycleProgress({super.key, required this.cycle, required this.title, this.paymentDue = false});
-  final Json cycle;
+/// Read-only class progress with one tutor, as a student sees it: a ring of
+/// classes done in the current cycle, then every class done by date, newest
+/// first, as the tutor marks them. Subjects are not split out. The latest five
+/// show; the rest are one tap away. No money here.
+class ClassesDone extends StatefulWidget {
+  const ClassesDone({super.key, required this.cycles, this.paymentDue = false});
 
-  /// The subject ("Physics"). The tuition's own name is never shown to students.
-  final String title;
+  /// The current cycle of each of the tutor's tuitions this student is in.
+  final List<Json> cycles;
 
-  /// A cycle of this subject waits for payment (a reminder only).
+  /// A cycle waits for payment (a reminder only).
   final bool paymentDue;
 
   @override
-  State<CycleProgress> createState() => _CycleProgressState();
+  State<ClassesDone> createState() => _ClassesDoneState();
 }
 
-class _CycleProgressState extends State<CycleProgress> {
+class _ClassesDoneState extends State<ClassesDone> {
+  static const _first = 5;
   bool _all = false;
 
   @override
   Widget build(BuildContext context) {
     final tt = context.tt;
-    final cycle = widget.cycle;
-    final total = cycle.integer('total_classes');
-    final completed = cycle.integer('completed_classes');
-    final log = orderedClasses(cycle).where((c) => c.flag('completed')).toList()
-      ..sort((a, b) => classNoOf(b).compareTo(classNoOf(a)));
-    final shown = _all ? log : log.take(3).toList();
+    var done = 0;
+    var total = 0;
+    final log = <Json>[];
+    for (final cycle in widget.cycles) {
+      done += cycle.integer('completed_classes');
+      total += cycle.integer('total_classes');
+      log.addAll(orderedClasses(cycle).where((c) => c.flag('completed')));
+    }
+    // Oldest first to number them 1, 2, 3…; shown newest first.
+    log.sort((a, b) => (a.date('date') ?? DateTime(0)).compareTo(b.date('date') ?? DateTime(0)));
+    final numbered = [for (final (i, c) in log.indexed) (i + 1, c)].reversed.toList();
+    final shown = _all ? numbered : numbered.take(_first).toList();
+    final complete = widget.cycles.isNotEmpty && widget.cycles.every((c) => c.flag('is_complete'));
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Row(
           children: [
-            ProgressRing(done: completed, total: total, size: 52, thickness: 5),
+            ProgressRing(done: done, total: total, size: 56, thickness: 6),
             const SizedBox(width: 14),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(widget.title, maxLines: 1, overflow: TextOverflow.ellipsis,
+                  Text(tr('{p0} of {p1} classes', {'p0': done, 'p1': total}),
                       style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: tt.textPrimary)),
                   const SizedBox(height: 2),
                   Text(
-                    [
-                      tr('{p0} of {p1} classes', {'p0': completed, 'p1': total}),
-                      tr('Cycle {n}', {'n': cycle.integer('cycle_number', 1)}),
-                      if (widget.paymentDue) tr('Payment due'),
-                    ].join(' · '),
+                    widget.paymentDue ? tr('This cycle · Payment due') : tr('This cycle'),
                     style: TextStyle(fontSize: 13, color: widget.paymentDue ? tone(context, AppColors.warning) : tt.textSecondary),
                   ),
                 ],
@@ -81,17 +85,17 @@ class _CycleProgressState extends State<CycleProgress> {
         else ...[
           const SizedBox(height: 12),
           Divider(height: 1, color: tt.border),
-          for (final c in shown) _DoneClass(entry: c),
-          if (log.length > 3)
+          for (final (n, c) in shown) _DoneClass(number: n, entry: c),
+          if (numbered.length > _first)
             Align(
               alignment: Alignment.centerLeft,
               child: TextButton(
                 onPressed: () => setState(() => _all = !_all),
-                child: Text(_all ? tr('Show fewer') : tr('Show all {n} classes', {'n': log.length})),
+                child: Text(_all ? tr('Show fewer') : tr('Show all {n} classes', {'n': numbered.length})),
               ),
             ),
         ],
-        if (cycle.flag('is_complete'))
+        if (complete)
           Padding(
             padding: const EdgeInsets.only(top: 8),
             child: Text(tr('This cycle is complete. Your tutor will start the next one.'), style: TextStyle(fontSize: 13, color: tt.textSecondary)),
@@ -101,9 +105,10 @@ class _CycleProgressState extends State<CycleProgress> {
   }
 }
 
-/// "✓ 7  Energy · Thu 22 Oct" — one class done.
+/// "Thu, 22 Oct   Energy" — one class done, on the day the tutor marked it.
 class _DoneClass extends StatelessWidget {
-  const _DoneClass({required this.entry});
+  const _DoneClass({required this.number, required this.entry});
+  final int number;
   final Json entry;
 
   @override
@@ -120,22 +125,23 @@ class _DoneClass extends StatelessWidget {
             height: 28,
             alignment: Alignment.center,
             decoration: BoxDecoration(color: tt.successContainer, shape: BoxShape.circle),
-            child: Text(localDigits('${classNoOf(entry)}'),
-                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: tt.onSuccessContainer, fontFeatures: tabular)),
+            child: Icon(Icons.check_rounded, size: 16, color: tt.onSuccessContainer),
           ),
           const SizedBox(width: 12),
           Expanded(
-            child: Text(
-              topic.isNotEmpty ? topic : tr('Class {n}', {'n': classNoOf(entry)}),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: tt.textPrimary),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  date == null ? tr('Class {n}', {'n': number}) : '${dayLabel(weekdayName(date))}, ${fmtShortDate(date)}',
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: tt.textPrimary, fontFeatures: tabular),
+                ),
+                if (topic.isNotEmpty)
+                  Text(topic, maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 13, color: tt.textSecondary)),
+              ],
             ),
           ),
-          if (date != null) ...[
-            const SizedBox(width: 8),
-            Text(fmtShortDate(date), style: TextStyle(fontSize: 12, color: tt.textTertiary, fontFeatures: tabular)),
-          ],
+          Text(tr('Class {n}', {'n': number}), style: TextStyle(fontSize: 12, color: tt.textTertiary, fontFeatures: tabular)),
         ],
       ),
     );

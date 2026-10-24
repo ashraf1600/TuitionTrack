@@ -1117,4 +1117,6 @@ const bnStrings = <String, String>{
   'No classes done yet in this cycle.': 'এই সাইকেলে এখনো কোনো ক্লাস হয়নি।',
   'Show fewer': 'কম দেখান',
   'Show all {n} classes': 'সব {n}টি ক্লাস দেখান',
+  'This cycle': 'এই সাইকেল',
+  'This cycle · Payment due': 'এই সাইকেল · পেমেন্ট বাকি',
 };
