@@ -3,7 +3,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tuitiontrack/core/app_keys.dart';
 import 'package:tuitiontrack/main.dart';
+import 'package:tuitiontrack/core/chat.dart';
 import 'package:tuitiontrack/screens/common/account_screen.dart';
+import 'package:tuitiontrack/screens/common/chat_screen.dart';
+import 'package:tuitiontrack/screens/common/chats_screen.dart';
 import 'package:tuitiontrack/screens/common/notifications.dart';
 import 'package:tuitiontrack/screens/student/exam_result_screen.dart';
 import 'package:tuitiontrack/screens/student/tutor_detail_screen.dart';
@@ -129,5 +132,23 @@ void main() {
   testWidgets('sign in', (tester) async {
     await openApp(tester, signedIn: false);
     await shoot(tester, 'student_13_sign_in');
+  });
+
+  testWidgets('messages', (tester) async {
+    await openApp(tester);
+    await push(tester, const ChatsScreen());
+    await shoot(tester, 'student_14_messages');
+  });
+
+  testWidgets('chat with tutor', (tester) async {
+    await openApp(tester);
+    await push(
+      tester,
+      const ChatScreen(
+        conversationId: '9a7c1e40-1111-4c1d-8a1b-000000000001',
+        person: ChatPerson(id: '5314ab58-c2bc-462c-a9d1-65283d8f73b5', name: 'Ashraful Sir', role: 'TUTOR'),
+      ),
+    );
+    await shoot(tester, 'student_15_chat');
   });
 }

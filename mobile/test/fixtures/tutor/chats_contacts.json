@@ -1,0 +1,52 @@
+{
+ "results": [
+  {
+   "id": "3d1b0bd1-f4da-4339-83de-f130c503bcda",
+   "name": "Fahim",
+   "username": "fahim",
+   "role": "STUDENT",
+   "photo": null,
+   "conversation_id": null
+  },
+  {
+   "id": "df5d042d-1f3e-4b27-9a62-6dc6e55bb099",
+   "name": "Mitu",
+   "username": "mitu",
+   "role": "STUDENT",
+   "photo": null,
+   "conversation_id": null
+  },
+  {
+   "id": "e47087ac-12d4-4db6-b4c3-ea108aad31f7",
+   "name": "Nabila Rahman",
+   "username": "nabila",
+   "role": "STUDENT",
+   "photo": null,
+   "conversation_id": null
+  },
+  {
+   "id": "998efc44-eb32-4bc0-8827-9cc3993f986c",
+   "name": "Orpa",
+   "username": "orpa",
+   "role": "STUDENT",
+   "photo": null,
+   "conversation_id": null
+  },
+  {
+   "id": "0ae3e33c-3ded-41c4-931f-a42e0b3f4138",
+   "name": "Rafi Ahmed",
+   "username": "rafi",
+   "role": "STUDENT",
+   "photo": null,
+   "conversation_id": "9a7c1e40-1111-4c1d-8a1b-000000000001"
+  },
+  {
+   "id": "3e7bc00d-9ef9-4335-8ba7-173563943b76",
+   "name": "Sakib",
+   "username": "sakib",
+   "role": "STUDENT",
+   "photo": null,
+   "conversation_id": null
+  }
+ ]
+}

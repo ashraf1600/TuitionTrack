@@ -7,6 +7,7 @@ import '../../core/json.dart';
 import '../../core/repo.dart';
 import '../../widgets/theme.dart';
 import '../../widgets/ui.dart';
+import '../common/chats_screen.dart' show openChatWith;
 import 'student_form_screen.dart';
 
 class _StudentsData {
@@ -168,6 +169,8 @@ class _StudentCard extends StatelessWidget {
     final id = student.str('id');
     final name = student.str('full_name');
     switch (action) {
+      case 'message':
+        await openChatWith(context, id);
       case 'edit':
         final changed = await Navigator.push<bool>(context, MaterialPageRoute(builder: (_) => StudentFormScreen(student: student)));
         if (changed == true) await reload();
@@ -285,6 +288,7 @@ class _StudentCard extends StatelessWidget {
                 style: IconButton.styleFrom(minimumSize: const Size(44, 44)),
                 onSelected: (value) => _action(context, value),
                 itemBuilder: (_) => [
+                  if (active) PopupMenuItem(value: 'message', child: Text(tr('Send a message'))),
                   PopupMenuItem(value: 'edit', child: Text(tr('Edit details'))),
                   if (active) PopupMenuItem(value: 'group', child: Text(tr('Add to a tuition'))),
                   PopupMenuItem(value: 'reset', child: Text(tr('Reset password'))),

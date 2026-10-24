@@ -359,4 +359,9 @@ class NotificationsView(APIView):
                     f'{tutor_name} · {amount}', cycle.updated_at, '/student',
                 )
 
+        # Unread chat messages, one item per conversation. The app keeps them out of
+        # the bell (the chat button has its own badge) but shows them on the phone.
+        from apps.messaging.views import unread_notifications
+        items.extend(unread_notifications(user, request))
+
         return Response({'count': len(items), 'notifications': items})

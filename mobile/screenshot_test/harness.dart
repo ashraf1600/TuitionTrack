@@ -132,6 +132,11 @@ class Fixtures {
     if (path.startsWith('/my-tutors/')) return 'tutor_detail';
     if (path.endsWith('/result/')) return 'exam_result';
     if (path.endsWith('/leaderboard/')) return 'leaderboard';
+    if (path == '/chats/') return 'chats';
+    if (path == '/chats/unread/') return 'chats_unread';
+    if (path == '/chats/contacts/') return 'chats_contacts';
+    if (RegExp(r'^/chats/[0-9a-f-]+/messages/$').hasMatch(path)) return 'chat_messages';
+    if (RegExp(r'^/chats/[0-9a-f-]+/$').hasMatch(path)) return 'chat_detail';
     return null;
   }
 

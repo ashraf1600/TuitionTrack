@@ -13,6 +13,7 @@ import '../../core/session.dart';
 import '../../widgets/theme.dart';
 import '../../widgets/ui.dart';
 import 'account_screen.dart';
+import 'chats_screen.dart';
 
 const _seenKey = 'seen_notifications';
 
@@ -54,7 +55,8 @@ class _NotificationBellState extends State<NotificationBell> with WidgetsBinding
     final settings = context.read<Session>().settings;
     try {
       final items = await context.read<Repo>().notifications();
-      if (mounted) setState(() => _items = items);
+      // Messages have their own button and badge; the phone still shows them below.
+      if (mounted) setState(() => _items = items.where((n) => n.str('kind') != 'message').toList());
       // New ones also go to the phone's notification shade.
       await Reminders.instance.announce(settings, items);
     } on ApiException {
@@ -158,9 +160,10 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   }
 }
 
-/// Bell + account button, shared by the tutor and student home screens.
+/// Messages, bell and account button, shared by the tutor and student home screens.
 List<Widget> homeActions(BuildContext context) {
   return [
+    const ChatButton(),
     const NotificationBell(),
     IconButton(
       tooltip: tr('My account'),

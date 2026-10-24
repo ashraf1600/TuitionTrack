@@ -270,9 +270,9 @@ class ApiClient {
     return headers['date'] ?? headers['last-modified'] ?? headers['x-server-time'];
   }
 
-  Future<dynamic> _request(String method, String path, {Object? body, Map<String, dynamic>? query}) async {
+  Future<dynamic> _request(String method, String path, {Object? body, Map<String, dynamic>? query, bool remember = true}) async {
     final uri = _uri(path, query);
-    final key = method == 'GET' && cache != null ? cacheKeyFor(uri) : null;
+    final key = method == 'GET' && cache != null && remember ? cacheKeyFor(uri) : null;
     final hasSaved = key != null && cache!.contains(key);
     // With a saved answer to fall back on, do not keep the person waiting on a sleeping server.
     final timeout = hasSaved ? _quickTimeout : _timeout;
@@ -341,6 +341,9 @@ class ApiClient {
   Future<dynamic> send(String method, String path, Object? body) => _request(method, path, body: body);
 
   Future<dynamic> get(String path, {Map<String, dynamic>? query}) => _request('GET', path, query: query);
+
+  /// A GET whose answer is not kept for offline use (e.g. polling a chat for new messages).
+  Future<dynamic> getFresh(String path, {Map<String, dynamic>? query}) => _request('GET', path, query: query, remember: false);
   Future<dynamic> post(String path, [Object? body]) => _request('POST', path, body: body ?? const <String, dynamic>{});
   Future<dynamic> patch(String path, [Object? body]) => _request('PATCH', path, body: body ?? const <String, dynamic>{});
   Future<dynamic> delete(String path) => _request('DELETE', path);
@@ -367,10 +370,11 @@ class ApiClient {
   }
 
   /// Sends one file as multipart form data (one field) and returns the decoded answer.
-  Future<dynamic> _multipart(String path, String field, Uint8List bytes, String filename) async {
+  Future<dynamic> _multipart(String path, String field, Uint8List bytes, String filename, {Map<String, String> fields = const {}}) async {
     Future<http.Response> attempt() async {
       final request = http.MultipartRequest('POST', _uri(path))
         ..headers.addAll(_headers(json: false))
+        ..fields.addAll(fields)
         ..files.add(http.MultipartFile.fromBytes(field, bytes, filename: filename, contentType: _mediaType(filename)));
       try {
         return await http.Response.fromStream(await _http.send(request).timeout(const Duration(seconds: 90)));
@@ -398,6 +402,10 @@ class ApiClient {
     }
     return url;
   }
+
+  /// Posts one file with some text fields (e.g. a chat photo with its caption).
+  Future<dynamic> postWithFile(String path, {required String field, required Uint8List bytes, required String filename, Map<String, String> fields = const {}}) =>
+      _multipart(path, field, bytes, filename, fields: fields);
 
   /// Sets the signed-in user's profile photo; answers with the updated profile.
   Future<dynamic> uploadProfilePhoto(Uint8List bytes, String filename) =>

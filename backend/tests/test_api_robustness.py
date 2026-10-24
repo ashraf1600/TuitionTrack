@@ -114,6 +114,9 @@ class ApiRobustnessSweep(APITestCase):
         self.schedule = ClassSchedule.objects.create(
             tutor=self.tutor, tuition=self.tuition, scheduled_at=now + timedelta(days=1), topic='Algebra',
         )
+        from apps.messaging.models import Conversation, Message
+        self.conversation = Conversation.objects.create(tutor=self.tutor, student=self.student, last_message_at=now)
+        Message.objects.create(conversation=self.conversation, sender=self.student, body='Sweep message')
         self.callers = {
             'signed out': None, 'tutor': self.tutor, 'other tutor': self.other_tutor,
             'student': self.student, 'outsider': self.outsider,
@@ -147,6 +150,8 @@ class ApiRobustnessSweep(APITestCase):
             real = [self.schedule.id]
         elif 'my-tutors/' in route:
             real = [self.tutor.id]
+        elif 'chats/' in route:
+            real = [self.conversation.id]
         else:
             self.fail(f'No fixture for route {route}')
         ids = [str(value) for value in real] + ['00000000-0000-0000-0000-000000000000']
