@@ -8,6 +8,9 @@ import '../../core/format.dart';
 import '../../core/i18n.dart';
 import '../../core/json.dart';
 import '../../core/repo.dart';
+import '../../widgets/math_text.dart';
+import '../../widgets/science_paste.dart';
+import '../../widgets/science_toolbar.dart';
 import '../../widgets/theme.dart';
 import '../../widgets/ui.dart';
 import '../student/homework_card.dart';
@@ -448,13 +451,22 @@ class _HomeworkFormScreenState extends State<HomeworkFormScreen> {
                     controller: _title,
                     hint: tr('Title, e.g. Chapter 4 problems'),
                     style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                    contextMenuBuilder: sciencePasteMenu,
                     onChanged: (_) => setState(() {}),
                   ),
                   AnimatedSize(
                     duration: const Duration(milliseconds: 180),
                     alignment: Alignment.topCenter,
                     child: _showInstructions || _desc.text.isNotEmpty
-                        ? FlatField(controller: _desc, hint: tr('Instructions: pages, problems, how to hand in…'), minLines: 3, maxLines: 8, autofocus: _desc.text.isEmpty)
+                        ? FlatField(
+                            controller: _desc,
+                            hint: tr('Instructions: pages, problems, how to hand in…'),
+                            minLines: 3,
+                            maxLines: 8,
+                            autofocus: _desc.text.isEmpty,
+                            contextMenuBuilder: sciencePasteMenu,
+                            onChanged: (_) => setState(() {}),
+                          )
                         : InkWell(
                             onTap: () => setState(() => _showInstructions = true),
                             child: Padding(
@@ -470,6 +482,22 @@ class _HomeworkFormScreenState extends State<HomeworkFormScreen> {
                           ),
                   ),
                 ]),
+                // Formulas typed with the science keys or pasted from ChatGPT, as students will see them.
+                if (hasMath(_title.text) || hasMath(_desc.text)) ...[
+                  gap8,
+                  AppCard(
+                    padding: const EdgeInsets.all(12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(tr('Students will see'), style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 11, fontWeight: FontWeight.w600)),
+                        const SizedBox(height: 4),
+                        if (_title.text.trim().isNotEmpty) MathText(_title.text.trim(), style: const TextStyle(fontWeight: FontWeight.w700)),
+                        if (_desc.text.trim().isNotEmpty) ...[const SizedBox(height: 4), MathText(_desc.text.trim())],
+                      ],
+                    ),
+                  ),
+                ],
                 gap16,
                 SizedBox(
                   width: double.infinity,
@@ -543,6 +571,8 @@ class _HomeworkFormScreenState extends State<HomeworkFormScreen> {
               ),
             ),
           ),
+          // x², H₂O, fractions, Greek letters and units — the same keys as in exams.
+          const ScienceToolbar(),
         ],
       ),
     );

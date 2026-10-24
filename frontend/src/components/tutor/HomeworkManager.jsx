@@ -9,6 +9,8 @@ import { notify } from '../../utils/toast';
 import { confirmAction } from '../common/ConfirmDialog';
 import { ErrorState } from '../common/States';
 import { useNow } from '../../hooks/useNow';
+import MathRenderer from '../common/MathRenderer';
+
 
 export default function HomeworkManager({ tuitions = [], students = [] }) {
   const [homeworkList, setHomeworkList] = useState([]);
@@ -233,16 +235,16 @@ export default function HomeworkManager({ tuitions = [], students = [] }) {
 
                   {/* Title & Instructions */}
                   <div>
-                    <h3 className="text-base font-bold text-slate-100">{hw.title}</h3>
+                    <h3 className="text-base font-bold text-slate-100"><MathRenderer plain inline content={hw.title} /></h3>
                     {hw.source_label && (
                       <p className="text-[11px] text-indigo-300/90 font-medium mt-0.5 flex items-center gap-1">
                         <BookOpen className="w-3 h-3" /> {hw.source_label}
                       </p>
                     )}
                     {hw.description && (
-                      <p className="text-xs text-slate-400 mt-1 line-clamp-3 leading-relaxed">
-                        {hw.description}
-                      </p>
+                      <div className="text-xs text-slate-400 mt-1 line-clamp-3 leading-relaxed">
+                        <MathRenderer plain content={hw.description} className="text-xs text-slate-400" />
+                      </div>
                     )}
                   </div>
 

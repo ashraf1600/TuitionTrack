@@ -2,11 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/connect.dart' show HomeworkItem, tutorSirName;
-import '../../core/format.dart';
 import '../../core/i18n.dart';
 import '../../core/json.dart';
 import '../../core/reminder_plan.dart' show nextClass, whenLabel;
 import '../../core/session.dart';
+import '../../widgets/charts.dart';
 import '../../widgets/kit.dart';
 import '../../widgets/student_kit.dart';
 import '../../widgets/theme.dart';
@@ -14,10 +14,10 @@ import '../../widgets/ui.dart';
 import 'student_lists.dart';
 
 /// Which tab of the student home to open, and which part of it.
-enum StudentTab { home, tutors, tests, homework }
+enum StudentTab { home, tests, homework }
 
-/// The student's home: what matters now on top, then the week, what is due,
-/// how each subject is going and the latest result.
+/// The student's home: what matters now on top (a test that is open, or the
+/// next class), each tutor as a card, homework due and the latest result.
 class StudentTodayView extends StatelessWidget {
   const StudentTodayView({
     super.key,
@@ -29,6 +29,7 @@ class StudentTodayView extends StatelessWidget {
     required this.reload,
     required this.onOpenTab,
     required this.onOpenTutor,
+    required this.onConnect,
   });
 
   final List<Json> tutors;
@@ -40,6 +41,9 @@ class StudentTodayView extends StatelessWidget {
   final void Function(StudentTab tab, {bool results}) onOpenTab;
   final void Function(String tutorId, String name) onOpenTutor;
 
+  /// Opens "Connect to a tutor" (invite code, requests, search).
+  final Future<void> Function() onConnect;
+
   @override
   Widget build(BuildContext context) {
     final session = context.watch<Session>();
@@ -48,14 +52,13 @@ class StudentTodayView extends StatelessWidget {
 
     final openExams = exams.where((e) => !e.flag('has_submission') && e.flag('can_submit')).toList()
       ..sort((a, b) => (a.date('end_time') ?? now).compareTo(b.date('end_time') ?? now));
-    final upcomingExams = exams
-        .where((e) => !e.flag('has_submission') && !e.flag('can_submit') && (e.date('start_time')?.isAfter(now) ?? false))
-        .toList();
     final todo = homework.where((h) => !h.isSubmitted && !h.isEvaluated).toList()..sort((a, b) => a.dueDate.compareTo(b.dueDate));
     final percents = resultPercents(exams);
-    final recent = percents.length > 5 ? percents.sublist(percents.length - 5) : percents;
-    final average = recent.isEmpty ? null : recent.reduce((a, b) => a + b) / recent.length;
+    final hero = _hero(context, now, openExams);
 
+    // Each thing appears once: the next class in the card on top, each tutor's
+    // progress on their card (their routine is one tap away), homework in one
+    // list, and the tests and homework counts on the tab badges.
     final blocks = <Widget>[
       GreetingHeader(name: session.displayName, now: now.toLocal(), subtitle: _summary(openExams.length, todo, now)),
       if (pendingRequests.isNotEmpty) ...[
@@ -65,55 +68,35 @@ class StudentTodayView extends StatelessWidget {
               : tr('{p0} requests are waiting for an answer.', {'p0': pendingRequests.length}),
           icon: Icons.hourglass_top_rounded,
           color: AppColors.warning,
+          action: TextButton(onPressed: onConnect, child: Text(tr('View'))),
         ),
         gap16,
       ],
-      _hero(context, now, openExams, todo),
-      gap12,
-      TileRow(children: [
-        StatTile(
-          icon: Icons.menu_book_rounded,
-          value: localDigits('${todo.length}'),
-          label: tr('Homework to do'),
-          accent: todo.isEmpty ? AppColors.success : AppColors.warning,
-          onTap: () => onOpenTab(StudentTab.homework),
-        ),
-        StatTile(
-          icon: Icons.quiz_rounded,
-          value: localDigits('${openExams.length + upcomingExams.length}'),
-          label: tr('Tests ahead'),
-          accent: AppColors.primarySoft,
-          onTap: () => onOpenTab(StudentTab.tests),
-        ),
-        StatTile(
-          icon: Icons.insights_rounded,
-          value: average == null ? '—' : '${localDigits('${average.round()}')}%',
-          label: tr('Average score'),
-          accent: AppColors.success,
-          onTap: () => onOpenTab(StudentTab.tests, results: true),
-        ),
-      ]),
-      if (tuitions.isNotEmpty) ...[
-        SectionHeader(tr('This week')),
-        WeekSchedule(tuitions: tuitions, now: now.toLocal(), onOpenTutor: onOpenTutor),
+      if (hero != null) hero,
+      if (tutors.isNotEmpty) ...[
+        SectionHeader(tr('Your tutors'), actionLabel: tr('Add'), onAction: onConnect),
+        for (final (i, tutor) in tutors.indexed) ...[
+          if (i > 0) gap12,
+          TutorCard(
+            tutor: tutor,
+            tuitions: tuitions.where((t) => t.str('tutor_id') == tutor.str('id')).toList(),
+            onTap: () => onOpenTutor(tutor.str('id'), tutorCardName(tutor)),
+          ),
+        ],
       ],
       if (todo.isNotEmpty) ...[
-        SectionHeader(tr('Due next'), count: todo.length, onAction: () => onOpenTab(StudentTab.homework)),
+        SectionHeader(tr('Homework due'), count: todo.length, onAction: () => onOpenTab(StudentTab.homework)),
         RowGroup(children: [
           for (final hw in todo.take(3))
             KitRow(
               icon: Icons.menu_book_rounded,
               accent: hw.dueDate.isBefore(now) ? AppColors.danger : AppColors.warning,
               title: hw.title,
-              subtitle: [hw.tutorDisplay, fmtDateTime(hw.dueDate)].where((s) => s.isNotEmpty).join(' · '),
+              subtitle: hw.tutorDisplay,
               trailing: DeadlineChip(at: hw.dueDate, now: now),
               onTap: () => onOpenTab(StudentTab.homework),
             ),
         ]),
-      ],
-      if (tuitions.isNotEmpty) ...[
-        SectionHeader(tr('Your subjects'), actionLabel: tr('Tutors'), onAction: () => onOpenTab(StudentTab.tutors)),
-        RowGroup(children: [for (final t in tuitions) _SubjectRow(tuition: t, onOpenTutor: onOpenTutor)]),
       ],
       if (percents.isNotEmpty) ...[
         SectionHeader(tr('Latest result'), onAction: () => onOpenTab(StudentTab.tests, results: true)),
@@ -126,7 +109,7 @@ class StudentTodayView extends StatelessWidget {
           title: tr('Connect with your tutor'),
           message: tr('Enter the invite code your tutor gave you. Your classes, tests and homework then appear here.'),
           action: FilledButton.icon(
-            onPressed: () => onOpenTab(StudentTab.tutors),
+            onPressed: onConnect,
             icon: const Icon(Icons.add_rounded),
             label: Text(tr('Add a tutor')),
           ),
@@ -145,7 +128,8 @@ class StudentTodayView extends StatelessWidget {
     return tr('{n} homework to do this week.', {'n': todo.length});
   }
 
-  Widget _hero(BuildContext context, DateTime now, List<Json> openExams, List<HomeworkItem> todo) {
+  /// A test that is open now, or the next class within a day and a half. Nothing otherwise.
+  Widget? _hero(BuildContext context, DateTime now, List<Json> openExams) {
     if (openExams.isNotEmpty) {
       final exam = openExams.first;
       final isAssignment = exam.str('category') == 'ASSIGNMENT';
@@ -188,265 +172,81 @@ class StudentTodayView extends StatelessWidget {
         onTap: () => onOpenTutor(next.tuition.str('tutor_id'), tutor),
       );
     }
-    if (todo.isNotEmpty && todo.first.dueDate.difference(now) < const Duration(hours: 48)) {
-      final hw = todo.first;
-      return HeroCard(
-        eyebrow: hw.dueDate.isBefore(now) ? tr('Overdue') : tr('Due soon'),
-        icon: Icons.menu_book_rounded,
-        accent: hw.dueDate.isBefore(now) ? AppColors.danger : AppColors.warning,
-        title: hw.title,
-        subtitle: hw.tutorDisplay,
-        meta: [DeadlineChip(at: hw.dueDate, now: now)],
-        action: OutlinedButton(onPressed: () => onOpenTab(StudentTab.homework), child: Text(tr('Open homework'))),
-      );
-    }
-    return HeroCard(
-      eyebrow: tr('All caught up'),
-      icon: Icons.task_alt_rounded,
-      accent: AppColors.success,
-      title: tr('Nothing due right now'),
-      subtitle: tr('New tests and homework from your tutors will show up here.'),
-    );
+    return null;
   }
 
   static String _requestName(Json c) =>
       c.str('tutor_display_name').isNotEmpty ? c.str('tutor_display_name') : c.str('tutor_name');
 }
 
-// ── Week ─────────────────────────────────────────────────────────────────────
+// ── Tutors ───────────────────────────────────────────────────────────────────
 
-/// Seven days from today; tap a day to see its classes.
-class WeekSchedule extends StatefulWidget {
-  const WeekSchedule({super.key, required this.tuitions, required this.now, required this.onOpenTutor});
+/// "Ashraf Sir" for a tutor from /my-tutors/.
+String tutorCardName(Json tutor) {
+  final name = tutor.str('display_name');
+  return name.isNotEmpty ? name : tutor.str('username');
+}
+
+/// One tutor on the student's home: photo, name, subjects and a ring of
+/// classes done in the current cycle (all their subjects together).
+/// Tap for the subjects, weekly routine and every class done.
+class TutorCard extends StatelessWidget {
+  const TutorCard({super.key, required this.tutor, required this.tuitions, required this.onTap});
+  final Json tutor;
   final List<Json> tuitions;
-  final DateTime now;
-  final void Function(String tutorId, String name) onOpenTutor;
+  final VoidCallback onTap;
 
   @override
-  State<WeekSchedule> createState() => _WeekScheduleState();
-}
-
-class _WeekScheduleState extends State<WeekSchedule> {
-  int _day = 0;
-
-  /// The classes on [day]: (start, end, tuition), earliest first.
-  List<(DateTime, DateTime, Json)> _classesOn(DateTime day) {
-    final out = <(DateTime, DateTime, Json)>[];
-    for (final t in widget.tuitions) {
-      for (final slot in slotsOn(t.maps('routine'), day)) {
-        final start = minutesOf(slotStart(slot));
-        final endRaw = slot['end_time'];
-        final end = endRaw == null ? start + 60 : minutesOf('$endRaw');
-        if (start >= 24 * 60) continue;
-        out.add((day.add(Duration(minutes: start)), day.add(Duration(minutes: end >= 24 * 60 ? start + 60 : end)), t));
-      }
+  Widget build(BuildContext context) {
+    final tt = context.tt;
+    final name = tutorCardName(tutor);
+    final subjects = {
+      for (final t in tuitions)
+        if (t.str('subject').isNotEmpty) t.str('subject'),
+      if (tuitions.isEmpty) ...tutor.strings('subjects'),
+    };
+    var done = 0;
+    var total = 0;
+    for (final t in tuitions) {
+      final cycle = t.obj('active_cycle');
+      done += cycle?.integer('completed_classes') ?? 0;
+      total += cycle?.integer('total_classes') ?? t.integer('cycle_length');
     }
-    out.sort((a, b) => a.$1.compareTo(b.$1));
-    return out;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final tt = context.tt;
-    final today = DateTime(widget.now.year, widget.now.month, widget.now.day);
-    final days = [for (var i = 0; i < 7; i++) today.add(Duration(days: i))];
-    final selected = days[_day];
-    final classes = _classesOn(selected);
+    final unpaid = tuitions.any((t) => t.maps('pending_payments').isNotEmpty);
     return AppCard(
-      padding: const EdgeInsets.fromLTRB(10, 12, 10, 6),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              for (final (i, day) in days.indexed)
-                Expanded(
-                  child: _DayChip(
-                    day: day,
-                    selected: i == _day,
-                    today: i == 0,
-                    hasClass: _classesOn(day).isNotEmpty,
-                    onTap: () => setState(() => _day = i),
-                  ),
-                ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          AnimatedSize(
-            duration: const Duration(milliseconds: 220),
-            curve: Curves.easeOutCubic,
-            alignment: Alignment.topCenter,
-            child: classes.isEmpty
-                ? Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 18),
-                    child: Text(
-                      _day == 0 ? tr('No classes today.') : tr('No classes on {day}.', {'day': Raw(shortWeekday(selected))}),
-                      textAlign: TextAlign.center,
-                      style: TextStyle(color: tt.textSecondary, fontSize: 14),
-                    ),
-                  )
-                : Column(
-                    children: [
-                      for (final (start, end, tuition) in classes)
-                        _ClassRow(
-                          start: start,
-                          end: end,
-                          tuition: tuition,
-                          now: widget.now,
-                          onTap: () => widget.onOpenTutor(tuition.str('tutor_id'), tutorSirName(tuition)),
-                        ),
-                    ],
-                  ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _DayChip extends StatelessWidget {
-  const _DayChip({required this.day, required this.selected, required this.today, required this.hasClass, required this.onTap});
-  final DateTime day;
-  final bool selected;
-  final bool today;
-  final bool hasClass;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final tt = context.tt;
-    final fg = selected ? tt.onPrimary : (today ? tt.primary : tt.textPrimary);
-    return Semantics(
-      selected: selected,
-      button: true,
-      label: longDate(day),
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          margin: const EdgeInsets.symmetric(horizontal: 2),
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          decoration: BoxDecoration(
-            color: selected ? tt.primary : Colors.transparent,
-            borderRadius: BorderRadius.circular(14),
-          ),
-          child: Column(
-            children: [
-              Text(shortWeekday(day),
-                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: selected ? tt.onPrimary : tt.textTertiary)),
-              const SizedBox(height: 4),
-              Text(localDigits('${day.day}'),
-                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: fg, fontFeatures: tabular)),
-              const SizedBox(height: 4),
-              Container(
-                width: 5,
-                height: 5,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: hasClass ? (selected ? tt.onPrimary : tt.primary) : Colors.transparent,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _ClassRow extends StatelessWidget {
-  const _ClassRow({required this.start, required this.end, required this.tuition, required this.now, required this.onTap});
-  final DateTime start;
-  final DateTime end;
-  final Json tuition;
-  final DateTime now;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final tt = context.tt;
-    final subject = tuition.str('subject').isEmpty ? tr('Class') : tuition.str('subject');
-    final live = !now.isBefore(start) && now.isBefore(end);
-    final over = !now.isBefore(end);
-    final soon = !live && !over && start.difference(now) < const Duration(hours: 12);
-    return KitRow(
-      dense: true,
-      icon: Icons.class_outlined,
-      accent: live ? AppColors.success : AppColors.primarySoft,
-      title: subject,
-      subtitle: '${fmtTime(start)} – ${fmtTime(end)} · ${tutorSirName(tuition)}',
-      trailing: live
-          ? Pill(tr('Now'), color: AppColors.success, icon: Icons.circle)
-          : over
-              ? Icon(Icons.check_rounded, size: 18, color: tt.textTertiary)
-              : soon
-                  ? Pill(tr('in {t}', {'t': Raw(shortGap(start.difference(now)))}), color: AppColors.primarySoft)
-                  : null,
       onTap: onTap,
-    );
-  }
-}
-
-// ── Subjects ─────────────────────────────────────────────────────────────────
-
-class _SubjectRow extends StatelessWidget {
-  const _SubjectRow({required this.tuition, required this.onOpenTutor});
-  final Json tuition;
-  final void Function(String tutorId, String name) onOpenTutor;
-
-  @override
-  Widget build(BuildContext context) {
-    final tt = context.tt;
-    final subject = tuition.str('subject').isEmpty ? tr('Class') : tuition.str('subject');
-    final cycle = tuition.obj('active_cycle');
-    final done = cycle?.integer('completed_classes') ?? 0;
-    final total = cycle?.integer('total_classes') ?? tuition.integer('cycle_length');
-    final unpaid = tuition.maps('pending_payments').isNotEmpty;
-    final tutor = tutorSirName(tuition);
-    return InkWell(
-      borderRadius: BorderRadius.circular(14),
-      onTap: () => onOpenTutor(tuition.str('tutor_id'), tutor),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
-        child: Row(
-          children: [
-            InitialTile(subject),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(subject, maxLines: 1, overflow: TextOverflow.ellipsis,
-                            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: tt.textPrimary)),
-                      ),
-                      Text(
-                        '${localDigits('$done')}/${localDigits('$total')}',
-                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: tt.textPrimary, fontFeatures: tabular),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    [
-                      if (tutor.isNotEmpty) tutor,
-                      tr('Cycle {n}', {'n': cycle?.integer('cycle_number') ?? 1}),
-                      if (unpaid) tr('Payment due'),
-                    ].join(' · '),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: 12, color: unpaid ? tone(context, AppColors.warning) : tt.textSecondary),
-                  ),
-                  const SizedBox(height: 8),
-                  GrowBar(value: total == 0 ? 0 : done / total, height: 6),
+      padding: const EdgeInsets.fromLTRB(16, 16, 12, 16),
+      child: Row(
+        children: [
+          PersonAvatar(name: name, photo: tutor.str('profile_picture_url', tutor.str('profile_picture')), radius: 24),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(name, maxLines: 1, overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, letterSpacing: -0.2, color: tt.textPrimary)),
+                const SizedBox(height: 2),
+                Text(
+                  subjects.isEmpty ? tr('No classes yet') : subjects.join(' · '),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 13, color: tt.textSecondary),
+                ),
+                if (unpaid) ...[
+                  const SizedBox(height: 6),
+                  Text(tr('Payment due'),
+                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tone(context, AppColors.warning))),
                 ],
-              ),
+              ],
             ),
-          ],
-        ),
+          ),
+          const SizedBox(width: 12),
+          if (tuitions.isNotEmpty && total > 0)
+            ProgressRing(done: done, total: total, size: 60, thickness: 6, caption: tr('classes'))
+          else
+            Icon(Icons.chevron_right_rounded, color: tt.textTertiary),
+        ],
       ),
     );
   }

@@ -5,6 +5,8 @@ import {
 } from 'lucide-react';
 import { api } from '../../api/client';
 import { notify } from '../../utils/toast';
+import MathRenderer from '../common/MathRenderer';
+
 
 // ─── Custom Hook: Live Countdown Timer ────────────────────────────────────────
 /**
@@ -189,7 +191,7 @@ export default function HomeworkCard({ homework, isTutor = false, onUpdated }) {
               </div>
 
               <div className="min-w-0">
-                <h4 className="text-sm font-bold text-slate-100 leading-tight">{homework.title}</h4>
+                <h4 className="text-sm font-bold text-slate-100 leading-tight"><MathRenderer plain inline content={homework.title} /></h4>
                 {homework.source_label && (
                   <div className="text-[11px] text-indigo-300/90 font-medium mt-0.5">
                     {homework.source_label}
@@ -251,9 +253,7 @@ export default function HomeworkCard({ homework, isTutor = false, onUpdated }) {
                 <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1 flex items-center gap-1">
                   <BookOpen className="w-3 h-3" /> Instructions
                 </div>
-                <p className="text-xs text-slate-300 leading-relaxed whitespace-pre-wrap">
-                  {homework.description}
-                </p>
+                <MathRenderer plain content={homework.description} className="text-xs text-slate-300 leading-relaxed" />
               </div>
             )}
 
