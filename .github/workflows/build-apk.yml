@@ -4,6 +4,12 @@ on:
   push:
     tags:
       - 'v*'
+  # Build again for a release that already exists (Actions → Build & release APK → Run workflow).
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to attach the APK to, e.g. v1.4.0'
+        required: true
 
 jobs:
   build:
@@ -33,6 +39,7 @@ jobs:
           path: |
             ~/.pub-cache
             mobile/.dart_tool/
+          key: ${{ runner.os }}-flutter-${{ hashFiles('mobile/pubspec.lock') }}
           restore-keys: |
             ${{ runner.os }}-flutter-
 
@@ -93,6 +100,7 @@ jobs:
       - name: Upload APK to release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
           files: |
             TuitionTrack.apk
             TuitionTrack.apk.sha256
