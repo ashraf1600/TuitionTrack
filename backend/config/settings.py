@@ -106,6 +106,7 @@ LOCAL_APPS = [
     'apps.cycles',
     'apps.analytics',
     'apps.exams',
+    'apps.messaging',
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
@@ -307,6 +308,8 @@ REST_FRAMEWORK = {
         'user': '600/min',
         # Sign-in, sign-up and password reset: slow enough to blunt password guessing.
         'auth': os.getenv('AUTH_THROTTLE_RATE', '20/min'),
+        # Sending chat messages (reading and polling are not limited by this).
+        'chat': os.getenv('CHAT_THROTTLE_RATE', '60/min'),
     },
 }
 TESTING = 'test' in sys.argv
@@ -314,7 +317,7 @@ TESTING = 'test' in sys.argv
 BACKGROUND_TASKS_INLINE = TESTING or os.getenv('BACKGROUND_TASKS_INLINE', 'False').lower() in ('true', '1', 't')
 if TESTING:
     # The test suite signs in far more often than a person can; throttling has its own test.
-    REST_FRAMEWORK['DEFAULT_THROTTLE_RATES'] = {'anon': '100000/min', 'user': '100000/min', 'auth': '100000/min'}
+    REST_FRAMEWORK['DEFAULT_THROTTLE_RATES'] = {'anon': '100000/min', 'user': '100000/min', 'auth': '100000/min', 'chat': '100000/min'}
     # Hashing every test password with PBKDF2 makes the suite several times slower.
     PASSWORD_HASHERS = ['django.contrib.auth.hashers.MD5PasswordHasher']
 

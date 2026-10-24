@@ -14,6 +14,7 @@ import '../../core/session.dart';
 import '../../widgets/ui.dart';
 import '../student/tutor_detail_screen.dart';
 import '../tutor/tuition_screen.dart';
+import 'chat_screen.dart';
 import 'cycle_progress.dart';
 
 /// What happens when a phone notification, or its "Mark done" button, is tapped.
@@ -45,6 +46,11 @@ Future<void> handleNotificationResponse(Session session, NotificationResponse re
 
   final navigator = rootNavigatorKey.currentState;
   if (navigator == null) return;
+  final chatLink = RegExp(r'^/chats/([0-9a-f-]{36})').firstMatch(link);
+  if (chatLink != null) {
+    await navigator.push(MaterialPageRoute<void>(builder: (_) => ChatScreen(conversationId: chatLink[1]!)));
+    return;
+  }
   if (session.isTutor && tuitionId.isNotEmpty) {
     await navigator.push(MaterialPageRoute<void>(builder: (_) => TuitionScreen(tuitionId: tuitionId)));
   } else if (session.isStudent && tutorId.isNotEmpty) {

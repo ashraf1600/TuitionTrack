@@ -17,6 +17,7 @@ urlpatterns = [
     path('api/v1/', include('apps.cycles.urls')),
     path('api/v1/', include('apps.analytics.urls')),
     path('api/v1/', include('apps.exams.urls')),
+    path('api/v1/', include('apps.messaging.urls')),
     path('api/v1/meta/', MetaView.as_view(), name='api-meta'),
     path('api/v1/schema/', SpectacularAPIView.as_view(), name='api-schema'),
     path('api/v1/docs/', SpectacularSwaggerView.as_view(url_name='api-schema'), name='api-docs'),

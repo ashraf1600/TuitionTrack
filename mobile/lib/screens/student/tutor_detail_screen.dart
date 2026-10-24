@@ -14,6 +14,7 @@ import '../../core/week_plan.dart' show weekOrder;
 import '../../widgets/kit.dart';
 import '../../widgets/theme.dart';
 import '../../widgets/ui.dart';
+import '../common/chats_screen.dart' show openChatWith;
 import '../common/cycle_progress.dart';
 import '../common/payments_screen.dart';
 import 'student_lists.dart';
@@ -103,6 +104,11 @@ class _TutorDetailScreenState extends State<TutorDetailScreen> {
         appBar: AppBar(
           title: Text(widget.title, overflow: TextOverflow.ellipsis),
           actions: [
+            IconButton(
+              tooltip: tr('Message {name}', {'name': Raw(widget.title)}),
+              icon: const Icon(Icons.chat_bubble_outline_rounded),
+              onPressed: () => openChatWith(context, widget.tutorId),
+            ),
             IconButton(
               tooltip: tr('Payment history'),
               icon: const Icon(Icons.receipt_long_outlined),

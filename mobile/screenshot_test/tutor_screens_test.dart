@@ -3,6 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tuitiontrack/core/app_keys.dart';
 import 'package:tuitiontrack/main.dart';
+import 'package:tuitiontrack/core/chat.dart';
+import 'package:tuitiontrack/screens/common/chat_screen.dart';
+import 'package:tuitiontrack/screens/common/chats_screen.dart';
 import 'package:tuitiontrack/screens/tutor/homework_tab.dart';
 import 'package:tuitiontrack/screens/tutor/tuition_screen.dart';
 
@@ -76,5 +79,24 @@ void main() {
       }
     }
     await shoot(tester, 'tutor_08_homework_form');
+  });
+
+  testWidgets('messages', (tester) async {
+    await openApp(tester, size: phone);
+    rootNavigatorKey.currentState!.push(MaterialPageRoute<void>(builder: (_) => const ChatsScreen()));
+    await settle(tester);
+    await shoot(tester, 'tutor_09_messages');
+  });
+
+  testWidgets('chat with a student', (tester) async {
+    await openApp(tester, size: phone);
+    rootNavigatorKey.currentState!.push(MaterialPageRoute<void>(
+      builder: (_) => const ChatScreen(
+        conversationId: '9a7c1e40-1111-4c1d-8a1b-000000000001',
+        person: ChatPerson(id: '0ae3e33c-3ded-41c4-931f-a42e0b3f4138', name: 'Rafi Ahmed', role: 'STUDENT'),
+      ),
+    ));
+    await settle(tester);
+    await shoot(tester, 'tutor_10_chat');
   });
 }
