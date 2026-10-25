@@ -3,7 +3,6 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/api.dart';
-import '../../core/format.dart';
 import '../../core/i18n.dart';
 import '../../core/json.dart';
 import '../../core/reminder_plan.dart';
