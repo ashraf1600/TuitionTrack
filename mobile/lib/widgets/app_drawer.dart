@@ -191,7 +191,7 @@ class AppDrawer extends StatelessWidget {
                         secondary: Icon(Icons.notifications_none_rounded, size: 20, color: tt.textTertiary),
                         title: Text(tr('Reminders')),
                         subtitle: Text(
-                          session.isTutor ? tr('Before and after your classes') : tr('Before classes and homework deadlines'),
+                          session.isTutor ? tr('Before and after your classes') : tr('Before homework deadlines'),
                         ),
                         value: Reminders.enabledIn(session.settings),
                         onChanged: (on) async {

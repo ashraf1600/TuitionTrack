@@ -1154,4 +1154,5 @@ const bnStrings = <String, String>{
   'You: ': 'আপনি: ',
   '{n} unread messages': '{n}টি না-পড়া মেসেজ',
   '📷 Photo': '📷 ছবি',
+  'Before homework deadlines': 'হোমওয়ার্ক জমার শেষ সময়ের আগে',
 };

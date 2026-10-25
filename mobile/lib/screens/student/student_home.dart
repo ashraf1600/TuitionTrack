@@ -66,8 +66,8 @@ class _StudentHomeState extends State<StudentHome> {
         if (a.isEvaluated != b.isEvaluated) return a.isEvaluated ? 1 : -1;
         return a.dueDate.compareTo(b.dueDate);
       });
-    // Class and homework reminders for the coming week (they work offline).
-    unawaited(Reminders.instance.schedule(settings, studentReminders(results[1], results[4], DateTime.now())));
+    // Homework reminders for the coming week (they work offline). No class reminders for students.
+    unawaited(Reminders.instance.schedule(settings, studentReminders(results[4], DateTime.now())));
     if (mounted) {
       final now = context.read<Session>().api.serverNow;
       setState(() {

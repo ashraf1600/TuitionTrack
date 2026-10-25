@@ -1,4 +1,3 @@
-import 'connect.dart' show tutorSirName;
 import 'format.dart';
 import 'i18n.dart';
 import 'json.dart';
@@ -92,25 +91,11 @@ List<PlannedReminder> tutorReminders(List<Json> tuitions, DateTime now) {
 }
 
 /// Student: each class 30 minutes ahead, and homework two hours before it is due.
-List<PlannedReminder> studentReminders(List<Json> tuitions, List<Json> homework, DateTime now) {
+/// A student's reminders: homework 2 hours before it is due. No class-time
+/// reminders: tutors often move or skip classes, so a reminder from the weekly
+/// routine could tell students the wrong time.
+List<PlannedReminder> studentReminders(List<Json> homework, DateTime now) {
   final out = <PlannedReminder>[];
-  for (final tuition in tuitions) {
-    final id = tuition.str('id');
-    for (final (start, _) in upcomingSlots(tuition.maps('routine'), now)) {
-      final at = start.subtract(const Duration(minutes: 30));
-      if (!at.isAfter(now)) continue;
-      out.add(PlannedReminder(
-        key: 'class:$id:${start.toIso8601String()}',
-        at: at,
-        // "Class at 5:00 PM" / "Class with Ashraf Sir starts in 30 minutes." — never the tuition's own name.
-        title: tr('Class at {time}', {'time': to12h(_hhmm(start))}),
-        body: tutorSirName(tuition).isEmpty
-            ? tr('Class starts in 30 minutes.')
-            : tr('Class with {tutor} starts in 30 minutes.', {'tutor': tutorSirName(tuition)}),
-        payload: {'type': 'tutor', 'tutor': tuition.str('tutor_id')},
-      ));
-    }
-  }
   for (final hw in homework) {
     if (hw.flag('is_evaluated') || hw.flag('is_submitted') || hw.flag('pending_sync')) continue;
     final due = hw.date('due_date')?.toLocal();
