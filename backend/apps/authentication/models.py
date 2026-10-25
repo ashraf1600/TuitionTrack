@@ -106,6 +106,8 @@ class CustomUser(AbstractUser):
 
     # Timestamps
     created_at = models.DateTimeField(auto_now_add=True)
+    # Last time the app checked in (chat polls), for "Active 5 min ago" in chats.
+    last_seen_at = models.DateTimeField(null=True, blank=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:

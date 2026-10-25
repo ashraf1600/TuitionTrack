@@ -60,6 +60,8 @@ class Message(models.Model):
     sender = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='chat_messages')
     body = models.TextField(blank=True, default='')
     image = models.ImageField(upload_to='messages/', null=True, blank=True)
+    # The message this one answers ("reply"), shown as a quote above it.
+    reply_to = models.ForeignKey('self', null=True, blank=True, on_delete=models.SET_NULL, related_name='+')
     # Set by the phone so a message sent twice on a bad connection is kept once.
     client_ref = models.CharField(max_length=64, blank=True, default='')
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)

@@ -30,6 +30,9 @@ jobs:
           channel: stable
           cache: true
       - run: flutter pub get
+      - name: Analyze (report saved with the screenshots)
+        continue-on-error: true
+        run: flutter analyze --no-fatal-infos 2>&1 | tee ../analyze.log
       - name: Render screens
         id: render
         continue-on-error: true
@@ -44,6 +47,7 @@ jobs:
           mkdir -p /tmp/shots/"$dest"
           cp mobile/screenshot_test/goldens/*.png /tmp/shots/"$dest"/ 2>/dev/null || true
           cp render.log /tmp/shots/"$dest"/render.log
+          cp analyze.log /tmp/shots/"$dest"/analyze.log 2>/dev/null || true
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           if git fetch --depth 1 origin screenshots 2>/dev/null; then

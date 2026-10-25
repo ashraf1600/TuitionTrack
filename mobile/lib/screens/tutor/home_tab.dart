@@ -4,7 +4,6 @@ import 'dart:math' show pi;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../../core/api.dart';
 import '../../core/format.dart';
 import '../../core/i18n.dart';
 import '../../core/json.dart';
@@ -21,20 +20,23 @@ import '../../widgets/theme.dart';
 import '../../widgets/ui.dart';
 import '../common/cycle_progress.dart';
 import '../common/notification_actions.dart';
-import '../common/payments_screen.dart';
-import 'homework_tab.dart';
+import 'to_check_screen.dart';
 import 'tuition_form_screen.dart';
 import 'tuition_screen.dart';
 
 class _HomeData {
-  _HomeData(this.wallet, this.tuitions, this.requests);
+  _HomeData(this.wallet, this.tuitions, this.requests, this.updates);
   final Json wallet;
   final List<Json> tuitions;
   final List<Json> requests;
+
+  /// The notification feed: work to grade and homework handed in come from here.
+  final List<Json> updates;
 }
 
-/// Overview on one screen: the wallet, the week at a glance, and every tuition
-/// as a card. Tap a tuition to mark classes, see its students and exams.
+/// Overview: what to do now. The next class (mark it done in one tap), what
+/// is waiting to be checked across all tuitions, and the week. Tuitions and
+/// money have their own tabs.
 class HomeTab extends StatelessWidget {
   const HomeTab({super.key, required this.onCreateTuition});
 
@@ -47,11 +49,16 @@ class HomeTab extends StatelessWidget {
     return Loader<_HomeData>(
       load: () async {
         final settings = context.read<Session>().settings;
-        final results = await Future.wait<dynamic>([repo.wallet(), repo.tuitions(), repo.connections('PENDING')]);
+        final results = await Future.wait<dynamic>([
+          repo.wallet(),
+          repo.tuitions(),
+          repo.connections('PENDING'),
+          repo.notifications().catchError((_) => <Json>[]),
+        ]);
         final tuitions = results[1] as List<Json>;
         // Class reminders for the coming week, set again on every load (they work offline).
         unawaited(Reminders.instance.schedule(settings, tutorReminders(tuitions, DateTime.now())));
-        return _HomeData(results[0] as Json, tuitions, results[2] as List<Json>);
+        return _HomeData(results[0] as Json, tuitions, results[2] as List<Json>, results[3] as List<Json>);
       },
       builder: (context, data, reload) {
         Future<void> open(String tuitionId) async {
@@ -59,32 +66,30 @@ class HomeTab extends StatelessWidget {
           await reload();
         }
 
+        final now = DateTime.now();
+        final plan = buildWeekPlan(data.tuitions, now);
+        final next = plan.next;
         return PageBody(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
           children: staggered(context, [
             GreetingHeader(
               name: context.read<Session>().displayName,
-              now: DateTime.now(),
+              now: now,
               subtitle: _todaySummary(data.tuitions, data.wallet),
             ),
             _GetStarted(tuitions: data.tuitions, onCreateTuition: onCreateTuition, onOpen: open, reload: reload),
-            _WalletStrip(wallet: data.wallet),
-            if (data.requests.isNotEmpty) ...[
-              gap8,
-              _RequestsBanner(requests: data.requests, tuitions: data.tuitions, reload: reload),
-            ],
-            _Heading(tr('This week'), trailing: _weekSummary(data.tuitions)),
-            _WeekAtAGlance(tuitions: data.tuitions, onOpen: open),
-            _Heading(tr('Tuitions'), trailing: data.tuitions.isEmpty ? null : tr('Hold a card for shortcuts')),
-            if (data.tuitions.isEmpty)
+            if (next != null) _NextUp(item: next, plan: plan, now: now, onOpen: () => open(next.tuition.str('id')), reload: reload),
+            if (data.tuitions.isNotEmpty) ...[
+              _ToCheck(updates: data.updates, requests: data.requests, tuitions: data.tuitions, reload: reload),
+              _Heading(tr('This week'), trailing: _weekSummary(data.tuitions)),
+              _WeekAtAGlance(tuitions: data.tuitions, onOpen: open),
+            ] else
               EmptyState(
                 icon: Icons.class_outlined,
                 title: tr('No tuitions yet'),
                 message: tr('Create a tuition, add its students and class days, then mark classes as you teach.'),
                 action: FilledButton.icon(onPressed: onCreateTuition, icon: const Icon(Icons.add), label: Text(tr('New tuition'))),
-              )
-            else
-              _TuitionGrid(tuitions: data.tuitions, onOpen: open, onActions: (t) => _quickActions(context, t, open, reload)),
+              ),
           ]),
         );
       },
@@ -215,94 +220,6 @@ class _GetStartedState extends State<_GetStarted> {
   }
 }
 
-/// Shortcuts for one tuition (long-press its card): mark the next class,
-/// set homework, record a payment, or open it.
-Future<void> _quickActions(
-  BuildContext context,
-  Json tuition,
-  Future<void> Function(String tuitionId) open,
-  Future<void> Function() reload,
-) async {
-  final session = context.read<Session>();
-  final repo = context.read<Repo>();
-  final id = tuition.str('id');
-  final cycle = tuition.obj('active_cycle');
-  final next = cycle == null ? null : orderedClasses(cycle).where((c) => !c.flag('completed')).firstOrNull;
-  final pending = tuition.maps('pending_payments');
-  final choice = await showModalBottomSheet<String>(
-    context: context,
-    builder: (sheet) => SafeArea(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
-            child: Text(tuition.str('title'), style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
-          ),
-          if (next != null)
-            ListTile(
-              leading: const Icon(Icons.check_circle_outline),
-              title: Text(tr('Mark class {n} done', {'n': classNoOf(next)})),
-              subtitle: Text(tr('Dated today. You can undo it.')),
-              onTap: () => Navigator.pop(sheet, 'mark'),
-            ),
-          ListTile(
-            leading: const Icon(Icons.assignment_outlined),
-            title: Text(tr('Assign homework')),
-            onTap: () => Navigator.pop(sheet, 'homework'),
-          ),
-          for (final p in pending)
-            ListTile(
-              leading: Icon(Icons.payments_outlined, color: tone(sheet, AppColors.warning)),
-              title: Text(tr('Mark cycle #{n} paid', {'n': p.integer('cycle_number')})),
-              subtitle: p.numberOrNull('amount') == null ? null : Text(taka(p.number('amount'))),
-              onTap: () => Navigator.pop(sheet, 'paid:${p.str('cycle_id')}:${p.integer('cycle_number')}'),
-            ),
-          ListTile(
-            leading: const Icon(Icons.open_in_new_rounded),
-            title: Text(tr('Open tuition')),
-            onTap: () => Navigator.pop(sheet, 'open'),
-          ),
-        ],
-      ),
-    ),
-  );
-  if (choice == null || !context.mounted) return;
-  if (choice == 'mark') {
-    await markNextClassFromReminder(repo, session, id);
-    await reload();
-  } else if (choice == 'homework') {
-    final changed = await Navigator.push<bool>(
-      context,
-      MaterialPageRoute(builder: (_) => HomeworkCreateScreen(initialTuitionId: id)),
-    );
-    if (changed == true) await reload();
-  } else if (choice == 'open') {
-    await open(id);
-  } else if (choice.startsWith('paid:')) {
-    final parts = choice.split(':');
-    final cycleId = parts[1];
-    final n = parts[2];
-    final messenger = ScaffoldMessenger.maybeOf(context);
-    if (!await attempt(context, () => repo.setCyclePayment(cycleId, true))) return;
-    showToastOn(
-      messenger,
-      tr('Cycle #{n} marked as paid.', {'n': n}),
-      actionLabel: tr('Undo'),
-      onAction: () async {
-        try {
-          await repo.setCyclePayment(cycleId, false);
-        } on ApiException catch (error) {
-          showToastOn(messenger, error.message, error: true);
-        }
-        await reload();
-      },
-    );
-    await reload();
-  }
-}
-
 /// A quiet section label: small caps, no icon, optional count on the right.
 class _Heading extends StatelessWidget {
   const _Heading(this.title, {this.trailing});
@@ -326,123 +243,171 @@ class _Heading extends StatelessWidget {
   }
 }
 
-/// The wallet in one line: earned in the current cycles and how far along they are.
-class _WalletStrip extends StatelessWidget {
-  const _WalletStrip({required this.wallet});
-  final Json wallet;
-
-  @override
-  Widget build(BuildContext context) {
-    final earned = wallet.number('total_earned');
-    final pending = wallet.number('total_pending');
-    final total = earned + pending;
-    final share = total <= 0 ? 0.0 : earned / total;
-    final tt = context.tt;
-    return AppCard(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(tr('Earned in current cycles'), style: TextStyle(fontSize: 13, height: 1.4, color: tt.textSecondary)),
-          const SizedBox(height: 4),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.baseline,
-            textBaseline: TextBaseline.alphabetic,
-            children: [
-              Expanded(
-                child: FittedBox(
-                  fit: BoxFit.scaleDown,
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    taka(earned),
-                    style: TextStyle(
-                      fontSize: 30,
-                      height: 1.15,
-                      letterSpacing: -0.6,
-                      fontWeight: FontWeight.w700,
-                      fontFeatures: tabular,
-                      color: tt.success,
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Text(tr('of {p0}', {'p0': taka(total)}),
-                  style: TextStyle(fontSize: 13, fontFeatures: tabular, color: tt.textTertiary)),
-            ],
+/// The list of students asking to join, in a sheet.
+Future<void> _openRequests(BuildContext context, List<Json> requests, List<Json> tuitions, Future<void> Function() reload) {
+  return showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    builder: (sheetContext) => SafeArea(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxHeight: MediaQuery.of(sheetContext).size.height * 0.8),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          child: _Requests(
+            requests: requests,
+            tuitions: tuitions,
+            reload: () async {
+              if (sheetContext.mounted) Navigator.pop(sheetContext);
+              await reload();
+            },
           ),
-          const SizedBox(height: 12),
-          ProgressLine(value: share, height: 8, label: tr('Share of the current cycles already earned')),
-          if (wallet.integer('unpaid_cycles') > 0) ...[
-            const SizedBox(height: 8),
-            InkWell(
-              borderRadius: BorderRadius.circular(12),
-              onTap: () => Navigator.push(context, MaterialPageRoute<void>(builder: (_) => const PaymentsScreen())),
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(minHeight: 44),
-                child: Row(
-                  children: [
-                    Icon(Icons.warning_amber_rounded, size: 18, color: tt.warning),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        tr('{p0} to collect · {p1} unpaid cycle{p2}', {'p0': taka(wallet.number('unpaid_total')), 'p1': wallet.integer('unpaid_cycles'), 'p2': wallet.integer('unpaid_cycles') == 1 ? '' : 's'}),
-                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: tt.warning),
-                      ),
-                    ),
-                    Icon(Icons.chevron_right_rounded, size: 20, color: tt.warning),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ],
+        ),
       ),
-    );
-  }
+    ),
+  );
 }
 
-/// Students asking to join, folded into one line that opens the list.
-class _RequestsBanner extends StatelessWidget {
-  const _RequestsBanner({required this.requests, required this.tuitions, required this.reload});
+/// Everything waiting on the tutor, across all tuitions: answers to grade,
+/// homework handed in, students asking to join. "All caught up" when empty.
+class _ToCheck extends StatelessWidget {
+  const _ToCheck({required this.updates, required this.requests, required this.tuitions, required this.reload});
+  final List<Json> updates;
   final List<Json> requests;
   final List<Json> tuitions;
   final Future<void> Function() reload;
 
+  Future<void> _openList(BuildContext context, int tab) async {
+    await Navigator.push(context, MaterialPageRoute<void>(builder: (_) => ToCheckScreen(initialTab: tab)));
+    await reload();
+  }
+
   @override
   Widget build(BuildContext context) {
-    final n = requests.length;
-    return Banner2(
-      tr('{p0} student{p1} asked to join you.', {'p0': n, 'p1': n == 1 ? '' : 's'}),
-      icon: Icons.person_add_alt_1_outlined,
-      action: TextButton(
-        onPressed: () => showModalBottomSheet<void>(
-          context: context,
-          isScrollControlled: true,
-          builder: (sheetContext) => SafeArea(
-            child: ConstrainedBox(
-              constraints: BoxConstraints(maxHeight: MediaQuery.of(sheetContext).size.height * 0.8),
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                child: _Requests(
-                  requests: requests,
-                  tuitions: tuitions,
-                  reload: () async {
-                    if (sheetContext.mounted) Navigator.pop(sheetContext);
-                    await reload();
-                  },
+    final tt = context.tt;
+    final grade = updates.where((n) => n.str('kind') == 'grade').toList();
+    final toGrade = grade.fold<int>(0, (sum, n) => sum + (int.tryParse(n.str('id').split('-').last) ?? 1));
+    final handedIn = updates.where((n) => n.str('kind') == 'homework' && n.str('id').startsWith('handed-in-')).toList();
+    final total = toGrade + handedIn.length + requests.length;
+    final rows = <Widget>[
+      if (toGrade > 0)
+        _CheckRow(
+          icon: Icons.fact_check_outlined,
+          accent: AppColors.success,
+          title: toGrade == 1 ? tr('1 exam answer to grade') : tr('{n} exam answers to grade', {'n': toGrade}),
+          subtitle: grade.map((n) => n.str('body')).where((b) => b.isNotEmpty).toSet().join(', '),
+          onTap: () => _openList(context, 0),
+        ),
+      if (handedIn.isNotEmpty)
+        _CheckRow(
+          icon: Icons.menu_book_rounded,
+          accent: AppColors.warning,
+          title: handedIn.length == 1 ? tr('1 homework handed in') : tr('{n} homework handed in', {'n': handedIn.length}),
+          subtitle: handedIn.map((n) => n.str('title').replaceAll(' handed in homework', '')).toSet().join(', '),
+          onTap: () => _openList(context, 1),
+        ),
+      if (requests.isNotEmpty)
+        _CheckRow(
+          icon: Icons.person_add_alt_1_outlined,
+          accent: AppColors.primarySoft,
+          title: requests.length == 1 ? tr('1 student asked to join') : tr('{n} students asked to join', {'n': requests.length}),
+          subtitle: requests.map((r) => r.str('student_name')).where((n) => n.isNotEmpty).join(', '),
+          onTap: () => _openRequests(context, requests, tuitions, reload),
+        ),
+    ];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(2, 24, 2, 10),
+          child: Row(
+            children: [
+              Text(tr('To check'), style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700, letterSpacing: -0.2, color: tt.textPrimary)),
+              if (total > 0) ...[
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 1),
+                  decoration: BoxDecoration(color: tt.cardRaised, borderRadius: BorderRadius.circular(10)),
+                  child: Text(localDigits('$total'), style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: tt.textSecondary)),
                 ),
-              ),
-            ),
+              ],
+              const Spacer(),
+              TextButton(onPressed: () => _openList(context, 0), child: Text(tr('See all'))),
+            ],
           ),
         ),
-        child: Text(tr('Review')),
+        AppCard(
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          child: rows.isEmpty
+              ? Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Row(
+                    children: [
+                      Icon(Icons.task_alt_rounded, color: tt.success),
+                      const SizedBox(width: 12),
+                      Expanded(child: Text(tr('All caught up. Nothing waiting to be checked.'), style: TextStyle(fontSize: 14, color: tt.textSecondary))),
+                    ],
+                  ),
+                )
+              : Column(
+                  children: [
+                    for (final (i, row) in rows.indexed) ...[
+                      if (i > 0) Divider(height: 1, indent: 64, color: tt.border),
+                      row,
+                    ],
+                  ],
+                ),
+        ),
+      ],
+    );
+  }
+}
+
+class _CheckRow extends StatelessWidget {
+  const _CheckRow({required this.icon, required this.accent, required this.title, required this.subtitle, required this.onTap});
+  final IconData icon;
+  final Color accent;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final tt = context.tt;
+    return InkWell(
+      onTap: onTap,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 64),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(14, 8, 10, 8),
+          child: Row(
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(color: tonalContainer(context, accent), borderRadius: BorderRadius.circular(12)),
+                child: Icon(icon, size: 20, color: tone(context, accent)),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title, style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: tt.textPrimary)),
+                    if (subtitle.isNotEmpty)
+                      Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 13, color: tt.textSecondary)),
+                  ],
+                ),
+              ),
+              Icon(Icons.chevron_right_rounded, color: tt.textTertiary),
+            ],
+          ),
+        ),
       ),
     );
   }
 }
 
-/// "This week", kept small: the next class, a strip of the seven days
+/// "This week", kept small: a strip of the seven days
 /// (Saturday first), and the classes of one day as cards — today by default,
 /// or whichever day is tapped.
 class _WeekAtAGlance extends StatefulWidget {
@@ -465,7 +430,6 @@ class _WeekAtAGlanceState extends State<_WeekAtAGlance> {
     final plan = buildWeekPlan(widget.tuitions, now);
     final day = _picked ?? plan.today;
     final classes = plan.byDay[day]!;
-    final next = plan.next;
 
     return Container(
       decoration: BoxDecoration(color: tt.card, borderRadius: BorderRadius.circular(20), boxShadow: tt.cardShadow),
@@ -473,10 +437,6 @@ class _WeekAtAGlanceState extends State<_WeekAtAGlance> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          if (next != null) ...[
-            _NextClassHero(item: next, plan: plan, now: now, onTap: () => widget.onOpen(next.tuition.str('id'))),
-            const SizedBox(height: 16),
-          ],
           _DayStrip(
             plan: plan,
             picked: day,
@@ -513,26 +473,6 @@ String? _weekSummary(List<Json> tuitions) {
   return tr('{a} today · {b} this week', {'a': today, 'b': plan.total});
 }
 
-/// A stable colour per tuition, shared by its classes in the week and its card,
-/// so the schedule and the cards read together.
-const _tuitionPalette = [
-  Color(0xFF5C95CB), // blue
-  Color(0xFF4FA37F), // green
-  Color(0xFFD9A443), // amber
-  Color(0xFF8E7CC3), // violet
-  Color(0xFF3FA3A8), // teal
-  Color(0xFFD27A7A), // rose
-];
-
-Color tuitionColor(Json tuition) {
-  final id = tuition.str('id');
-  var hash = 0;
-  for (final unit in id.codeUnits) {
-    hash = (hash * 31 + unit) & 0x7fffffff;
-  }
-  return _tuitionPalette[hash % _tuitionPalette.length];
-}
-
 /// When a class of this week starts, as a date.
 DateTime _classTime(WeekClass item, WeekPlan plan, DateTime now) {
   final offset = weekOrder.indexOf(item.day) - plan.todayIndex;
@@ -544,68 +484,97 @@ DateTime _classTime(WeekClass item, WeekPlan plan, DateTime now) {
 bool _isNow(WeekClass item, WeekPlan plan, DateTime now) =>
     item.day == plan.today && !item.past && minutesOf(item.start) <= now.hour * 60 + now.minute;
 
-/// The next class, large: which tuition, when, and how long until it starts (or "Now").
-class _NextClassHero extends StatelessWidget {
-  const _NextClassHero({required this.item, required this.plan, required this.now, required this.onTap});
+/// The next class, large, with the two things to do about it: mark it done
+/// (dated today, with Undo) or open the tuition.
+class _NextUp extends StatelessWidget {
+  const _NextUp({required this.item, required this.plan, required this.now, required this.onOpen, required this.reload});
   final WeekClass item;
   final WeekPlan plan;
   final DateTime now;
-  final VoidCallback onTap;
+  final VoidCallback onOpen;
+  final Future<void> Function() reload;
 
   @override
   Widget build(BuildContext context) {
     final tt = context.tt;
-    final color = tuitionColor(item.tuition);
+    final color = tuitionColorOf(item.tuition.str('id'));
     final at = _classTime(item, plan, now);
     final live = _isNow(item, plan, now);
     final students = item.tuition.integer('enrolled_count');
-    final subject = item.tuition.str('subject');
-    return Material(
-      color: color.withValues(alpha: 0.12),
-      borderRadius: BorderRadius.circular(16),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(16),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(14, 12, 12, 12),
-          child: Row(
+    final cycle = item.tuition.obj('active_cycle');
+    final nextNo = cycle == null ? null : orderedClasses(cycle).where((c) => !c.flag('completed')).firstOrNull;
+    return Container(
+      margin: const EdgeInsets.only(top: 4),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(color: Color.alphaBlend(color.withValues(alpha: 0.10), tt.card), borderRadius: BorderRadius.circular(18)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          InkWell(
+            onTap: onOpen,
+            borderRadius: BorderRadius.circular(12),
+            child: Row(
+              children: [
+                Container(width: 4, height: 52, decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(2))),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(live ? tr('Class now') : tr('Next class'),
+                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: live ? tt.success : tt.textSecondary)),
+                      const SizedBox(height: 2),
+                      Text(item.tuition.str('title'),
+                          maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: tt.textPrimary)),
+                      Text(
+                        [
+                          '${whenLabel(at, now)}${item.end.isEmpty ? '' : ' – ${to12h(item.end)}'}',
+                          tr('{p0} student{p1}', {'p0': students, 'p1': students == 1 ? '' : 's'}),
+                        ].join(' · '),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: 13, color: tt.textSecondary),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(color: live ? tt.success : color, borderRadius: BorderRadius.circular(20)),
+                  child: Text(
+                    live ? tr('Now') : tr('in {t}', {'t': Raw(shortGap(at.difference(now)))}),
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: tt.onPrimary),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
+          Row(
             children: [
-              Container(width: 4, height: 48, decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(2))),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(live ? tr('Class now') : tr('Next class'),
-                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: live ? tt.success : tt.textSecondary)),
-                    const SizedBox(height: 2),
-                    Text(item.tuition.str('title'),
-                        maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: tt.textPrimary)),
-                    Text(
-                      [
-                        whenLabel(at, now),
-                        if (subject.isNotEmpty) subject,
-                        tr('{p0} student{p1}', {'p0': students, 'p1': students == 1 ? '' : 's'}),
-                      ].join(' · '),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(fontSize: 12, color: tt.textSecondary),
-                    ),
-                  ],
+              if (nextNo != null) ...[
+                Expanded(
+                  child: FilledButton.icon(
+                    style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(46)),
+                    onPressed: () async {
+                      await markNextClassFromReminder(context.read<Repo>(), context.read<Session>(), item.tuition.str('id'));
+                      await reload();
+                    },
+                    icon: const Icon(Icons.check_rounded),
+                    label: Text(tr('Mark class done')),
+                  ),
                 ),
-              ),
-              const SizedBox(width: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                decoration: BoxDecoration(color: live ? tt.success : color, borderRadius: BorderRadius.circular(20)),
-                child: Text(
-                  live ? tr('Now') : tr('in {t}', {'t': Raw(shortGap(at.difference(now)))}),
-                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Colors.white),
-                ),
+                const SizedBox(width: 10),
+              ],
+              OutlinedButton(
+                style: OutlinedButton.styleFrom(minimumSize: const Size(88, 46)),
+                onPressed: onOpen,
+                child: Text(tr('Open')),
               ),
             ],
           ),
-        ),
+        ],
       ),
     );
   }
@@ -760,7 +729,7 @@ class _ClassCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final tt = context.tt;
-    final color = tuitionColor(item.tuition);
+    final color = tuitionColorOf(item.tuition.str('id'));
     final ink = item.past ? tt.textSecondary : tt.textPrimary;
     final students = item.tuition.integer('enrolled_count');
     return Material(
@@ -868,161 +837,6 @@ class _WeekEmpty extends StatelessWidget {
             style: TextStyle(fontSize: 14, height: 1.5, color: tt.textSecondary),
           ),
         ],
-      ),
-    );
-  }
-}
-
-/// Every tuition as a small card, two per row: name, cycle, classes done.
-class _TuitionGrid extends StatelessWidget {
-  const _TuitionGrid({required this.tuitions, required this.onOpen, required this.onActions});
-  final List<Json> tuitions;
-  final Future<void> Function(String tuitionId) onOpen;
-  final void Function(Json tuition) onActions;
-
-  @override
-  Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        const spacing = 12.0;
-        final columns = constraints.maxWidth >= 560 ? 2 : 1;
-        final width = (constraints.maxWidth - spacing * (columns - 1)) / columns;
-        return Wrap(
-          spacing: spacing,
-          runSpacing: spacing,
-          children: [
-            for (final tuition in tuitions)
-              SizedBox(
-                width: width,
-                child: _TuitionCard(tuition: tuition, onTap: () => onOpen(tuition.str('id')), onLongPress: () => onActions(tuition)),
-              ),
-          ],
-        );
-      },
-    );
-  }
-}
-
-class _TuitionCard extends StatelessWidget {
-  const _TuitionCard({required this.tuition, required this.onTap, required this.onLongPress});
-  final Json tuition;
-  final VoidCallback onTap;
-  final VoidCallback onLongPress;
-
-  @override
-  Widget build(BuildContext context) {
-    final tt = context.tt;
-    final cycle = tuition.obj('active_cycle');
-    final done = cycle?.integer('completed_classes') ?? 0;
-    final total = cycle?.integer('total_classes') ?? tuition.integer('cycle_length');
-    final cycleNo = cycle?.integer('cycle_number') ?? 1;
-    final students = tuition.integer('enrolled_count');
-    final due = tuition.maps('pending_payments').isNotEmpty;
-    final subject = tuition.str('subject');
-    final now = DateTime.now();
-    final next = nextClass([tuition], now);
-    final fee = tuition.number('total_fee');
-    final earned = total <= 0 ? 0 : fee * done / total;
-    final color = tuitionColor(tuition);
-    return AppCard(
-      onTap: onTap,
-      onLongPress: onLongPress,
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(color: color.withValues(alpha: 0.18), borderRadius: BorderRadius.circular(12)),
-                child: Icon(Icons.class_rounded, size: 20, color: color),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(tuition.str('title'),
-                        maxLines: 1, overflow: TextOverflow.ellipsis,
-                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, letterSpacing: -0.2, color: tt.textPrimary)),
-                    Text(
-                      [
-                        if (subject.isNotEmpty) subject,
-                        tr('{p0} student{p1}', {'p0': students, 'p1': students == 1 ? '' : 's'}),
-                        tr('Cycle {p0}', {'p0': cycleNo}),
-                      ].join(' · '),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(fontSize: 12, height: 1.4, color: tt.textSecondary),
-                    ),
-                  ],
-                ),
-              ),
-              if (due) ...[const SizedBox(width: 8), _DueChip(tt: tt)],
-            ],
-          ),
-          const SizedBox(height: 14),
-          Row(
-            children: [
-              Text(
-                tr('{p0}/{p1} classes', {'p0': done, 'p1': total}),
-                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: tt.textPrimary, fontFeatures: tabular),
-              ),
-              const Spacer(),
-              if (fee > 0)
-                Text(
-                  tr('{p0} of {p1}', {'p0': taka(earned), 'p1': taka(fee)}),
-                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tt.success, fontFeatures: tabular),
-                ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          GrowBar(value: total <= 0 ? 0 : done / total, color: tt.chartEarned, height: 6),
-          if (next != null) ...[
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Icon(Icons.schedule_rounded, size: 15, color: tt.textTertiary),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    tr('Next: {when}', {'when': whenLabel(next.at, now)}),
-                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tt.textSecondary),
-                  ),
-                ),
-                Icon(Icons.chevron_right_rounded, size: 18, color: tt.textTertiary),
-              ],
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-/// Amber "Due" badge: a cycle of this tuition waits for payment. Word + dot, never colour alone.
-class _DueChip extends StatelessWidget {
-  const _DueChip({required this.tt});
-  final TtTokens tt;
-
-  @override
-  Widget build(BuildContext context) {
-    return Semantics(
-      label: tr('Payment pending'),
-      excludeSemantics: true,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-        decoration: BoxDecoration(color: tt.warningContainer, borderRadius: BorderRadius.circular(8)),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(width: 6, height: 6, decoration: BoxDecoration(color: tt.warning, shape: BoxShape.circle)),
-            const SizedBox(width: 6),
-            Text(tr('@payment_due'), style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tt.onWarningContainer)),
-          ],
-        ),
       ),
     );
   }

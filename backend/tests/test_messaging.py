@@ -202,3 +202,54 @@ class MessagingTests(APITestCase):
         self.start(self.tutor, self.enrolled)
         self.client.force_authenticate(self.tutor)
         self.assertEqual(self.client.get(reverse('chat-list')).data['results'], [])
+
+    # ── Replies, last active, phone, whole-tuition messages ────────────────
+
+    def test_reply_quotes_the_original_from_the_same_chat_only(self):
+        conv_id = self.start(self.enrolled, self.tutor).data['id']
+        question = self.send(self.enrolled, conv_id, 'In Q3, how do I use v^2 = u^2 + 2as?').data
+        answer = self.send(self.tutor, conv_id, 'Put v = 0.', reply_to=question['id'])
+        self.assertEqual(answer.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(answer.data['reply_to']['id'], question['id'])
+        self.assertFalse(answer.data['reply_to']['mine'])
+        other = self.start(self.tutor, self.requested).data['id']
+        foreign = self.send(self.tutor, other, 'Elsewhere').data
+        self.assertEqual(self.send(self.tutor, conv_id, 'x', reply_to=foreign['id']).status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(self.send(self.tutor, conv_id, 'x', reply_to='abc').status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_last_active_and_phone_only_for_tutors(self):
+        self.enrolled.phone = '01700000000'
+        self.enrolled.save()
+        self.tutor.phone = '01811111111'
+        self.tutor.save()
+        self.client.force_authenticate(self.enrolled)
+        self.client.get(reverse('chat-unread'))
+        self.client.force_authenticate(self.tutor)
+        contacts = {c['name']: c for c in self.client.get(reverse('chat-contacts')).data['results']}
+        self.assertIsNotNone(contacts['Rafi Hasan']['last_seen'])
+        self.assertEqual(contacts['Rafi Hasan']['phone'], '01700000000')
+        self.client.force_authenticate(self.enrolled)
+        tutor_card = self.client.get(reverse('chat-contacts')).data['results'][0]
+        self.assertIsNone(tutor_card['phone'], "a tutor's number is not handed to students")
+
+    def test_message_a_whole_tuition(self):
+        classmate = make_user('stu_e', User.Role.STUDENT, first_name='Mitu')
+        TuitionEnrollment.objects.create(tuition=self.enrollment.tuition, student=classmate)
+        self.client.force_authenticate(self.tutor)
+        url = reverse('chat-broadcast')
+        body = {'tuition_id': str(self.enrollment.tuition.id), 'body': 'No class today.', 'client_ref': 'b1'}
+        resp = self.client.post(url, body, format='json')
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(resp.data, {'sent': 2, 'students': 2})
+        # Sent again (bad connection): kept once.
+        self.assertEqual(self.client.post(url, body, format='json').data['sent'], 0)
+        self.client.force_authenticate(classmate)
+        chats = self.client.get(reverse('chat-list')).data['results']
+        self.assertEqual(chats[0]['last_message']['body'], 'No class today.')
+        self.assertEqual(chats[0]['unread'], 1)
+        # Students, other tutors' tuitions and empty messages are refused.
+        self.assertEqual(self.client.post(url, body, format='json').status_code, status.HTTP_403_FORBIDDEN)
+        self.client.force_authenticate(self.other_tutor)
+        self.assertEqual(self.client.post(url, body, format='json').status_code, status.HTTP_404_NOT_FOUND)
+        self.client.force_authenticate(self.tutor)
+        self.assertEqual(self.client.post(url, {**body, 'body': ' '}, format='json').status_code, status.HTTP_400_BAD_REQUEST)

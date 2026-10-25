@@ -33,7 +33,13 @@ T? _firstOrNull<T>(Iterable<T> items, [bool Function(T)? test]) {
 /// submissions, mark each done, split shared rows per student.
 /// Same logic as the web HomeworkManager.
 class HomeworkTab extends StatefulWidget {
-  const HomeworkTab({super.key});
+  const HomeworkTab({super.key, this.tuitionId, this.initialFilter = 'all'});
+
+  /// Only this tuition's homework (its shared tasks and its students' copies).
+  final String? tuitionId;
+
+  /// all | handed (handed in, not checked yet) | pending | evaluated
+  final String initialFilter;
 
   @override
   State<HomeworkTab> createState() => _HomeworkTabState();
@@ -41,13 +47,19 @@ class HomeworkTab extends StatefulWidget {
 
 class _HomeworkTabState extends State<HomeworkTab> {
   final _key = GlobalKey<LoaderState<_HomeworkData>>();
-  String _filter = 'all'; // all | pending | evaluated
-  static const _filterLabels = {'all': 'All', 'pending': 'Pending', 'evaluated': 'Evaluated'};
+  late String _filter = widget.initialFilter; // all | handed | pending | evaluated
+  static const _filterLabels = {'all': 'All', 'handed': 'Handed in', 'pending': 'Pending', 'evaluated': 'Evaluated'};
 
   Future<_HomeworkData> _load() async {
     final repo = context.read<Repo>();
     final results = await Future.wait([repo.homework(), repo.tuitions(), repo.students()]);
-    final items = results[0].map(HomeworkItem.fromJson).toList();
+    var items = results[0].map(HomeworkItem.fromJson).toList();
+    final tuitionId = widget.tuitionId;
+    if (tuitionId != null) {
+      final tuition = _firstOrNull(results[1], (t) => t.str('id') == tuitionId);
+      final members = {for (final e in tuition?.maps('enrollments') ?? const <Json>[]) e.str('student_id')};
+      items = items.where((h) => h.tuitionId == tuitionId || (h.tuitionId.isEmpty && members.contains(h.studentId))).toList();
+    }
     return _HomeworkData(items, results[1], results[2]);
   }
 
@@ -55,7 +67,7 @@ class _HomeworkTabState extends State<HomeworkTab> {
     final created = await Navigator.push<bool>(
       context,
       MaterialPageRoute(
-        builder: (_) => HomeworkFormScreen(tuitions: data.tuitions, students: data.students),
+        builder: (_) => HomeworkFormScreen(tuitions: data.tuitions, students: data.students, initialTuitionId: widget.tuitionId),
       ),
     );
     if (created == true) await _key.currentState?.reload();
@@ -110,10 +122,12 @@ class _HomeworkTabState extends State<HomeworkTab> {
       builder: (context, data, reload) {
         final counts = {
           'all': data.homework.length,
+          'handed': data.homework.where((h) => h.isSubmitted && !h.isEvaluated).length,
           'pending': data.homework.where((h) => !h.isEvaluated).length,
           'evaluated': data.homework.where((h) => h.isEvaluated).length,
         };
         final filtered = data.homework.where((h) {
+          if (_filter == 'handed') return h.isSubmitted && !h.isEvaluated;
           if (_filter == 'pending') return !h.isEvaluated;
           if (_filter == 'evaluated') return h.isEvaluated;
           return true;
@@ -122,7 +136,7 @@ class _HomeworkTabState extends State<HomeworkTab> {
           children: [
             PillToggle<String>(
               options: [
-                for (final f in const ['all', 'pending', 'evaluated'])
+                for (final f in const ['all', 'handed', 'evaluated'])
                   (f, '${tr(_filterLabels[f]!)} ${localDigits('${counts[f] ?? 0}')}', null),
               ],
               selected: _filter,
@@ -145,7 +159,9 @@ class _HomeworkTabState extends State<HomeworkTab> {
                 title: tr('No homework found'),
                 message: _filter == 'all'
                     ? tr('Assign homework to a tuition or a student to get started.')
-                    : (_filter == 'pending' ? tr('No pending homework right now.') : tr('No evaluated homework right now.')),
+                    : _filter == 'handed'
+                        ? tr('Homework your students hand in appears here until you check it.')
+                        : (_filter == 'pending' ? tr('No pending homework right now.') : tr('No evaluated homework right now.')),
               )
             else
               for (final (i, hw) in filtered.indexed) ...[

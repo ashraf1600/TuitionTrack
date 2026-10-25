@@ -4,15 +4,22 @@ import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 
 import 'api.dart';
+import 'i18n.dart';
 import 'json.dart';
 
 /// The other person in a chat: a tutor ("Ashraf Sir" to students) or a student.
 class ChatPerson {
-  const ChatPerson({required this.id, required this.name, required this.role, this.photo});
+  const ChatPerson({required this.id, required this.name, required this.role, this.photo, this.lastSeen, this.phone});
   final String id;
   final String name;
   final String role;
   final String? photo;
+
+  /// When they last had the app open (for "Active 5 min ago").
+  final DateTime? lastSeen;
+
+  /// A student's (or guardian's) number, given to their tutor only.
+  final String? phone;
 
   bool get isTutor => role == 'TUTOR';
 
@@ -21,7 +28,20 @@ class ChatPerson {
         name: j.str('name').isNotEmpty ? j.str('name') : j.str('username'),
         role: j.str('role'),
         photo: j.str('photo').isEmpty ? null : j.str('photo'),
+        lastSeen: j.date('last_seen')?.toLocal(),
+        phone: j.str('phone').isEmpty ? null : j.str('phone'),
       );
+}
+
+/// The message a reply answers, shown as a small quote above it.
+class ChatQuote {
+  const ChatQuote({required this.id, required this.body, required this.hasImage, required this.mine});
+  final int id;
+  final String body;
+  final bool hasImage;
+  final bool mine;
+
+  factory ChatQuote.fromJson(Json j) => ChatQuote(id: j.integer('id'), body: j.str('body'), hasImage: j.flag('has_image'), mine: j.flag('mine'));
 }
 
 enum SendState { sent, sending, failed }
@@ -38,6 +58,7 @@ class ChatMessage {
     this.clientRef = '',
     this.state = SendState.sent,
     this.localImage,
+    this.replyTo,
   });
 
   final int id;
@@ -51,6 +72,9 @@ class ChatMessage {
   /// A photo picked on this phone, shown while it uploads.
   final Uint8List? localImage;
 
+  /// The message this one answers.
+  final ChatQuote? replyTo;
+
   bool get hasImage => (image != null && image!.isNotEmpty) || localImage != null;
 
   factory ChatMessage.fromJson(Json j) => ChatMessage(
@@ -60,6 +84,7 @@ class ChatMessage {
         createdAt: (j.date('created_at') ?? DateTime.now()).toLocal(),
         image: j.str('image').isEmpty ? null : j.str('image'),
         clientRef: j.str('client_ref'),
+        replyTo: j.obj('reply_to') == null ? null : ChatQuote.fromJson(j.obj('reply_to')!),
       );
 }
 
@@ -72,6 +97,7 @@ class ChatSummary {
     required this.canSend,
     this.last,
     this.lastAt,
+    this.otherReadAt,
   });
 
   final String id;
@@ -81,6 +107,11 @@ class ChatSummary {
   final int unread;
   final bool canSend;
 
+  /// Up to when the other person has read this chat (for ✓✓ on my last message).
+  final DateTime? otherReadAt;
+
+  bool get lastSeenByOther => last != null && last!.mine && otherReadAt != null && !last!.createdAt.isAfter(otherReadAt!);
+
   factory ChatSummary.fromJson(Json j) => ChatSummary(
         id: j.str('id'),
         other: ChatPerson.fromJson(j.obj('other') ?? const {}),
@@ -88,6 +119,7 @@ class ChatSummary {
         lastAt: j.date('last_message_at')?.toLocal(),
         unread: j.integer('unread'),
         canSend: j['can_send'] != false,
+        otherReadAt: j.date('other_read_at')?.toLocal(),
       );
 }
 
@@ -151,19 +183,24 @@ class ChatApi {
     );
   }
 
-  Future<ChatMessage> send(String id, {required String body, required String clientRef}) async =>
-      ChatMessage.fromJson(_map(await api.post('/chats/$id/messages/', {'body': body, 'client_ref': clientRef})));
+  Future<ChatMessage> send(String id, {required String body, required String clientRef, int? replyTo}) async =>
+      ChatMessage.fromJson(_map(await api.post('/chats/$id/messages/', {'body': body, 'client_ref': clientRef, if (replyTo != null) 'reply_to': replyTo})));
 
-  Future<ChatMessage> sendPhoto(String id, {required Uint8List bytes, required String filename, String body = '', required String clientRef}) async =>
+  Future<ChatMessage> sendPhoto(String id, {required Uint8List bytes, required String filename, String body = '', required String clientRef, int? replyTo}) async =>
       ChatMessage.fromJson(_map(await api.postWithFile(
         '/chats/$id/messages/',
         field: 'image',
         bytes: bytes,
         filename: filename,
-        fields: {'body': body, 'client_ref': clientRef},
+        fields: {'body': body, 'client_ref': clientRef, if (replyTo != null) 'reply_to': '$replyTo'},
       )));
 
   Future<void> markRead(String id) async => api.post('/chats/$id/read/');
+
+  /// One message to every student of a tuition (each gets it in their own chat).
+  /// Answers how many students it was sent to.
+  Future<int> broadcast(String tuitionId, String body, {required String clientRef}) async =>
+      _map(await api.post('/chats/broadcast/', {'tuition_id': tuitionId, 'body': body, 'client_ref': clientRef})).integer('students');
 }
 
 /// How many messages wait unread, shared by the chat buttons. Checked every
@@ -185,3 +222,14 @@ class ChatUnread extends ValueNotifier<int> {
 String newClientRef() => 'm${DateTime.now().microsecondsSinceEpoch}-${_random.nextInt(1 << 30)}';
 
 final _random = Random();
+
+/// "Active now", "Active 5 min ago", "Active 3 h ago", "Active yesterday" — or null when unknown.
+String? activeLabel(DateTime? lastSeen) {
+  if (lastSeen == null) return null;
+  final gap = DateTime.now().difference(lastSeen);
+  if (gap.inMinutes < 2) return tr('Active now');
+  if (gap.inMinutes < 60) return tr('Active {n} min ago', {'n': gap.inMinutes});
+  if (gap.inHours < 24) return tr('Active {n} h ago', {'n': gap.inHours});
+  if (gap.inDays == 1) return tr('Active yesterday');
+  return tr('Active {n} days ago', {'n': gap.inDays});
+}

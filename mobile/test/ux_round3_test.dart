@@ -83,10 +83,9 @@ void main() {
   });
 
   group('student reminders', () {
-    test('classes 30 minutes ahead and homework 2 hours before it is due', () {
+    test('homework 2 hours before it is due, and no class-time reminders', () {
       final due = DateTime(2026, 10, 11, 20);
       final reminders = studentReminders(
-        [_tuition(routine: [_slot('Sunday', '16:00')])],
         [
           {'id': 'h1', 'title': 'Chapter 4', 'due_date': due.toIso8601String()},
           {'id': 'h2', 'title': 'Done already', 'due_date': due.toIso8601String(), 'is_submitted': true},
@@ -94,11 +93,8 @@ void main() {
         ],
         _now,
       );
-      final classes = reminders.where((r) => r.key.startsWith('class:')).toList();
-      expect(classes.first.at, DateTime(2026, 10, 11, 15, 30));
-      expect(classes.first.body, 'Class with Ashraf Sir starts in 30 minutes.');
-      // Students never see the name the tutor gave the tuition.
-      expect(classes.first.title, isNot(contains('Physics')));
+      // Tutors often move classes, so students are never reminded of the routine's times.
+      expect(reminders.where((r) => r.key.startsWith('class:')), isEmpty);
       final homework = reminders.where((r) => r.key.startsWith('homework:')).toList();
       expect(homework.map((r) => r.key), ['homework:h1']);
       expect(homework.single.at, DateTime(2026, 10, 11, 18));

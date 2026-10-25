@@ -14,15 +14,21 @@ import '../common/notification_actions.dart';
 import '../common/payments_screen.dart';
 import 'exam_editor_screen.dart';
 import 'exams_view.dart';
+import 'homework_tab.dart';
 import 'tuition_form_screen.dart';
 
 class _TuitionData {
-  _TuitionData(this.tuition, this.cycles);
+  _TuitionData(this.tuition, this.cycles, this.homework);
   final Json tuition;
   final List<Json> cycles;
+
+  /// This tuition's homework (shared tasks and its students' copies), to show
+  /// under the class done on the day it was given.
+  final List<Json> homework;
 }
 
-/// One tuition: its shared class tracker, its students, and its exams.
+/// One tuition: classes (pies, mark the next class, what was taught and the
+/// homework given each day), its students, its homework and its exams.
 class TuitionScreen extends StatefulWidget {
   const TuitionScreen({super.key, required this.tuitionId});
   final String tuitionId;
@@ -34,11 +40,34 @@ class TuitionScreen extends StatefulWidget {
 class _TuitionScreenState extends State<TuitionScreen> {
   final _loader = GlobalKey<LoaderState<_TuitionData>>();
   int _examsVersion = 0;
+  int _homeworkVersion = 0;
+
+  Future<void> _newExam() async {
+    final changed = await Navigator.push<bool>(context, MaterialPageRoute(builder: (_) => ExamEditorScreen(initialTuitionId: widget.tuitionId)));
+    if (changed == true && mounted) setState(() => _examsVersion++);
+  }
+
+  Future<void> _newHomework() async {
+    final changed = await Navigator.push<bool>(context, MaterialPageRoute(builder: (_) => HomeworkCreateScreen(initialTuitionId: widget.tuitionId)));
+    if (changed == true && mounted) {
+      setState(() => _homeworkVersion++);
+      await _loader.currentState?.reload(quiet: true);
+    }
+  }
 
   Future<_TuitionData> _load() async {
     final repo = context.read<Repo>();
-    final results = await Future.wait<dynamic>([repo.tuition(widget.tuitionId), repo.cycles(widget.tuitionId)]);
-    return _TuitionData(results[0] as Json, results[1] as List<Json>);
+    final results = await Future.wait<dynamic>([
+      repo.tuition(widget.tuitionId),
+      repo.cycles(widget.tuitionId),
+      repo.homework().catchError((_) => <Json>[]),
+    ]);
+    final tuition = results[0] as Json;
+    final members = {for (final e in tuition.maps('enrollments')) e.str('student_id')};
+    final homework = (results[2] as List<Json>)
+        .where((h) => h.str('tuition_id') == widget.tuitionId || (h.str('tuition_id').isEmpty && members.contains(h.str('student_id'))))
+        .toList();
+    return _TuitionData(tuition, results[1] as List<Json>, homework);
   }
 
   Future<void> _edit(Json tuition) async {
@@ -64,16 +93,41 @@ class _TuitionScreenState extends State<TuitionScreen> {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 3,
+      length: 4,
       child: Loader<_TuitionData>(
         key: _loader,
         load: _load,
         scrollable: false,
         builder: (context, data, reload) {
           final tuition = data.tuition;
+          final students = tuition.maps('enrollments').length;
           return Scaffold(
             appBar: AppBar(
-              title: Text(tuition.str('title'), overflow: TextOverflow.ellipsis),
+              titleSpacing: 0,
+              title: Row(
+                children: [
+                  Container(width: 10, height: 10, decoration: BoxDecoration(color: tuitionColorOf(widget.tuitionId), shape: BoxShape.circle)),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(tuition.str('title'), maxLines: 1, overflow: TextOverflow.ellipsis),
+                        Text(
+                          [
+                            if (tuition.str('subject').isNotEmpty) tuition.str('subject'),
+                            tr('{p0} student{p1}', {'p0': students, 'p1': students == 1 ? '' : 's'}),
+                            if (tuition.obj('active_cycle') != null) tr('Cycle {n}', {'n': tuition.obj('active_cycle')!.integer('cycle_number', 1)}),
+                          ].join(' · '),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w400, color: context.tt.textSecondary),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
               actions: [
                 IconButton(
                   tooltip: tr('Payments'),
@@ -102,16 +156,25 @@ class _TuitionScreenState extends State<TuitionScreen> {
                   ],
                 ),
               ],
-              bottom: TabBar(tabs: [
-                Tab(text: tr('Classes')),
-                Tab(text: tr('Students ({p0})', {'p0': tuition.maps('enrollments').length})),
-                Tab(text: tr('Exams')),
-              ]),
+              bottom: TabBar(
+                isScrollable: true,
+                tabAlignment: TabAlignment.start,
+                tabs: [
+                  Tab(text: tr('Classes')),
+                  Tab(text: tr('Students ({p0})', {'p0': students})),
+                  Tab(text: tr('Homework')),
+                  Tab(text: tr('Exams')),
+                ],
+              ),
             ),
             body: TabBarView(
               children: [
-                RefreshIndicator(onRefresh: reload, child: _ClassesTab(data: data, reload: reload)),
+                RefreshIndicator(
+                  onRefresh: reload,
+                  child: _ClassesTab(data: data, reload: reload, onNewHomework: _newHomework, onNewExam: _newExam),
+                ),
                 RefreshIndicator(onRefresh: reload, child: _StudentsTab(tuition: tuition, reload: reload)),
+                HomeworkTab(key: ValueKey('tuition-homework-$_homeworkVersion'), tuitionId: widget.tuitionId),
                 ExamsView(key: ValueKey('tuition-exams-$_examsVersion'), tuitionId: widget.tuitionId),
               ],
             ),
@@ -119,16 +182,10 @@ class _TuitionScreenState extends State<TuitionScreen> {
               final controller = DefaultTabController.of(context);
               return AnimatedBuilder(
                 animation: controller,
-                builder: (context, _) => controller.index != 2
+                builder: (context, _) => controller.index != 3
                     ? const SizedBox.shrink()
                     : FloatingActionButton.extended(
-                        onPressed: () async {
-                          final changed = await Navigator.push<bool>(
-                            context,
-                            MaterialPageRoute(builder: (_) => ExamEditorScreen(initialTuitionId: widget.tuitionId)),
-                          );
-                          if (changed == true && mounted) setState(() => _examsVersion++);
-                        },
+                        onPressed: _newExam,
                         icon: const Icon(Icons.add),
                         label: Text(tr('New exam')),
                       ),
@@ -144,9 +201,11 @@ class _TuitionScreenState extends State<TuitionScreen> {
 // ── Classes: the shared cycle ────────────────────────────────────────────────
 
 class _ClassesTab extends StatelessWidget {
-  const _ClassesTab({required this.data, required this.reload});
+  const _ClassesTab({required this.data, required this.reload, required this.onNewHomework, required this.onNewExam});
   final _TuitionData data;
   final Future<void> Function() reload;
+  final Future<void> Function() onNewHomework;
+  final Future<void> Function() onNewExam;
 
   Future<void> _openClass(BuildContext context, Json entry) async {
     final tuition = data.tuition;
@@ -526,12 +585,33 @@ class _ClassesTab extends StatelessWidget {
     }
   }
 
+  static const _week = ['Saturday', 'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+
+  static List<Json> _sortedSlots(List<Json> slots) => [...slots]
+    ..sort((a, b) {
+      final byDay = _week.indexOf(normalizeDay(a.str('day'))).compareTo(_week.indexOf(normalizeDay(b.str('day'))));
+      return byDay != 0 ? byDay : minutesOf(slotStart(a)).compareTo(minutesOf(slotStart(b)));
+    });
+
+  /// Titles of the homework given on [day] (one per task, not one per student copy).
+  List<String> _homeworkOn(DateTime? day) {
+    if (day == null) return const [];
+    final titles = <String>{};
+    for (final h in data.homework) {
+      final at = h.date('created_at')?.toLocal();
+      if (at != null && at.year == day.year && at.month == day.month && at.day == day.day) titles.add(h.str('title'));
+    }
+    return titles.toList();
+  }
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final tuition = data.tuition;
     final cycle = tuition.obj('active_cycle');
     final wallet = tuition.obj('wallet_summary') ?? {};
+    final earned = wallet.number('earned_revenue');
+    final feeTotal = earned + wallet.number('pending_balance');
     final history = data.cycles.where((c) => c.str('status') == 'ARCHIVED').toList();
 
     if (cycle == null) {
@@ -564,47 +644,83 @@ class _ClassesTab extends StatelessWidget {
           ),
           gap8,
         ],
-        // The headline: how far this cycle has got.
+        // The headline: classes done and taka earned this cycle, then what to do next.
         AppCard(
+          padding: const EdgeInsets.fromLTRB(14, 18, 14, 16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Row(
                 children: [
-                  ProgressRing(done: done, total: total, size: 104, thickness: 10, caption: tr('classes done')),
-                  const SizedBox(width: 18),
                   Expanded(
                     child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(tr('Cycle #{p0}', {'p0': cycle.integer('cycle_number')}), style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 13)),
-                        Text(tr('{p0}/{p1} classes done', {'p0': done, 'p1': total}), style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
-                        const SizedBox(height: 2),
+                        ProgressRing(done: done, total: total, size: 108, thickness: 12, caption: tr('classes')),
+                        const SizedBox(height: 8),
                         Text(
-                          total - done <= 0 ? tr('All classes taught') : tr('{p0} class{p1} left', {'p0': total - done, 'p1': total - done == 1 ? '' : 'es'}),
-                          style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 13),
+                          total - done <= 0 ? tr('All classes taught') : tr('Classes done · {n} left', {'n': total - done}),
+                          textAlign: TextAlign.center,
+                          style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant),
                         ),
+                      ],
+                    ),
+                  ),
+                  Expanded(
+                    child: Column(
+                      children: [
+                        RingChart(
+                          value: feeTotal <= 0 ? 0 : earned / feeTotal,
+                          color: tuitionColorOf(tuition.str('id')),
+                          size: 108,
+                          thickness: 12,
+                          label: tr('Taka earned: {a} of {b}', {'a': Raw(taka(earned)), 'b': Raw(taka(feeTotal))}),
+                          center: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(taka(earned), style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: context.tt.success)),
+                              Text(tr('of {p0}', {'p0': taka(feeTotal)}), style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant)),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(tr('{p0} per class', {'p0': taka(wallet.number('per_class_rate'))}),
+                            textAlign: TextAlign.center, style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant)),
                       ],
                     ),
                   ),
                 ],
               ),
-              gap16,
-              Row(
-                children: [
-                  Expanded(child: Stat(label: tr('Earned'), value: taka(wallet.number('earned_revenue')), color: AppColors.success)),
-                  Expanded(child: Stat(label: tr('Still to earn'), value: taka(wallet.number('pending_balance')), color: AppColors.primarySoft)),
-                  Expanded(child: Stat(label: tr('Per class'), value: taka(wallet.number('per_class_rate')))),
-                ],
-              ),
               if (next != null) ...[
                 gap16,
                 FilledButton.icon(
+                  style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(50)),
                   onPressed: () => _quickMark(context, next),
-                  icon: const Icon(Icons.check),
+                  icon: const Icon(Icons.check_rounded),
                   label: Text(tr('Mark class {p0} done', {'p0': classNoOf(next)})),
                 ),
               ],
+              gap12,
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(46)),
+                      onPressed: onNewHomework,
+                      icon: const Icon(Icons.add_rounded, size: 18),
+                      label: Text(tr('Homework')),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(46)),
+                      onPressed: onNewExam,
+                      icon: const Icon(Icons.add_rounded, size: 18),
+                      label: Text(tr('Exam')),
+                    ),
+                  ),
+                ],
+              ),
               if (done == 0 && previous != null)
                 TextButton.icon(
                   onPressed: () => _reopen(context, previous),
@@ -625,46 +741,33 @@ class _ClassesTab extends StatelessWidget {
           BusyButton(onPressed: () => _startNext(context, cycle), label: tr('Start next cycle'), icon: Icons.restart_alt),
         ],
 
-        // Every class of the cycle as a tile: done, next, or still to come.
-        SectionTitle(tr('Classes'), subtitle: tr('Tap a class to mark it, change its date or topic, or set homework.')),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            for (final entry in classes)
-              _ClassTile(entry: entry, isNext: identical(entry, next), onTap: () => _openClass(context, entry)),
-          ],
-        ),
+        // The usual class days, as chips (today's highlighted).
+        if (tuition.maps('routine').isNotEmpty) ...[
+          SectionTitle(tr('Class days')),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final slot in _sortedSlots(tuition.maps('routine')))
+                _DayChip(slot: slot, today: normalizeDay(slot.str('day')) == weekdayName(DateTime.now())),
+            ],
+          ),
+        ],
 
-        // The log of what was taught, newest first.
-        SectionTitle(tr('Done classes ({p0}/{p1})', {'p0': done, 'p1': total}), icon: Icons.task_alt),
+        // What was taught, newest first, with the homework given that day. Tap to correct or undo.
+        SectionTitle(tr('Classes done ({p0}/{p1})', {'p0': done, 'p1': total}), icon: Icons.task_alt),
         if (doneClasses.isEmpty)
           Text(tr('No class marked done yet in this cycle.'), style: TextStyle(color: scheme.onSurfaceVariant))
         else
           AppCard(
-            padding: EdgeInsets.zero,
+            padding: const EdgeInsets.symmetric(vertical: 4),
             child: Column(
               children: [
                 for (var i = 0; i < doneClasses.length; i++) ...[
-                  if (i > 0) const Divider(indent: 64),
-                  ListTile(
-                    leading: CircleAvatar(
-                      backgroundColor: context.tt.successContainer,
-                      child: Text('${classNoOf(doneClasses[i])}',
-                          style: TextStyle(fontWeight: FontWeight.w800, color: tone(context, AppColors.success))),
-                    ),
-                    title: Text(
-                      doneClasses[i].str('topic').isNotEmpty ? doneClasses[i].str('topic') : tr('Class {p0}', {'p0': classNoOf(doneClasses[i])}),
-                      style: const TextStyle(fontWeight: FontWeight.w600),
-                    ),
-                    subtitle: Text(
-                      [
-                        if (doneClasses[i].str('topic').isNotEmpty) tr('Class {p0}', {'p0': classNoOf(doneClasses[i])}),
-                        fmtDate(doneClasses[i].date('date')),
-                      ].join(' · '),
-                      style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 13),
-                    ),
-                    trailing: const Icon(Icons.edit_outlined, size: 18),
+                  if (i > 0) Divider(height: 1, indent: 58, color: context.tt.border),
+                  _DoneClassRow(
+                    entry: doneClasses[i],
+                    homework: _homeworkOn(doneClasses[i].date('date')),
                     onTap: () => _openClass(context, doneClasses[i]),
                   ),
                 ],
@@ -710,51 +813,81 @@ class _ClassesTab extends StatelessWidget {
   }
 }
 
-/// One class of the cycle as a square: a tick when done, highlighted when it is next.
-class _ClassTile extends StatelessWidget {
-  const _ClassTile({required this.entry, required this.isNext, required this.onTap});
+/// "Sun · 5:00–6:30 PM", highlighted on today.
+class _DayChip extends StatelessWidget {
+  const _DayChip({required this.slot, required this.today});
+  final Json slot;
+  final bool today;
+
+  @override
+  Widget build(BuildContext context) {
+    final tt = context.tt;
+    final day = normalizeDay(slot.str('day'));
+    final end = slot.str('end_time');
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(color: today ? tt.primaryContainer : tt.card, borderRadius: BorderRadius.circular(12)),
+      child: Text(
+        '${day.isEmpty ? slot.str('day') : dayLabel(day)} · ${to12h(slotStart(slot))}${end.isEmpty ? '' : '–${to12h(end)}'}${today ? ' · ${tr('today')}' : ''}',
+        style: TextStyle(fontSize: 13, fontWeight: today ? FontWeight.w700 : FontWeight.w600, color: today ? tt.onPrimaryContainer : tt.textPrimary),
+      ),
+    );
+  }
+}
+
+/// "✓ Thu, 22 Oct · Energy · Homework: Exercise 3.2 — Class 7 ✎"
+class _DoneClassRow extends StatelessWidget {
+  const _DoneClassRow({required this.entry, required this.homework, required this.onTap});
   final Json entry;
-  final bool isNext;
+  final List<String> homework;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final done = entry.flag('completed');
-    final no = classNoOf(entry);
-    final Color fill = done
-        ? context.tt.successContainer
-        : isNext
-            ? context.tt.primaryContainer
-            : scheme.surfaceContainerHighest;
-    final Color edge = done ? context.tt.chartEarned : (isNext ? context.tt.primary : scheme.outline);
-    return Tooltip(
-      message: done ? tr('Class {p0} · {p1}', {'p0': no, 'p1': fmtShortDate(entry.date('date'))}) : (isNext ? tr('Class {p0} · next', {'p0': no}) : tr('Class {p0} · not yet', {'p0': no})),
-      child: Semantics(
-        button: true,
-        label: done ? tr('Class {p0}, done on {p1}', {'p0': no, 'p1': fmtDate(entry.date('date'))}) : tr('Class {p0}, {p1}', {'p0': no, 'p1': isNext ? tr('next') : tr('not done yet')}),
-        excludeSemantics: true,
-        child: Material(
-          color: fill,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: BorderSide(color: edge, width: isNext ? 2 : 1)),
-          clipBehavior: Clip.antiAlias,
-          child: InkWell(
-            onTap: onTap,
-            child: SizedBox(
-              width: 52,
-              height: 52,
+    final tt = context.tt;
+    final date = entry.date('date');
+    final topic = entry.str('topic');
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 10, 6, 10),
+        child: Row(
+          children: [
+            Container(
+              width: 30,
+              height: 30,
+              decoration: BoxDecoration(color: tt.successContainer, shape: BoxShape.circle),
+              child: Icon(Icons.check_rounded, size: 16, color: tt.onSuccessContainer),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
               child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('$no', style: TextStyle(fontWeight: FontWeight.w800, color: done || isNext ? scheme.onSurface : scheme.onSurfaceVariant)),
-                  if (done)
-                    Icon(Icons.check, size: 14, color: tone(context, AppColors.success))
-                  else if (isNext)
-                    Text(tr('next'), style: TextStyle(fontSize: 10, color: tone(context, AppColors.primarySoft))),
+                  Text(
+                    date == null ? tr('Class {p0}', {'p0': classNoOf(entry)}) : '${dayLabel(weekdayName(date))}, ${fmtShortDate(date)}',
+                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: tt.textPrimary),
+                  ),
+                  if (topic.isNotEmpty) Text(topic, maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 13, color: tt.textSecondary)),
+                  for (final title in homework)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 3),
+                      child: Text(
+                        tr('Homework: {title}', {'title': Raw(title)}),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: tone(context, AppColors.warning)),
+                      ),
+                    ),
                 ],
               ),
             ),
-          ),
+            Text(tr('Class {p0}', {'p0': classNoOf(entry)}), style: TextStyle(fontSize: 12, color: tt.textTertiary)),
+            Padding(
+              padding: const EdgeInsets.all(10),
+              child: Icon(Icons.edit_outlined, size: 18, color: tt.textTertiary),
+            ),
+          ],
         ),
       ),
     );

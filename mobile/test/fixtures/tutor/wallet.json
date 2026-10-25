@@ -3,9 +3,9 @@
  "total_tuitions": 2,
  "total_earned": 9250.0,
  "total_pending": 8750.0,
- "lifetime_archived_earnings": 0.0,
- "unpaid_cycles": 0,
- "unpaid_total": 0.0,
+ "lifetime_archived_earnings": 64500.0,
+ "unpaid_cycles": 2,
+ "unpaid_total": 3500.0,
  "chart_data": [
   {
    "name": "Earned",
@@ -48,5 +48,45 @@
    "progress_percentage": 58.0
   }
  ],
- "student_breakdowns": []
+ "student_breakdowns": [],
+ "unpaid_list": [
+  {
+   "cycle_id": "c0a1b2c3-0000-4000-8000-000000000001",
+   "tuition_id": "5a5b5c5d-0000-4000-8000-0000000000c1",
+   "tuition_title": "HSC Chemistry",
+   "cycle_number": 2,
+   "completed_classes": 12,
+   "total_classes": 12,
+   "amount": 2000.0,
+   "finished_at": "2026-10-13T18:25:15.445534Z"
+  },
+  {
+   "cycle_id": "c0a1b2c3-0000-4000-8000-000000000002",
+   "tuition_id": "5a5b5c5d-0000-4000-8000-0000000000c2",
+   "tuition_title": "Class 9 Higher Math",
+   "cycle_number": 1,
+   "completed_classes": 8,
+   "total_classes": 8,
+   "amount": 1500.0,
+   "finished_at": "2026-10-20T18:25:15.445534Z"
+  }
+ ],
+ "recent_paid": [
+  {
+   "cycle_id": "c0a1b2c3-0000-4000-8000-000000000003",
+   "tuition_id": "7f224607-d82e-4b5f-bb5c-d5cd601c2d45",
+   "tuition_title": "SSC Physics Batch A",
+   "cycle_number": 0,
+   "amount": 12000.0,
+   "paid_at": "2026-10-18T18:25:15.445534Z"
+  },
+  {
+   "cycle_id": "c0a1b2c3-0000-4000-8000-000000000004",
+   "tuition_id": "1ee06117-da03-4eff-9659-61ccda053a74",
+   "tuition_title": "Higher Math Weekend",
+   "cycle_number": 0,
+   "amount": 6000.0,
+   "paid_at": "2026-10-11T18:25:15.445534Z"
+  }
+ ]
 }

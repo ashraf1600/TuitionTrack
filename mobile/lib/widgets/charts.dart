@@ -95,3 +95,63 @@ class ProgressLine extends StatelessWidget {
     );
   }
 }
+
+/// A stable colour per tuition, shared by its classes, its card and its wallet
+/// slice. Never green, amber or red: those mean done/earned, due and late.
+const tuitionPalette = [
+  Color(0xFF5C95CB), // blue
+  Color(0xFF8E7CC3), // violet
+  Color(0xFF3FA3A8), // teal
+  Color(0xFFC77DAA), // pink
+  Color(0xFF6F86D6), // indigo
+  Color(0xFFB39A7A), // sand
+];
+
+Color tuitionColorOf(String tuitionId) {
+  var hash = 0;
+  for (final unit in tuitionId.codeUnits) {
+    hash = (hash * 31 + unit) & 0x7fffffff;
+  }
+  return tuitionPalette[hash % tuitionPalette.length];
+}
+
+/// A pie ring (filled share of [value] out of 1) with anything in the middle.
+class RingChart extends StatelessWidget {
+  const RingChart({super.key, required this.value, required this.color, required this.center, this.size = 96, this.thickness = 12, this.label});
+  final double value;
+  final Color color;
+  final Widget center;
+  final double size;
+  final double thickness;
+
+  /// Read by screen readers, e.g. "Taka earned: 7,000 of 12,000".
+  final String? label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      label: label,
+      excludeSemantics: label != null,
+      child: SizedBox.square(
+        dimension: size,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            CircularProgressIndicator(
+              value: value.isNaN ? 0 : value.clamp(0.0, 1.0),
+              strokeWidth: thickness,
+              color: color,
+              backgroundColor: context.tt.chartTrack,
+            ),
+            Center(
+              child: Padding(
+                padding: EdgeInsets.all(thickness + 2),
+                child: FittedBox(fit: BoxFit.scaleDown, child: center),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}

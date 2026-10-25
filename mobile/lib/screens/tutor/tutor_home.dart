@@ -6,15 +6,15 @@ import '../../widgets/offline_banner.dart';
 import '../../widgets/tt_logo.dart';
 import '../../widgets/update_banner.dart';
 import '../common/notifications.dart';
-import 'exam_editor_screen.dart';
-import 'exams_view.dart';
 import 'home_tab.dart';
-import 'homework_tab.dart';
 import 'student_form_screen.dart';
 import 'students_tab.dart';
 import 'tuition_form_screen.dart';
+import 'tuitions_tab.dart';
+import 'wallet_tab.dart';
 
-/// The tutor's app in four tabs. Tuitions live on the Overview, as cards.
+/// The tutor's app in four tabs: Overview (what to do now), Tuitions (cards;
+/// homework and exams live inside each tuition), Wallet (money) and Students.
 class TutorHome extends StatefulWidget {
   const TutorHome({super.key});
 
@@ -24,29 +24,25 @@ class TutorHome extends StatefulWidget {
 
 class _TutorHomeState extends State<TutorHome> {
   int _tab = 0;
-  // Bumped after something is created from the + button, so the visible tab reloads.
+  // Bumped after something is created, so the visible tab reloads.
   int _version = 0;
 
-  static const _titles = ['Overview', 'Students', 'Homework', 'Exams'];
+  static const _titles = ['Overview', 'Tuitions', 'Wallet', 'Students'];
 
-  Future<void> _create() async {
-    final Widget screen = switch (_tab) {
-      1 => const StudentFormScreen(),
-      2 => const HomeworkCreateScreen(),
-      3 => const ExamEditorScreen(),
-      _ => const TuitionFormScreen(),
-    };
+  Future<void> _create(Widget screen) async {
     final changed = await Navigator.push<bool>(context, MaterialPageRoute(builder: (_) => screen));
     if (changed == true && mounted) setState(() => _version++);
   }
 
+  Future<void> _newTuition() => _create(const TuitionFormScreen());
+
   @override
   Widget build(BuildContext context) {
     final body = switch (_tab) {
-      0 => HomeTab(key: ValueKey('home$_version'), onCreateTuition: _create),
-      1 => StudentsTab(key: ValueKey('students$_version')),
-      2 => HomeworkTab(key: ValueKey('homework$_version')),
-      _ => ExamsView(key: ValueKey('exams$_version')),
+      0 => HomeTab(key: ValueKey('home$_version'), onCreateTuition: _newTuition),
+      1 => TuitionsTab(key: ValueKey('tuitions$_version'), onCreateTuition: _newTuition),
+      2 => WalletTab(key: ValueKey('wallet$_version')),
+      _ => StudentsTab(key: ValueKey('students$_version')),
     };
     return Scaffold(
       appBar: AppBar(
@@ -56,21 +52,29 @@ class _TutorHomeState extends State<TutorHome> {
       ),
       drawer: const AppDrawer(),
       body: Column(children: [const OfflineBanner(), const UpdateBanner(), Expanded(child: body)]),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _create,
-        icon: const Icon(Icons.add),
-        label: Text(switch (_tab) { 1 => tr('Student'), 2 => tr('Homework'), 3 => tr('Exam'), _ => tr('Tuition') }),
-      ),
+      floatingActionButton: switch (_tab) {
+        1 => FloatingActionButton.extended(onPressed: _newTuition, icon: const Icon(Icons.add), label: Text(tr('Tuition'))),
+        3 => FloatingActionButton.extended(
+            onPressed: () => _create(const StudentFormScreen()),
+            icon: const Icon(Icons.add),
+            label: Text(tr('Student')),
+          ),
+        _ => null,
+      },
       bottomNavigationBar: NavigationBar(
         selectedIndex: _tab,
         height: 64,
         labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
         onDestinationSelected: (index) => setState(() => _tab = index),
         destinations: [
-          NavigationDestination(icon: Icon(Icons.space_dashboard_outlined), selectedIcon: Icon(Icons.space_dashboard), label: tr('Overview')),
-          NavigationDestination(icon: Icon(Icons.person_outline), selectedIcon: Icon(Icons.person), label: tr('Students')),
-          NavigationDestination(icon: Icon(Icons.assignment_outlined), selectedIcon: Icon(Icons.assignment), label: tr('Homework')),
-          NavigationDestination(icon: Icon(Icons.quiz_outlined), selectedIcon: Icon(Icons.quiz), label: tr('Exams')),
+          NavigationDestination(icon: const Icon(Icons.space_dashboard_outlined), selectedIcon: const Icon(Icons.space_dashboard), label: tr('Overview')),
+          NavigationDestination(icon: const Icon(Icons.grid_view_outlined), selectedIcon: const Icon(Icons.grid_view_rounded), label: tr('Tuitions')),
+          NavigationDestination(
+            icon: const Icon(Icons.account_balance_wallet_outlined),
+            selectedIcon: const Icon(Icons.account_balance_wallet),
+            label: tr('Wallet'),
+          ),
+          NavigationDestination(icon: const Icon(Icons.person_outline), selectedIcon: const Icon(Icons.person), label: tr('Students')),
         ],
       ),
     );

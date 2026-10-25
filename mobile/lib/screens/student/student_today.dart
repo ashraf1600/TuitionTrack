@@ -4,7 +4,6 @@ import 'package:provider/provider.dart';
 import '../../core/connect.dart' show HomeworkItem, tutorSirName;
 import '../../core/i18n.dart';
 import '../../core/json.dart';
-import '../../core/reminder_plan.dart' show nextClass, whenLabel;
 import '../../core/session.dart';
 import '../../widgets/charts.dart';
 import '../../widgets/kit.dart';
@@ -128,7 +127,8 @@ class StudentTodayView extends StatelessWidget {
     return tr('{n} homework to do this week.', {'n': todo.length});
   }
 
-  /// A test that is open now, or the next class within a day and a half. Nothing otherwise.
+  /// A test that is open now. Nothing otherwise: no "next class" card, because tutors
+  /// often move classes and a countdown from the routine could be wrong.
   Widget? _hero(BuildContext context, DateTime now, List<Json> openExams) {
     if (openExams.isNotEmpty) {
       final exam = openExams.first;
@@ -153,23 +153,6 @@ class StudentTodayView extends StatelessWidget {
           icon: const Icon(Icons.play_arrow_rounded),
           label: Text(isAssignment ? tr('Open assignment') : tr('Start now')),
         ),
-      );
-    }
-    final next = nextClass(tuitions, now);
-    if (next != null && next.at.difference(now) < const Duration(hours: 36)) {
-      final subject = next.tuition.str('subject');
-      final tutor = tutorSirName(next.tuition);
-      return HeroCard(
-        eyebrow: tr('Next class'),
-        icon: Icons.event_available_rounded,
-        accent: AppColors.primary,
-        title: subject.isEmpty ? tr('Class') : subject,
-        subtitle: tutor.isEmpty ? null : tr('with {tutor}', {'tutor': Raw(tutor)}),
-        meta: [
-          Pill(whenLabel(next.at.toLocal(), now.toLocal()), icon: Icons.schedule_rounded, color: AppColors.primarySoft),
-          Pill(tr('in {t}', {'t': Raw(shortGap(next.at.difference(now)))}), color: AppColors.primarySoft),
-        ],
-        onTap: () => onOpenTutor(next.tuition.str('tutor_id'), tutor),
       );
     }
     return null;

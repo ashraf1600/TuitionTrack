@@ -9,7 +9,6 @@ import '../../core/i18n.dart';
 import '../../core/json.dart';
 import '../../core/repo.dart';
 import '../../core/session.dart';
-import '../../core/reminder_plan.dart' show nextClass, whenLabel;
 import '../../core/week_plan.dart' show weekOrder;
 import '../../widgets/kit.dart';
 import '../../widgets/theme.dart';
@@ -265,7 +264,7 @@ class _RoutineCard extends StatelessWidget {
   }
 }
 
-/// Who the tutor is and when the next class with them is.
+/// Who the tutor is. No "next class" time: tutors often move classes.
 class _TutorHeader extends StatelessWidget {
   const _TutorHeader({required this.detail});
   final _Detail detail;
@@ -275,8 +274,6 @@ class _TutorHeader extends StatelessWidget {
     final tt = context.tt;
     final tutor = detail.tutor;
     final name = tutor.str('display_name').isNotEmpty ? tutor.str('display_name') : tutor.str('username');
-    final now = context.read<Session>().api.serverNow;
-    final next = nextClass(detail.tuitions, now);
     return Row(
       children: [
         PersonAvatar(name: name, photo: tutor.str('profile_picture_url', tutor.str('profile_picture')), radius: 32),
@@ -286,25 +283,8 @@ class _TutorHeader extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(name, style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700, letterSpacing: -0.4, color: tt.textPrimary)),
-              const SizedBox(height: 4),
-              Row(
-                children: [
-                  Icon(Icons.event_available_rounded, size: 16, color: next == null ? tt.textTertiary : tone(context, AppColors.primarySoft)),
-                  const SizedBox(width: 6),
-                  Flexible(
-                    child: Text(
-                      next == null ? tr('No class coming up') : tr('Next class: {when}', {'when': whenLabel(next.at.toLocal(), now.toLocal())}),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        color: next == null ? tt.textSecondary : tone(context, AppColors.primarySoft),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
+              const SizedBox(height: 2),
+              Text(tr('Your tutor'), style: TextStyle(fontSize: 14, color: tt.textSecondary)),
             ],
           ),
         ),

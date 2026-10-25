@@ -12,6 +12,7 @@ import '../../core/session.dart';
 import '../../widgets/kit.dart' show shortWeekday;
 import '../../widgets/theme.dart';
 import '../../widgets/ui.dart';
+import 'broadcast_screen.dart';
 import 'chat_screen.dart';
 
 /// Opens the chat with [userId] (a tutor or student), making it if it is new.
@@ -132,7 +133,10 @@ class _ChatsScreenState extends State<ChatsScreen> {
   }
 
   Future<void> _open(ChatSummary chat) async {
-    await Navigator.push(context, MaterialPageRoute<void>(builder: (_) => ChatScreen(conversationId: chat.id, person: chat.other)));
+    await Navigator.push(
+      context,
+      MaterialPageRoute<void>(builder: (_) => ChatScreen(conversationId: chat.id, person: chat.other, unreadOnOpen: chat.unread)),
+    );
     await _load(quiet: true);
   }
 
@@ -196,6 +200,7 @@ class _ChatsScreenState extends State<ChatsScreen> {
                 : ListView(
                     padding: const EdgeInsets.only(bottom: 96),
                     children: [
+                      if (isTutor) _BroadcastEntry(onSent: () => _load(quiet: true)),
                       if (chats.length > 6)
                         Padding(
                           padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
@@ -238,6 +243,7 @@ class _ChatRow extends StatelessWidget {
     final preview = last == null
         ? ''
         : '${last.mine ? tr('You: ') : ''}${last.body.trim().isNotEmpty ? last.body.trim().split('\n').first : tr('📷 Photo')}';
+    final seenColor = tt.isDark ? const Color(0xFF5FD3C6) : const Color(0xFF1F7A72);
     return InkWell(
       onTap: onTap,
       child: Padding(
@@ -273,6 +279,11 @@ class _ChatRow extends StatelessWidget {
                   const SizedBox(height: 3),
                   Row(
                     children: [
+                      if (last != null && last.mine) ...[
+                        Icon(chat.lastSeenByOther ? Icons.done_all_rounded : Icons.done_rounded,
+                            size: 16, color: chat.lastSeenByOther ? seenColor : tt.textTertiary),
+                        const SizedBox(width: 4),
+                      ],
                       Expanded(
                         child: Text(
                           preview,
@@ -335,6 +346,7 @@ class _NoChats extends StatelessWidget {
         ),
         if (contacts.isNotEmpty) ...[
           gap16,
+          if (isTutor) _BroadcastEntry(onSent: () {}),
           for (final c in contacts) _ContactRow(contact: c, onTap: () => onOpen(c)),
         ],
       ],
@@ -401,6 +413,57 @@ class _ContactPickerState extends State<_ContactPicker> {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// "Message a whole tuition": the tutor's way to tell every student at once.
+class _BroadcastEntry extends StatelessWidget {
+  const _BroadcastEntry({required this.onSent});
+  final VoidCallback onSent;
+
+  @override
+  Widget build(BuildContext context) {
+    final tt = context.tt;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+      child: Material(
+        color: tt.primaryContainer.withValues(alpha: tt.isDark ? 0.6 : 1),
+        borderRadius: BorderRadius.circular(16),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: () async {
+            final sent = await Navigator.push<bool>(context, MaterialPageRoute(builder: (_) => const BroadcastScreen()));
+            if (sent == true) onSent();
+          },
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Row(
+              children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(color: tt.isDark ? const Color(0xFF2B4A6B) : tt.card, borderRadius: BorderRadius.circular(14)),
+                  child: Icon(Icons.campaign_outlined, color: tt.onPrimaryContainer),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(tr('Message a whole tuition'), style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: tt.textPrimary)),
+                      const SizedBox(height: 2),
+                      Text(tr('One message to every student; replies come back privately'),
+                          style: TextStyle(fontSize: 13, color: tt.textSecondary)),
+                    ],
+                  ),
+                ),
+                Icon(Icons.chevron_right_rounded, color: tt.textTertiary),
+              ],
+            ),
+          ),
         ),
       ),
     );
