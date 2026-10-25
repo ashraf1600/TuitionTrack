@@ -39,6 +39,27 @@ class TuitionBreakdownSerializer(serializers.Serializer):
     progress_percentage = serializers.FloatField()
 
 
+class UnpaidCycleSerializer(serializers.Serializer):
+    cycle_id = serializers.UUIDField()
+    tuition_id = serializers.UUIDField(allow_null=True)
+    tuition_title = serializers.CharField()
+    cycle_number = serializers.IntegerField()
+    completed_classes = serializers.IntegerField()
+    total_classes = serializers.IntegerField()
+    amount = serializers.FloatField()
+    # When the cycle was closed (its last change), i.e. since when the money is due.
+    finished_at = serializers.DateTimeField()
+
+
+class PaidCycleSerializer(serializers.Serializer):
+    cycle_id = serializers.UUIDField()
+    tuition_id = serializers.UUIDField(allow_null=True)
+    tuition_title = serializers.CharField()
+    cycle_number = serializers.IntegerField()
+    amount = serializers.FloatField()
+    paid_at = serializers.DateTimeField()
+
+
 class WalletAnalyticsSerializer(serializers.Serializer):
     total_students = serializers.IntegerField()
     total_tuitions = serializers.IntegerField()
@@ -48,6 +69,9 @@ class WalletAnalyticsSerializer(serializers.Serializer):
     # Finished cycles not marked paid yet, and what they come to.
     unpaid_cycles = serializers.IntegerField()
     unpaid_total = serializers.FloatField()
+    unpaid_list = UnpaidCycleSerializer(many=True)
+    # The last few cycles marked paid, newest first.
+    recent_paid = PaidCycleSerializer(many=True)
     chart_data = ChartItemSerializer(many=True)
     tuition_breakdowns = TuitionBreakdownSerializer(many=True)
     # Legacy 1-on-1 cycles that predate tuition groups.

@@ -169,3 +169,23 @@ class MetaAppUpdateTests(APITestCase):
         self.assertEqual(app['download_url'], 'https://example.com/TuitionTrack.apk')
         with override_settings(APP_DOWNLOAD_URL='http://example.com/x.apk'):
             self.assertEqual(self.client.get(reverse('api-meta')).data['app']['download_url'], '')
+
+
+class WalletListsTests(PaymentSetup):
+    def test_wallet_lists_unpaid_cycles_then_recent_payments(self):
+        self.finish_cycle()
+        wallet = self.client.get(reverse('wallet-analytics')).data
+        self.assertEqual(len(wallet['unpaid_list']), 1)
+        row = wallet['unpaid_list'][0]
+        self.assertEqual((row['tuition_title'], row['cycle_number'], row['amount']), ('Physics', 1, 3000.0))
+        self.assertEqual((row['completed_classes'], row['total_classes']), (3, 3))
+        self.assertTrue(row['finished_at'])
+        self.assertEqual(wallet['recent_paid'], [])
+
+        cycle = AttendanceCycle.objects.get(tuition_id=self.tuition_id, cycle_number=1)
+        cycle.set_payment(True)
+        wallet = self.client.get(reverse('wallet-analytics')).data
+        self.assertEqual(wallet['unpaid_list'], [])
+        self.assertEqual(wallet['recent_paid'][0]['cycle_number'], 1)
+        self.assertEqual(wallet['recent_paid'][0]['amount'], 3000.0)
+        self.assertTrue(wallet['recent_paid'][0]['paid_at'])

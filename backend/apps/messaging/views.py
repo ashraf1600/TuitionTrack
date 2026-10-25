@@ -9,6 +9,7 @@ GET  /api/v1/chats/<id>/                  one conversation
 GET  /api/v1/chats/<id>/messages/         ?after=<id> (new ones) | ?before=<id> (older), &limit=
 POST /api/v1/chats/<id>/messages/         {body, client_ref} or multipart {image, body, client_ref}
 POST /api/v1/chats/<id>/read/             everything up to now has been seen
+POST /api/v1/chats/broadcast/             tutor: {tuition_id, body} to every student of a tuition
 
 Students see their tutor as "Ashraf Sir". Sending needs the tutor and student
 to still be linked; reading an old conversation does not.
@@ -53,16 +54,32 @@ def display_name(person, viewer):
 
 
 def person_json(person, viewer, request):
-    return {
+    data = {
         'id': str(person.id),
         'name': display_name(person, viewer),
         'username': person.username,
         'role': person.role,
         'photo': _abs(request, person.profile_picture.url) if person.profile_picture else None,
+        'last_seen': _iso(person.last_seen_at),
+        'phone': None,
     }
+    # A tutor may call their student (or the guardian); a tutor's number is never handed out.
+    if viewer.role == 'TUTOR' and person.role == 'STUDENT':
+        profile = getattr(person, 'student_profile', None)
+        data['phone'] = person.phone or getattr(profile, 'parent_phone', '') or None
+    return data
 
 
 def message_json(message, viewer, request):
+    quote = None
+    if message.reply_to_id and message.reply_to is not None:
+        original = message.reply_to
+        quote = {
+            'id': original.id,
+            'body': original.body[:160],
+            'has_image': bool(original.image),
+            'mine': original.sender_id == viewer.id,
+        }
     return {
         'id': message.id,
         'body': message.body,
@@ -71,7 +88,16 @@ def message_json(message, viewer, request):
         'sender_id': str(message.sender_id),
         'client_ref': message.client_ref,
         'created_at': _iso(message.created_at),
+        'reply_to': quote,
     }
+
+
+def touch_last_seen(user):
+    """Notes that the user has the app open, at most once a minute."""
+    now = timezone.now()
+    if user.last_seen_at is None or (now - user.last_seen_at).total_seconds() > 60:
+        type(user).objects.filter(pk=user.pk).update(last_seen_at=now)
+        user.last_seen_at = now
 
 
 def _my_conversations(user):
@@ -114,13 +140,14 @@ class ChatListView(APIView):
 
     def get(self, request):
         user = request.user
+        touch_last_seen(user)
         convs = list(
             _with_unread(_my_conversations(user), user)
             .filter(last_message_at__isnull=False)
             .select_related('tutor', 'student')
             .order_by('-last_message_at')[:200]
         )
-        lasts = Message.objects.in_bulk([c.last_id for c in convs if c.last_id])
+        lasts = Message.objects.select_related('reply_to').in_bulk([c.last_id for c in convs if c.last_id])
         linked = linked_ids(user)
         results = [conversation_json(c, user, request, lasts.get(c.last_id), linked) for c in convs]
         return Response({'results': results, 'unread_total': sum(c.unread for c in convs)})
@@ -132,6 +159,7 @@ class UnreadView(APIView):
 
     def get(self, request):
         user = request.user
+        touch_last_seen(user)
         counts = [c.unread for c in _with_unread(_my_conversations(user), user).only('id')]
         return Response({'unread': sum(counts), 'conversations': sum(1 for n in counts if n)})
 
@@ -201,8 +229,9 @@ class MessagesView(APIView):
 
     def get(self, request, pk):
         user = request.user
+        touch_last_seen(user)
         conv = _conversation_for(request, pk)
-        qs = conv.messages.all()
+        qs = conv.messages.select_related('reply_to')
         try:
             limit = max(1, min(int(request.query_params.get('limit', 50)), MAX_PAGE))
             after = request.query_params.get('after')
@@ -257,10 +286,17 @@ class MessagesView(APIView):
             error = self._check_image(image)
             if error:
                 return Response({'image': [error], 'message': error}, status=status.HTTP_400_BAD_REQUEST)
+        reply_to = None
+        raw_reply = request.data.get('reply_to')
+        if raw_reply not in (None, ''):
+            try:
+                reply_to = conv.messages.get(pk=int(raw_reply))
+            except (ValueError, TypeError, Message.DoesNotExist):
+                return Response({'message': 'The message you replied to is not in this chat.'}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
             with transaction.atomic():
-                message = Message(conversation=conv, sender=user, body=body, client_ref=client_ref)
+                message = Message(conversation=conv, sender=user, body=body, client_ref=client_ref, reply_to=reply_to)
                 if image is not None:
                     ext = os.path.splitext(image.name or '')[1].lower() or '.jpg'
                     message.image.save(f'{conv.pk}-{uuid.uuid4().hex[:10]}{ext}', image, save=False)
@@ -292,6 +328,49 @@ class MessagesView(APIView):
         except UploadRejected as exc:
             return str(exc)
         return None
+
+
+class BroadcastView(APIView):
+    """A tutor sends one message to every student of a tuition: one copy in each
+    student's own chat, so replies come back privately."""
+    permission_classes = [IsAuthenticated]
+    throttle_scope = 'chat'
+    throttle_classes = [ScopedRateThrottle]
+
+    def post(self, request):
+        from apps.students.models import Tuition, TuitionEnrollment
+        user = request.user
+        if user.role != 'TUTOR':
+            return Response({'message': 'Only tutors can message a whole tuition.'}, status=status.HTTP_403_FORBIDDEN)
+        try:
+            tuition = Tuition.objects.get(pk=request.data.get('tuition_id'), tutor=user)
+        except (Tuition.DoesNotExist, ValueError, TypeError, DjangoValidationError):
+            return Response({'message': 'That tuition was not found.'}, status=status.HTTP_404_NOT_FOUND)
+        body = str(request.data.get('body') or '').strip()
+        if not body:
+            return Response({'message': 'Write a message.'}, status=status.HTTP_400_BAD_REQUEST)
+        if len(body) > Message.MAX_LENGTH:
+            return Response(
+                {'message': f'A message can be at most {Message.MAX_LENGTH} characters.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        ref = str(request.data.get('client_ref') or uuid.uuid4().hex)[:27]
+        students = [
+            e.student for e in TuitionEnrollment.objects.filter(
+                tuition=tuition, is_active=True, student__is_active=True,
+            ).select_related('student')
+        ]
+        sent = 0
+        with transaction.atomic():
+            for student in students:
+                conv, _ = Conversation.objects.get_or_create(tutor=user, student=student)
+                client_ref = f'{ref}:{student.id}'
+                if Message.objects.filter(sender=user, client_ref=client_ref).exists():
+                    continue
+                message = Message.objects.create(conversation=conv, sender=user, body=body, client_ref=client_ref)
+                Conversation.objects.filter(pk=conv.pk).update(last_message_at=message.created_at, tutor_read_at=message.created_at)
+                sent += 1
+        return Response({'sent': sent, 'students': len(students)}, status=status.HTTP_201_CREATED)
 
 
 class ReadView(APIView):

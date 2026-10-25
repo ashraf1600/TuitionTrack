@@ -75,8 +75,45 @@ class WalletAnalyticsView(APIView):
         )
 
         # Finished cycles the tutor has not marked paid yet (cash still to collect).
-        unpaid = [c for c in group_archived if c.payment_status == AttendanceCycle.Payment.PENDING]
+        group_archived = list(group_archived.select_related('tuition'))
+        unpaid = sorted(
+            (c for c in group_archived if c.payment_status == AttendanceCycle.Payment.PENDING),
+            key=lambda c: c.updated_at,
+        )
         unpaid_total = float(sum((c.earned_revenue for c in unpaid), zero))
+
+        def title_of(cycle):
+            return cycle.tuition.title if cycle.tuition_id else 'Deleted tuition'
+
+        unpaid_list = [
+            {
+                'cycle_id': c.id,
+                'tuition_id': c.tuition_id,
+                'tuition_title': title_of(c),
+                'cycle_number': c.cycle_number,
+                'completed_classes': c.completed_classes,
+                'total_classes': c.total_classes,
+                'amount': float(c.earned_revenue),
+                'finished_at': c.updated_at,
+            }
+            for c in unpaid
+        ]
+        paid = sorted(
+            (c for c in group_archived if c.payment_status == AttendanceCycle.Payment.PAID and c.paid_at),
+            key=lambda c: c.paid_at,
+            reverse=True,
+        )[:5]
+        recent_paid = [
+            {
+                'cycle_id': c.id,
+                'tuition_id': c.tuition_id,
+                'tuition_title': title_of(c),
+                'cycle_number': c.cycle_number,
+                'amount': float(c.earned_revenue),
+                'paid_at': c.paid_at,
+            }
+            for c in paid
+        ]
 
         students_per_tuition = {}
         for tuition_id in TuitionEnrollment.objects.filter(
@@ -125,6 +162,8 @@ class WalletAnalyticsView(APIView):
             'lifetime_archived_earnings': round(lifetime_archived, 2),
             'unpaid_cycles': len(unpaid),
             'unpaid_total': round(unpaid_total, 2),
+            'unpaid_list': unpaid_list,
+            'recent_paid': recent_paid,
             'chart_data': [
                 {'name': 'Earned', 'value': round(total_earned, 2), 'color': '#10B981'},
                 {'name': 'Pending', 'value': round(total_pending, 2), 'color': '#6366F1'},
