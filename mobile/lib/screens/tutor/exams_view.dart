@@ -20,8 +20,11 @@ class _ExamsData {
 
 /// The tutor's exams and assignments — all of them, or one tuition's.
 class ExamsView extends StatelessWidget {
-  const ExamsView({super.key, this.tuitionId});
+  const ExamsView({super.key, this.tuitionId, this.toGradeOnly = false});
   final String? tuitionId;
+
+  /// Only exams with handed-in answers that are not graded yet.
+  final bool toGradeOnly;
 
   @override
   Widget build(BuildContext context) {
@@ -32,6 +35,18 @@ class ExamsView extends StatelessWidget {
         return _ExamsData(results[0], results[1]);
       },
       builder: (context, data, reload) {
+        if (toGradeOnly) {
+          final waiting = data.exams.where((e) => e.integer('submissions_count') > e.integer('graded_count')).toList();
+          return PageBody(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+            children: [
+              if (waiting.isEmpty)
+                EmptyState(icon: Icons.task_alt_rounded, title: tr('Nothing to grade'), message: tr('Answers handed in for your exams appear here until you grade them.'))
+              else
+                for (final exam in waiting) ...[_ExamCard(exam: exam, tuitions: data.tuitions, reload: reload), gap12],
+            ],
+          );
+        }
         final drafts = data.exams.where((e) => !e.flag('is_published')).toList();
         final live = data.exams.where((e) => e.flag('is_published') && ['Scheduled', 'Running', 'Late'].contains(e.str('dynamic_status'))).toList();
         final finished = data.exams.where((e) => !drafts.contains(e) && !live.contains(e)).toList();

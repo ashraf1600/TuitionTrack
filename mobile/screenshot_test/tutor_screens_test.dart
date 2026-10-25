@@ -5,6 +5,7 @@ import 'package:tuitiontrack/core/app_keys.dart';
 import 'package:tuitiontrack/main.dart';
 import 'package:tuitiontrack/core/chat.dart';
 import 'package:tuitiontrack/screens/common/chat_screen.dart';
+import 'package:tuitiontrack/screens/common/broadcast_screen.dart';
 import 'package:tuitiontrack/screens/common/chats_screen.dart';
 import 'package:tuitiontrack/screens/tutor/homework_tab.dart';
 import 'package:tuitiontrack/screens/tutor/tuition_screen.dart';
@@ -98,5 +99,14 @@ void main() {
     ));
     await settle(tester);
     await shoot(tester, 'tutor_10_chat');
+  });
+
+  testWidgets('message a whole tuition', (tester) async {
+    await openApp(tester, size: phone);
+    rootNavigatorKey.currentState!.push(MaterialPageRoute<void>(
+      builder: (_) => const BroadcastScreen(initialText: 'No class today. We will meet on Thursday at 5 PM.'),
+    ));
+    await settle(tester);
+    await shoot(tester, 'tutor_11_broadcast');
   });
 }

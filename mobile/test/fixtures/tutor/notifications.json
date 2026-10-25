@@ -1,5 +1,5 @@
 {
- "count": 1,
+ "count": 4,
  "notifications": [
   {
    "id": "request-019273a5-bdb5-477c-858e-2759d7b3d983",
@@ -7,6 +7,30 @@
    "title": "Nabila Rahman wants to join you",
    "body": "I would like to join the Physics batch, Sir.",
    "when": "2026-10-22T18:25:15.164615Z",
+   "link": "/tutor"
+  },
+  {
+   "id": "grade-d40add53-6940-42a7-8c60-b8793ace3a4c-3",
+   "kind": "grade",
+   "title": "3 submissions to grade",
+   "body": "Weekly MCQ: Motion & Force",
+   "when": "2026-10-22T16:25:15.445534Z",
+   "link": "/tutor"
+  },
+  {
+   "id": "handed-in-aaaa0000-0000-4000-8000-000000000001-1",
+   "kind": "homework",
+   "title": "Rafi Ahmed handed in homework",
+   "body": "Exercise 3.2",
+   "when": "2026-10-22T15:25:15.445534Z",
+   "link": "/tutor"
+  },
+  {
+   "id": "handed-in-aaaa0000-0000-4000-8000-000000000002-1",
+   "kind": "homework",
+   "title": "Nabila Rahman handed in homework",
+   "body": "Exercise 3.2",
+   "when": "2026-10-22T13:25:15.445534Z",
    "link": "/tutor"
   }
  ]

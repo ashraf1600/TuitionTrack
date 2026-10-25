@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/api.dart';
 import '../../core/chat.dart';
@@ -25,11 +26,14 @@ import '../../widgets/ui.dart';
 /// that could not be sent stays with "Tap to retry". New messages are fetched
 /// every few seconds while the chat is open.
 class ChatScreen extends StatefulWidget {
-  const ChatScreen({super.key, required this.conversationId, this.person});
+  const ChatScreen({super.key, required this.conversationId, this.person, this.unreadOnOpen = 0});
   final String conversationId;
 
-  /// Shown in the title straight away; loaded from the server when not given.
+  /// Shown in the title straight away; refreshed from the server.
   final ChatPerson? person;
+
+  /// Messages that were unread when the chat was opened: a "new messages" line goes above them.
+  final int unreadOnOpen;
 
   @override
   State<ChatScreen> createState() => _ChatScreenState();
@@ -56,6 +60,12 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   bool _resumed = true;
   DateTime? _otherReadAt;
   Timer? _poll;
+
+  /// The message being answered (shown above the text box until sent).
+  ChatMessage? _replyTo;
+
+  /// The first message that was new when the chat opened.
+  int? _newFromId;
 
   @override
   void initState() {
@@ -92,10 +102,13 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       _error = null;
     });
     try {
-      if (_person == null) {
+      // Fresh details of the other person ("Active 5 min ago", phone for tutors).
+      try {
         final conv = await _api.conversation(widget.conversationId);
         _person = conv.other;
         _canSend = conv.canSend;
+      } on ApiException {
+        if (_person == null) rethrow;
       }
       final page = await _api.messages(widget.conversationId);
       if (!mounted) return;
@@ -103,6 +116,17 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         _messages
           ..clear()
           ..addAll(page.messages);
+        if (widget.unreadOnOpen > 0) {
+          var seen = 0;
+          for (final m in page.messages.reversed) {
+            if (m.mine) continue;
+            seen++;
+            if (seen == widget.unreadOnOpen) {
+              _newFromId = m.id;
+              break;
+            }
+          }
+        }
         _hasMore = page.hasMore;
         _canSend = page.canSend;
         _otherReadAt = page.otherReadAt;
@@ -204,8 +228,19 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     final body = _text.text.trim();
     if (body.isEmpty || !_canSend) return;
     HapticFeedback.lightImpact();
-    final message = ChatMessage(id: 0, body: body, mine: true, createdAt: DateTime.now(), clientRef: newClientRef(), state: SendState.sending);
-    setState(() => _messages.add(message));
+    final message = ChatMessage(
+      id: 0,
+      body: body,
+      mine: true,
+      createdAt: DateTime.now(),
+      clientRef: newClientRef(),
+      state: SendState.sending,
+      replyTo: _quoteOf(_replyTo),
+    );
+    setState(() {
+      _messages.add(message);
+      _replyTo = null;
+    });
     _text.clear();
     _jumpToBottom();
     _deliver(message);
@@ -215,8 +250,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     try {
       final saved = message.localImage != null
           ? await _api.sendPhoto(widget.conversationId,
-              bytes: message.localImage!, filename: 'photo.jpg', body: message.body, clientRef: message.clientRef)
-          : await _api.send(widget.conversationId, body: message.body, clientRef: message.clientRef);
+              bytes: message.localImage!, filename: 'photo.jpg', body: message.body, clientRef: message.clientRef, replyTo: message.replyTo?.id)
+          : await _api.send(widget.conversationId, body: message.body, clientRef: message.clientRef, replyTo: message.replyTo?.id);
       if (!mounted) return;
       setState(() => _merge([saved]));
     } on ApiException catch (error) {
@@ -229,26 +264,57 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     }
   }
 
+  static ChatQuote? _quoteOf(ChatMessage? m) =>
+      m == null || m.id == 0 ? null : ChatQuote(id: m.id, body: m.body, hasImage: m.hasImage, mine: m.mine);
+
+  void _reply(ChatMessage message) {
+    if (message.id == 0 || !_canSend) return;
+    HapticFeedback.selectionClick();
+    setState(() => _replyTo = message);
+    _focus.requestFocus();
+  }
+
+  /// The + button: a photo (camera or gallery), or the science keys.
+  Future<void> _more() async {
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      builder: (sheet) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(leading: const Icon(Icons.photo_camera_outlined), title: Text(tr('Take a photo')), onTap: () => Navigator.pop(sheet, 'camera')),
+            ListTile(leading: const Icon(Icons.photo_library_outlined), title: Text(tr('Choose from gallery')), onTap: () => Navigator.pop(sheet, 'gallery')),
+            ListTile(
+              leading: const Icon(Icons.functions_rounded),
+              title: Text(_science ? tr('Hide science keys') : tr('Science keys')),
+              subtitle: Text(tr('x², H₂O, fractions, Greek letters, units')),
+              onTap: () => Navigator.pop(sheet, 'science'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (choice == null || !mounted) return;
+    if (choice == 'science') {
+      setState(() => _science = !_science);
+      if (_science) _focus.requestFocus();
+      return;
+    }
+    await _pickPhoto(choice == 'camera' ? ImageSource.camera : ImageSource.gallery);
+  }
+
+  Future<void> _call(String phone) async {
+    final uri = Uri(scheme: 'tel', path: phone.replaceAll(RegExp(r'[^0-9+]'), ''));
+    if (!await launchUrl(uri) && mounted) showToast(context, tr('Could not start a call.'), error: true);
+  }
+
   void _retry(ChatMessage message) {
     HapticFeedback.lightImpact();
     setState(() => message.state = SendState.sending);
     _deliver(message);
   }
 
-  Future<void> _pickPhoto() async {
-    final source = await showModalBottomSheet<ImageSource>(
-      context: context,
-      builder: (context) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(leading: const Icon(Icons.photo_camera_outlined), title: Text(tr('Take a photo')), onTap: () => Navigator.pop(context, ImageSource.camera)),
-            ListTile(leading: const Icon(Icons.photo_library_outlined), title: Text(tr('Choose from gallery')), onTap: () => Navigator.pop(context, ImageSource.gallery)),
-          ],
-        ),
-      ),
-    );
-    if (source == null || !mounted) return;
+  Future<void> _pickPhoto(ImageSource source) async {
     XFile? file;
     try {
       // Big enough to read a page of handwriting, small enough to send quickly.
@@ -269,8 +335,12 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       clientRef: newClientRef(),
       state: SendState.sending,
       localImage: bytes,
+      replyTo: _quoteOf(_replyTo),
     );
-    setState(() => _messages.add(message));
+    setState(() {
+      _messages.add(message);
+      _replyTo = null;
+    });
     _jumpToBottom();
     _deliver(message);
   }
@@ -299,13 +369,27 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(person.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
-                        Text(person.isTutor ? tr('Your tutor') : tr('Student'),
-                            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w400, color: tt.textSecondary)),
+                        Text(
+                          activeLabel(person.lastSeen) ?? (person.isTutor ? tr('Your tutor') : tr('Student')),
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w400,
+                            color: activeLabel(person.lastSeen) == tr('Active now') ? tt.success : tt.textSecondary,
+                          ),
+                        ),
                       ],
                     ),
                   ),
                 ],
               ),
+        actions: [
+          if (person?.phone != null)
+            IconButton(
+              tooltip: tr('Call {name}', {'name': Raw(person!.name)}),
+              icon: const Icon(Icons.call_outlined),
+              onPressed: () => _call(person.phone!),
+            ),
+        ],
       ),
       body: Column(
         children: [
@@ -357,7 +441,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       rows.add(m);
     }
     final seenUpTo = _otherReadAt;
-    // "Seen" ticks on my messages up to the moment they opened the chat.
+    final lastMine = _messages.lastWhere((m) => m.mine && m.id > 0, orElse: () => ChatMessage(id: -1, body: '', mine: true, createdAt: DateTime(0)));
+    final lastIsMine = _messages.isNotEmpty && _messages.last.mine;
     return ListView.builder(
       controller: _scroll,
       reverse: true,
@@ -376,12 +461,29 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         final after = i + 1 < rows.length && rows[i + 1] is ChatMessage ? rows[i + 1] as ChatMessage : null;
         bool joined(ChatMessage? other) =>
             other != null && other.mine == m.mine && other.createdAt.difference(m.createdAt).abs() < const Duration(minutes: 5);
-        return _Bubble(
+        final seen = m.mine && m.id > 0 && seenUpTo != null && !m.createdAt.isAfter(seenUpTo);
+        final bubble = _Bubble(
           message: m,
-          joinedAbove: joined(before),
+          joinedAbove: joined(before) && m.id != _newFromId,
           joinedBelow: joined(after),
-          seen: m.mine && m.id > 0 && seenUpTo != null && !m.createdAt.isAfter(seenUpTo),
+          seen: seen,
           onRetry: () => _retry(m),
+          onReply: _canSend ? () => _reply(m) : null,
+          otherName: _person?.name ?? '',
+        );
+        final showSeen = lastIsMine && identical(m, lastMine) && seen;
+        if (m.id != _newFromId && !showSeen) return bubble;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (m.id == _newFromId) const _NewMessagesLine(),
+            bubble,
+            if (showSeen)
+              Padding(
+                padding: const EdgeInsets.only(top: 3, right: 4),
+                child: Text(tr('Seen'), textAlign: TextAlign.right, style: TextStyle(fontSize: 11, color: _seenColor(context))),
+              ),
+          ],
         );
       },
     );
@@ -390,72 +492,101 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   Widget _composer(BuildContext context) {
     final tt = context.tt;
     final canSend = _text.text.trim().isNotEmpty;
+    final reply = _replyTo;
     return Material(
       color: Theme.of(context).scaffoldBackgroundColor,
       child: SafeArea(
         top: false,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(4, 6, 8, 8),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
+          padding: const EdgeInsets.fromLTRB(8, 6, 8, 8),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              IconButton(
-                tooltip: tr('Send a photo'),
-                onPressed: _pickPhoto,
-                icon: Icon(Icons.add_photo_alternate_outlined, color: tt.textSecondary),
-              ),
-              IconButton(
-                tooltip: tr('Science keys'),
-                isSelected: _science,
-                onPressed: () {
-                  HapticFeedback.selectionClick();
-                  setState(() => _science = !_science);
-                  if (_science) _focus.requestFocus();
-                },
-                icon: Icon(Icons.functions_rounded, color: _science ? tt.primary : tt.textSecondary),
-              ),
-              Expanded(
-                child: Container(
-                  constraints: const BoxConstraints(minHeight: 44),
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  decoration: BoxDecoration(color: tt.card, borderRadius: BorderRadius.circular(22)),
-                  alignment: Alignment.centerLeft,
-                  child: TextField(
-                    controller: _text,
-                    focusNode: _focus,
-                    minLines: 1,
-                    maxLines: 5,
-                    textCapitalization: TextCapitalization.sentences,
-                    keyboardType: TextInputType.multiline,
-                    contextMenuBuilder: sciencePasteMenu,
-                    style: TextStyle(fontSize: 15, color: tt.textPrimary),
-                    decoration: InputDecoration(
-                      hintText: tr('Message'),
-                      filled: false,
-                      isDense: true,
-                      border: InputBorder.none,
-                      enabledBorder: InputBorder.none,
-                      focusedBorder: InputBorder.none,
-                      contentPadding: const EdgeInsets.symmetric(vertical: 12),
+              if (reply != null)
+                Container(
+                  margin: const EdgeInsets.only(bottom: 6),
+                  padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
+                  decoration: BoxDecoration(
+                    color: tt.card,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border(left: BorderSide(color: _seenColor(context), width: 3)),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(reply.mine ? tr('Replying to yourself') : tr('Replying to {name}', {'name': Raw(_person?.name ?? '')}),
+                                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: _seenColor(context))),
+                            Text(reply.body.isNotEmpty ? reply.body : tr('📷 Photo'),
+                                maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 13, color: tt.textSecondary)),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: tr('Cancel reply'),
+                        onPressed: () => setState(() => _replyTo = null),
+                        icon: Icon(Icons.close_rounded, size: 20, color: tt.textTertiary),
+                      ),
+                    ],
+                  ),
+                ),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  IconButton.filledTonal(
+                    tooltip: tr('Photo or science keys'),
+                    onPressed: _more,
+                    style: IconButton.styleFrom(minimumSize: const Size(44, 44), backgroundColor: tt.card, foregroundColor: _science ? tt.primary : tt.onPrimaryContainer),
+                    icon: Icon(_science ? Icons.functions_rounded : Icons.add_rounded, size: 22),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Container(
+                      constraints: const BoxConstraints(minHeight: 44),
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      decoration: BoxDecoration(color: tt.card, borderRadius: BorderRadius.circular(22)),
+                      alignment: Alignment.centerLeft,
+                      child: TextField(
+                        controller: _text,
+                        focusNode: _focus,
+                        minLines: 1,
+                        maxLines: 5,
+                        textCapitalization: TextCapitalization.sentences,
+                        keyboardType: TextInputType.multiline,
+                        contextMenuBuilder: sciencePasteMenu,
+                        style: TextStyle(fontSize: 15, color: tt.textPrimary),
+                        decoration: InputDecoration(
+                          hintText: tr('Message'),
+                          filled: false,
+                          isDense: true,
+                          border: InputBorder.none,
+                          enabledBorder: InputBorder.none,
+                          focusedBorder: InputBorder.none,
+                          contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
+                      ),
                     ),
                   ),
-                ),
-              ),
-              const SizedBox(width: 6),
-              AnimatedScale(
-                scale: canSend ? 1 : 0.85,
-                duration: const Duration(milliseconds: 150),
-                child: IconButton.filled(
-                  tooltip: tr('Send'),
-                  onPressed: canSend ? _send : null,
-                  style: IconButton.styleFrom(
-                    minimumSize: const Size(44, 44),
-                    backgroundColor: tt.primary,
-                    foregroundColor: tt.onPrimary,
-                    disabledBackgroundColor: tt.cardRaised,
+                  const SizedBox(width: 8),
+                  AnimatedScale(
+                    scale: canSend ? 1 : 0.88,
+                    duration: const Duration(milliseconds: 150),
+                    child: IconButton.filled(
+                      tooltip: tr('Send'),
+                      onPressed: canSend ? _send : null,
+                      style: IconButton.styleFrom(
+                        minimumSize: const Size(44, 44),
+                        backgroundColor: tt.primary,
+                        foregroundColor: tt.onPrimary,
+                        disabledBackgroundColor: tt.cardRaised,
+                      ),
+                      icon: const Icon(Icons.send_rounded, size: 20),
+                    ),
                   ),
-                  icon: const Icon(Icons.send_rounded, size: 20),
-                ),
+                ],
               ),
             ],
           ),
@@ -511,28 +642,76 @@ class _DayLabel extends StatelessWidget {
   }
 }
 
+/// Teal for "seen" ticks and reply quotes; readable on both themes.
+Color _seenColor(BuildContext context) => context.tt.isDark ? const Color(0xFF5FD3C6) : const Color(0xFF1F7A72);
+
+/// My bubbles: a deep blue in the dark theme (calmer than the bright primary), a pale blue in the light one.
+Color _mineFill(BuildContext context) => context.tt.isDark ? const Color(0xFF2B4A6B) : context.tt.primaryContainer;
+
+/// "──── New messages ────" above the first message that was unread.
+class _NewMessagesLine extends StatelessWidget {
+  const _NewMessagesLine();
+
+  @override
+  Widget build(BuildContext context) {
+    final tt = context.tt;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      child: Row(
+        children: [
+          Expanded(child: Divider(color: tt.primary.withValues(alpha: 0.4))),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            child: Text(tr('New messages'), style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: tt.primary)),
+          ),
+          Expanded(child: Divider(color: tt.primary.withValues(alpha: 0.4))),
+        ],
+      ),
+    );
+  }
+}
+
 class _Bubble extends StatelessWidget {
-  const _Bubble({required this.message, required this.joinedAbove, required this.joinedBelow, required this.seen, required this.onRetry});
+  const _Bubble({required this.message, required this.joinedAbove, required this.joinedBelow, required this.seen, required this.onRetry, this.onReply, this.otherName = ''});
   final ChatMessage message;
+
+  /// Shown on quotes of the other person's messages.
+  final String otherName;
   final bool joinedAbove;
   final bool joinedBelow;
   final bool seen;
   final VoidCallback onRetry;
+  final VoidCallback? onReply;
 
   void _actions(BuildContext context) {
-    if (message.body.isEmpty) return;
+    if (message.id == 0) return;
     HapticFeedback.mediumImpact();
     showModalBottomSheet<void>(
       context: context,
       builder: (sheet) => SafeArea(
-        child: ListTile(
-          leading: const Icon(Icons.copy_rounded),
-          title: Text(tr('Copy text')),
-          onTap: () async {
-            await Clipboard.setData(ClipboardData(text: message.body));
-            if (sheet.mounted) Navigator.pop(sheet);
-            if (context.mounted) showToast(context, tr('Copied.'));
-          },
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (onReply != null)
+              ListTile(
+                leading: const Icon(Icons.reply_rounded),
+                title: Text(tr('Reply')),
+                onTap: () {
+                  Navigator.pop(sheet);
+                  onReply!();
+                },
+              ),
+            if (message.body.isNotEmpty)
+              ListTile(
+                leading: const Icon(Icons.copy_rounded),
+                title: Text(tr('Copy text')),
+                onTap: () async {
+                  await Clipboard.setData(ClipboardData(text: message.body));
+                  if (sheet.mounted) Navigator.pop(sheet);
+                  if (context.mounted) showToast(context, tr('Copied.'));
+                },
+              ),
+          ],
         ),
       ),
     );
@@ -543,8 +722,8 @@ class _Bubble extends StatelessWidget {
     final tt = context.tt;
     final mine = message.mine;
     final failed = message.state == SendState.failed;
-    final ink = mine ? tt.onPrimary : tt.textPrimary;
-    final quiet = mine ? tt.onPrimary.withValues(alpha: 0.75) : tt.textTertiary;
+    final ink = tt.textPrimary;
+    final quiet = mine ? tt.textSecondary : tt.textTertiary;
     const big = Radius.circular(18);
     const small = Radius.circular(6);
     final radius = BorderRadius.only(
@@ -558,43 +737,63 @@ class _Bubble extends StatelessWidget {
       children: [
         Text(fmtTime(message.createdAt), style: TextStyle(fontSize: 11, color: quiet, fontFeatures: tabular)),
         if (mine) ...[
-          const SizedBox(width: 4),
+          const SizedBox(width: 3),
           Icon(
             switch (message.state) {
               SendState.sending => Icons.schedule_rounded,
               SendState.failed => Icons.error_outline_rounded,
               SendState.sent => seen ? Icons.done_all_rounded : Icons.done_rounded,
             },
-            size: 14,
-            color: failed ? tt.danger : (seen ? tt.onPrimary : quiet),
+            size: 15,
+            color: failed ? tt.danger : (seen ? _seenColor(context) : quiet),
           ),
         ],
       ],
     );
+    final quote = message.replyTo;
     final hasText = message.body.isNotEmpty;
     final bubble = Container(
       decoration: BoxDecoration(
-        color: failed ? tt.danger.withValues(alpha: 0.25) : (mine ? tt.primary : tt.card),
+        color: failed ? tt.danger.withValues(alpha: 0.25) : (mine ? _mineFill(context) : tt.card),
         borderRadius: radius,
       ),
       padding: message.hasImage ? const EdgeInsets.all(4) : const EdgeInsets.fromLTRB(12, 8, 10, 6),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.end,
+        crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (message.hasImage) _Photo(message: message, radius: radius),
-          if (hasText)
-            Padding(
-              padding: message.hasImage ? const EdgeInsets.fromLTRB(8, 6, 6, 0) : EdgeInsets.zero,
-              child: Align(
-                alignment: Alignment.centerLeft,
-                widthFactor: 1,
-                child: MathText(message.body, style: TextStyle(fontSize: 15, height: 1.35, color: ink)),
+          if (quote != null)
+            Container(
+              margin: EdgeInsets.only(bottom: 6, left: message.hasImage ? 4 : 0, right: message.hasImage ? 4 : 0, top: message.hasImage ? 4 : 0),
+              padding: const EdgeInsets.fromLTRB(10, 6, 10, 6),
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: tt.isDark ? 0.22 : 0.05),
+                borderRadius: BorderRadius.circular(8),
+                border: Border(left: BorderSide(color: _seenColor(context), width: 3)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(quote.mine ? tr('You') : otherName, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: _seenColor(context))),
+                  Text(quote.body.isNotEmpty ? quote.body : tr('📷 Photo'),
+                      maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 13, color: tt.textSecondary)),
+                ],
               ),
             ),
+          if (message.hasImage) _Photo(message: message, radius: radius),
+          // The time sits at the end of the last line when it fits, else on its own line.
           Padding(
-            padding: EdgeInsets.only(top: 2, right: message.hasImage ? 6 : 0, bottom: message.hasImage ? 2 : 0),
-            child: time,
+            padding: message.hasImage ? const EdgeInsets.fromLTRB(8, 6, 6, 2) : EdgeInsets.zero,
+            child: Wrap(
+              alignment: WrapAlignment.end,
+              crossAxisAlignment: WrapCrossAlignment.end,
+              spacing: 10,
+              runSpacing: 2,
+              children: [
+                if (hasText) MathText(message.body, style: TextStyle(fontSize: 15, height: 1.35, color: ink)),
+                Padding(padding: const EdgeInsets.only(bottom: 1), child: time),
+              ],
+            ),
           ),
         ],
       ),
@@ -605,8 +804,18 @@ class _Bubble extends StatelessWidget {
         crossAxisAlignment: mine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
         children: [
           ConstrainedBox(
-            constraints: BoxConstraints(maxWidth: MediaQuery.sizeOf(context).width * 0.78),
-            child: GestureDetector(onLongPress: () => _actions(context), onTap: failed ? onRetry : null, child: bubble),
+            constraints: BoxConstraints(maxWidth: MediaQuery.sizeOf(context).width * 0.8),
+            child: GestureDetector(
+              onLongPress: () => _actions(context),
+              onTap: failed ? onRetry : null,
+              // Swipe a message to the right to reply, as in other chat apps.
+              onHorizontalDragEnd: onReply == null || message.id == 0
+                  ? null
+                  : (details) {
+                      if ((details.primaryVelocity ?? 0) > 300) onReply!();
+                    },
+              child: bubble,
+            ),
           ),
           if (failed)
             Padding(
