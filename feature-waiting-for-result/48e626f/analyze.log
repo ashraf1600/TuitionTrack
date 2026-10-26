@@ -1,0 +1,7 @@
+Analyzing mobile...                                             
+
+   info • The import of 'dart:typed_data' is unnecessary because all of the used elements are also provided by the import of 'package:flutter/foundation.dart'. Try removing the import directive • lib/core/chat.dart:2:8 • unnecessary_import
+   info • The import of 'dart:typed_data' is unnecessary because all of the used elements are also provided by the import of 'package:flutter/services.dart'. Try removing the import directive • lib/screens/common/chat_screen.dart:2:8 • unnecessary_import
+   info • Constructors for public widgets should have a named 'key' parameter. Try adding a named parameter to the constructor • lib/screens/tutor/tuitions_tab.dart:309:9 • use_key_in_widget_constructors
+
+3 issues found. (ran in 15.8s)
