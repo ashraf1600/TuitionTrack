@@ -176,7 +176,7 @@ class _ResultRow extends StatelessWidget {
                       if (showTutor && tutorSirName(exam).isNotEmpty) tutorSirName(exam),
                       when,
                       if (!turnedIn) tr('Missed'),
-                      if (turnedIn && !released) tr('Submitted · waiting for result'),
+                      if (turnedIn && !released) tr('Waiting for result'),
                       if (result?.str('status') == 'DELAYED') tr('Late'),
                     ].join(' · '),
                     maxLines: 1,

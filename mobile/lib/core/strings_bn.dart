@@ -240,7 +240,6 @@ const bnStrings = <String, String>{
   'Results pending': 'ফলাফল অপেক্ষমাণ',
   'Waiting for result': 'ফলাফলের অপেক্ষায়',
   'Waiting': 'অপেক্ষায়',
-  'Submitted · waiting for result': 'জমা দেওয়া হয়েছে · ফলাফলের অপেক্ষায়',
   'Your tutor has not published the results yet.': 'আপনার টিউটর এখনো ফলাফল প্রকাশ করেননি।',
   'Your result is being prepared.': 'আপনার ফলাফল তৈরি হচ্ছে।',
   'Results will be published on {p0}.': 'ফলাফল প্রকাশিত হবে {p0}।',
