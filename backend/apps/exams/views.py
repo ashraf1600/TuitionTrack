@@ -89,7 +89,7 @@ class ExamViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         import uuid as _uuid
         user = self.request.user
-        qs = Exam.objects.select_related('tutor', 'student', 'tuition').prefetch_related('submissions')
+        qs = Exam.objects.select_related('tutor', 'student', 'tuition').prefetch_related('submissions', 'attempts')
 
         if user.role == 'TUTOR':
             qs = qs.filter(models.Q(tutor=user) | models.Q(tuition__tutor=user)).annotate(
