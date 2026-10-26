@@ -290,6 +290,7 @@ class ExamListSerializer(serializers.ModelSerializer):
             'is_graded': data['is_graded'],
             'obtained_marks': data['obtained_marks'],
             'status': data['status'],
+            'submitted_at': data['submitted_at'],
         }
 
 

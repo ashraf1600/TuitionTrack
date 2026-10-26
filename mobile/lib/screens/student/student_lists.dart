@@ -70,8 +70,13 @@ class _StudentExamsListState extends State<StudentExamsList> {
         .where((e) => !e.flag('has_submission') && !e.flag('can_submit') && (e.date('start_time')?.isAfter(now) ?? false))
         .toList()
       ..sort((a, b) => (a.date('start_time') ?? now).compareTo(b.date('start_time') ?? now));
+    // Handed in and waiting for marks first, then everything else newest first.
+    bool waiting(Json e) => e.flag('has_submission') && !e.flag('results_released');
     final done = exams.where((e) => !todo.contains(e) && !upcoming.contains(e)).toList()
-      ..sort((a, b) => (b.date('end_time') ?? now).compareTo(a.date('end_time') ?? now));
+      ..sort((a, b) {
+        if (waiting(a) != waiting(b)) return waiting(a) ? -1 : 1;
+        return (b.date('end_time') ?? now).compareTo(a.date('end_time') ?? now);
+      });
 
     if (exams.isEmpty) {
       return PageBody(children: [
@@ -171,12 +176,17 @@ class _ResultRow extends StatelessWidget {
                       if (showTutor && tutorSirName(exam).isNotEmpty) tutorSirName(exam),
                       when,
                       if (!turnedIn) tr('Missed'),
-                      if (turnedIn && !released) tr('Results pending'),
+                      if (turnedIn && !released) tr('Submitted · waiting for result'),
                       if (result?.str('status') == 'DELAYED') tr('Late'),
                     ].join(' · '),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: 12, color: !turnedIn ? tone(context, AppColors.danger) : tt.textSecondary),
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: !turnedIn
+                          ? tone(context, AppColors.danger)
+                          : (!released ? tone(context, AppColors.warning) : tt.textSecondary),
+                    ),
                   ),
                 ],
               ),
