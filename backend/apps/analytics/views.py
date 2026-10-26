@@ -246,7 +246,7 @@ class NotificationsView(APIView):
                     'Mark it paid when you receive the money.', cycle.updated_at, f'/tuitions/{cycle.tuition_id}',
                 )
 
-            # Homework handed in and waiting to be checked.
+            # A student says their homework is done: waiting for the tutor to check.
             from apps.students.models import Homework
             for hw in Homework.objects.filter(
                 tutor=user, is_evaluated=False, submitted_at__isnull=False, submitted_at__gte=now - timedelta(days=14),
@@ -254,7 +254,7 @@ class NotificationsView(APIView):
                 who = (hw.student.get_full_name() or hw.student.username) if hw.student_id else 'A student'
                 add(
                     f'handed-in-{hw.id}-{int(hw.submitted_at.timestamp())}', 'homework',
-                    f'{who} handed in homework', hw.title, hw.submitted_at, '/tutor',
+                    f'{who} says homework is done', hw.title, hw.submitted_at, '/tutor',
                 )
 
         elif user.role == 'STUDENT':
@@ -290,6 +290,16 @@ class NotificationsView(APIView):
                     add(f'soon-{exam.id}', 'soon', f'{noun} coming up: {exam.title}', 'opens', exam.start_time, '/student')
 
             recent = now - timedelta(days=14)
+            # Homework the tutor sent back as not done (until the student says done again).
+            from apps.students.services import student_homework
+            for hw in student_homework(user).filter(
+                returned_at__gte=recent, submitted_at__isnull=True, is_evaluated=False,
+            ).select_related('tutor')[:20]:
+                add(
+                    f'sent-back-{hw.id}-{int(hw.returned_at.timestamp())}', 'homework',
+                    f'{sir_name(hw.tutor)} says not done: {hw.title}', hw.tutor_feedback, hw.returned_at, '/student',
+                )
+
             for req in ConnectionRequest.objects.filter(
                 student=user, responded_at__gte=recent
             ).exclude(status=ConnectionRequest.Status.PENDING).select_related('tutor'):

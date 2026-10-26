@@ -536,9 +536,13 @@ class ExamWorkflowUpgradeTests(APITestCase):
         self.assertEqual(self.client.post(reverse('exam-start', kwargs={'pk': exam['id']})).status_code, status.HTTP_400_BAD_REQUEST)
         # Someone who has not started still can.
         self.assertTrue(self._student_rows(self.s2)[0]['can_submit'])
+        self.assertIsNone(self._student_rows(self.s2)[0]['attempt_deadline'])
         # Inside the grace period it is still open.
         ExamAttempt.objects.filter(exam_id=exam['id'], student=self.s1).update(started_at=self.now - timedelta(minutes=32))
-        self.assertTrue(self._student_rows(self.s1)[0]['can_submit'])
+        row = self._student_rows(self.s1)[0]
+        self.assertTrue(row['can_submit'])
+        self.assertIsNotNone(row['attempt_started_at'])
+        self.assertIsNotNone(row['attempt_deadline'])
 
     def test_assignment_accepts_late_work_until_cutoff(self):
         exam = self._create(category='ASSIGNMENT', exam_type='CQ', mcq_data=[], duration_minutes=45,

@@ -738,7 +738,9 @@ class HomeworkViewSet(viewsets.GenericViewSet):
     POST   /api/v1/homework/<id>/mark_done/     - Tutor marks as evaluated
     POST   /api/v1/homework/<id>/evaluate/      - Tutor sets is_evaluated true/false
     POST   /api/v1/homework/<id>/split/         - Tutor turns a group task into one copy per student
-    POST   /api/v1/homework/<id>/submit/        - Student submits a link and/or file
+    POST   /api/v1/homework/<id>/submit/        - Student says "done" (a link or file is optional)
+    POST   /api/v1/homework/<id>/undo_submit/   - Student takes back "done" before the tutor checks it
+    POST   /api/v1/homework/<id>/not_done/      - Tutor sends it back as not done (optional note)
 
     A group task (tuition set, no student) is shared. A student never writes on
     it: handing in work creates (or reuses) their own copy, and from then on
@@ -849,9 +851,10 @@ class HomeworkViewSet(viewsets.GenericViewSet):
 
         hw.is_evaluated = True
         hw.evaluated_at = timezone.now()
+        hw.returned_at = None
         if serializer.validated_data.get("feedback"):
             hw.tutor_feedback = serializer.validated_data["feedback"]
-        hw.save(update_fields=["is_evaluated", "evaluated_at", "tutor_feedback", "updated_at"])
+        hw.save(update_fields=["is_evaluated", "evaluated_at", "tutor_feedback", "returned_at", "updated_at"])
 
         return Response({
             "message": "Homework marked as done.",
@@ -924,7 +927,8 @@ class HomeworkViewSet(viewsets.GenericViewSet):
             if serializer.validated_data.get("submission_file"):
                 target.submission_file = serializer.validated_data["submission_file"]
             target.submitted_at = timezone.now()
-            target.save(update_fields=["submitted_online_url", "submission_file", "submitted_at", "updated_at"])
+            target.returned_at = None
+            target.save(update_fields=["submitted_online_url", "submission_file", "submitted_at", "returned_at", "updated_at"])
 
         return Response({
             "message": "Homework submission recorded.",
@@ -941,11 +945,66 @@ class HomeworkViewSet(viewsets.GenericViewSet):
         serializer.is_valid(raise_exception=True)
         hw.is_evaluated = serializer.validated_data["is_evaluated"]
         hw.evaluated_at = timezone.now() if hw.is_evaluated else None
+        if hw.is_evaluated:
+            hw.returned_at = None
         if serializer.validated_data.get("tutor_feedback"):
             hw.tutor_feedback = serializer.validated_data["tutor_feedback"]
-        hw.save(update_fields=["is_evaluated", "evaluated_at", "tutor_feedback", "updated_at"])
+        hw.save(update_fields=["is_evaluated", "evaluated_at", "tutor_feedback", "returned_at", "updated_at"])
         return Response({
             "message": "Homework evaluation updated.",
+            "homework": HomeworkSerializer(hw, context={"request": request}).data,
+        })
+
+    @staticmethod
+    def _clear_hand_in(hw):
+        hw.submitted_at = None
+        hw.submitted_online_url = ""
+        hw.submission_file = None
+
+    @action(detail=True, methods=["post"])
+    def undo_submit(self, request, pk=None):
+        """
+        POST /api/v1/homework/<id>/undo_submit/ — STUDENT ONLY.
+        Takes back "done" (a mistaken tap) while the tutor has not checked it yet.
+        """
+        from .serializers import HomeworkSerializer
+        if request.user.role != "STUDENT":
+            return Response({"error": "Only students can do this."}, status=status.HTTP_403_FORBIDDEN)
+        hw = get_object_or_404(self.get_queryset(), pk=pk)
+        if hw.student_id != request.user.id:
+            return Response({"error": "Nothing to take back."}, status=status.HTTP_400_BAD_REQUEST)
+        if hw.is_evaluated:
+            return Response({"error": "This homework has already been checked."}, status=status.HTTP_400_BAD_REQUEST)
+        self._clear_hand_in(hw)
+        hw.save(update_fields=["submitted_at", "submitted_online_url", "submission_file", "updated_at"])
+        return Response({"homework": HomeworkSerializer(hw, context={"request": request}).data})
+
+    @action(detail=True, methods=["post"], permission_classes=[IsAuthenticated, IsTutor])
+    def not_done(self, request, pk=None):
+        """
+        POST /api/v1/homework/<id>/not_done/ — TUTOR ONLY. Body: {"tutor_feedback": "..."} (optional).
+        The student said done but it is not: it goes back to them as to-do, with the note.
+        """
+        from .serializers import HomeworkSerializer
+        hw = get_object_or_404(self.get_queryset(), pk=pk)
+        if hw.student_id is None:
+            return Response(
+                {"error": "This task is shared by the whole tuition. Split it per student first."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        note = request.data.get("tutor_feedback", "") if isinstance(request.data, dict) else ""
+        self._clear_hand_in(hw)
+        hw.is_evaluated = False
+        hw.evaluated_at = None
+        hw.returned_at = timezone.now()
+        if isinstance(note, str):
+            hw.tutor_feedback = note.strip()[:2000]
+        hw.save(update_fields=[
+            "submitted_at", "submitted_online_url", "submission_file", "is_evaluated",
+            "evaluated_at", "returned_at", "tutor_feedback", "updated_at",
+        ])
+        return Response({
+            "message": "Sent back as not done.",
             "homework": HomeworkSerializer(hw, context={"request": request}).data,
         })
 

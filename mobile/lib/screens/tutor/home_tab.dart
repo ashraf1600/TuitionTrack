@@ -301,8 +301,11 @@ class _ToCheck extends StatelessWidget {
         _CheckRow(
           icon: Icons.menu_book_rounded,
           accent: AppColors.warning,
-          title: handedIn.length == 1 ? tr('1 homework handed in') : tr('{n} homework handed in', {'n': handedIn.length}),
-          subtitle: handedIn.map((n) => n.str('title').replaceAll(' handed in homework', '')).toSet().join(', '),
+          title: handedIn.length == 1 ? tr('1 homework says done') : tr('{n} homework say done', {'n': handedIn.length}),
+          subtitle: handedIn
+              .map((n) => n.str('title').replaceAll(' says homework is done', '').replaceAll(' handed in homework', ''))
+              .toSet()
+              .join(', '),
           onTap: () => _openList(context, 1),
         ),
       if (requests.isNotEmpty)

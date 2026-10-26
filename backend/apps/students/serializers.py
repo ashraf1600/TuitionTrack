@@ -750,7 +750,7 @@ class HomeworkSerializer(serializers.ModelSerializer):
             "student_id", "student_name", "tuition_id", "tuition_title",
             "is_group", "group_source_id", "client_ref", "class_id",
             "submitted_online_url", "submission_file_url", "submitted_at", "is_submitted",
-            "is_evaluated", "evaluated_at", "tutor_feedback",
+            "is_evaluated", "evaluated_at", "tutor_feedback", "returned_at",
             "created_at", "updated_at",
         ]
         read_only_fields = fields

@@ -250,7 +250,7 @@ class Repo {
   Future<Json> submitHomework(String id, String url) async {
     _refuseLocal(id);
     final data = await _sendOrKeep('POST', '/homework/$id/submit/', {'submitted_online_url': url},
-        kind: PendingKind.submitHomework, label: tr('Your homework link'), extra: {'homework_id': id});
+        kind: PendingKind.submitHomework, label: tr('Homework done'), extra: {'homework_id': id});
     return data.containsKey('homework') ? _map(data['homework']) : data;
   }
 
@@ -259,6 +259,20 @@ class Repo {
     _refuseLocal(id);
     final data = await _sendOrKeep('POST', '/homework/$id/evaluate/', {'is_evaluated': evaluated, 'tutor_feedback': feedback},
         kind: PendingKind.evaluateHomework, label: tr('Homework check'), extra: {'homework_id': id});
+    return data.containsKey('homework') ? _map(data['homework']) : data;
+  }
+
+  /// Student takes back "done" before the tutor has checked it.
+  Future<Json> undoHomeworkDone(String id) async {
+    _refuseLocal(id);
+    final data = _map(await api.post('/homework/$id/undo_submit/'));
+    return data.containsKey('homework') ? _map(data['homework']) : data;
+  }
+
+  /// Tutor: the student said done but it is not. Goes back to them as to-do, with [note].
+  Future<Json> homeworkNotDone(String id, {String note = ''}) async {
+    _refuseLocal(id);
+    final data = _map(await api.post('/homework/$id/not_done/', {'tutor_feedback': note}));
     return data.containsKey('homework') ? _map(data['homework']) : data;
   }
 
