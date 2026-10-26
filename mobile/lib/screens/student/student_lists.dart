@@ -389,8 +389,8 @@ class StudentExamCard extends StatelessWidget {
 
 enum _HomeworkView { todo, handedIn, checked }
 
-/// Student homework in three parts: still to do (grouped by when it is due),
-/// handed in and waiting for the tutor, and checked.
+/// Student homework in three parts: still to do (grouped by when it is due;
+/// work the tutor sent back is here too), said done and waiting for the tutor, and checked.
 class StudentHomeworkList extends StatefulWidget {
   const StudentHomeworkList({super.key, required this.items, required this.reload, this.showTutor = true});
 
@@ -433,7 +433,7 @@ class _StudentHomeworkListState extends State<StudentHomeworkList> {
     switch (view) {
       case _HomeworkView.todo:
         if (todo.isEmpty) {
-          body.add(EmptyState(icon: Icons.task_alt_rounded, title: tr('All done!'), message: tr('Nothing left to hand in.')));
+          body.add(EmptyState(icon: Icons.task_alt_rounded, title: tr('All done!'), message: tr('No homework left to do.')));
         } else {
           final today = DateTime(now.year, now.month, now.day);
           final groups = <String, List<HomeworkItem>>{};
@@ -458,7 +458,7 @@ class _StudentHomeworkListState extends State<StudentHomeworkList> {
         }
       case _HomeworkView.handedIn:
         if (handedIn.isEmpty) {
-          body.add(EmptyState(icon: Icons.outbox_rounded, title: tr('Nothing waiting'), message: tr('Homework you hand in waits here until your tutor checks it.')));
+          body.add(EmptyState(icon: Icons.hourglass_empty_rounded, title: tr('Nothing waiting'), message: tr('Homework you say is done waits here until your tutor checks it.')));
         } else {
           body.addAll(handedIn.map(card));
         }
@@ -476,7 +476,7 @@ class _StudentHomeworkListState extends State<StudentHomeworkList> {
         SegmentTabs<_HomeworkView>(
           options: [
             (_HomeworkView.todo, tr('To do'), todo.length),
-            (_HomeworkView.handedIn, tr('Handed in'), handedIn.length),
+            (_HomeworkView.handedIn, tr('Said done'), handedIn.length),
             (_HomeworkView.checked, tr('Checked'), null),
           ],
           selected: view,

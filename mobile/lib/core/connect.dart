@@ -104,6 +104,7 @@ class HomeworkItem {
     required this.studentName,
     this.isPending = false,
     this.createdAt,
+    this.returnedAt,
   });
   final String id;
   final String title;
@@ -133,6 +134,12 @@ class HomeworkItem {
   /// When the tutor gave it (to show it under that day's class).
   final DateTime? createdAt;
 
+  /// When the tutor said "not done" and sent it back (null otherwise).
+  final DateTime? returnedAt;
+
+  /// Sent back by the tutor and not done again yet.
+  bool get isSentBack => returnedAt != null && !isSubmitted && !isEvaluated;
+
   /// True for a group-shared row (one task, whole group) as opposed to a
   /// per-student copy that is reviewed and marked done individually.
   bool get isSharedGroupTask => tuitionId.isNotEmpty && studentId.isEmpty;
@@ -158,5 +165,6 @@ class HomeworkItem {
         studentName: j.str('student_name'),
         isPending: j.flag('pending_sync'),
         createdAt: j.date('created_at'),
+        returnedAt: j.date('returned_at'),
       );
 }

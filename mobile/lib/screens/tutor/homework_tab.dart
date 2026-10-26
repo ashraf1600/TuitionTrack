@@ -48,7 +48,7 @@ class HomeworkTab extends StatefulWidget {
 class _HomeworkTabState extends State<HomeworkTab> {
   final _key = GlobalKey<LoaderState<_HomeworkData>>();
   late String _filter = widget.initialFilter; // all | handed | pending | evaluated
-  static const _filterLabels = {'all': 'All', 'handed': 'Handed in', 'pending': 'Pending', 'evaluated': 'Evaluated'};
+  static const _filterLabels = {'all': 'All', 'handed': 'Says done', 'pending': 'Not done', 'evaluated': 'Done'};
 
   Future<_HomeworkData> _load() async {
     final repo = context.read<Repo>();
@@ -71,6 +71,14 @@ class _HomeworkTabState extends State<HomeworkTab> {
       ),
     );
     if (created == true) await _key.currentState?.reload();
+  }
+
+  Future<void> _edit(HomeworkItem hw, _HomeworkData data) async {
+    final saved = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(builder: (_) => HomeworkFormScreen(tuitions: data.tuitions, students: data.students, existing: hw)),
+    );
+    if (saved == true) await _key.currentState?.reload();
   }
 
   Future<void> _delete(HomeworkItem hw) async {
@@ -160,7 +168,7 @@ class _HomeworkTabState extends State<HomeworkTab> {
                 message: _filter == 'all'
                     ? tr('Assign homework to a tuition or a student to get started.')
                     : _filter == 'handed'
-                        ? tr('Homework your students hand in appears here until you check it.')
+                        ? tr('When a student says their homework is done, it waits here for you to check.')
                         : (_filter == 'pending' ? tr('No pending homework right now.') : tr('No evaluated homework right now.')),
               )
             else
@@ -173,6 +181,7 @@ class _HomeworkTabState extends State<HomeworkTab> {
                     await _key.currentState?.reload();
                   },
                   onDelete: () => _delete(hw),
+                  onEdit: () => _edit(hw, data),
                   onSplit: hw.isSharedGroupTask ? () => _split(hw, data.tuitions) : null,
                 ),
                 gap12,
@@ -187,10 +196,18 @@ class _HomeworkTabState extends State<HomeworkTab> {
 String _targetOf(HomeworkItem hw) => hw.studentName.isNotEmpty ? hw.studentName : hw.tuitionTitle;
 
 class _TutorHomeworkRow extends StatelessWidget {
-  const _TutorHomeworkRow({required this.hw, required this.onChanged, required this.onDelete, this.onSplit, this.showHeader = true});
+  const _TutorHomeworkRow({
+    required this.hw,
+    required this.onChanged,
+    required this.onDelete,
+    required this.onEdit,
+    this.onSplit,
+    this.showHeader = true,
+  });
   final HomeworkItem hw;
   final Future<void> Function() onChanged;
   final VoidCallback onDelete;
+  final VoidCallback onEdit;
   final VoidCallback? onSplit;
   final bool showHeader;
 
@@ -230,14 +247,27 @@ class _TutorHomeworkRow extends StatelessWidget {
           onChanged: onChanged,
           trailing: hw.isPending
               ? null
-              : IconButton(
-                  tooltip: tr('Delete homework'),
-                  visualDensity: VisualDensity.compact,
-                  icon: Icon(Icons.delete_outline_rounded, size: 20, color: tt.textTertiary),
-                  onPressed: () {
+              : PopupMenuButton<String>(
+                  tooltip: tr('More'),
+                  icon: Icon(Icons.more_vert_rounded, size: 20, color: tt.textTertiary),
+                  onSelected: (choice) {
                     HapticFeedback.lightImpact();
-                    onDelete();
+                    choice == 'edit' ? onEdit() : onDelete();
                   },
+                  itemBuilder: (_) => [
+                    PopupMenuItem(
+                      value: 'edit',
+                      child: ListTile(leading: const Icon(Icons.edit_outlined), title: Text(tr('Edit')), contentPadding: EdgeInsets.zero),
+                    ),
+                    PopupMenuItem(
+                      value: 'delete',
+                      child: ListTile(
+                        leading: Icon(Icons.delete_outline_rounded, color: tone(context, AppColors.danger)),
+                        title: Text(tr('Delete'), style: TextStyle(color: tone(context, AppColors.danger))),
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                    ),
+                  ],
                 ),
         ),
         if (!hw.isPending && onSplit != null)
@@ -277,13 +307,15 @@ class HomeworkCreateScreen extends StatelessWidget {
     );
   }
 }
-/// Create sheet: title + deadline required, tuition or student target,
-/// optional fan-out into one copy per student.
+/// Create (or, with [existing], edit) homework: title + deadline required,
+/// tuition or student target, optional fan-out into one copy per student.
+/// Editing changes the title, instructions and deadline; who it is for stays.
 class HomeworkFormScreen extends StatefulWidget {
-  const HomeworkFormScreen({super.key, required this.tuitions, required this.students, this.initialTuitionId});
+  const HomeworkFormScreen({super.key, required this.tuitions, required this.students, this.initialTuitionId, this.existing});
   final List<Json> tuitions;
   final List<Json> students;
   final String? initialTuitionId;
+  final HomeworkItem? existing;
 
   @override
   State<HomeworkFormScreen> createState() => _HomeworkFormScreenState();
@@ -299,10 +331,40 @@ class _HomeworkFormScreenState extends State<HomeworkFormScreen> {
   bool _showInstructions = false;
   DateTime _due = _at(1, 18);
 
+  bool get _editing => widget.existing != null;
+
   @override
   void initState() {
     super.initState();
     _tuitionId = widget.initialTuitionId;
+    final hw = widget.existing;
+    if (hw != null) {
+      _title.text = hw.title;
+      _desc.text = hw.description;
+      _showInstructions = hw.description.isNotEmpty;
+      _due = hw.dueDate.toLocal();
+    }
+  }
+
+  /// Saves the changed title, instructions and deadline.
+  Future<void> _saveEdit() async {
+    HapticFeedback.lightImpact();
+    final title = _title.text.trim();
+    if (title.isEmpty) {
+      showToast(context, tr('Title is required.'), error: true);
+      return;
+    }
+    final repo = context.read<Repo>();
+    final ok = await attempt(
+      context,
+      () => repo.updateHomework(widget.existing!.id, {
+        'title': title,
+        'description': _desc.text.trim(),
+        'due_date': _due.toUtc().toIso8601String(),
+      }),
+      success: tr('Homework updated.'),
+    );
+    if (ok && mounted) Navigator.pop(context, true);
   }
 
   /// [days] from today at [hour]:00.
@@ -322,6 +384,13 @@ class _HomeworkFormScreenState extends State<HomeworkFormScreen> {
     super.dispose();
   }
 
+  /// Who the homework being edited is for.
+  String get _editTarget {
+    final hw = widget.existing;
+    if (hw == null) return '';
+    return hw.studentName.isNotEmpty ? hw.studentName : hw.tuitionTitle;
+  }
+
   List<(String, String)> get _roster {
     final t = _tuition;
     if (t == null) return const [];
@@ -332,10 +401,11 @@ class _HomeworkFormScreenState extends State<HomeworkFormScreen> {
   }
 
   Future<void> _pickDue() async {
+    final first = _editing && _due.isBefore(DateTime.now()) ? _due : DateTime.now();
     final date = await showDatePicker(
       context: context,
       initialDate: _due,
-      firstDate: DateTime.now(),
+      firstDate: DateTime(first.year, first.month, first.day),
       lastDate: DateTime.now().add(const Duration(days: 365)),
     );
     if (date == null || !mounted) return;
@@ -455,7 +525,7 @@ class _HomeworkFormScreenState extends State<HomeworkFormScreen> {
     final targetName = _toGroup ? (tuition?.str('title') ?? tr('No tuitions yet')) : (student == null ? tr('No students yet') : _studentName(student));
     final quick = <(String, DateTime)>[(tr('Tomorrow'), _at(1, 18)), (tr('In 3 days'), _at(3, 18)), (tr('Next week'), _at(7, 18))];
     return Scaffold(
-      appBar: AppBar(title: Text(tr('Assign homework'))),
+      appBar: AppBar(title: Text(_editing ? tr('Edit homework') : tr('Assign homework'))),
       body: Column(
         children: [
           Expanded(
@@ -515,6 +585,22 @@ class _HomeworkFormScreenState extends State<HomeworkFormScreen> {
                   ),
                 ],
                 gap16,
+                if (_editing)
+                  FlatGroup(children: [
+                    PickerRow(
+                      leading: InitialAvatar(_editTarget, radius: 14),
+                      label: tr('For'),
+                      value: _editTarget,
+                      onTap: null,
+                    ),
+                    PickerRow(
+                      leading: Icon(Icons.calendar_month_outlined, size: 22, color: tone(context, AppColors.primarySoft)),
+                      label: tr('Due'),
+                      value: '${fmtShortDate(_due)}, ${dayLabel(weekdayName(_due))} · ${fmtTime(_due)}',
+                      onTap: _pickDue,
+                    ),
+                  ])
+                else ...[
                 SizedBox(
                   width: double.infinity,
                   child: SegmentedButton<bool>(
@@ -570,6 +656,7 @@ class _HomeworkFormScreenState extends State<HomeworkFormScreen> {
                       ),
                   ],
                 ),
+                ],
               ],
             ),
           ),
@@ -579,11 +666,13 @@ class _HomeworkFormScreenState extends State<HomeworkFormScreen> {
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
               child: SizedBox(
                 width: double.infinity,
-                child: BusyButton(
-                  label: _toGroup && _perStudent && roster.isNotEmpty ? tr('Assign to {p0} students', {'p0': roster.length}) : tr('Assign homework'),
-                  icon: Icons.send,
-                  onPressed: _title.text.trim().isEmpty ? null : _send,
-                ),
+                child: _editing
+                    ? BusyButton(label: tr('Save changes'), icon: Icons.check_rounded, onPressed: _title.text.trim().isEmpty ? null : _saveEdit)
+                    : BusyButton(
+                        label: _toGroup && _perStudent && roster.isNotEmpty ? tr('Assign to {p0} students', {'p0': roster.length}) : tr('Assign homework'),
+                        icon: Icons.send,
+                        onPressed: _title.text.trim().isEmpty ? null : _send,
+                      ),
               ),
             ),
           ),

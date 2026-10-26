@@ -239,7 +239,8 @@ class Homework(models.Model):
 
     Business rules:
       - Only a TUTOR can create / edit / mark homework as evaluated.
-      - A student can optionally submit an online URL.
+      - A student says "done" (submit, no link needed); the tutor confirms it
+        (evaluate / mark_done) or sends it back as not done (not_done).
       - `is_evaluated` is ONLY set to True by the tutor (physical review OR online check).
     """
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -330,6 +331,9 @@ class Homework(models.Model):
     )
     evaluated_at = models.DateTimeField(null=True, blank=True, verbose_name='Evaluated At')
     tutor_feedback = models.TextField(blank=True, verbose_name='Tutor Feedback')
+    # Set when the tutor says the work is not done and sends it back; cleared
+    # when the student says done again or the tutor marks it done.
+    returned_at = models.DateTimeField(null=True, blank=True, verbose_name='Sent Back At')
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

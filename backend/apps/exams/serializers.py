@@ -170,6 +170,8 @@ class ExamListSerializer(serializers.ModelSerializer):
     mcq_count = serializers.SerializerMethodField()
     results_released = serializers.SerializerMethodField()
     results_release_time = serializers.ReadOnlyField()
+    attempt_started_at = serializers.SerializerMethodField()
+    attempt_deadline = serializers.SerializerMethodField()
 
     class Meta:
         model = Exam
@@ -210,9 +212,27 @@ class ExamListSerializer(serializers.ModelSerializer):
             'graded_count',
             'assigned_count',
             'my_result',
+            'attempt_started_at',
+            'attempt_deadline',
             'created_at',
         ]
         read_only_fields = fields
+
+    def _my_attempt(self, obj):
+        """This student's attempt (attempts are prefetched by the list view)."""
+        request = self.context.get('request')
+        if not request or request.user.role != 'STUDENT':
+            return None
+        return next((a for a in obj.attempts.all() if a.student_id == request.user.id), None)
+
+    def get_attempt_started_at(self, obj):
+        attempt = self._my_attempt(obj)
+        return attempt.started_at if attempt else None
+
+    def get_attempt_deadline(self, obj):
+        """When a started timed test closes for this student (their timer, capped at the end)."""
+        attempt = self._my_attempt(obj)
+        return obj.personal_deadline(attempt.started_at) if attempt else None
 
     def get_tutor_name(self, obj):
         return obj.tutor.get_full_name() or obj.tutor.username

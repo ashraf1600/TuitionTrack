@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -56,7 +58,12 @@ class StudentTodayView extends StatelessWidget {
       ..sort((a, b) => (a.date('end_time') ?? now).compareTo(b.date('end_time') ?? now));
     final todo = homework.where((h) => !h.isSubmitted && !h.isEvaluated).toList()..sort((a, b) => a.dueDate.compareTo(b.dueDate));
     final percents = resultPercents(exams);
-    final hero = _hero(context, now, openExams);
+    final heroes = [for (final exam in openExams) _hero(context, now, exam)];
+    // Not open yet: listed with when they open, never startable before that.
+    final upcoming = exams
+        .where((e) => !e.flag('has_submission') && !e.flag('can_submit') && (e.date('start_time')?.isAfter(now) ?? false))
+        .toList()
+      ..sort((a, b) => (a.date('start_time') ?? now).compareTo(b.date('start_time') ?? now));
     // Handed in, marks not out yet: stays on Home so the student knows it arrived.
     final waiting = exams.where((e) => e.flag('has_submission') && !e.flag('results_released')).toList()
       ..sort((a, b) => (_submittedAt(b) ?? now).compareTo(_submittedAt(a) ?? now));
@@ -77,7 +84,12 @@ class StudentTodayView extends StatelessWidget {
         ),
         gap16,
       ],
-      if (hero != null) hero,
+      // Every test open right now, each with its own Start button.
+      for (final (i, hero) in heroes.indexed) ...[if (i > 0) gap12, hero],
+      if (upcoming.isNotEmpty) ...[
+        SectionHeader(tr('Upcoming tests'), count: upcoming.length, onAction: () => onOpenTab(StudentTab.tests)),
+        _UpcomingTests(exams: upcoming.take(3).toList(), reload: reload),
+      ],
       if (waiting.isNotEmpty) ...[
         SectionHeader(tr('Waiting for result'), count: waiting.length, onAction: () => onOpenTab(StudentTab.tests, results: true)),
         RowGroup(children: [
@@ -171,14 +183,15 @@ class StudentTodayView extends StatelessWidget {
     return tr('{n} homework to do this week.', {'n': todo.length});
   }
 
-  /// A test that is open now. Nothing otherwise: no "next class" card, because tutors
-  /// often move classes and a countdown from the routine could be wrong.
-  Widget? _hero(BuildContext context, DateTime now, List<Json> openExams) {
-    if (openExams.isNotEmpty) {
-      final exam = openExams.first;
+  /// One test that is open now. No "next class" card: tutors often move classes,
+  /// and a countdown from the routine could be wrong.
+  Widget _hero(BuildContext context, DateTime now, Json exam) {
+    {
       final isAssignment = exam.str('category') == 'ASSIGNMENT';
       final minutes = exam.integer('duration_minutes');
-      final end = exam.date('end_time') ?? now;
+      // A timed test already started runs to the student's own deadline.
+      final started = exam.date('attempt_started_at') != null;
+      final end = (started ? exam.date('attempt_deadline') : null) ?? exam.date('end_time') ?? now;
       return HeroCard(
         eyebrow: isAssignment ? tr('Assignment open') : tr('Live now'),
         live: !isAssignment,
@@ -195,11 +208,10 @@ class StudentTodayView extends StatelessWidget {
           style: FilledButton.styleFrom(backgroundColor: AppColors.successDeep, foregroundColor: Colors.white, minimumSize: const Size.fromHeight(50)),
           onPressed: () => takeExam(context, exam, reload),
           icon: const Icon(Icons.play_arrow_rounded),
-          label: Text(isAssignment ? tr('Open assignment') : tr('Start now')),
+          label: Text(isAssignment ? tr('Open assignment') : (started ? tr('Continue') : tr('Start now'))),
         ),
       );
     }
-    return null;
   }
 
   static DateTime? _submittedAt(Json exam) => exam.obj('my_result')?.date('submitted_at');
@@ -333,5 +345,74 @@ class _LatestResult extends StatelessWidget {
         ],
       ),
     );
+  }
+}
+
+// ── Upcoming tests ───────────────────────────────────────────────────────────
+
+/// Tests that have not opened yet, with a live "Opens in …". Tapping one says when
+/// it opens. When one reaches its start time the page reloads, and it moves up
+/// into a live card with Start.
+class _UpcomingTests extends StatefulWidget {
+  const _UpcomingTests({required this.exams, required this.reload});
+  final List<Json> exams;
+  final Future<void> Function() reload;
+
+  @override
+  State<_UpcomingTests> createState() => _UpcomingTestsState();
+}
+
+class _UpcomingTestsState extends State<_UpcomingTests> {
+  Timer? _timer;
+  bool _reloading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer.periodic(const Duration(seconds: 15), (_) => _tick());
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  void _tick() {
+    if (!mounted) return;
+    final now = context.read<Session>().api.serverNow;
+    final opened = widget.exams.any((e) => !(e.date('start_time')?.isAfter(now) ?? false));
+    if (opened && !_reloading) {
+      _reloading = true;
+      widget.reload().whenComplete(() => _reloading = false);
+    } else {
+      setState(() {}); // move the countdowns on
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final now = context.read<Session>().api.serverNow;
+    return RowGroup(children: [
+      for (final exam in widget.exams)
+        KitRow(
+          icon: exam.str('category') == 'ASSIGNMENT' ? Icons.assignment_outlined : Icons.event_note_rounded,
+          accent: AppColors.primarySoft,
+          title: exam.str('title'),
+          subtitle: [
+            if (tutorSirName(exam).isNotEmpty) tutorSirName(exam),
+            fmtDateTime(exam.date('start_time')),
+            if (exam.integer('duration_minutes') > 0) tr('{p0} min', {'p0': exam.integer('duration_minutes')}),
+          ].join(' · '),
+          trailing: DeadlineChip(at: exam.date('start_time') ?? now, now: now, kind: DeadlineKind.opens),
+          onTap: () => showToast(
+            context,
+            tr('"{p0}" opens {p1}. Start it here when it opens.', {
+              'p0': exam.str('title'),
+              'p1': Raw(fmtDateTime(exam.date('start_time'))),
+            }),
+          ),
+        ),
+    ]);
   }
 }

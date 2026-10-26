@@ -109,4 +109,13 @@ void main() {
     await settle(tester);
     await shoot(tester, 'tutor_11_broadcast');
   });
+
+  testWidgets('homework: says done, sent back, edit menu', (tester) async {
+    await openApp(tester, size: phone);
+    rootNavigatorKey.currentState!.push(MaterialPageRoute<void>(
+      builder: (_) => Scaffold(appBar: AppBar(title: const Text('Homework')), body: const HomeworkTab()),
+    ));
+    await settle(tester);
+    await shoot(tester, 'tutor_12_homework');
+  });
 }
