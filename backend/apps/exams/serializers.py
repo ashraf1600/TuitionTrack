@@ -246,7 +246,7 @@ class ExamListSerializer(serializers.ModelSerializer):
         request = self.context.get('request')
         if not request or request.user.role != 'STUDENT':
             return False
-        return self._get_submission(obj) is None and obj.can_submit()
+        return self._get_submission(obj) is None and obj.student_can_submit(request.user.id)
 
     def get_has_submission(self, obj):
         request = self.context.get('request')
@@ -466,7 +466,7 @@ class ExamDetailSerializer(serializers.ModelSerializer):
         sub = self._get_submission(obj)
         if sub:
             return False
-        return obj.can_submit()
+        return obj.student_can_submit(request.user.id)
 
     def get_mcq_data(self, obj):
         """The answer key goes to tutors only. Students get it from the result endpoint, once released."""

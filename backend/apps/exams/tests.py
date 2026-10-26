@@ -526,6 +526,20 @@ class ExamWorkflowUpgradeTests(APITestCase):
         self.assertEqual(ok.status_code, status.HTTP_201_CREATED, ok.data)
         self.assertEqual(ExamSubmission.objects.get(exam_id=exam['id'], student=self.s1).status, 'DELAYED')
 
+    def test_can_submit_follows_the_students_own_timer(self):
+        """Exam open for 2 more hours, but s1's 30 min + 5 min grace ran out: not open for s1."""
+        from apps.exams.models import ExamAttempt
+        exam = self._create(duration_minutes=30)
+        ExamAttempt.objects.create(exam_id=exam['id'], student=self.s1, started_at=self.now - timedelta(minutes=45))
+        self.assertFalse(self._student_rows(self.s1)[0]['can_submit'])
+        self.assertFalse(self.client.get(reverse('exam-detail', kwargs={'pk': exam['id']})).data['can_submit'])
+        self.assertEqual(self.client.post(reverse('exam-start', kwargs={'pk': exam['id']})).status_code, status.HTTP_400_BAD_REQUEST)
+        # Someone who has not started still can.
+        self.assertTrue(self._student_rows(self.s2)[0]['can_submit'])
+        # Inside the grace period it is still open.
+        ExamAttempt.objects.filter(exam_id=exam['id'], student=self.s1).update(started_at=self.now - timedelta(minutes=32))
+        self.assertTrue(self._student_rows(self.s1)[0]['can_submit'])
+
     def test_assignment_accepts_late_work_until_cutoff(self):
         exam = self._create(category='ASSIGNMENT', exam_type='CQ', mcq_data=[], duration_minutes=45,
                             late_submission_until=(self.now + timedelta(days=3)).isoformat())

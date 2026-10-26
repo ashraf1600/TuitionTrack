@@ -389,6 +389,19 @@ class Exam(models.Model):
         now = timezone.now()
         return self.start_time <= now <= self.final_deadline
 
+    def student_can_submit(self, student_id) -> bool:
+        """
+        can_submit() for one student: a timed exam they already opened closes when
+        their own timer (plus the grace period) runs out, even if it stays open for others.
+        Matches what the start and submit endpoints accept.
+        """
+        if not self.can_submit():
+            return False
+        attempt = next((a for a in self.attempts.all() if a.student_id == student_id), None)
+        if attempt is None:
+            return True
+        return self.submission_status_at(timezone.now(), attempt.started_at) is not None
+
 
 class ExamAttempt(models.Model):
     """
