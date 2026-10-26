@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/connect.dart' show HomeworkItem, tutorSirName;
+import '../../core/format.dart';
 import '../../core/i18n.dart';
 import '../../core/json.dart';
 import '../../core/session.dart';
@@ -56,6 +57,9 @@ class StudentTodayView extends StatelessWidget {
     final todo = homework.where((h) => !h.isSubmitted && !h.isEvaluated).toList()..sort((a, b) => a.dueDate.compareTo(b.dueDate));
     final percents = resultPercents(exams);
     final hero = _hero(context, now, openExams);
+    // Handed in, marks not out yet: stays on Home so the student knows it arrived.
+    final waiting = exams.where((e) => e.flag('has_submission') && !e.flag('results_released')).toList()
+      ..sort((a, b) => (_submittedAt(b) ?? now).compareTo(_submittedAt(a) ?? now));
 
     // Each thing appears once: the next class in the card on top, each tutor's
     // progress on their card (their routine is one tap away), homework in one
@@ -74,6 +78,24 @@ class StudentTodayView extends StatelessWidget {
         gap16,
       ],
       if (hero != null) hero,
+      if (waiting.isNotEmpty) ...[
+        SectionHeader(tr('Waiting for result'), count: waiting.length, onAction: () => onOpenTab(StudentTab.tests, results: true)),
+        RowGroup(children: [
+          for (final exam in waiting.take(3))
+            KitRow(
+              icon: Icons.hourglass_top_rounded,
+              accent: AppColors.warning,
+              title: exam.str('title'),
+              subtitle: [
+                if (tutorSirName(exam).isNotEmpty) tutorSirName(exam),
+                tr('Submitted {p0}', {'p0': fmtShortDate(_submittedAt(exam) ?? exam.date('end_time'))}),
+                if (exam.obj('my_result')?.str('status') == 'DELAYED') tr('Late'),
+              ].join(' · '),
+              trailing: Pill(tr('Waiting'), color: AppColors.warning),
+              onTap: () => openExamResult(context, exam),
+            ),
+        ]),
+      ],
       if (tutors.isNotEmpty) ...[
         SectionHeader(tr('Your tutors'), actionLabel: tr('Add'), onAction: onConnect),
         // One card per tuition: a student in Physics and Math with the same tutor gets two cards.
@@ -179,6 +201,8 @@ class StudentTodayView extends StatelessWidget {
     }
     return null;
   }
+
+  static DateTime? _submittedAt(Json exam) => exam.obj('my_result')?.date('submitted_at');
 
   static String _requestName(Json c) =>
       c.str('tutor_display_name').isNotEmpty ? c.str('tutor_display_name') : c.str('tutor_name');
