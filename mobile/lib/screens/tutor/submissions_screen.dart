@@ -317,7 +317,11 @@ class _GradeScreenState extends State<GradeScreen> {
                 ),
               ),
             gap8,
-            if (submission.str('text_answer').isEmpty && images.isEmpty)
+            if (submission.str('answer_link').isNotEmpty) ...[
+              AnswerLinkCard(submission.str('answer_link')),
+              gap12,
+            ],
+            if (submission.str('text_answer').isEmpty && images.isEmpty && submission.str('answer_link').isEmpty)
               Banner2(tr('This student did not hand in a written answer.'), color: AppColors.warning)
             else ...[
               if (submission.str('text_answer').isNotEmpty) ...[

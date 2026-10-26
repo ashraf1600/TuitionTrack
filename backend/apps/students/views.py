@@ -702,7 +702,7 @@ class TutorDetailForStudentView(APIView):
         from .services import student_homework
         homework_qs = student_homework(request.user).filter(
             tutor=tutor,
-        ).select_related("tutor", "student", "tuition").order_by("due_date")
+        ).select_related("tutor", "student", "tuition", "group_source").order_by("due_date")
 
         homework_data = HomeworkSerializer(
             homework_qs, many=True, context={"request": request}
@@ -712,10 +712,12 @@ class TutorDetailForStudentView(APIView):
             "tutor": tutor_data,
             "weekly_routine": [
                 {"day_of_week": r.day_of_week, "start_time": str(r.start_time),
-                 "end_time": str(r.end_time), "subject": r.subject} for r in routines
+                 "end_time": str(r.end_time), "subject": r.subject,
+                 "tuition_id": str(r.tuition_id) if r.tuition_id else None} for r in routines
             ],
             "upcoming_classes": [
-                {"scheduled_at": c.scheduled_at.strftime("%Y-%m-%dT%H:%M:%SZ"), "topic": c.topic}
+                {"scheduled_at": c.scheduled_at.strftime("%Y-%m-%dT%H:%M:%SZ"), "topic": c.topic,
+                 "tuition_id": str(c.tuition_id) if c.tuition_id else None}
                 for c in upcoming
             ],
             "homework": homework_data,
@@ -747,12 +749,12 @@ class HomeworkViewSet(viewsets.GenericViewSet):
     def get_queryset(self):
         from .models import Homework
         user = self.request.user
-        qs = Homework.objects.select_related("tutor", "student", "tuition")
+        qs = Homework.objects.select_related("tutor", "student", "tuition", "group_source")
         if user.role == "TUTOR":
             return qs.filter(tutor=user)
         if user.role == "STUDENT":
             from .services import student_homework
-            return student_homework(user).select_related("tutor", "student", "tuition")
+            return student_homework(user).select_related("tutor", "student", "tuition", "group_source")
         return Homework.objects.none()
 
     def _tutor_only(self, request, verb):
@@ -888,7 +890,7 @@ class HomeworkViewSet(viewsets.GenericViewSet):
                 Homework.objects.filter(group_source=hw).exclude(id__in=[c.id for c in copies]).values_list("id", flat=True)
             )
             hw.delete()
-            rows = Homework.objects.filter(id__in=copy_ids).select_related("tutor", "student", "tuition")
+            rows = Homework.objects.filter(id__in=copy_ids).select_related("tutor", "student", "tuition", "group_source")
 
         return Response({
             "message": f"Split into {len(copies)} individual copies.",

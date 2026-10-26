@@ -39,28 +39,35 @@ class ConnectedTutor {
 }
 
 class RoutineSlot {
-  RoutineSlot({required this.day, required this.start, required this.end, required this.subject});
+  RoutineSlot({required this.day, required this.start, required this.end, required this.subject, this.tuitionId = ''});
   final String day;
   final String start;
   final String end;
   final String subject;
+
+  /// The tuition this slot is for; empty for a one-to-one slot.
+  final String tuitionId;
 
   factory RoutineSlot.fromJson(Json j) => RoutineSlot(
         day: j.str('day_of_week').isNotEmpty ? j.str('day_of_week') : j.str('day'),
         start: j.str('start_time').isNotEmpty ? j.str('start_time') : j.str('time'),
         end: j.str('end_time'),
         subject: j.str('subject'),
+        tuitionId: j.str('tuition_id'),
       );
 }
 
 class ScheduledClass {
-  ScheduledClass({required this.at, required this.topic});
+  ScheduledClass({required this.at, required this.topic, this.tuitionId = ''});
   final DateTime at;
   final String topic;
 
+  /// The tuition this class is for; empty for a one-to-one class.
+  final String tuitionId;
+
   factory ScheduledClass.fromJson(Json j) {
     final dt = j.date('scheduled_at') ?? DateTime.now();
-    return ScheduledClass(at: dt, topic: j.str('topic'));
+    return ScheduledClass(at: dt, topic: j.str('topic'), tuitionId: j.str('tuition_id'));
   }
 }
 
@@ -92,6 +99,7 @@ class HomeworkItem {
     this.submissionFileUrl = '',
     this.tuitionId = '',
     this.tuitionTitle = '',
+    this.classId = '',
     required this.studentId,
     required this.studentName,
     this.isPending = false,
@@ -112,6 +120,10 @@ class HomeworkItem {
   final String sourceLabel;
   final String tuitionId;
   final String tuitionTitle;
+
+  /// The tuition (class) this homework belongs to — also for a student's own
+  /// copy of a group task. Empty for one-to-one homework.
+  final String classId;
   final String studentId;
   final String studentName;
 
@@ -141,6 +153,7 @@ class HomeworkItem {
         sourceLabel: j.str('source_label'),
         tuitionId: j.str('tuition_id'),
         tuitionTitle: j.str('tuition_title'),
+        classId: j.str('class_id', j.str('tuition_id')),
         studentId: j.str('student_id'),
         studentName: j.str('student_name'),
         isPending: j.flag('pending_sync'),

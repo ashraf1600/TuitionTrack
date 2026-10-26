@@ -135,3 +135,48 @@ Future<List<String>> pickAndUpload(BuildContext context, {bool multiple = true})
   }
   return urls;
 }
+
+
+/// A student's written answer sheet, handed in as a link (Google Drive, Docs…):
+/// the address and one button to open it.
+class AnswerLinkCard extends StatelessWidget {
+  const AnswerLinkCard(this.url, {super.key, this.title});
+  final String url;
+  final String? title;
+
+  @override
+  Widget build(BuildContext context) {
+    final tt = context.tt;
+    final uri = Uri.tryParse(url);
+    return Material(
+      color: tt.primaryContainer,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () => openExternal(context, url),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
+          child: Row(
+            children: [
+              Icon(Icons.link_rounded, color: tt.onPrimaryContainer),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title ?? tr('Written answer sheet'),
+                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: tt.onPrimaryContainer)),
+                    Text(uri?.host.isNotEmpty == true ? uri!.host : url,
+                        maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12.5, color: tt.onPrimaryContainer)),
+                  ],
+                ),
+              ),
+              Text(tr('Open'), style: TextStyle(fontWeight: FontWeight.w700, color: tt.onPrimaryContainer)),
+              Icon(Icons.open_in_new_rounded, size: 18, color: tt.onPrimaryContainer),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}

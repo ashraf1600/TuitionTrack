@@ -166,6 +166,10 @@ class _Pending extends StatelessWidget {
             gap8,
           ],
         ],
+        if (submission.str('answer_link').isNotEmpty) ...[
+          SectionTitle(tr('Your written answer')),
+          AnswerLinkCard(submission.str('answer_link')),
+        ],
         if (submission.str('text_answer').isNotEmpty) ...[
           SectionTitle(tr('Your typed answer')),
           AppCard(child: SelectableText(submission.str('text_answer'))),
@@ -326,6 +330,10 @@ class _Released extends StatelessWidget {
                 ],
               ),
             ),
+          if (written.str('answer_link').isNotEmpty) ...[
+            SectionTitle(tr('Your written answer')),
+            AnswerLinkCard(written.str('answer_link')),
+          ],
           if (written.str('text_answer').isNotEmpty) ...[
             SectionTitle(tr('Your typed answer')),
             AppCard(child: SelectableText(written.str('text_answer'))),

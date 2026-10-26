@@ -33,6 +33,7 @@ class ExamSubmissionSerializer(serializers.ModelSerializer):
             'student_name',
             'submitted_at',
             'answers_data',
+            'answer_link',
             'text_answer',
             'image_urls',
             'started_at',
@@ -175,6 +176,7 @@ class ExamListSerializer(serializers.ModelSerializer):
         fields = [
             'id',
             'title',
+            'instructions',
             'category',
             'exam_type',
             'tutor',
@@ -322,10 +324,12 @@ class ExamDetailSerializer(serializers.ModelSerializer):
         fields = [
             'id',
             'title',
+            'instructions',
             'category',
             'exam_type',
             'content_html',
             'mcq_data',
+            'cq_data',
             'written_scheme',
             'solution_html',
             'solution_media_url',
@@ -571,6 +575,7 @@ class ExamResultSerializer(serializers.Serializer):
                 'scheme': [
                     {**item, 'awarded': breakdown.get(item['id'])} for item in (exam.written_scheme or [])
                 ],
+                'answer_link': submission.answer_link,
                 'text_answer': submission.text_answer,
                 'image_urls': submission.uploaded_images or submission.image_urls or [],
                 # A written part that has not been marked yet is "awaiting marking", not zero.
@@ -596,6 +601,7 @@ class ExamCreateUpdateSerializer(serializers.ModelSerializer):
         fields = [
             'id',
             'title',
+            'instructions',
             'category',
             'exam_type',
             'tuition_id',
@@ -604,6 +610,7 @@ class ExamCreateUpdateSerializer(serializers.ModelSerializer):
 
             'content_html',
             'mcq_data',
+            'cq_data',
             'written_scheme',
             'solution_html',
             'solution_media_url',
@@ -638,6 +645,53 @@ class ExamCreateUpdateSerializer(serializers.ModelSerializer):
         if value and not (value.startswith('/media/') or value.lower().startswith(('http://', 'https://'))):
             raise serializers.ValidationError('Use an uploaded file or a link that starts with https://.')
         return value
+
+    def validate_cq_data(self, value):
+        """Normalise creative questions to [{id, stem, image_url, parts: [{label, text, marks}]}]."""
+        import uuid
+        if value in (None, ''):
+            return []
+        if not isinstance(value, list):
+            raise serializers.ValidationError('Creative questions must be a list.')
+        if len(value) > 30:
+            raise serializers.ValidationError('An exam can have at most 30 creative questions.')
+        out = []
+        for idx, item in enumerate(value):
+            if not isinstance(item, dict):
+                raise serializers.ValidationError(f'Creative question #{idx + 1} must be an object.')
+            image = str(item.get('image_url') or '').strip()[:500]
+            if image and not (image.startswith('/media/') or image.lower().startswith(('http://', 'https://'))):
+                raise serializers.ValidationError(f'Creative question #{idx + 1}: unsafe picture link.')
+            raw_parts = item.get('parts') or []
+            if not isinstance(raw_parts, list) or len(raw_parts) > 8:
+                raise serializers.ValidationError(f'Creative question #{idx + 1}: at most 8 parts.')
+            parts = []
+            for p_idx, part in enumerate(raw_parts):
+                if not isinstance(part, dict):
+                    raise serializers.ValidationError(f'Creative question #{idx + 1}: part {p_idx + 1} must be an object.')
+                try:
+                    marks = round(float(part.get('marks') or 0), 2)
+                except (TypeError, ValueError):
+                    raise serializers.ValidationError(f'Creative question #{idx + 1}: part {p_idx + 1} needs a number of marks.') from None
+                if marks < 0:
+                    raise serializers.ValidationError(f'Creative question #{idx + 1}: marks cannot be negative.')
+                parts.append({
+                    'label': str(part.get('label') or '').strip()[:10],
+                    'text': str(part.get('text') or '')[:5000],
+                    'marks': marks,
+                })
+            item_id = str(item.get('id') or '')
+            try:
+                uuid.UUID(item_id)
+            except (ValueError, AttributeError):
+                item_id = str(uuid.uuid4())
+            out.append({
+                'id': item_id,
+                'stem': str(item.get('stem') or '')[:10000],
+                'image_url': image,
+                'parts': parts,
+            })
+        return out
 
     def validate_written_scheme(self, value):
         """Normalise to [{id, label, marks}] with server-made ids and positive marks."""
@@ -901,6 +955,7 @@ class ExamCreateUpdateSerializer(serializers.ModelSerializer):
 class SubmitExamSerializer(serializers.Serializer):
     """Validates payload for student exam submission."""
     answers_data = serializers.DictField(required=False, default=dict, child=serializers.CharField(max_length=5000))
+    answer_link = serializers.URLField(required=False, allow_blank=True, default='', max_length=1000)
     text_answer = serializers.CharField(required=False, allow_blank=True, default='', max_length=20000)
     uploaded_images = serializers.ListField(
         child=serializers.CharField(max_length=500),
@@ -918,6 +973,12 @@ class SubmitExamSerializer(serializers.Serializer):
     def validate_answers_data(self, value):
         if len(value) > 200:
             raise serializers.ValidationError('Too many answers (max 200).')
+        return value
+
+    def validate_answer_link(self, value):
+        value = (value or '').strip()
+        if value and not value.lower().startswith(('http://', 'https://')):
+            raise serializers.ValidationError('Paste a full link that starts with https://')
         return value
 
     def validate(self, attrs):

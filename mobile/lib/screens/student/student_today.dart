@@ -11,6 +11,7 @@ import '../../widgets/student_kit.dart';
 import '../../widgets/theme.dart';
 import '../../widgets/ui.dart';
 import 'student_lists.dart';
+import 'tutor_detail_screen.dart' show classLabel;
 
 /// Which tab of the student home to open, and which part of it.
 enum StudentTab { home, tests, homework }
@@ -38,7 +39,8 @@ class StudentTodayView extends StatelessWidget {
   final List<HomeworkItem> homework;
   final Future<void> Function() reload;
   final void Function(StudentTab tab, {bool results}) onOpenTab;
-  final void Function(String tutorId, String name) onOpenTutor;
+  /// Opens a tutor's page on one of their tuitions (null: the first one).
+  final void Function(String tutorId, String name, String? tuitionId) onOpenTutor;
 
   /// Opens "Connect to a tutor" (invite code, requests, search).
   final Future<void> Function() onConnect;
@@ -74,12 +76,14 @@ class StudentTodayView extends StatelessWidget {
       if (hero != null) hero,
       if (tutors.isNotEmpty) ...[
         SectionHeader(tr('Your tutors'), actionLabel: tr('Add'), onAction: onConnect),
-        for (final (i, tutor) in tutors.indexed) ...[
+        // One card per tuition: a student in Physics and Math with the same tutor gets two cards.
+        for (final (i, (tutor, tuition, label)) in _classCards().indexed) ...[
           if (i > 0) gap12,
           TutorCard(
             tutor: tutor,
-            tuitions: tuitions.where((t) => t.str('tutor_id') == tutor.str('id')).toList(),
-            onTap: () => onOpenTutor(tutor.str('id'), tutorCardName(tutor)),
+            tuitions: tuition == null ? const [] : [tuition],
+            classLabel: label,
+            onTap: () => onOpenTutor(tutor.str('id'), tutorCardName(tutor), tuition?.str('id')),
           ),
         ],
       ],
@@ -116,6 +120,24 @@ class StudentTodayView extends StatelessWidget {
       ],
     ];
     return PageBody(padding: const EdgeInsets.fromLTRB(16, 4, 16, 32), children: staggered(context, blocks));
+  }
+
+  /// (tutor, tuition, label) for each card: a tutor with no tuition yet still gets one card.
+  /// The label is the tuition's subject ("Physics"), shown when it tells two cards apart or says what the class is.
+  List<(Json, Json?, String)> _classCards() {
+    final cards = <(Json, Json?, String)>[];
+    for (final tutor in tutors) {
+      final mine = tuitions.where((t) => t.str('tutor_id') == tutor.str('id')).toList();
+      if (mine.isEmpty) {
+        cards.add((tutor, null, ''));
+        continue;
+      }
+      for (final (i, t) in mine.indexed) {
+        final hasSubject = t.str('subject').trim().isNotEmpty;
+        cards.add((tutor, t, mine.length > 1 || hasSubject ? classLabel(t, i) : ''));
+      }
+    }
+    return cards;
   }
 
   /// "2 things due today" style line under the greeting.
@@ -174,16 +196,18 @@ String tutorCardName(Json tutor) {
 /// classes done in the current cycle.
 /// Tap for the weekly routine and every class done.
 class TutorCard extends StatelessWidget {
-  const TutorCard({super.key, required this.tutor, required this.tuitions, required this.onTap});
+  const TutorCard({super.key, required this.tutor, required this.tuitions, required this.onTap, this.classLabel = ''});
   final Json tutor;
   final List<Json> tuitions;
   final VoidCallback onTap;
+
+  /// Which of the tutor's tuitions this card is ("Physics"); empty when there is nothing to tell apart.
+  final String classLabel;
 
   @override
   Widget build(BuildContext context) {
     final tt = context.tt;
     final name = tutorCardName(tutor);
-    // Subjects are not shown: a tutor teaches whatever the student needs.
     final perWeek = tuitions.fold<int>(0, (n, t) => n + t.maps('routine').length);
     var done = 0;
     var total = 0;
@@ -208,11 +232,14 @@ class TutorCard extends StatelessWidget {
                     style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, letterSpacing: -0.2, color: tt.textPrimary)),
                 const SizedBox(height: 2),
                 Text(
-                  tuitions.isEmpty
-                      ? tr('No classes yet')
-                      : perWeek == 1
-                          ? tr('1 class a week')
-                          : tr('{n} classes a week', {'n': perWeek}),
+                  [
+                    if (classLabel.isNotEmpty) classLabel,
+                    tuitions.isEmpty
+                        ? tr('No classes yet')
+                        : perWeek == 1
+                            ? tr('1 class a week')
+                            : tr('{n} classes a week', {'n': perWeek}),
+                  ].join(' · '),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(fontSize: 13, color: tt.textSecondary),
