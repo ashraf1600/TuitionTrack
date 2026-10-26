@@ -296,7 +296,14 @@ class Repo {
 
   // Student side
   Future<Json> startExam(String id) async => _map(await api.post('/exams/$id/start/'));
-  Future<Json> submitExam(String id, {required Json answers, required String text, required List<String> images}) async {
+  /// Hands in an exam: MCQ choices and, for the written part, a link to the answer sheet.
+  Future<Json> submitExam(
+    String id, {
+    required Json answers,
+    String answerLink = '',
+    String text = '',
+    List<String> images = const [],
+  }) async {
     // The backend serializer accepts ints natively and a single-letter string
     // for "A"–"E" answers, but rejects other shapes; we therefore type-coerce
     // each answer before posting. Falls back to a Stringified value when the
@@ -313,6 +320,7 @@ class Repo {
     });
     return _map(await api.post('/exams/$id/submit/', {
       'answers_data': typed,
+      'answer_link': answerLink,
       'text_answer': text,
       'image_urls': images,
       'uploaded_images': images,

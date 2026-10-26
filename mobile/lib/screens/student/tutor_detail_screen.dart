@@ -37,22 +37,39 @@ class _Detail {
 
 /// One tutor's page for a student: their classes (routine, class tracker,
 /// payment reminders), exams and homework — only what belongs to this tutor.
+///
+/// A student in two tuitions of the same tutor (say Physics and Math) never
+/// sees them merged: the page shows one tuition at a time, with a switch at
+/// the top, and each tuition keeps its own routine, classes done, exams and
+/// homework. One-to-one work from the tutor (not tied to a tuition) shows in
+/// each of them.
+///
 /// It refreshes by itself every 30 seconds while open, so a payment the tutor
 /// records or a class they mark shows up without pulling to refresh.
 class TutorDetailScreen extends StatefulWidget {
-  const TutorDetailScreen({super.key, required this.tutorId, required this.title});
+  const TutorDetailScreen({super.key, required this.tutorId, required this.title, this.tuitionId});
   final String tutorId;
   final String title;
+
+  /// The tuition to open on; null opens the first one.
+  final String? tuitionId;
 
   @override
   State<TutorDetailScreen> createState() => _TutorDetailScreenState();
 }
 
+/// What a student calls one of a tutor's tuitions: its subject, else "Class 2".
+/// Never the name the tutor gave the tuition.
+String classLabel(Json tuition, int index) {
+  final subject = tuition.str('subject').trim();
+  return subject.isNotEmpty ? subject : tr('Class {n}', {'n': index + 1});
+}
+
 class _TutorDetailScreenState extends State<TutorDetailScreen> {
   final _key = GlobalKey<LoaderState<_Detail>>();
   Timer? _refresh;
-  int _examCount = 0;
-  int _homeworkCount = 0;
+  _Detail? _all;
+  late String? _classId = widget.tuitionId;
 
   @override
   void initState() {
@@ -78,14 +95,7 @@ class _TutorDetailScreenState extends State<TutorDetailScreen> {
         return a.dueDate.compareTo(b.dueDate);
       });
     final exams = (results[2] as List<Json>).where((e) => e.str('tutor') == widget.tutorId).toList();
-    if (mounted) {
-      final now = context.read<Session>().api.serverNow;
-      setState(() {
-        _examCount = pendingExamCount(exams, now);
-        _homeworkCount = pendingHomeworkCount(homework);
-      });
-    }
-    return _Detail(
+    final all = _Detail(
       tutor: Map<String, dynamic>.from(d['tutor'] as Map? ?? {}),
       tuitions: (results[1] as List<Json>).where((t) => t.str('tutor_id') == widget.tutorId).toList(),
       legacyRoutine: rows('weekly_routine').map(RoutineSlot.fromJson).toList(),
@@ -93,10 +103,45 @@ class _TutorDetailScreenState extends State<TutorDetailScreen> {
       homework: homework,
       exams: exams,
     );
+    if (mounted) setState(() => _all = all);
+    return all;
+  }
+
+  /// The tuition on screen (null when the student has at most one with this tutor).
+  String? _selected(_Detail d) {
+    if (d.tuitions.length < 2) return null;
+    final ids = d.tuitions.map((t) => t.str('id')).toList();
+    return ids.contains(_classId) ? _classId : ids.first;
+  }
+
+  /// Only what belongs to the tuition on screen, plus one-to-one work.
+  _Detail _scope(_Detail d) {
+    final id = _selected(d);
+    if (id == null) return d;
+    bool mine(String tuitionId) => tuitionId.isEmpty || tuitionId == id;
+    return _Detail(
+      tutor: d.tutor,
+      tuitions: d.tuitions.where((t) => t.str('id') == id).toList(),
+      legacyRoutine: d.legacyRoutine.where((r) => mine(r.tuitionId)).toList(),
+      upcoming: d.upcoming.where((c) => mine(c.tuitionId)).toList(),
+      homework: d.homework.where((h) => mine(h.classId)).toList(),
+      exams: d.exams.where((e) => mine(e.str('tuition_id'))).toList(),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
+    final all = _all;
+    final scoped = all == null ? null : _scope(all);
+    final now = context.read<Session>().api.serverNow;
+    final examCount = scoped == null ? 0 : pendingExamCount(scoped.exams, now);
+    final homeworkCount = scoped == null ? 0 : pendingHomeworkCount(scoped.homework);
+    final selected = all == null ? null : _selected(all);
+    final tabs = TabBar(tabs: [
+      Tab(text: tr('Classes')),
+      Tab(child: countBadge(Text(tr('Exams')), examCount, offset: const Offset(14, -6))),
+      Tab(child: countBadge(Text(tr('Homework')), homeworkCount, offset: const Offset(14, -6))),
+    ]);
     return DefaultTabController(
       length: 3,
       child: Scaffold(
@@ -117,24 +162,42 @@ class _TutorDetailScreenState extends State<TutorDetailScreen> {
               ),
             ),
           ],
-          // How many exams and homework are waiting, so the student knows where to tap.
-          bottom: TabBar(tabs: [
-            Tab(text: tr('Classes')),
-            Tab(child: countBadge(Text(tr('Exams')), _examCount, offset: const Offset(14, -6))),
-            Tab(child: countBadge(Text(tr('Homework')), _homeworkCount, offset: const Offset(14, -6))),
-          ]),
+          // One tuition at a time (Physics / Math…), then how many exams and homework are waiting in it.
+          bottom: selected == null
+              ? tabs
+              : PreferredSize(
+                  preferredSize: Size.fromHeight(tabs.preferredSize.height + 60),
+                  child: Column(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+                        child: PillToggle<String>(
+                          options: [
+                            for (final (i, t) in all!.tuitions.indexed) (t.str('id'), classLabel(t, i), null),
+                          ],
+                          selected: selected,
+                          onChanged: (id) => setState(() => _classId = id),
+                        ),
+                      ),
+                      tabs,
+                    ],
+                  ),
+                ),
         ),
         body: Loader<_Detail>(
           key: _key,
           load: _load,
           scrollable: false,
-          builder: (context, d, reload) => TabBarView(
-            children: [
-              RefreshIndicator(onRefresh: reload, child: _ClassesTab(detail: d)),
-              RefreshIndicator(onRefresh: reload, child: StudentExamsList(exams: d.exams, reload: reload, showTutor: false)),
-              RefreshIndicator(onRefresh: reload, child: StudentHomeworkList(items: d.homework, reload: reload, showTutor: false)),
-            ],
-          ),
+          builder: (context, d, reload) {
+            final view = _scope(d);
+            return TabBarView(
+              children: [
+                RefreshIndicator(onRefresh: reload, child: _ClassesTab(detail: view)),
+                RefreshIndicator(onRefresh: reload, child: StudentExamsList(exams: view.exams, reload: reload, showTutor: false)),
+                RefreshIndicator(onRefresh: reload, child: StudentHomeworkList(items: view.homework, reload: reload, showTutor: false)),
+              ],
+            );
+          },
         ),
       ),
     );
@@ -171,7 +234,7 @@ class _ClassesTab extends StatelessWidget {
         ],
         if (detail.tuitions.isNotEmpty) ...[
           SectionHeader(tr('Classes done')),
-          // One date-wise list for this tutor, as they mark classes; no split by subject.
+          // Date-wise, as the tutor marks them — for the tuition on screen only.
           AppCard(
             child: ClassesDone(
               cycles: [
@@ -284,7 +347,13 @@ class _TutorHeader extends StatelessWidget {
             children: [
               Text(name, style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700, letterSpacing: -0.4, color: tt.textPrimary)),
               const SizedBox(height: 2),
-              Text(tr('Your tutor'), style: TextStyle(fontSize: 14, color: tt.textSecondary)),
+              // "Physics" when this page shows one tuition with a subject; otherwise just "Your tutor".
+              Text(
+                detail.tuitions.length == 1 && detail.tuitions.first.str('subject').trim().isNotEmpty
+                    ? detail.tuitions.first.str('subject').trim()
+                    : tr('Your tutor'),
+                style: TextStyle(fontSize: 14, color: tt.textSecondary),
+              ),
             ],
           ),
         ),

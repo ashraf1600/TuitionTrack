@@ -739,6 +739,7 @@ class HomeworkSerializer(serializers.ModelSerializer):
     is_submitted = serializers.SerializerMethodField()
     submission_file_url = serializers.SerializerMethodField()
     is_group = serializers.SerializerMethodField()
+    class_id = serializers.SerializerMethodField()
 
     class Meta:
         from .models import Homework
@@ -747,12 +748,23 @@ class HomeworkSerializer(serializers.ModelSerializer):
             "id", "title", "description", "due_date", "source_label",
             "tutor_id", "tutor_name", "tutor_display_name", "tutor_profile_picture",
             "student_id", "student_name", "tuition_id", "tuition_title",
-            "is_group", "group_source_id", "client_ref",
+            "is_group", "group_source_id", "client_ref", "class_id",
             "submitted_online_url", "submission_file_url", "submitted_at", "is_submitted",
             "is_evaluated", "evaluated_at", "tutor_feedback",
             "created_at", "updated_at",
         ]
         read_only_fields = fields
+
+    def get_class_id(self, obj):
+        """
+        The tuition this homework belongs to, so a student in several tuitions of
+        one tutor sees it under the right class. A student's personal copy of a
+        group task belongs to the group's tuition. None for one-to-one homework.
+        """
+        if obj.tuition_id:
+            return str(obj.tuition_id)
+        source = obj.group_source if obj.group_source_id else None
+        return str(source.tuition_id) if source and source.tuition_id else None
 
     def get_is_group(self, obj):
         """A shared task for a whole tuition group (no single student yet)."""

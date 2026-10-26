@@ -86,11 +86,13 @@ class _StudentHomeState extends State<StudentHome> {
     _loader.currentState?.reload(quiet: true);
   }
 
-  Future<void> _openTutor(String tutorId, String name) async {
+  Future<void> _openTutor(String tutorId, String name, String? tuitionId) async {
     if (tutorId.isEmpty) return;
     await Navigator.push(
       context,
-      MaterialPageRoute<void>(builder: (_) => TutorDetailScreen(tutorId: tutorId, title: name.isEmpty ? tr('Tutor') : name)),
+      MaterialPageRoute<void>(
+        builder: (_) => TutorDetailScreen(tutorId: tutorId, title: name.isEmpty ? tr('Tutor') : name, tuitionId: tuitionId),
+      ),
     );
     await _loader.currentState?.reload(quiet: true);
   }

@@ -82,6 +82,13 @@ class Exam(models.Model):
 
 
     title = models.CharField(max_length=255, verbose_name='Exam Title')
+    instructions = models.TextField(
+        blank=True,
+        default='',
+        max_length=2000,
+        verbose_name='Instructions',
+        help_text='Short rules printed at the top of the paper, e.g. "Answer any 3 CQ".',
+    )
 
     # Sanitized rich text / CQ questions from TipTap editor
     content_html = models.TextField(
@@ -98,6 +105,16 @@ class Exam(models.Model):
         blank=True,
         verbose_name='MCQ Questions Data',
         help_text='List of structured MCQs with 4 options and answers for auto-grading.',
+    )
+
+    # Structured creative questions built in the app, so the paper can be printed
+    # question by question. content_html is still written alongside for older clients.
+    # Schema: [{"id": "<uuid>", "stem": "...", "image_url": "", "parts": [{"label": "ক", "text": "...", "marks": 1}]}]
+    cq_data = models.JSONField(
+        default=list,
+        blank=True,
+        verbose_name='Creative Questions (Structured)',
+        help_text='Stem plus parts (ক খ গ ঘ) with marks, for each creative question.',
     )
 
     # Optional marking scheme for the written part, so it can be marked question by question.
@@ -451,6 +468,13 @@ class ExamSubmission(models.Model):
         blank=True,
         verbose_name='CQ Image Uploads (Legacy)',
         help_text='List of uploaded CQ answer sheet image file paths.'
+    )
+    answer_link = models.URLField(
+        max_length=1000,
+        blank=True,
+        default='',
+        verbose_name='Written Answer Link',
+        help_text='Link to the written (CQ) answer paper, e.g. a Google Drive or Docs link.',
     )
     text_answer = models.TextField(
         blank=True,

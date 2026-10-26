@@ -14,6 +14,8 @@ import '../../widgets/science_paste.dart';
 import '../../widgets/science_toolbar.dart';
 import '../../widgets/theme.dart';
 import '../../widgets/ui.dart';
+import '../student/exam_take_screen.dart';
+import 'cq_builder.dart';
 import 'mcq_builder.dart';
 
 class _SchemeRow {
@@ -61,6 +63,7 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> {
   int _open = 0;
   final _sectionKeys = List.generate(4, (_) => GlobalKey());
   final _title = TextEditingController();
+  final _instructions = TextEditingController();
   final _written = TextEditingController();
   final _totalMarks = TextEditingController(text: '100');
   final _duration = TextEditingController();
@@ -77,6 +80,10 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> {
   List<Json> _tuitions = const [];
   List<Json> _students = const [];
   List<Json> _mcq = [];
+  // Creative questions built card by card (stem + ক খ গ ঘ). An older paper written as
+  // one block of text keeps the text box instead ([_cqMode] false).
+  List<Json> _cq = [];
+  bool _cqMode = true;
   // A paper formatted on the website (tables, bold…) is kept untouched unless the tutor rewrites it here.
   bool _keepPaper = false;
   String _originalHtml = '';
@@ -102,6 +109,8 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> {
     final exam = widget.exam;
     if (exam != null) {
       _title.text = exam.str('title');
+      _instructions.text = exam.str('instructions');
+      _cq = [for (final q in exam.maps('cq_data')) Map<String, dynamic>.from(q)];
       _category = exam.str('category', 'EXAM');
       _type = exam.str('exam_type') == 'MIXED' ? 'HYBRID' : exam.str('exam_type', 'HYBRID');
       _forGroup = exam.str('tuition_id').isNotEmpty;
@@ -132,6 +141,11 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> {
         final editable = htmlToPlainText(_originalHtml);
         _keepPaper = editable.lossy;
         _written.text = editable.text;
+        _cqMode = _cq.isNotEmpty || editable.text.trim().isEmpty;
+        if (_cqMode) {
+          _keepPaper = false;
+          _written.text = '';
+        }
       }
     }
     _written.addListener(() => setState(() {}));
@@ -156,7 +170,7 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> {
 
   @override
   void dispose() {
-    for (final c in [_title, _written, _totalMarks, _duration, _grace, _negative, _solution]) {
+    for (final c in [_title, _instructions, _written, _totalMarks, _duration, _grace, _negative, _solution]) {
       c.dispose();
     }
     for (final row in _scheme) {
@@ -166,7 +180,11 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> {
   }
 
   num get _mcqTotal => _type == 'CQ' ? 0 : _mcq.fold<num>(0, (sum, q) => sum + q.number('points', 1));
-  num get _writtenTotal => _type == 'MCQ' ? 0 : _scheme.fold<num>(0, (sum, row) => sum + (num.tryParse(row.marks.text.trim()) ?? 0));
+  num get _writtenTotal => _type == 'MCQ'
+      ? 0
+      : _cqMode
+          ? cqTotal(_cq)
+          : _scheme.fold<num>(0, (sum, row) => sum + (num.tryParse(row.marks.text.trim()) ?? 0));
 
   bool _fail(String message, int section) {
     setState(() {
@@ -202,7 +220,7 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> {
     if (!_end.isAfter(_start)) return _fail(tr('The end time must be after the start time.'), 0);
     if (!_editing && !_end.isAfter(DateTime.now())) return _fail(tr('The end time is already in the past.'), 0);
     if (_lateUntil != null && !_lateUntil!.isAfter(_end)) return _fail(tr('"Accept late work until" must be after the deadline.'), 2);
-    if (_type != 'MCQ' && _scheme.any((row) => (num.tryParse(row.marks.text.trim()) ?? 0) <= 0)) {
+    if (_type != 'MCQ' && !_cqMode && _scheme.any((row) => (num.tryParse(row.marks.text.trim()) ?? 0) <= 0)) {
       return _fail(tr('Every written question in the marking scheme needs marks above 0.'), 1);
     }
     if (_mcqTotal + _writtenTotal > total) {
@@ -221,12 +239,24 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> {
         );
       }
     }
-    if (publish && _type == 'CQ' && !_keepPaper && _written.text.trim().isEmpty) return _fail(tr('The written paper is empty.'), 1);
+    if (publish && _type == 'CQ' && !_cqMode && !_keepPaper && _written.text.trim().isEmpty) return _fail(tr('The written paper is empty.'), 1);
+    if (publish && _type == 'CQ' && _cqMode && _cq.isEmpty) return _fail(tr('Add at least one creative question.'), 1);
+    if (publish && _type != 'MCQ' && _cqMode) {
+      final problems = cqProblems(_cq);
+      if (problems.isNotEmpty) return _fail(tr('{p0}. You can still save it as a draft.', {'p0': problems.first}), 1);
+    }
     if (_resultsMode == 'TIME') {
       if (_resultsAt == null) return _fail(tr('Choose the date and time when results should be published.'), 3);
       if (!_resultsAt!.isAfter(_start)) return _fail(tr('Results cannot be published before the exam starts.'), 3);
     }
     return true;
+  }
+
+  /// The written paper as HTML: built from the CQ cards, or the text box for an older paper.
+  String get _paperHtml {
+    if (_type == 'MCQ') return '<p>Multiple Choice Examination</p>';
+    if (_cqMode) return plainTextToHtml(cqToPlainText(_cq));
+    return _keepPaper ? _originalHtml : plainTextToHtml(_written.text);
   }
 
   Future<void> _save(bool publish) async {
@@ -238,15 +268,19 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> {
     });
     final payload = <String, dynamic>{
       'title': _title.text.trim(),
+      'instructions': _instructions.text.trim(),
+      'cq_data': _type == 'MCQ' || !_cqMode ? <Json>[] : _cq,
       'category': _category,
       'exam_type': _type,
       'student_id': _forGroup ? null : _studentId,
       'tuition_id': _forGroup ? _tuitionId : null,
-      'content_html': _type == 'MCQ' ? '<p>Multiple Choice Examination</p>' : (_keepPaper ? _originalHtml : plainTextToHtml(_written.text)),
+      'content_html': _paperHtml,
       'mcq_data': _type == 'CQ' ? <Json>[] : _mcq,
       'written_scheme': _type == 'MCQ'
           ? <Json>[]
-          : [
+          : _cqMode
+              ? cqScheme(_cq)
+              : [
               for (final row in _scheme)
                 {'id': ?row.id, 'label': row.label.text.trim(), 'marks': num.tryParse(row.marks.text.trim()) ?? 0},
             ],
@@ -282,6 +316,25 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> {
         });
       }
     }
+  }
+
+  void _preview() {
+    FocusScope.of(context).unfocus();
+    final exam = <String, dynamic>{
+      'id': widget.exam?.str('id') ?? 'preview',
+      'title': _title.text.trim().isEmpty ? tr('No title yet') : _title.text.trim(),
+      'instructions': _instructions.text.trim(),
+      'category': _category,
+      'exam_type': _type,
+      'total_marks': num.tryParse(_totalMarks.text.trim()) ?? 0,
+      'duration_minutes': _category == 'EXAM' ? int.tryParse(_duration.text.trim()) : null,
+      'negative_marks_per_wrong': _type == 'CQ' ? 0 : (num.tryParse(_negative.text.trim()) ?? 0),
+      'mcq_data': _type == 'CQ' ? <Json>[] : _mcq,
+      'cq_data': _type == 'MCQ' || !_cqMode ? <Json>[] : _cq,
+      'content_html': _paperHtml,
+      'end_time': _end.toUtc().toIso8601String(),
+    };
+    Navigator.push(context, MaterialPageRoute<void>(builder: (_) => ExamTakeScreen(exam: exam, preview: true)));
   }
 
   Future<void> _pasteWritten() async {
@@ -344,9 +397,17 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         if (_type != 'CQ') McqBuilder(questions: _mcq, onChanged: (value) => setState(() => _mcq = value)),
-        if (_type != 'MCQ') ...[
+        if (_type != 'MCQ' && _cqMode) ...[
+          gap16,
+          _Label(
+            tr('Creative questions (CQ)'),
+            info: tr('Each CQ is a stem (উদ্দীপক) with parts ক খ গ ঘ. They start at 1, 2, 3 and 4 marks; change them if you like.\n\nStudents write on paper and hand in a link to their answer sheet (Google Drive, Docs…).'),
+          ),
+          CqBuilder(initial: _cq, onChanged: (value) => setState(() => _cq = value)),
+        ],
+        if (_type != 'MCQ' && !_cqMode) ...[
           gap8,
-          _Label(tr('Written questions'), info: tr('Students type their answer or upload photos of their handwriting.\n\nLeave a blank line between questions. Maths works as \$x^2\$, \\(x_1\\) or \$\$…\$\$.')),
+          _Label(tr('Written questions'), info: tr('Students write on paper and hand in a link to their answer sheet.\n\nLeave a blank line between questions. Maths works as \$x^2\$, \\(x_1\\) or \$\$…\$\$.')),
           if (_keepPaper) ...[
             Banner2(
               tr('This paper was formatted on the website (tables, bold or lists). It is kept exactly as it is. Rewriting it here keeps the text and pictures but drops that formatting.'),
@@ -454,7 +515,7 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> {
         ],
         gap12,
         Text(
-          tr('Marks set so far: {p0} MCQ{p1} = {p2} of {p3} total.', {'p0': trimNumber(_mcqTotal), 'p1': _type != 'MCQ' && _scheme.isNotEmpty ? tr(' + {p0} written', {'p0': trimNumber(_writtenTotal)}) : '', 'p2': trimNumber(allocated), 'p3': trimNumber(total)}),
+          tr('Marks set so far: {p0} MCQ{p1} = {p2} of {p3} total.', {'p0': trimNumber(_mcqTotal), 'p1': _type != 'MCQ' && _writtenTotal > 0 ? tr(' + {p0} written', {'p0': trimNumber(_writtenTotal)}) : '', 'p2': trimNumber(allocated), 'p3': trimNumber(total)}),
           style: TextStyle(color: allocated > total ? AppColors.danger : Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13, fontWeight: allocated > total ? FontWeight.w700 : null),
         ),
       ],
@@ -530,6 +591,31 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> {
           decoration: InputDecoration(hintText: tr('Title, e.g. Chapter 3 quiz — Polynomials')),
           onChanged: (_) => setState(() {}),
         ),
+        gap12,
+        _Label(tr('Instructions'), info: tr('Optional. Printed at the top of the paper, under the title.')),
+        TextField(
+          controller: _instructions,
+          minLines: 1,
+          maxLines: 4,
+          maxLength: 2000,
+          textCapitalization: TextCapitalization.sentences,
+          onChanged: (_) => setState(() {}),
+          decoration: InputDecoration(hintText: tr('e.g. Answer all questions.'), counterText: ''),
+        ),
+        if (_instructions.text.trim().isEmpty) ...[
+          gap8,
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final hint in [tr('Answer all questions.'), tr('Answer any 2 of the creative questions.'), tr('Show your working.')])
+                ActionChip(
+                  label: Text(hint, style: const TextStyle(fontSize: 13)),
+                  onPressed: () => setState(() => _instructions.text = hint),
+                ),
+            ],
+          ),
+        ],
         gap16,
         _Label(tr('Type'), info: tr('Timed exam: open between a start and an end time, with an optional time limit per student.\n\nAssignment: homework with a deadline and no stopwatch.')),
         _chips<String>([('EXAM', tr('Timed exam')), ('ASSIGNMENT', tr('Assignment'))], _category, (v) => _category = v),
@@ -573,6 +659,26 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> {
               info: tr('Each student\'s clock starts when they open the exam and never runs past the closing time. Leave empty for no limit.'),
             ),
         ]),
+        if (isExam) ...[
+          gap8,
+          // One tap for the usual lengths.
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final minutes in const [30, 45, 60, 90, 120])
+                ChoiceChip(
+                  label: Text(tr('{p0} min', {'p0': minutes})),
+                  selected: _duration.text.trim() == '$minutes',
+                  onSelected: (_) => setState(() {
+                    _duration.text = '$minutes';
+                    // An exam open for less time than its limit would cut students short.
+                    if (_end.difference(_start).inMinutes < minutes) _end = _start.add(Duration(minutes: minutes));
+                  }),
+                ),
+            ],
+          ),
+        ],
       ],
     );
   }
@@ -683,7 +789,8 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> {
   String get _questionsSummary {
     final parts = <String>[
       if (_type != 'CQ') tr('{n} MCQ', {'n': _mcq.length}),
-      if (_type != 'MCQ') _keepPaper || _written.text.trim().isNotEmpty ? tr('written paper') : tr('no written paper yet'),
+      if (_type != 'MCQ' && _cqMode) tr('{n} CQ', {'n': _cq.length}),
+      if (_type != 'MCQ' && !_cqMode) _keepPaper || _written.text.trim().isNotEmpty ? tr('written paper') : tr('no written paper yet'),
     ];
     return tr('{p0} · {p1} of {p2} marks', {'p0': parts.join(' + '), 'p1': trimNumber(_mcqTotal + _writtenTotal), 'p2': _totalMarks.text.trim().isEmpty ? '?' : _totalMarks.text.trim()});
   }
@@ -746,7 +853,8 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> {
   @override
   Widget build(BuildContext context) {
     final noun = _category == 'ASSIGNMENT' ? 'assignment' : 'exam';
-    final hasQuestions = (_type != 'CQ' && _mcq.isNotEmpty) || (_type != 'MCQ' && (_keepPaper || _written.text.trim().isNotEmpty));
+    final hasQuestions = (_type != 'CQ' && _mcq.isNotEmpty) ||
+        (_type != 'MCQ' && (_cqMode ? _cq.isNotEmpty : (_keepPaper || _written.text.trim().isNotEmpty)));
     // Publishing needs a title and a question; until then the button shows it is not ready.
     final canPublish = _wasPublished || (_title.text.trim().isNotEmpty && hasQuestions);
     return Scaffold(
@@ -754,6 +862,14 @@ class _ExamEditorScreenState extends State<ExamEditorScreen> {
         title: Text(_editing
             ? (noun == 'assignment' ? tr('Edit assignment') : tr('Edit exam'))
             : (noun == 'assignment' ? tr('New assignment') : tr('New exam'))),
+        actions: [
+          // The paper exactly as students will see it.
+          TextButton.icon(
+            onPressed: hasQuestions ? _preview : null,
+            icon: const Icon(Icons.visibility_outlined, size: 18),
+            label: Text(tr('Preview')),
+          ),
+        ],
       ),
       body: Column(children: [
         Expanded(child: ListView(
