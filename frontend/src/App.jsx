@@ -6,6 +6,7 @@ import { ProtectedRoute } from './routes/ProtectedRoute';
 import LoginPage from './pages/LoginPage';
 import Toaster from './components/common/Toaster';
 import ResetPasswordPage from './pages/ResetPasswordPage';
+import DownloadAppPage from './pages/DownloadAppPage';
 import { Spinner } from './components/common/States';
 
 // Each role's pages load on demand: a student never downloads the tutor's exam editor.
@@ -44,6 +45,9 @@ export default function App() {
           <Route path="/" element={<RootRedirect />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/reset-password" element={<ResetPasswordPage />} />
+          {/* The Android app: download, screens, how to install. Public. */}
+          <Route path="/app" element={<DownloadAppPage />} />
+          <Route path="/download" element={<Navigate to="/app" replace />} />
           <Route
             path="/tutor"
             element={
