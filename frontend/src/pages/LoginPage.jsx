@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/auth';
 import { api } from '../api/client';
 import GoogleSignInButton from '../components/common/GoogleSignInButton';
@@ -565,6 +565,22 @@ export default function LoginPage() {
               </>
             )}
           </p>
+
+          {/* The Android app: a card with real screens, linking to /app. */}
+          <Link
+            to="/app"
+            className="mt-8 group flex items-center gap-4 p-3 pr-4 rounded-2xl bg-slate-900/70 border border-slate-800 hover:border-indigo-500/40 hover:bg-slate-900 transition"
+          >
+            <span className="flex -space-x-6 shrink-0" aria-hidden="true">
+              <img src="/app/overview.webp" alt="" width={44} height={95} className="w-11 rounded-lg ring-2 ring-slate-950 -rotate-6" />
+              <img src="/app/student-home.webp" alt="" width={44} height={95} className="w-11 rounded-lg ring-2 ring-slate-950 rotate-6 translate-y-1" />
+            </span>
+            <span className="flex-1 min-w-0">
+              <span className="block text-sm font-bold text-white">Get the Android app</span>
+              <span className="block text-xs text-slate-400 mt-0.5">Messages, reminders and tests on your phone. Free.</span>
+            </span>
+            <span className="text-xs font-bold text-indigo-300 group-hover:text-white whitespace-nowrap">Download →</span>
+          </Link>
         </div>
       </main>
     </div>
