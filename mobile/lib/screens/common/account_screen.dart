@@ -17,7 +17,10 @@ import '../../widgets/ui.dart';
 /// and invite code, a flat settings-style list of fields (saved from the app
 /// bar), and the password and sign-out actions underneath.
 class AccountScreen extends StatefulWidget {
-  const AccountScreen({super.key});
+  const AccountScreen({super.key, this.pickPhoto = false});
+
+  /// Open the "take a photo / choose from gallery" sheet straight away (tutors).
+  final bool pickPhoto;
 
   @override
   State<AccountScreen> createState() => _AccountScreenState();
@@ -37,6 +40,12 @@ class _AccountScreenState extends State<AccountScreen> {
     _fill(context.read<Session>().user ?? {});
     for (final controller in _c.values) {
       controller.addListener(_changed);
+    }
+    final session = context.read<Session>();
+    if (widget.pickPhoto && session.isTutor) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _photo((session.user ?? {}).str('profile_picture_url').isNotEmpty);
+      });
     }
   }
 

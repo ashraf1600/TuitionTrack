@@ -41,7 +41,7 @@ void main() {
     await shoot(tester, 'tutor_02_home_full');
   });
 
-  for (final (index, name) in [(1, 'tutor_03_tab2'), (2, 'tutor_04_tab3'), (3, 'tutor_05_tab4')]) {
+  for (final (index, name) in [(1, 'tutor_03_tab2'), (2, 'tutor_04_routine'), (3, 'tutor_05_wallet'), (4, 'tutor_05b_students')]) {
     testWidgets('tab $index', (tester) async {
       await openApp(tester);
       await tapTab(tester, index);

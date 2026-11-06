@@ -1332,4 +1332,30 @@ const bnStrings = <String, String>{
   // ── Live chat and push ──
   'typing…': 'লিখছে…',
   'New chat messages from your tutor or students.': 'টিচার বা স্টুডেন্টদের নতুন মেসেজ।',
+  // ── Routine tab and profile photo ──
+  'Routine': 'রুটিন',
+  'class a week': 'সাপ্তাহিক ক্লাস',
+  'classes a week': 'সাপ্তাহিক ক্লাস',
+  'days busy': 'দিন ক্লাস আছে',
+  'teaching': 'সপ্তাহে পড়ানো',
+  'Free': 'ফাঁকা',
+  'Time clash': 'সময় মিলে গেছে',
+  '1 class': '১টি ক্লাস',
+  '{m} m': '{m} মি.',
+  '{h} h': '{h} ঘ.',
+  '{h} h {m} m': '{h} ঘ. {m} মি.',
+  'No class days yet': 'এখনো ক্লাসের দিন দেওয়া হয়নি',
+  'Add the days and times of each tuition. Your whole week then shows here, with any time clash marked.':
+      'প্রতিটা টিউশনের দিন আর সময় দিন। তখন পুরো সপ্তাহ এখানে দেখাবে, আর কোনো ক্লাসের সময় মিলে গেলে সেটাও দেখাবে।',
+  '{n} classes overlap. Change a time so you are not in two places at once.':
+      '{n}টি ক্লাসের সময় একসাথে পড়ে গেছে। একটার সময় বদলে দিন।',
+  'Add your photo': 'আপনার ছবি দিন',
+  'Students see it next to your name, in chat and on their home screen.':
+      'স্টুডেন্টরা আপনার নামের পাশে ছবিটা দেখবে, চ্যাটে আর তাদের হোম স্ক্রিনে।',
+  'Add photo': 'ছবি দিন',
+  'Whole week': 'পুরো সপ্তাহ',
+  'No more classes this week.': 'এই সপ্তাহে আর ক্লাস নেই।',
+  '{n} this week': 'এই সপ্তাহে {n}',
+  'Two of your classes are at the same time. Tell one of your tutors.':
+      'তোমার দুইটা ক্লাস একই সময়ে পড়েছে। একজন স্যারকে জানাও।',
 };

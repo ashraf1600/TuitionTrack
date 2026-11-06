@@ -514,8 +514,11 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       reverse: true,
       keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
       padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-      itemCount: rows.length + (_hasMore ? 1 : 0),
-      itemBuilder: (context, index) {
+      itemCount: rows.length + (_hasMore ? 1 : 0) + (_typing ? 1 : 0),
+      itemBuilder: (context, at) {
+        // The list is reversed: the typing dots sit at the very bottom.
+        if (_typing && at == 0) return _TypingBubble(name: _person?.name ?? '', photo: _person?.photo);
+        final index = _typing ? at - 1 : at;
         if (index == rows.length) {
           return const Padding(padding: EdgeInsets.all(16), child: Center(child: SizedBox.square(dimension: 20, child: CircularProgressIndicator(strokeWidth: 2))));
         }
@@ -536,6 +539,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           onRetry: () => _retry(m),
           onReply: _canSend ? () => _reply(m) : null,
           otherName: _person?.name ?? '',
+          otherPhoto: _person?.photo,
         );
         final showSeen = lastIsMine && identical(m, lastMine) && seen;
         if (m.id != _newFromId && !showSeen) return bubble;
@@ -738,8 +742,20 @@ class _NewMessagesLine extends StatelessWidget {
 }
 
 class _Bubble extends StatelessWidget {
-  const _Bubble({required this.message, required this.joinedAbove, required this.joinedBelow, required this.seen, required this.onRetry, this.onReply, this.otherName = ''});
+  const _Bubble({
+    required this.message,
+    required this.joinedAbove,
+    required this.joinedBelow,
+    required this.seen,
+    required this.onRetry,
+    this.onReply,
+    this.otherName = '',
+    this.otherPhoto,
+  });
   final ChatMessage message;
+
+  /// The other person's photo, shown small beside the last of their messages in a run.
+  final String? otherPhoto;
 
   /// Shown on quotes of the other person's messages.
   final String otherName;
@@ -864,13 +880,11 @@ class _Bubble extends StatelessWidget {
         ],
       ),
     );
-    return Padding(
-      padding: EdgeInsets.only(top: joinedAbove ? 2 : 8),
-      child: Column(
+    final column = Column(
         crossAxisAlignment: mine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
         children: [
           ConstrainedBox(
-            constraints: BoxConstraints(maxWidth: MediaQuery.sizeOf(context).width * 0.8),
+            constraints: BoxConstraints(maxWidth: MediaQuery.sizeOf(context).width * (mine ? 0.8 : 0.74)),
             child: GestureDetector(
               onLongPress: () => _actions(context),
               onTap: failed ? onRetry : null,
@@ -889,8 +903,95 @@ class _Bubble extends StatelessWidget {
               child: Text(tr('Not sent · Tap to retry'), style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tt.danger)),
             ),
         ],
+      );
+    return Padding(
+      padding: EdgeInsets.only(top: joinedAbove ? 2 : 8),
+      child: mine
+          ? column
+          : Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                // Their face beside the last message of a run, like other chat apps.
+                SizedBox(
+                  width: 28,
+                  child: joinedBelow ? null : PersonAvatar(name: otherName, photo: otherPhoto, radius: 13),
+                ),
+                const SizedBox(width: 6),
+                Flexible(child: column),
+              ],
+            ),
+    );
+  }
+}
+
+/// Three dots that rise and fall while the other person is writing.
+class _TypingBubble extends StatefulWidget {
+  const _TypingBubble({required this.name, this.photo});
+  final String name;
+  final String? photo;
+
+  @override
+  State<_TypingBubble> createState() => _TypingBubbleState();
+}
+
+class _TypingBubbleState extends State<_TypingBubble> with SingleTickerProviderStateMixin {
+  late final AnimationController _dots = AnimationController(vsync: this, duration: const Duration(milliseconds: 1100))..repeat();
+
+  @override
+  void dispose() {
+    _dots.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final tt = context.tt;
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          SizedBox(width: 28, child: PersonAvatar(name: widget.name, photo: widget.photo, radius: 13)),
+          const SizedBox(width: 6),
+          Semantics(
+            label: tr('typing…'),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              decoration: BoxDecoration(color: tt.card, borderRadius: BorderRadius.circular(18)),
+              child: AnimatedBuilder(
+                animation: _dots,
+                builder: (context, _) => Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    for (var i = 0; i < 3; i++) ...[
+                      if (i > 0) const SizedBox(width: 4),
+                      Transform.translate(
+                        offset: Offset(0, -3 * _bump(_dots.value - i * 0.15)),
+                        child: Container(
+                          width: 7,
+                          height: 7,
+                          decoration: BoxDecoration(
+                            color: tt.textSecondary.withValues(alpha: 0.5 + 0.5 * _bump(_dots.value - i * 0.15)),
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
+  }
+
+  /// 0 → 1 → 0 over the first half of the cycle, then rest.
+  static double _bump(double t) {
+    final x = t % 1;
+    if (x > 0.5) return 0;
+    return x < 0.25 ? x * 4 : (0.5 - x) * 4;
   }
 }
 
