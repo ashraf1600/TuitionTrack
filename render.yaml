@@ -55,8 +55,6 @@ services:
       # Set the Neon pooled connection string in Dashboard → tuitiontrack-api → Environment.
       - key: DATABASE_URL
         sync: false
-      - key: DB_CONN_MAX_AGE     # let Neon sleep when nobody is using the app
-        value: "0"
       # Optional: SENTRY_DSN (error reports), set in the Dashboard.
 
       # ── Frontend & CORS ──
@@ -69,8 +67,12 @@ services:
       # ── App updates: the newest APK version and where to download it ──
       # Bump APP_LATEST_VERSION after you publish a new TuitionTrack.apk; the app
       # then offers the download to everyone on an older version.
+      # This file is a Blueprint: a value set here replaces the Dashboard's on every sync,
+      # so change the version here, not in the Dashboard.
       - key: APP_LATEST_VERSION
-        value: "1.1.0"
+        value: "1.7.0"
+      - key: APP_RELEASE_NOTES
+        value: "Live chat, notifications even when the app is closed, weekly routine, Google sign-in"
       - key: APP_DOWNLOAD_URL
         value: https://github.com/ashraf1600/TuitionTrack/releases/latest/download/TuitionTrack.apk
 
