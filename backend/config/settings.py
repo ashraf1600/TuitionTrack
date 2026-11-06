@@ -98,6 +98,8 @@ THIRD_PARTY_APPS = [
     # Lets a refresh token be revoked: sign-out, password change, deactivation.
     'rest_framework_simplejwt.token_blacklist',
     'corsheaders',
+    # The live connection (/ws/): chat messages and "seen" as they happen.
+    'channels',
 ]
 
 LOCAL_APPS = [
@@ -125,9 +127,26 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    # After a save, tells the other side's apps to look for news (live + silent push).
+    'apps.messaging.nudge.NudgeMiddleware',
 ]
 
 ROOT_URLCONF = 'config.urls'
+ASGI_APPLICATION = 'config.asgi.application'
+
+# Live updates go between connections through a channel layer. One server process
+# (uvicorn, as on Render) shares them in memory; with several processes or servers,
+# set REDIS_URL (e.g. Render Key Value, Upstash) so they reach each other.
+REDIS_URL = os.getenv('REDIS_URL', '').strip()
+CHANNEL_LAYERS = {
+    'default': {'BACKEND': 'channels_redis.core.RedisChannelLayer', 'CONFIG': {'hosts': [REDIS_URL]}}
+    if REDIS_URL else {'BACKEND': 'channels.layers.InMemoryChannelLayer'},
+}
+
+# Push notifications (Firebase Cloud Messaging): the service account key, as JSON or base64 JSON.
+# Empty: no pushes; the apps still check for news every 15 minutes on their own.
+FCM_SERVICE_ACCOUNT = os.getenv('FCM_SERVICE_ACCOUNT', '')
+
 
 TEMPLATES = [
     {

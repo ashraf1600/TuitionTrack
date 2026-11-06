@@ -1,0 +1,2 @@
+# Only for the test suite (channels.testing needs it); the server runs on uvicorn.
+daphne==4.2.3

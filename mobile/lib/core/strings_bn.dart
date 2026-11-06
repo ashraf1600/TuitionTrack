@@ -1329,4 +1329,7 @@ const bnStrings = <String, String>{
   'Said done': 'শেষ বলা',
   'Upcoming tests': 'আসন্ন পরীক্ষা',
   '"{p0}" opens {p1}. Start it here when it opens.': '"{p0}" খুলবে {p1}। খুললে এখান থেকে শুরু করুন।',
+  // ── Live chat and push ──
+  'typing…': 'লিখছে…',
+  'New chat messages from your tutor or students.': 'টিচার বা স্টুডেন্টদের নতুন মেসেজ।',
 };

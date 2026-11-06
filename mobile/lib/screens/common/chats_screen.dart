@@ -8,6 +8,8 @@ import '../../core/api.dart';
 import '../../core/chat.dart';
 import '../../core/format.dart';
 import '../../core/i18n.dart';
+import '../../core/json.dart';
+import '../../core/live.dart';
 import '../../core/session.dart';
 import '../../widgets/kit.dart' show shortWeekday;
 import '../../widgets/theme.dart';
@@ -102,17 +104,26 @@ class _ChatsScreenState extends State<ChatsScreen> {
   String? _error;
   String _search = '';
   Timer? _timer;
+  StreamSubscription<Json>? _live;
 
   @override
   void initState() {
     super.initState();
     _load();
-    _timer = Timer.periodic(const Duration(seconds: 10), (_) => _load(quiet: true));
+    // New messages arrive live; the slow check covers a missing live connection.
+    _timer = Timer.periodic(const Duration(seconds: 10), (_) {
+      if (!LiveConnection.instance.connected.value) _load(quiet: true);
+    });
+    _live = LiveConnection.instance.events.listen((event) {
+      final type = event.str('type');
+      if (mounted && (type == 'message' || type == 'connected')) _load(quiet: true);
+    });
   }
 
   @override
   void dispose() {
     _timer?.cancel();
+    unawaited(_live?.cancel());
     super.dispose();
   }
 

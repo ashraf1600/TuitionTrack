@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'api.dart';
 import 'i18n.dart';
 import 'json.dart';
+import 'live.dart';
 
 /// The other person in a chat: a tutor ("Ashraf Sir" to students) or a student.
 class ChatPerson {
@@ -206,10 +207,20 @@ class ChatApi {
 /// How many messages wait unread, shared by the chat buttons. Checked every
 /// half minute while the app is open, and right away after reading a chat.
 class ChatUnread extends ValueNotifier<int> {
-  ChatUnread._() : super(0);
+  ChatUnread._() : super(0) {
+    // A message arriving live updates the badge at once.
+    LiveConnection.instance.events.listen((event) {
+      final type = event.str('type');
+      final api = _api;
+      if (api != null && (type == 'message' || type == 'connected')) refresh(api);
+    });
+  }
   static final instance = ChatUnread._();
 
+  ApiClient? _api;
+
   Future<void> refresh(ApiClient api) async {
+    _api = api;
     try {
       value = await ChatApi(api).unread();
     } on ApiException {

@@ -9,6 +9,7 @@ import 'google_auth.dart';
 import 'i18n.dart';
 import 'json.dart';
 import 'offline.dart';
+import 'push.dart';
 
 /// Keeps tokens in the platform keystore; falls back to app preferences where that is unavailable.
 class SecureTokenStore implements TokenStore {
@@ -267,6 +268,8 @@ class Session extends ChangeNotifier {
   }
 
   Future<void> logout() async {
+    // This phone stops getting the account's push notifications.
+    await Push.unregister(this);
     final refresh = (await api.tokens.read())['refresh'];
     if (refresh != null && refresh.isNotEmpty && !api.offline.value) {
       try {

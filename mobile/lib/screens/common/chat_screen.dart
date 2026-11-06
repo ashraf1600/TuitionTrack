@@ -11,6 +11,8 @@ import '../../core/api.dart';
 import '../../core/chat.dart';
 import '../../core/format.dart';
 import '../../core/i18n.dart';
+import '../../core/json.dart';
+import '../../core/live.dart';
 import '../../core/session.dart';
 import '../../widgets/kit.dart' show longDate;
 import '../../widgets/math_text.dart';
@@ -23,8 +25,9 @@ import '../../widgets/ui.dart';
 ///
 /// Messages appear the moment they are sent (a clock until the server has
 /// them, then ✓, and ✓✓ once the other person has opened the chat). A message
-/// that could not be sent stays with "Tap to retry". New messages are fetched
-/// every few seconds while the chat is open.
+/// that could not be sent stays with "Tap to retry". New messages, "seen" and
+/// "typing…" arrive over the live connection the moment they happen; a slow
+/// check every 30 seconds (every 3 without the live connection) catches anything missed.
 class ChatScreen extends StatefulWidget {
   const ChatScreen({super.key, required this.conversationId, this.person, this.unreadOnOpen = 0});
   final String conversationId;
@@ -60,6 +63,13 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   bool _resumed = true;
   DateTime? _otherReadAt;
   Timer? _poll;
+  int _ticks = 0;
+  bool _fetchAgain = false;
+  StreamSubscription<Json>? _live;
+
+  /// The other person is typing (shown under their name for a few seconds).
+  bool _typing = false;
+  Timer? _typingTimer;
 
   /// The message being answered (shown above the text box until sent).
   ChatMessage? _replyTo;
@@ -73,15 +83,63 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     _person = widget.person;
     WidgetsBinding.instance.addObserver(this);
     _scroll.addListener(_onScroll);
-    _text.addListener(() => setState(() {}));
+    _text.addListener(_onTextChanged);
     _load();
-    _poll = Timer.periodic(_pollEvery, (_) => _fetchNew());
+    _poll = Timer.periodic(_pollEvery, (_) {
+      // With the live connection up, a check every 30 seconds is plenty.
+      if (LiveConnection.instance.connected.value && ++_ticks % 10 != 0) return;
+      _fetchNew();
+    });
+    _live = LiveConnection.instance.events.listen(_onLive);
+  }
+
+  void _onTextChanged() {
+    setState(() {});
+    if (_text.text.trim().isNotEmpty) LiveConnection.instance.typing(widget.conversationId);
+  }
+
+  void _onLive(Json event) {
+    if (!mounted) return;
+    final type = event.str('type');
+    if (type == 'connected') {
+      _fetchNew();
+      return;
+    }
+    if (event.str('conversation_id') != widget.conversationId) return;
+    switch (type) {
+      case 'message':
+        final raw = event.obj('message');
+        if (raw == null || _loading) {
+          _fetchNew();
+          return;
+        }
+        final message = ChatMessage.fromJson(raw);
+        final fromOther = _merge([message]);
+        setState(() {
+          if (fromOther) _typing = false;
+        });
+        if (fromOther && _resumed) {
+          _markRead();
+          HapticFeedback.selectionClick();
+        }
+      case 'read':
+        final at = event.date('read_at')?.toLocal();
+        if (at != null) setState(() => _otherReadAt = at);
+      case 'typing':
+        _typingTimer?.cancel();
+        setState(() => _typing = true);
+        _typingTimer = Timer(const Duration(seconds: 4), () {
+          if (mounted) setState(() => _typing = false);
+        });
+    }
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _poll?.cancel();
+    _typingTimer?.cancel();
+    unawaited(_live?.cancel());
     _text.dispose();
     _scroll.dispose();
     _focus.dispose();
@@ -145,8 +203,14 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
   /// New messages since the newest one here (and whether they were seen).
   Future<void> _fetchNew() async {
-    if (_polling || _loading || !_resumed || !mounted || _error != null) return;
+    if (_polling) {
+      // Something new came in while a check was running: check again after it.
+      _fetchAgain = true;
+      return;
+    }
+    if (_loading || !_resumed || !mounted || _error != null) return;
     _polling = true;
+    _fetchAgain = false;
     try {
       final page = await _api.messages(widget.conversationId, after: _lastId);
       if (!mounted) return;
@@ -163,6 +227,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       // A missed poll is fine; the next one catches up.
     } finally {
       _polling = false;
+      if (_fetchAgain && mounted) unawaited(_fetchNew());
     }
   }
 
@@ -370,11 +435,12 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                       children: [
                         Text(person.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
                         Text(
-                          activeLabel(person.lastSeen) ?? (person.isTutor ? tr('Your tutor') : tr('Student')),
+                          _typing ? tr('typing…') : activeLabel(person.lastSeen) ?? (person.isTutor ? tr('Your tutor') : tr('Student')),
                           style: TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.w400,
-                            color: activeLabel(person.lastSeen) == tr('Active now') ? tt.success : tt.textSecondary,
+                            fontStyle: _typing ? FontStyle.italic : FontStyle.normal,
+                            color: _typing || activeLabel(person.lastSeen) == tr('Active now') ? tt.success : tt.textSecondary,
                           ),
                         ),
                       ],

@@ -136,6 +136,33 @@ class Reminders {
     }
   }
 
+  /// Notes that the phone already showed [id] (a chat message pushed by the
+  /// server), so the next check for news does not show it a second time.
+  static Future<void> markShown(Settings settings, String id) async {
+    await settings.refresh();
+    final shown = settings.getList(_notifiedKey);
+    if (shown.contains(id)) return;
+    await settings.setList(_notifiedKey, [id, ...shown].take(300).toList());
+  }
+
+  /// The channel chat pushes arrive on (Android shows them itself when the app is closed).
+  Future<void> createMessagesChannel() async {
+    if (!_ready) return;
+    await _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()?.createNotificationChannel(
+          AndroidNotificationChannel(
+            'messages',
+            tr('Messages'),
+            description: tr('New chat messages from your tutor or students.'),
+            importance: Importance.high,
+          ),
+        );
+  }
+
+  /// Asks for permission to show notifications (Android 13+), once.
+  Future<void> askPermissionOnce(Settings settings) async {
+    if (_ready) await _askOnce(settings);
+  }
+
   static String _bodyOf(Json n) {
     final body = n.str('body');
     // "opens" / "closes" / "due" describe the time that follows them on the bell screen.

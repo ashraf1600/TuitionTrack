@@ -1,4 +1,6 @@
 asgiref==3.12.1
+channels-redis==4.3.0
+channels==4.3.2
 dj-database-url==3.1.2
 django-cors-headers==4.9.0
 django-storages[s3]==1.14.6
@@ -17,4 +19,5 @@ requests==2.34.2
 sentry-sdk==2.71.0
 sqlparse==0.6.0
 tzdata==2026.5
+uvicorn[standard]==0.54.0
 whitenoise==6.12.0

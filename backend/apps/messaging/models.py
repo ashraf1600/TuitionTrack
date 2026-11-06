@@ -77,3 +77,24 @@ class Message(models.Model):
 
     def __str__(self):
         return (self.body or '[photo]')[:40]
+
+
+class PushDevice(models.Model):
+    """A phone that gets push notifications (Firebase Cloud Messaging) for its signed-in user.
+
+    A token belongs to one install of the app; signing in as someone else on the
+    same phone moves it to them, so a phone never shows another account's messages.
+    """
+    MAX_PER_USER = 10
+
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='push_devices')
+    token = models.CharField(max_length=512, unique=True)
+    platform = models.CharField(max_length=16, default='android')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-updated_at']
+
+    def __str__(self):
+        return f'{self.user} · {self.platform}'

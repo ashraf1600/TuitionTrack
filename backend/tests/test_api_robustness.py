@@ -32,6 +32,8 @@ PUBLIC_ROUTES = (
     'auth/token/', 'auth/token/refresh/', 'auth/logout/', 'auth/register/', 'auth/register/student/',
     'auth/tutors/', 'auth/password-reset/', 'auth/password-reset/verify/', 'auth/password-reset/confirm/',
     'auth/google/', 'meta/',
+    # Removing a phone's push token works signed out (holding the token is the proof).
+    'push/devices/',
 )
 
 # Every body key the API reads anywhere, so each malformed value reaches real code.
