@@ -13,7 +13,7 @@ const REPO = 'ashraf1600/TuitionTrack';
 // GitHub always serves the newest release's file at this address, so the button never goes stale.
 const LATEST_APK = `https://github.com/${REPO}/releases/latest/download/TuitionTrack.apk`;
 const LATEST_APK_ARM64 = `https://github.com/${REPO}/releases/latest/download/TuitionTrack-arm64.apk`;
-const FACEBOOK = 'https://www.facebook.com/profile.php?id=100089263684121';
+const FACEBOOK = 'https://www.facebook.com/TuitionTrackApp';
 
 // Real screens from the app (dark theme), as cards.
 const SCREENS = [
