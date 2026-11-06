@@ -14,6 +14,7 @@ import '../../widgets/student_kit.dart';
 import '../../widgets/theme.dart';
 import '../../widgets/ui.dart';
 import 'student_lists.dart';
+import 'student_week.dart';
 import 'tutor_detail_screen.dart' show classLabel;
 
 /// Which tab of the student home to open, and which part of it.
@@ -86,6 +87,15 @@ class StudentTodayView extends StatelessWidget {
       ],
       // Every test open right now, each with its own Start button.
       for (final (i, hero) in heroes.indexed) ...[if (i > 0) gap12, hero],
+      // The next class across every tutor; tap for the whole week.
+      if (tuitions.any((t) => t.maps('routine').isNotEmpty)) ...[
+        SectionHeader(
+          tr('Classes'),
+          actionLabel: tr('Whole week'),
+          onAction: () => _openWeek(context),
+        ),
+        StudentNextClass(tuitions: tuitions, photos: _photos(), onWholeWeek: () => _openWeek(context)),
+      ],
       if (upcoming.isNotEmpty) ...[
         SectionHeader(tr('Upcoming tests'), count: upcoming.length, onAction: () => onOpenTab(StudentTab.tests)),
         _UpcomingTests(exams: upcoming.take(3).toList(), reload: reload),
@@ -155,6 +165,16 @@ class StudentTodayView extends StatelessWidget {
     ];
     return PageBody(padding: const EdgeInsets.fromLTRB(16, 4, 16, 32), children: staggered(context, blocks));
   }
+
+  /// Tutor id -> profile photo, so classes show their tutor's face.
+  Map<String, String?> _photos() => {
+        for (final t in tutors) t.str('id'): t.str('profile_picture_url', t.str('profile_picture')),
+      };
+
+  void _openWeek(BuildContext context) => Navigator.push(
+        context,
+        MaterialPageRoute<void>(builder: (_) => StudentWeekScreen(tuitions: tuitions, photos: _photos())),
+      );
 
   /// (tutor, tuition, label) for each card: a tutor with no tuition yet still gets one card.
   /// The label is the tuition's subject ("Physics"), shown when it tells two cards apart or says what the class is.

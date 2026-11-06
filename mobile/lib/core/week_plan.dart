@@ -108,3 +108,24 @@ WeekPlan buildWeekPlan(List<Json> tuitions, DateTime now) {
   }
   return WeekPlan._(today, byDay);
 }
+
+/// When a class ends, in minutes after midnight (an hour after it starts when no end is set).
+int classEnd(WeekClass c) => c.end.isEmpty ? minutesOf(c.start) + 60 : minutesOf(c.end);
+
+/// Classes whose time overlaps another class on the same day.
+Set<WeekClass> clashingClasses(WeekPlan plan) {
+  final found = <WeekClass>{};
+  for (final list in plan.byDay.values) {
+    for (var i = 0; i < list.length; i++) {
+      for (var j = i + 1; j < list.length; j++) {
+        final a = list[i], b = list[j];
+        if (minutesOf(b.start) < classEnd(a) && minutesOf(a.start) < classEnd(b)) {
+          found
+            ..add(a)
+            ..add(b);
+        }
+      }
+    }
+  }
+  return found;
+}

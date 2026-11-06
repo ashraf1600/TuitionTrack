@@ -151,4 +151,13 @@ void main() {
     );
     await shoot(tester, 'student_15_chat');
   });
+
+  testWidgets('whole week', (tester) async {
+    await openApp(tester, size: tallPhone);
+    final link = find.text('Whole week');
+    if (link.evaluate().isEmpty) return;
+    await tester.tap(link.first);
+    await settle(tester);
+    await shoot(tester, 'student_16_week');
+  });
 }

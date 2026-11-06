@@ -18,6 +18,7 @@ import '../../widgets/share.dart';
 import '../../widgets/student_kit.dart' show shortGap;
 import '../../widgets/theme.dart';
 import '../../widgets/ui.dart';
+import '../common/account_screen.dart';
 import '../common/cycle_progress.dart';
 import '../common/notification_actions.dart';
 import 'to_check_screen.dart';
@@ -78,6 +79,7 @@ class HomeTab extends StatelessWidget {
               subtitle: _todaySummary(data.tuitions, data.wallet),
             ),
             _GetStarted(tuitions: data.tuitions, onCreateTuition: onCreateTuition, onOpen: open, reload: reload),
+            const _PhotoPrompt(),
             if (next != null) _NextUp(item: next, plan: plan, now: now, onOpen: () => open(next.tuition.str('id')), reload: reload),
             if (data.tuitions.isNotEmpty) ...[
               _ToCheck(updates: data.updates, requests: data.requests, tuitions: data.tuitions, reload: reload),
@@ -213,6 +215,93 @@ class _GetStartedState extends State<_GetStarted> {
                 trailing: isDone ? null : Icon(Icons.chevron_right, color: scheme.onSurfaceVariant),
                 onTap: isDone ? null : action,
               ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Asks a tutor without a profile photo to add one: students see it beside
+/// "Sir" on their home screen and in chat. Gone once there is a photo, or
+/// when put off with "Later".
+class _PhotoPrompt extends StatefulWidget {
+  const _PhotoPrompt();
+
+  @override
+  State<_PhotoPrompt> createState() => _PhotoPromptState();
+}
+
+class _PhotoPromptState extends State<_PhotoPrompt> {
+  static const _laterKey = 'photo_prompt_later';
+
+  @override
+  Widget build(BuildContext context) {
+    final session = context.watch<Session>();
+    final user = session.user ?? {};
+    if (user.isEmpty || user.str('profile_picture_url').isNotEmpty || session.settings.getString(_laterKey) == 'yes') {
+      return const SizedBox.shrink();
+    }
+    final tt = context.tt;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: AppCard(
+        padding: const EdgeInsets.fromLTRB(16, 14, 12, 10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    PersonAvatar(name: session.displayName, radius: 24),
+                    Positioned(
+                      right: -2,
+                      bottom: -2,
+                      child: Container(
+                        padding: const EdgeInsets.all(4),
+                        decoration: BoxDecoration(color: tt.primary, shape: BoxShape.circle, border: Border.all(color: tt.card, width: 2)),
+                        child: Icon(Icons.photo_camera, size: 12, color: tt.onPrimary),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(tr('Add your photo'), style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: tt.textPrimary)),
+                      const SizedBox(height: 2),
+                      Text(
+                        tr('Students see it next to your name, in chat and on their home screen.'),
+                        style: TextStyle(fontSize: 13, height: 1.4, color: tt.textSecondary),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                TextButton(
+                  onPressed: () async {
+                    await session.settings.setString(_laterKey, 'yes');
+                    if (mounted) setState(() {});
+                  },
+                  child: Text(tr('Later')),
+                ),
+                const SizedBox(width: 4),
+                FilledButton.tonalIcon(
+                  onPressed: () => Navigator.push(context, MaterialPageRoute<void>(builder: (_) => const AccountScreen(pickPhoto: true))),
+                  icon: const Icon(Icons.add_a_photo_outlined, size: 18),
+                  label: Text(tr('Add photo')),
+                ),
+              ],
+            ),
           ],
         ),
       ),
@@ -460,7 +549,7 @@ class _WeekAtAGlanceState extends State<_WeekAtAGlance> {
           else
             for (final (i, c) in classes.indexed) ...[
               if (i > 0) const SizedBox(height: 8),
-              _ClassCard(item: c, live: _isNow(c, plan, now), onTap: () => widget.onOpen(c.tuition.str('id'))),
+              ClassCard(item: c, live: _isNow(c, plan, now), onTap: () => widget.onOpen(c.tuition.str('id'))),
             ],
         ],
       ),
@@ -721,13 +810,16 @@ class _DashedCircle extends CustomPainter {
 
 /// One class as a small card in the tuition's colour: time, tuition, subject
 /// and students, with "Now" or "Next" when it applies. Opens the tuition.
-class _ClassCard extends StatelessWidget {
-  const _ClassCard({required this.item, required this.onTap, this.live = false});
+class ClassCard extends StatelessWidget {
+  const ClassCard({super.key, required this.item, required this.onTap, this.live = false, this.clash = false});
   final WeekClass item;
   final VoidCallback onTap;
 
   /// The class is going on right now.
   final bool live;
+
+  /// Its time overlaps another class on the same day.
+  final bool clash;
 
   @override
   Widget build(BuildContext context) {
@@ -785,7 +877,9 @@ class _ClassCard extends StatelessWidget {
                           ],
                         ),
                       ),
-                      if (live)
+                      if (clash)
+                        _Tag(tr('Time clash'), background: tt.dangerContainer, foreground: tt.danger)
+                      else if (live)
                         _Tag(tr('Now'), background: tt.successContainer, foreground: tt.onSuccessContainer)
                       else if (item.isNext)
                         _Tag(tr('Next'), background: tt.primaryContainer, foreground: tt.onPrimaryContainer)

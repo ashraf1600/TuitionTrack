@@ -78,4 +78,16 @@ void main() {
     expect(to12h('16:00'), 'বিকাল ৪:০০');
     expect(to12h('05:00'), 'ভোর ৫:০০');
   });
+
+  test('overlapping classes on the same day are a clash; back-to-back ones are not', () {
+    final plan = buildWeekPlan([
+      _tuition('a', [('Sunday', '16:00', '17:00'), ('Monday', '10:00', '')]),
+      _tuition('b', [('Sunday', '16:30', '18:00'), ('Monday', '11:00', '12:00')]),
+      _tuition('c', [('Sunday', '18:00', '19:00'), ('Tuesday', '16:00', '17:00')]),
+    ], _thu5pm);
+    final clashes = clashingClasses(plan);
+    expect(clashes.map((c) => '${c.day} ${c.tuition['id']}').toSet(), {'Sunday a', 'Sunday b'});
+    // No end time counts as one hour: 10:00 ends at 11:00, so 11:00 does not clash.
+    expect(classEnd(plan.byDay['Monday']!.first), 11 * 60);
+  });
 }

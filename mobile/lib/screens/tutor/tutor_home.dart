@@ -7,14 +7,16 @@ import '../../widgets/tt_logo.dart';
 import '../../widgets/update_banner.dart';
 import '../common/notifications.dart';
 import 'home_tab.dart';
+import 'routine_tab.dart';
 import 'student_form_screen.dart';
 import 'students_tab.dart';
 import 'tuition_form_screen.dart';
 import 'tuitions_tab.dart';
 import 'wallet_tab.dart';
 
-/// The tutor's app in four tabs: Overview (what to do now), Tuitions (cards;
-/// homework and exams live inside each tuition), Wallet (money) and Students.
+/// The tutor's app in five tabs: Overview (what to do now), Tuitions (cards;
+/// homework and exams live inside each tuition), Routine (the whole week across
+/// tuitions), Wallet (money) and Students.
 class TutorHome extends StatefulWidget {
   const TutorHome({super.key});
 
@@ -27,7 +29,7 @@ class _TutorHomeState extends State<TutorHome> {
   // Bumped after something is created, so the visible tab reloads.
   int _version = 0;
 
-  static const _titles = ['Overview', 'Tuitions', 'Wallet', 'Students'];
+  static const _titles = ['Overview', 'Tuitions', 'Weekly routine', 'Wallet', 'Students'];
 
   Future<void> _create(Widget screen) async {
     final changed = await Navigator.push<bool>(context, MaterialPageRoute(builder: (_) => screen));
@@ -41,7 +43,8 @@ class _TutorHomeState extends State<TutorHome> {
     final body = switch (_tab) {
       0 => HomeTab(key: ValueKey('home$_version'), onCreateTuition: _newTuition),
       1 => TuitionsTab(key: ValueKey('tuitions$_version'), onCreateTuition: _newTuition),
-      2 => WalletTab(key: ValueKey('wallet$_version')),
+      2 => RoutineTab(key: ValueKey('routine$_version'), onCreateTuition: _newTuition),
+      3 => WalletTab(key: ValueKey('wallet$_version')),
       _ => StudentsTab(key: ValueKey('students$_version')),
     };
     return Scaffold(
@@ -54,7 +57,7 @@ class _TutorHomeState extends State<TutorHome> {
       body: Column(children: [const OfflineBanner(), const UpdateBanner(), Expanded(child: body)]),
       floatingActionButton: switch (_tab) {
         1 => FloatingActionButton.extended(onPressed: _newTuition, icon: const Icon(Icons.add), label: Text(tr('Tuition'))),
-        3 => FloatingActionButton.extended(
+        4 => FloatingActionButton.extended(
             onPressed: () => _create(const StudentFormScreen()),
             icon: const Icon(Icons.add),
             label: Text(tr('Student')),
@@ -69,6 +72,11 @@ class _TutorHomeState extends State<TutorHome> {
         destinations: [
           NavigationDestination(icon: const Icon(Icons.space_dashboard_outlined), selectedIcon: const Icon(Icons.space_dashboard), label: tr('Overview')),
           NavigationDestination(icon: const Icon(Icons.grid_view_outlined), selectedIcon: const Icon(Icons.grid_view_rounded), label: tr('Tuitions')),
+          NavigationDestination(
+            icon: const Icon(Icons.calendar_view_week_outlined),
+            selectedIcon: const Icon(Icons.calendar_view_week),
+            label: tr('Routine'),
+          ),
           NavigationDestination(
             icon: const Icon(Icons.account_balance_wallet_outlined),
             selectedIcon: const Icon(Icons.account_balance_wallet),
