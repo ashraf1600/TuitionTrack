@@ -224,7 +224,9 @@ export default function DownloadAppPage() {
       </section>
 
       <footer className="max-w-6xl mx-auto px-4 sm:px-6 py-8 text-xs text-slate-600 border-t border-slate-900">
-        TuitionTrack · for private tutors, coaching centres and their students
+        TuitionTrack · for private tutors, coaching centres and their students ·{' '}
+        <Link to="/privacy" className="hover:text-slate-400">Privacy</Link> ·{' '}
+        <Link to="/terms" className="hover:text-slate-400">Terms</Link>
       </footer>
     </div>
   );
