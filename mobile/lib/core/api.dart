@@ -142,6 +142,31 @@ class ApiClient {
     _refresh = saved['refresh'];
   }
 
+  /// A usable access token for the live connection (/ws/), renewed first when it
+  /// is about to run out (or when [force]d after the server refused it).
+  Future<String?> freshAccessToken({bool force = false}) async {
+    if (!hasSession) return null;
+    if (force || _expiresSoon(_access)) {
+      if (!await _renew()) return null;
+    }
+    return _access;
+  }
+
+  bool _expiresSoon(String? jwt) {
+    if (jwt == null || jwt.isEmpty) return true;
+    final parts = jwt.split('.');
+    if (parts.length != 3) return true;
+    try {
+      final payload = jsonDecode(utf8.decode(base64Url.decode(base64Url.normalize(parts[1]))));
+      final exp = payload is Map ? payload['exp'] : null;
+      if (exp is! num) return true;
+      final expiry = DateTime.fromMillisecondsSinceEpoch(exp.toInt() * 1000, isUtc: true);
+      return expiry.isBefore(serverNow.toUtc().add(const Duration(seconds: 60)));
+    } catch (_) {
+      return true;
+    }
+  }
+
   Future<void> setTokens(String? access, String? refresh) async {
     _access = access;
     _refresh = refresh;

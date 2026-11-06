@@ -1,4 +1,4 @@
-import 'dart:ui' show DartPluginRegistrant;
+import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -11,8 +11,11 @@ import 'package:workmanager/workmanager.dart';
 
 import 'core/api.dart';
 import 'core/app_keys.dart';
-import 'core/i18n.dart';
+import 'core/background_check.dart';
+import 'core/json.dart';
+import 'core/live.dart';
 import 'core/offline.dart';
+import 'core/push.dart';
 import 'core/reminders.dart';
 import 'core/repo.dart';
 import 'core/session.dart';
@@ -23,15 +26,6 @@ import 'screens/student/student_home.dart';
 import 'screens/tutor/tutor_home.dart';
 import 'widgets/theme.dart';
 import 'widgets/tt_logo.dart';
-
-/// The server the app talks to until the user sets another one on the sign-in screen.
-/// Override at build time with --dart-define=API_BASE_URL=https://… . Release builds
-/// default to the hosted API (https); development builds to the computer they run on
-/// (10.0.2.2 is how an Android emulator reaches it).
-const defaultServer = String.fromEnvironment(
-  'API_BASE_URL',
-  defaultValue: kReleaseMode ? 'https://tuitiontrack-api.onrender.com' : 'http://10.0.2.2:8000',
-);
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -56,6 +50,8 @@ Future<void> main() async {
     debugPrint('Notifications unavailable: $error');
   }
   Reminders.instance.onResponse = (response) => handleNotificationResponse(session, response);
+  // Push notifications, when this build has a Firebase project (see core/push.dart).
+  await Push.init(onOpen: (payload) => openNotificationTarget(session, payload));
   runApp(TuitionTrackApp(session: session));
   await session.restore();
   // The notification that opened the app (e.g. "Mark done"), once someone is signed in.
@@ -63,6 +59,11 @@ Future<void> main() async {
   if (launch != null && session.signedIn) {
     Reminders.instance.launchResponse = null;
     WidgetsBinding.instance.addPostFrameCallback((_) => handleNotificationResponse(session, launch));
+  }
+  final pushed = Push.launchMessage;
+  if (pushed != null && session.signedIn) {
+    Push.launchMessage = null;
+    WidgetsBinding.instance.addPostFrameCallback((_) => openNotificationTarget(session, Push.payloadOf(pushed)));
   }
   await _startBackgroundCheck();
 }
@@ -86,24 +87,7 @@ Future<void> _startBackgroundCheck() async {
 @pragma('vm:entry-point')
 void backgroundDispatcher() {
   Workmanager().executeTask((task, input) async {
-    try {
-      DartPluginRegistrant.ensureInitialized();
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.reload();
-      final settings = PrefsSettings(prefs);
-      if (!Reminders.enabledIn(settings)) return true;
-      final saved = settings.getString(Session.serverKey);
-      final api = ApiClient(baseUrl: saved == null || saved.isEmpty ? defaultServer : saved, tokens: SecureTokenStore());
-      await api.loadTokens();
-      if (!api.hasSession) return true;
-      setAppLanguage(settings.getString('language') ?? 'en');
-      final items = await Repo(api).notifications();
-      await Reminders.instance.init();
-      await Reminders.instance.announce(settings, items);
-    } catch (error) {
-      // Offline, signed out, or the server is asleep: try again next time.
-      debugPrint('Background check skipped: $error');
-    }
+    await checkForUpdatesInBackground();
     return true;
   });
 }
@@ -119,20 +103,35 @@ class TuitionTrackApp extends StatefulWidget {
 class _TuitionTrackAppState extends State<TuitionTrackApp> with WidgetsBindingObserver {
   final _navigator = rootNavigatorKey;
   String? _lastUser;
+  StreamSubscription<Json>? _live;
+  Timer? _refreshSoon;
 
   @override
   void initState() {
     super.initState();
     widget.session.addListener(_onSessionChanged);
     WidgetsBinding.instance.addObserver(this);
+    _onSessionChanged();
+    // The other side saved something (a class marked, a payment, homework): open screens reload.
+    _live = LiveConnection.instance.events.listen((event) {
+      if (event.str('type') != 'nudge') return;
+      _refreshSoon?.cancel();
+      _refreshSoon = Timer(const Duration(seconds: 1), () => widget.session.api.dataVersion.value++);
+    });
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    final session = widget.session;
+    // The live connection is open only while the app is on screen; pushes cover the rest.
+    if (state == AppLifecycleState.paused || state == AppLifecycleState.detached) {
+      LiveConnection.instance.stop();
+      return;
+    }
     // Back in the app: see whether the server can be reached and send anything made offline.
     if (state != AppLifecycleState.resumed) return;
-    final session = widget.session;
     if (!session.signedIn) return;
+    LiveConnection.instance.start(session.api);
     if (session.api.offline.value) {
       session.api.checkConnection();
     } else {
@@ -148,15 +147,25 @@ class _TuitionTrackAppState extends State<TuitionTrackApp> with WidgetsBindingOb
   void dispose() {
     widget.session.removeListener(_onSessionChanged);
     WidgetsBinding.instance.removeObserver(this);
+    unawaited(_live?.cancel());
+    _refreshSoon?.cancel();
     super.dispose();
   }
 
   void _onSessionChanged() {
     // When the person changes (sign out, sign in as someone else) close whatever was open.
-    final current = widget.session.user?['id']?.toString();
+    final session = widget.session;
+    final current = session.user?['id']?.toString();
     if (current != _lastUser) {
       _lastUser = current;
       _navigator.currentState?.popUntil((route) => route.isFirst);
+      if (current == null) {
+        LiveConnection.instance.stop();
+      } else {
+        LiveConnection.instance.start(session.api);
+        // Signed in on this phone: its pushes now belong to this account.
+        unawaited(Push.register(session));
+      }
     }
   }
 

@@ -14,6 +14,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:tuitiontrack/core/api.dart';
+import 'package:tuitiontrack/core/live.dart';
 import 'package:tuitiontrack/core/session.dart';
 
 const fixtureDir = 'test/fixtures';
@@ -155,6 +156,8 @@ class Fixtures {
 
 /// A signed-in session (or a signed-out one) talking to the recorded answers.
 Future<Session> demoSession(Fixtures fixtures, {bool signedIn = true, bool light = false, String language = 'en'}) async {
+  // No server here to keep a live connection with.
+  LiveConnection.instance.enabled = false;
   final settings = MemorySettings();
   await settings.setString('language', language);
   if (light) await settings.setString('theme_mode', 'light');

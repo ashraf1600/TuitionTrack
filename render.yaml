@@ -22,7 +22,9 @@ services:
     region: singapore     # Same region as tuitiontrack-db
     rootDir: backend
     buildCommand: bash build.sh
-    startCommand: gunicorn config.wsgi:application --bind 0.0.0.0:$PORT --workers 2 --timeout 60
+    # uvicorn serves the API and the live chat connection (/ws/) from one process.
+    # One process keeps live updates in memory; for more, add REDIS_URL (see settings.py).
+    startCommand: uvicorn config.asgi:application --host 0.0.0.0 --port $PORT --workers 1 --proxy-headers --forwarded-allow-ips '*'
     healthCheckPath: /api/v1/meta/
     envVars:
       - key: PYTHON_VERSION
@@ -35,6 +37,14 @@ services:
         value: Asia/Dhaka
       - key: REFRESH_TOKEN_LIFETIME_DAYS
         value: "30"
+      # Under uvicorn (ASGI) each request closes its database connection (Django's advice);
+      # use Neon's "pooled" connection string for DATABASE_URL so that stays cheap.
+      - key: DB_CONN_MAX_AGE
+        value: "0"
+      # Push notifications: the Firebase service account key JSON (base64 is fine too).
+      # Empty = no pushes; the app still checks every 15 minutes. See docs/SETUP_GUIDE.md.
+      - key: FCM_SERVICE_ACCOUNT
+        sync: false
 
       # ── Database Connection (Render Managed PostgreSQL) ──
       # Automatically connects to tuitiontrack-db over Render's low-latency internal network.

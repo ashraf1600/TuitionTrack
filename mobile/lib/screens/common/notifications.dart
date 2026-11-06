@@ -7,6 +7,7 @@ import '../../core/api.dart';
 import '../../core/format.dart';
 import '../../core/i18n.dart';
 import '../../core/json.dart';
+import '../../core/live.dart';
 import '../../core/reminders.dart';
 import '../../core/repo.dart';
 import '../../core/session.dart';
@@ -30,6 +31,8 @@ class NotificationBell extends StatefulWidget {
 class _NotificationBellState extends State<NotificationBell> with WidgetsBindingObserver {
   List<Json> _items = const [];
   Timer? _timer;
+  Timer? _soon;
+  StreamSubscription<Json>? _live;
 
   @override
   void initState() {
@@ -37,12 +40,23 @@ class _NotificationBellState extends State<NotificationBell> with WidgetsBinding
     WidgetsBinding.instance.addObserver(this);
     _load();
     _timer = Timer.periodic(const Duration(minutes: 2), (_) => _load());
+    // "Something changed for you" from the server: look now (gathered over a second).
+    _live = LiveConnection.instance.events.listen((event) {
+      final type = event.str('type');
+      if (type != 'nudge' && type != 'connected') return;
+      _soon?.cancel();
+      _soon = Timer(const Duration(seconds: 1), () {
+        if (mounted) _load();
+      });
+    });
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _timer?.cancel();
+    _soon?.cancel();
+    unawaited(_live?.cancel());
     super.dispose();
   }
 

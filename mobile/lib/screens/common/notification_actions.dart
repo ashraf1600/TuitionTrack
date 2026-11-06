@@ -28,14 +28,19 @@ Future<void> handleNotificationResponse(Session session, NotificationResponse re
     payload = <String, dynamic>{};
   }
   final repo = Repo(session.api, outbox: session.outbox);
-  final type = payload.str('type');
 
   if (response.actionId == Reminders.markActionId && session.isTutor) {
     await markNextClassFromReminder(repo, session, payload.str('tuition'));
     return;
   }
 
-  // A plain tap opens the screen the notification is about.
+  await openNotificationTarget(session, payload);
+}
+
+/// Opens the screen a notification is about: a chat, a tuition (tutor) or a tutor's page (student).
+Future<void> openNotificationTarget(Session session, Json payload) async {
+  if (!session.signedIn) return;
+  final type = payload.str('type');
   String tuitionId = (type == 'mark' || type == 'tuition') ? payload.str('tuition') : '';
   String tutorId = type == 'tutor' ? payload.str('tutor') : '';
   final link = payload.str('link');

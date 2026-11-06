@@ -119,7 +119,7 @@ If you prefer to configure each component individually in the Render dashboard:
    - **Root Directory**: `backend`
    - **Runtime**: `Python 3`
    - **Build Command**: `bash build.sh`
-   - **Start Command**: `gunicorn config.wsgi:application --bind 0.0.0.0:$PORT --workers 2 --timeout 60`
+   - **Start Command**: `uvicorn config.asgi:application --host 0.0.0.0 --port $PORT --workers 1 --proxy-headers --forwarded-allow-ips '*'`
    - **Plan**: `Free`
 4. Expand **Advanced** and set:
    - **Health Check Path**: `/api/v1/meta/`

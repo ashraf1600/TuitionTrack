@@ -10,6 +10,11 @@ GET  /api/v1/chats/<id>/messages/         ?after=<id> (new ones) | ?before=<id> 
 POST /api/v1/chats/<id>/messages/         {body, client_ref} or multipart {image, body, client_ref}
 POST /api/v1/chats/<id>/read/             everything up to now has been seen
 POST /api/v1/chats/broadcast/             tutor: {tuition_id, body} to every student of a tuition
+POST /api/v1/push/devices/                {token, platform} this phone gets push notifications
+DELETE /api/v1/push/devices/              {token} it no longer does (works signed out too)
+
+New messages and "seen" also go out live over /ws/ (consumers.py) and, to a
+phone whose app is closed, as a push notification (push.py).
 
 Students see their tutor as "Ashraf Sir". Sending needs the tutor and student
 to still be linked; reading an old conversation does not.
@@ -32,8 +37,12 @@ from rest_framework.views import APIView
 from apps.authentication.naming import sir_name
 from config.api import ObjectJSONParser
 
+from config.background import run_after_commit
+
+from . import push
 from .links import are_linked, linked_ids
-from .models import Conversation, Message
+from .live import send_to_users
+from .models import Conversation, Message, PushDevice
 
 MAX_PAGE = 100
 
@@ -133,6 +142,38 @@ def _conversation_for(request, pk):
         from django.http import Http404
         raise Http404
     return conv
+
+
+def _push_messages(rows):
+    """rows: [(recipient_id, title, body, conversation_id, message_id)] — one visible push each."""
+    for recipient_id, title, body, conv_id, message_id in rows:
+        push.send(
+            [recipient_id], title=title, body=body, tag=f'chat-{conv_id}',
+            data={'kind': 'message', 'conversation_id': conv_id, 'message_id': message_id, 'link': f'/chats/{conv_id}'},
+        )
+
+
+def announce_messages(pairs, request):
+    """Tells both people of each (conversation, message) about it: live to open apps, a push to the recipient."""
+    events, pushes = [], []
+    for conv, message in pairs:
+        for member in (conv.tutor, conv.student):
+            events.append((member.id, {
+                'type': 'message',
+                'conversation_id': str(conv.id),
+                'message': message_json(message, member, request),
+            }))
+        recipient = conv.other(message.sender)
+        pushes.append((
+            recipient.id,
+            display_name(message.sender, recipient),
+            message.body.strip()[:240] or '📷 Photo',
+            str(conv.id),
+            str(message.id),
+        ))
+    send_to_users(events)
+    if pushes and push.enabled():
+        run_after_commit(_push_messages, pushes)
 
 
 class ChatListView(APIView):
@@ -309,6 +350,7 @@ class MessagesView(APIView):
             # The same client_ref arrived twice at once: answer with the one that was kept.
             message = Message.objects.get(sender=user, client_ref=client_ref)
             return Response(message_json(message, user, request), status=status.HTTP_200_OK)
+        announce_messages([(conv, message)], request)
         return Response(message_json(message, user, request), status=status.HTTP_201_CREATED)
 
     def _check_image(self, image):
@@ -361,6 +403,7 @@ class BroadcastView(APIView):
             ).select_related('student')
         ]
         sent = 0
+        created = []
         with transaction.atomic():
             for student in students:
                 conv, _ = Conversation.objects.get_or_create(tutor=user, student=student)
@@ -369,7 +412,10 @@ class BroadcastView(APIView):
                     continue
                 message = Message.objects.create(conversation=conv, sender=user, body=body, client_ref=client_ref)
                 Conversation.objects.filter(pk=conv.pk).update(last_message_at=message.created_at, tutor_read_at=message.created_at)
+                conv.tutor, conv.student = user, student
+                created.append((conv, message))
                 sent += 1
+            announce_messages(created, request)
         return Response({'sent': sent, 'students': len(students)}, status=status.HTTP_201_CREATED)
 
 
@@ -381,7 +427,42 @@ class ReadView(APIView):
         conv = _conversation_for(request, pk)
         now = timezone.now()
         Conversation.objects.filter(pk=conv.pk).update(**{Conversation.read_field(user): now})
+        send_to_users([(conv.other(user).id, {'type': 'read', 'conversation_id': str(conv.id), 'read_at': _iso(now)})])
         return Response({'read_at': _iso(now)})
+
+
+class PushDeviceView(APIView):
+    """Registers this phone for push notifications, or removes it.
+
+    Removing works without signing in: holding the token is proof enough, and a
+    phone whose session ended elsewhere must still be able to stop its pushes.
+    """
+
+    def get_permissions(self):
+        from rest_framework.permissions import AllowAny
+        return [AllowAny()] if self.request.method == 'DELETE' else [IsAuthenticated()]
+
+    @staticmethod
+    def _token(request):
+        token = str(request.data.get('token') or '').strip()
+        return token if 20 <= len(token) <= 512 else ''
+
+    def post(self, request):
+        token = self._token(request)
+        if not token:
+            return Response({'message': 'A push token is needed.'}, status=status.HTTP_400_BAD_REQUEST)
+        platform = str(request.data.get('platform') or 'android')[:16]
+        # The same phone signed in as someone else: the token moves to them.
+        PushDevice.objects.update_or_create(token=token, defaults={'user': request.user, 'platform': platform})
+        stale = PushDevice.objects.filter(user=request.user).values_list('id', flat=True)[PushDevice.MAX_PER_USER:]
+        PushDevice.objects.filter(id__in=list(stale)).delete()
+        return Response({'push': push.enabled()}, status=status.HTTP_201_CREATED)
+
+    def delete(self, request):
+        token = self._token(request)
+        if token:
+            PushDevice.objects.filter(token=token).delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 def unread_notifications(user, request=None):
