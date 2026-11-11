@@ -12,6 +12,7 @@ import '../../widgets/ui.dart';
 import '../common/cycle_progress.dart';
 import '../common/notification_actions.dart';
 import '../common/payments_screen.dart';
+import 'class_done_sheet.dart';
 import 'exam_editor_screen.dart';
 import 'exams_view.dart';
 import 'homework_tab.dart';
@@ -320,20 +321,26 @@ class _ClassesTab extends StatelessWidget {
   }
 
   /// Records the payment at once, with Undo (no "are you sure" step).
-  /// One tap: marks the next class done today, with Undo (the tile opens the full editor).
+  /// Marks the next class done today from one sheet (topic and homework optional), with Undo.
   Future<void> _quickMark(BuildContext context, Json entry) async {
     final tuition = data.tuition;
     final repo = context.read<Repo>();
     final classNo = classNoOf(entry);
+    // One step: what was covered and any homework, then done.
+    final details = await askClassDone(context, tuitionTitle: tuition.str('title'), classNo: classNo);
+    if (details == null || !context.mounted) return;
     Json result = const {};
     final ok = await attempt(context, () async {
-      result = await repo.markClass(tuition.str('id'), classNo, true, tuitionTitle: tuition.str('title'));
+      result = await repo.markClass(tuition.str('id'), classNo, true, topic: details.topic, tuitionTitle: tuition.str('title'));
+      if (details.homework.isNotEmpty) await sendClassHomework(repo, tuition, classNo, details.homework, details.due);
     });
     if (!ok || !context.mounted) return;
     final messenger = ScaffoldMessenger.maybeOf(context);
     showToast(
       context,
-      classMarkedMessage(result, classNo, tuition.str('title')),
+      details.homework.isEmpty
+          ? classMarkedMessage(result, classNo, tuition.str('title'))
+          : tr('Class {n} marked done and homework sent.', {'n': classNo}),
       actionLabel: tr('Undo'),
       onAction: () async {
         try {
