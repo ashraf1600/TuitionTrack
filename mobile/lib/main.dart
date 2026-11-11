@@ -41,18 +41,17 @@ Future<void> main() async {
     ),
     settings: PrefsSettings(prefs),
   );
-  // Month and day names for both languages.
-  await initializeDateFormatting();
-  // Phone notifications; a phone that refuses them still runs the app.
-  try {
-    await Reminders.instance.init();
-  } catch (error) {
-    debugPrint('Notifications unavailable: $error');
-  }
-  Reminders.instance.onResponse = (response) => handleNotificationResponse(session, response);
-  // Push notifications, when this build has a Firebase project (see core/push.dart).
-  await Push.init(onOpen: (payload) => openNotificationTarget(session, payload));
+  // The logo is on screen at once; everything below happens behind it.
   runApp(TuitionTrackApp(session: session));
+  Reminders.instance.onResponse = (response) => handleNotificationResponse(session, response);
+  await Future.wait([
+    // Month and day names for both languages.
+    initializeDateFormatting(),
+    // Phone notifications; a phone that refuses them still runs the app.
+    Reminders.instance.init().catchError((Object error) => debugPrint('Notifications unavailable: $error')),
+    // Push notifications, when this build has a Firebase project (see core/push.dart).
+    Push.init(onOpen: (payload) => openNotificationTarget(session, payload)),
+  ]);
   await session.restore();
   // The notification that opened the app (e.g. "Mark done"), once someone is signed in.
   final launch = Reminders.instance.launchResponse;

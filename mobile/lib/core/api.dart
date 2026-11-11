@@ -13,6 +13,9 @@ import 'offline.dart';
 typedef Json = Map<String, dynamic>;
 
 /// An error answer from the API (or a failure to reach it), already in words a person can read.
+/// Thrown inside [ApiClient.fromSavedOnly] when a request has nothing saved on the phone.
+class SavedCopyMissing implements Exception {}
+
 class ApiException implements Exception {
   ApiException(this.message, {this.code = 'error', this.status = 0, this.errors = const {}, this.data = const {}});
 
@@ -299,6 +302,10 @@ class ApiClient {
     final uri = _uri(path, query);
     final key = method == 'GET' && cache != null && remember ? cacheKeyFor(uri) : null;
     final hasSaved = key != null && cache!.contains(key);
+    if (Zone.current[_savedOnly] == true) {
+      if (hasSaved) return _saved(key);
+      throw SavedCopyMissing();
+    }
     // With a saved answer to fall back on, do not keep the person waiting on a sleeping server.
     final timeout = hasSaved ? _quickTimeout : _timeout;
     http.Response response;
@@ -327,6 +334,21 @@ class ApiClient {
     cache!.write(key, data);
     return overlay == null ? data : overlay!(key, data);
   }
+
+  /// What the server last answered for this GET, straight from the phone (null when never fetched).
+  /// Lets a screen show something at once while the fresh answer is on its way.
+  dynamic saved(String path, {Map<String, dynamic>? query}) {
+    if (cache == null) return null;
+    final key = cacheKeyFor(_uri(path, query));
+    return cache!.contains(key) ? _saved(key) : null;
+  }
+
+  /// Runs [load] answering every GET from the phone's saved copy, without touching the network.
+  /// Throws [SavedCopyMissing] when any of its requests has no saved copy (or is not a GET).
+  static Future<T> fromSavedOnly<T>(Future<T> Function() load) =>
+      runZoned(load, zoneValues: {_savedOnly: true});
+
+  static const _savedOnly = #tuitionTrackSavedOnly;
 
   dynamic _saved(String key) {
     final data = cache!.read(key);
