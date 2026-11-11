@@ -121,6 +121,8 @@ class LoaderState<T> extends State<Loader<T>> {
   bool _loaded = false;
   String? _error;
   bool _slow = false;
+  // Showing the saved copy while the fresh one is fetched.
+  bool _refreshing = false;
   Timer? _slowTimer;
   ValueNotifier<int>? _dataVersion;
 
@@ -133,7 +135,27 @@ class LoaderState<T> extends State<Loader<T>> {
     } on ProviderNotFoundException {
       _dataVersion = null;
     }
-    reload();
+    _open();
+  }
+
+  /// Shows what the phone saved last time straight away (when it has everything this
+  /// screen asks for), then fetches the fresh answer quietly. A screen never opened
+  /// before waits for the server as usual.
+  Future<void> _open() async {
+    try {
+      final saved = await ApiClient.fromSavedOnly(widget.load);
+      if (!mounted) return;
+      setState(() {
+        _data = saved;
+        _loaded = true;
+        _refreshing = true;
+      });
+      await reload(quiet: true);
+      if (mounted) setState(() => _refreshing = false);
+    } catch (_) {
+      // Nothing saved for this screen yet (or it could not be read): load normally.
+      if (mounted && !_loaded) await reload();
+    }
   }
 
   @override
@@ -229,9 +251,27 @@ class LoaderState<T> extends State<Loader<T>> {
         ),
       );
     }
-    final child = widget.builder(context, _data as T, reload);
-    if (!widget.scrollable) return child;
-    return RefreshIndicator(onRefresh: reload, child: child);
+    final built = widget.builder(context, _data as T, reload);
+    final content = widget.scrollable ? RefreshIndicator(onRefresh: reload, child: built) : built;
+    // A hairline at the top while the saved copy is being brought up to date.
+    return Stack(
+      fit: StackFit.passthrough,
+      children: [
+        content,
+        Positioned(
+          top: 0,
+          left: 0,
+          right: 0,
+          child: IgnorePointer(
+            child: AnimatedOpacity(
+              opacity: _refreshing ? 1 : 0,
+              duration: const Duration(milliseconds: 250),
+              child: _refreshing ? const LinearProgressIndicator(minHeight: 2) : const SizedBox(height: 2),
+            ),
+          ),
+        ),
+      ],
+    );
   }
 }
 

@@ -141,6 +141,17 @@ class Session extends ChangeNotifier {
     if (api.hasSession) {
       // Whose waiting changes to show, even before the server answers.
       outbox.useOwner(settings.getString('last_user_id') ?? '');
+      // Opened before on this phone: show the app at once with the profile saved last time,
+      // and check it with the server in the background (which may be waking up).
+      final saved = api.saved('/auth/me/');
+      if (saved is Map && '${saved['id'] ?? ''}'.isNotEmpty) {
+        user = Map<String, dynamic>.from(saved);
+        outbox.useOwner(user!.str('id'));
+        ready = true;
+        notifyListeners();
+        unawaited(_confirmUser());
+        return;
+      }
       try {
         user = Map<String, dynamic>.from(await api.get('/auth/me/') as Map);
         outbox.useOwner(user!.str('id'));
@@ -156,6 +167,26 @@ class Session extends ChangeNotifier {
     ready = true;
     notifyListeners();
     if (user != null) unawaited(syncPending());
+  }
+
+  /// After opening from the saved profile: the server's word on who is signed in.
+  /// Only a refused session signs the person out; an unreachable server changes nothing.
+  Future<void> _confirmUser() async {
+    try {
+      final fresh = Map<String, dynamic>.from(await api.get('/auth/me/') as Map);
+      if (user == null) return; // signed out meanwhile
+      user = fresh;
+      outbox.useOwner(fresh.str('id'));
+      notifyListeners();
+      unawaited(syncPending());
+    } on ApiException catch (error) {
+      if (error.status == 401 || error.status == 403) {
+        user = null;
+        notifyListeners();
+      }
+    } catch (_) {
+      // keep the saved profile; the next launch checks again
+    }
   }
 
   Future<void> setServer(String url) async {

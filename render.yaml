@@ -70,9 +70,9 @@ services:
       # This file is a Blueprint: a value set here replaces the Dashboard's on every sync,
       # so change the version here, not in the Dashboard.
       - key: APP_LATEST_VERSION
-        value: "1.7.0"
+        value: "1.7.1"
       - key: APP_RELEASE_NOTES
-        value: "Live chat, notifications even when the app is closed, weekly routine, Google sign-in"
+        value: "Opens instantly: your last data shows at once while the server catches up"
       - key: APP_DOWNLOAD_URL
         value: https://github.com/ashraf1600/TuitionTrack/releases/latest/download/TuitionTrack.apk
 
