@@ -72,7 +72,7 @@ services:
       - key: APP_LATEST_VERSION
         value: "1.7.1"
       - key: APP_RELEASE_NOTES
-        value: "Opens instantly: your last data shows at once while the server catches up"
+        value: "Opens instantly with your last data, and a fresher, clearer look"
       - key: APP_DOWNLOAD_URL
         value: https://github.com/ashraf1600/TuitionTrack/releases/latest/download/TuitionTrack.apk
 

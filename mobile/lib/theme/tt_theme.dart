@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
-/// Colour tokens from the calm redesign handoff (`d` = dark theme, `l` = light).
+/// Colour tokens (`d` = dark theme, `l` = light): the calm redesign palette, with the
+/// primary blue brought closer to the logo, a clearer danger red, and a cool light theme.
 /// Every text token clears WCAG AA (4.5:1) on the surface it sits on.
 class TtColors {
   // Dark
@@ -11,16 +12,16 @@ class TtColors {
   static const dBorder = Color(0xFF2C3542);
   static const dTextPrimary = Color(0xFFE7EBF0);
   static const dTextSecond = Color(0xFFA7B2BF);
-  static const dTextTertiary = Color(0xFF8A94A1);
-  static const dPrimary = Color(0xFF7FA9D8);
+  static const dTextTertiary = Color(0xFF98A2AF);
+  static const dPrimary = Color(0xFF6CAEF0);
   static const dOnPrimary = Color(0xFF0E1319);
-  static const dPrimaryCont = Color(0xFF22303F);
+  static const dPrimaryCont = Color(0xFF1F3246);
   static const dOnPrimaryCont = Color(0xFFA8C8E8);
   static const dSuccess = Color(0xFF74C79A);
   static const dSuccessCont = Color(0xFF1B2E25);
   static const dWarning = Color(0xFFE0B468);
   static const dWarningCont = Color(0xFF342B1B);
-  static const dDanger = Color(0xFFE18C86);
+  static const dDanger = Color(0xFFF0766D);
   static const dDangerCont = Color(0xFF3A2422);
   static const dChartEarned = Color(0xFF5EB489);
   static const dChartTrack = Color(0xFF2A3442);
@@ -30,31 +31,31 @@ class TtColors {
   static const dDotPast = Color(0xFF333F4C);
 
   // Light
-  static const lBackground = Color(0xFFF4F1EC);
-  static const lSurface = Color(0xFFFBF9F6);
-  static const lCard = Color(0xFFFFFCF8);
-  static const lCardRaised = Color(0xFFEDF1F6);
-  static const lBorder = Color(0xFFE6E1D8);
+  static const lBackground = Color(0xFFF2F5F9);
+  static const lSurface = Color(0xFFF8FAFC);
+  static const lCard = Color(0xFFFFFFFF);
+  static const lCardRaised = Color(0xFFE8EEF5);
+  static const lBorder = Color(0xFFDFE5EC);
   static const lTextPrimary = Color(0xFF262B33);
   static const lTextSecond = Color(0xFF5A6472);
   static const lTextTertiary = Color(0xFF646D7B);
-  static const lPrimary = Color(0xFF35648F);
-  static const lOnPrimary = Color(0xFFFFFCF8);
-  static const lPrimaryCont = Color(0xFFE4EBF2);
-  static const lOnPrimaryCont = Color(0xFF27506F);
+  static const lPrimary = Color(0xFF2B6CB0);
+  static const lOnPrimary = Color(0xFFFFFFFF);
+  static const lPrimaryCont = Color(0xFFE1ECF8);
+  static const lOnPrimaryCont = Color(0xFF1F4F82);
   static const lSuccess = Color(0xFF246B4D);
   static const lSuccessCont = Color(0xFFE0EDE5);
   static const lOnSuccessCont = Color(0xFF1F6248);
   static const lWarning = Color(0xFF8A6316);
   static const lWarningCont = Color(0xFFF7ECD8);
   static const lOnWarningCont = Color(0xFF7A5610);
-  static const lDanger = Color(0xFFA8453E);
+  static const lDanger = Color(0xFFB3362E);
   // Not in the handoff table: the light counterpart of dDangerCont (lDanger on it is 5.0:1).
   static const lDangerCont = Color(0xFFF6E3E0);
   static const lChartEarned = Color(0xFF2E8A63);
-  static const lChartTrack = Color(0xFFE7E2D9);
+  static const lChartTrack = Color(0xFFE2E8EF);
   // Light versions of the "This week" markers, picked to match the light mockup.
-  static const lPastDayFill = Color(0xFFECE8E1);
+  static const lPastDayFill = Color(0xFFE9EEF4);
   static const lDotUpcoming = Color(0xFF8C95A1);
   static const lDotPast = Color(0xFFC2C8D0);
 
