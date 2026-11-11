@@ -65,24 +65,25 @@ Future<void> openNotificationTarget(Session session, Json payload) async {
 
 /// Records the next class of a tuition from the "Mark done" button, unless a
 /// class is already recorded for today, and offers Undo.
-Future<void> markNextClassFromReminder(Repo repo, Session session, String tuitionId) async {
+/// [topic] is saved with the class. Returns the class number it marked, or null when it marked nothing.
+Future<int?> markNextClassFromReminder(Repo repo, Session session, String tuitionId, {String topic = ''}) async {
   final messenger = rootMessengerKey.currentState;
-  if (tuitionId.isEmpty) return;
+  if (tuitionId.isEmpty) return null;
   try {
     final tuition = await repo.tuition(tuitionId);
     final title = tuition.str('title');
     if (classRecordedOn(tuition, DateTime.now())) {
       showToastOn(messenger, tr("{title}: today's class is already marked.", {'title': title}));
-      return;
+      return null;
     }
     final cycle = tuition.obj('active_cycle');
     final next = cycle == null ? null : orderedClasses(cycle).where((c) => !c.flag('completed')).firstOrNull;
     if (next == null) {
       showToastOn(messenger, tr('{title}: no class left to mark in this cycle.', {'title': title}));
-      return;
+      return null;
     }
     final classNo = classNoOf(next);
-    final result = await repo.markClass(tuitionId, classNo, true, tuitionTitle: title);
+    final result = await repo.markClass(tuitionId, classNo, true, topic: topic, tuitionTitle: title);
     session.api.dataVersion.value++;
     showToastOn(
       messenger,
@@ -98,8 +99,10 @@ Future<void> markNextClassFromReminder(Repo repo, Session session, String tuitio
         }
       },
     );
+    return classNo;
   } on ApiException catch (error) {
     showToastOn(messenger, error.message, error: true);
+    return null;
   }
 }
 

@@ -1358,4 +1358,9 @@ const bnStrings = <String, String>{
   '{n} this week': 'এই সপ্তাহে {n}',
   'Two of your classes are at the same time. Tell one of your tutors.':
       'তোমার দুইটা ক্লাস একই সময়ে পড়েছে। একজন স্যারকে জানাও।',
+  // ── Class done sheet ──
+  'Class {n} done': 'ক্লাস {n} হয়েছে',
+  'Homework (optional)': 'হোমওয়ার্ক (ঐচ্ছিক)',
+  'Mark done and send homework': 'ক্লাস চিহ্নিত করুন, হোমওয়ার্ক পাঠান',
+  'Class {n} marked done and homework sent.': 'ক্লাস {n} চিহ্নিত হয়েছে, হোমওয়ার্কও পাঠানো হয়েছে।',
 };

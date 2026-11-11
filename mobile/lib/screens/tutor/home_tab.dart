@@ -4,6 +4,8 @@ import 'dart:math' show pi;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../core/api.dart';
+import '../../core/app_keys.dart';
 import '../../core/format.dart';
 import '../../core/i18n.dart';
 import '../../core/json.dart';
@@ -21,6 +23,7 @@ import '../../widgets/ui.dart';
 import '../common/account_screen.dart';
 import '../common/cycle_progress.dart';
 import '../common/notification_actions.dart';
+import 'class_done_sheet.dart';
 import 'to_check_screen.dart';
 import 'tuition_form_screen.dart';
 import 'tuition_screen.dart';
@@ -650,7 +653,19 @@ class _NextUp extends StatelessWidget {
                   child: FilledButton.icon(
                     style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(46)),
                     onPressed: () async {
-                      await markNextClassFromReminder(context.read<Repo>(), context.read<Session>(), item.tuition.str('id'));
+                      final repo = context.read<Repo>();
+                      final session = context.read<Session>();
+                      // One step: what was covered and any homework, then done.
+                      final details = await askClassDone(context, tuitionTitle: item.tuition.str('title'), classNo: classNoOf(nextNo));
+                      if (details == null) return;
+                      final marked = await markNextClassFromReminder(repo, session, item.tuition.str('id'), topic: details.topic);
+                      if (marked != null && details.homework.isNotEmpty) {
+                        try {
+                          await sendClassHomework(repo, item.tuition, marked, details.homework, details.due);
+                        } on ApiException catch (error) {
+                          showToastOn(rootMessengerKey.currentState, error.message, error: true);
+                        }
+                      }
                       await reload();
                     },
                     icon: const Icon(Icons.check_rounded),
