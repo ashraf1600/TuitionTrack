@@ -67,6 +67,11 @@ class _ExamTakeScreenState extends State<ExamTakeScreen> {
   bool _autoSent = false;
   String? _error;
 
+  /// Set when sending failed for want of a connection: the answers are sent
+  /// again on their own at this time, without asking, until the window closes.
+  DateTime? _retryAt;
+  static const _retryEvery = Duration(seconds: 15);
+
   Json get exam => widget.exam;
   bool get _preview => widget.preview;
 
@@ -156,11 +161,41 @@ class _ExamTakeScreenState extends State<ExamTakeScreen> {
         _left = left;
       });
     }
+    // Sending failed offline earlier: try again quietly while the server can still take it.
+    if (_retryAt != null && !_submitting) {
+      if (phase == _Phase.over) {
+        _retryAt = null;
+        if (mounted) {
+          setState(() => _error = tr(
+              'The time ran out before your answers could be sent. They are still saved on this phone; tell your tutor.'));
+        }
+        return;
+      }
+      if (!now.isBefore(_retryAt!)) {
+        _autoSent = true;
+        _submit(auto: true);
+        return;
+      }
+    }
     // Time is up and late work is not accepted: send whatever has been answered, once.
     if (phase == _Phase.grace && !_autoSent && !_submitting) {
       _autoSent = true;
       _submit(auto: true);
     }
+  }
+
+  /// The answers reached the server but its reply did not reach the phone, so
+  /// the retry is refused as a second turn-in. That is a success.
+  static bool _alreadyIn(ApiException error) =>
+      error.status == 400 && error.message.toLowerCase().contains('already submitted');
+
+  void _keepTrying() {
+    if (!mounted) return;
+    setState(() {
+      _submitting = false;
+      _retryAt = context.read<Session>().api.serverNow.add(_retryEvery);
+      _error = tr('No internet. Your answers are saved on this phone and will be sent on their own when the connection is back. Keep this screen open.');
+    });
   }
 
   void _jumpTo(GlobalKey key) {
@@ -221,7 +256,10 @@ class _ExamTakeScreenState extends State<ExamTakeScreen> {
       if (!ok || !mounted) return;
     }
 
-    setState(() => _submitting = true);
+    setState(() {
+      _submitting = true;
+      _retryAt = null;
+    });
     final session = context.read<Session>();
     try {
       final response = await context.read<Repo>().submitExam(
@@ -233,6 +271,12 @@ class _ExamTakeScreenState extends State<ExamTakeScreen> {
       await session.settings.setString(_draftKey, '');
       if (mounted) Navigator.pop(context, response);
     } on ApiException catch (error) {
+      if (_alreadyIn(error)) {
+        await session.settings.setString(_draftKey, '');
+        if (mounted) Navigator.pop(context, <String, dynamic>{'already_submitted': true});
+        return;
+      }
+      if (error.isUnreachable) return _keepTrying();
       if (!mounted) return;
       setState(() {
         _submitting = false;
@@ -240,11 +284,7 @@ class _ExamTakeScreenState extends State<ExamTakeScreen> {
       });
     } catch (_) {
       // Never leave the button stuck on "sending": the answers are still saved on the device.
-      if (!mounted) return;
-      setState(() {
-        _submitting = false;
-        _error = tr('Your answers could not be sent. They are saved on this phone; tap "Turn in" to try again.');
-      });
+      _keepTrying();
     }
   }
 

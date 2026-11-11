@@ -230,7 +230,9 @@ Future<void> takeExam(BuildContext context, Json exam, Future<void> Function() r
   await reload();
   if (response == null || !context.mounted) return;
   final status = response.obj('result_status') ?? {};
-  if (response.flag('results_released')) {
+  if (response.flag('already_submitted')) {
+    showToast(context, tr('Your answers have reached your tutor.'));
+  } else if (response.flag('results_released')) {
     showToast(context, tr('Submitted. Here is your result.'));
     openExamResult(context, exam);
   } else if (status.str('mode') == 'SCHEDULED' && status.date('publish_at') != null) {
